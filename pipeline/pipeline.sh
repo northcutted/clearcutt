@@ -58,6 +58,8 @@ ensure_cosign_keys() {
   mkdir -p "$KEYS_DIR"
   if [[ ! -f "$KEYS_DIR/cosign.key" ]] || [[ ! -f "$KEYS_DIR/cosign.pub" ]]; then
     log_warn "Cosign release keys not found. Materializing ephemeral local key pair..."
+    log_warn "SECURITY NOTE: Local key generation and passphrases are STRICTLY for local testing/dev."
+    log_warn "In production registries, utilize keyless OIDC signing or inject COSIGN_PRIVATE_KEY secrets."
     # Set dummy password for automated key generation
     export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
     cosign generate-key-pair --output-key-prefix "$KEYS_DIR/cosign"
@@ -152,7 +154,7 @@ main() {
 
   # Run daily patch cycle if requested
   if [ "$run_patch" = true ]; then
-    run_patch_cycle()
+    run_patch_cycle
   fi
 
   # Default target if none provided
@@ -180,4 +182,3 @@ main() {
 }
 
 main "$@"
-EOF

@@ -35,6 +35,18 @@ fileExistenceTests:
   - name: 'Sh Shell Absence'
     path: '/bin/sh'
     shouldExist: false
+  - name: 'Ls Utility Absence'
+    path: '/bin/ls'
+    shouldExist: false
+  - name: 'Cat Utility Absence'
+    path: '/bin/cat'
+    shouldExist: false
+  - name: 'Usr Bin Ls Absence'
+    path: '/usr/bin/ls'
+    shouldExist: false
+  - name: 'Usr Bin Cat Absence'
+    path: '/usr/bin/cat'
+    shouldExist: false
 
 fileContentTests:
   - name: 'Passwd App User'

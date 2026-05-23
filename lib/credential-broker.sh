@@ -139,13 +139,17 @@ EOF
     unset GRADLE_OPTS
     unalias mvn 2>/dev/null
     
-    # Securely overwrite and remove file contents to prevent any directory scraping residues
+    # Delete the temporary session cache directory
+    # Note: Secure dd overwriting represents security theater on modern filesystems (COW, SSDs, journaling)
+    # as physical flash sectors are not guaranteed to be zeroed immediately.
     if [[ -d "$AUTH_CACHE_DIR" ]]; then
-      find "$AUTH_CACHE_DIR" -type f -exec dd if=/dev/zero of={} bs=1k count=1 conv=notrunc 2>/dev/null \;
       rm -rf "$AUTH_CACHE_DIR"
     fi
     echo -e "\033[1;32m[ClearCutt Broker]\033[0m Session credentials destroyed. Guardrails verified."
   }
+
+  # Register exit traps to automatically trigger cleanup upon shell exit or cancellation
+  trap cleanup_credential_broker EXIT INT TERM
 }
 
 # Run setup

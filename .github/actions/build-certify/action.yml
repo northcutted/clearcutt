@@ -48,22 +48,7 @@ runs:
       shell: bash
       run: |
         nix path-info --json -r result > path-info.json
-        # Fetch ClearCutt sbom generator and execute
-        python3 -c "
-        import urllib.request
-        url = 'https://raw.githubusercontent.com/eddie-northcutt/clearcutt-images/main/pipeline/sbom-generator.py'
-        try:
-            # Fallback to local script if available (e.g. running in clearcutt repo itself)
-            import os
-            if os.path.exists('pipeline/sbom-generator.py'):
-                os.system('python3 pipeline/sbom-generator.py path-info.json > sbom.json')
-            else:
-                urllib.request.urlretrieve(url, 'sbom-generator.py')
-                os.system('python3 sbom-generator.py path-info.json > sbom.json')
-        except Exception as e:
-            print('Fallback to local: ', e)
-            os.system('python3 pipeline/sbom-generator.py path-info.json > sbom.json')
-        "
+        python3 "${{ github.action_path }}/sbom-generator.py" path-info.json > sbom.json
         echo "SPDX 2.3 SBOM generated successfully."
 
     # 6. Run Trivy Gating Scans (Fails on fixed Critical/High CVEs)

@@ -18,14 +18,14 @@
           config = {
             allowUnfree = true;
             allowBroken = true;
-            permittedInsecurePackages = [
-              "nodejs-20.20.2"
-            ];
           };
         };
 
         # Secure split: host shell tools remain native, but target images are cross-compiled
         # to Linux x86_64 when running on Darwin/macOS hosts, completely avoiding platform mismatches.
+        # WARNING: Cross-compiling heavy runtime systems (like JDK, .NET, or Python) from macOS hosts to Linux
+        # OCI layers via pkgsCross is unstable and unsupported by many upstream Nixpkgs derivations. Native
+        # Linux compilation is strongly recommended for production image matrix builds.
         pkgs = if hostPkgs.stdenv.isDarwin then hostPkgs.pkgsCross.gnu64 else hostPkgs;
 
         # Import our custom image compiler

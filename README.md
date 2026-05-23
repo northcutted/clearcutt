@@ -20,6 +20,8 @@ Instead of forcing downstream applications to migrate to a new OS, ClearCutt pac
 * **Dynamic Linking Isolation:** Nix compiles target binaries (such as Python interpreters or Node runtimes) with their dynamic links (`RPATH`/`RUNPATH`) and interpreters bound strictly to Nix store subpaths. They execute in isolation from the host filesystem's `/lib` or `/usr/lib`, preserving mandated host configurations, monitoring daemons, and security agents.
 * > [!IMPORTANT]
   > **Technical Assumption:** This architecture assumes downstream applications have no hard dependencies on host operating system libraries outside the Nix store closure. Any application that performs runtime discovery of `/usr/lib` paths, requires host-specific graphic drivers, or loads shared system libraries dynamically will break under this isolated hermetic model.
+* > [!WARNING]
+  > **macOS Cross-Compilation Constraint:** Nix native development shells seamlessly support both Linux and macOS (`x86_64` and `aarch64`) for running local command utilities and development runtimes on your host machine. However, cross-compiling heavy runtime systems (such as Java JDK, .NET SDK, or Python) from macOS to Linux target OCI layers via `pkgsCross` is unstable and unsupported by many upstream Nixpkgs derivations. For building the production `slim` and `distroless` image matrix tiers, compiling on a native Linux host (e.g., standard Linux virtual machine or CI runner) is strictly recommended.
 
 ### 2. Multi-Tiered Matrix Lifecycle
 ClearCutt generates three distinct lifecycle tiers tailored for different stages of the delivery pipeline:
@@ -96,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build and Certify Application
-        uses: ./#/.github/actions/build-certify
+        uses: ./.github/actions/build-certify
         with:
           language: 'java25'
           tier: 'distroless'
@@ -109,8 +111,8 @@ For container runtimes, the project provides a hardened Compose blueprint enforc
 ```yaml
 # examples/oci-deployment/docker-compose.yml
 services:
-  app:
-    image: clearcutt-core-lts:distroless
+  secure-app:
+    image: ghcr.io/eddie-northcutt/clearcutt-python3.14:distroless
     read_only: true               # Locks container root (Nix store is immutable)
     security_opt:
       - no-new-privileges:true    # Prevents runtime privilege escalation
