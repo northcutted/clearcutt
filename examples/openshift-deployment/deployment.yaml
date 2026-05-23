@@ -1,0 +1,94 @@
+# ClearCutt Hardened OpenShift Production Deployment
+# Paradigm: Compliance with restricted-v2 SCC using Arbitrary Namespace UIDs
+# Brand Owner & Principal Architect: Eddie Northcutt
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clearcutt-openshift
+  namespace: clearcutt-sandbox
+  labels:
+    app: clearcutt-openshift
+    tier: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: clearcutt-openshift
+  template:
+    metadata:
+      labels:
+        app: clearcutt-openshift
+    spec:
+      # Use an isolated ServiceAccount
+      serviceAccountName: clearcutt-openshift-sa
+      
+      securityContext:
+        # Enforce that the container MUST NOT execute as root
+        runAsNonRoot: true
+        
+        # We OMIT 'runAsUser' to allow OpenShift's SCC admission controller
+        # to dynamically assign the namespace-allocated random high-range UID (e.g. 1000070000).
+        
+        # Force membership in root group (gid: 0) to ensure writeability on emptyDir volumes
+        runAsGroup: 0
+        
+        # Enforce strict system call restrictions
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: runtime-container
+          # Targets our hardened distroless base layer
+          image: ghcr.io/eddie-northcutt/clearcutt-core:distroless
+          imagePullPolicy: IfNotPresent
+
+          # Enforce resource boundaries to prevent starvation vectors
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+          securityContext:
+            # Prevent privilege escalation vectors natively
+            allowPrivilegeEscalation: false
+            
+            # Lock the container root layer (Nix store is inherently read-only)
+            readOnlyRootFilesystem: true
+            
+            # Remove all Linux kernel capabilities completely
+            capabilities:
+              drop:
+                - ALL
+
+          # Map in-memory dynamic directories to support temp file writes by the random UID
+          volumeMounts:
+            - name: ephemeral-tmp
+              mountPath: /tmp
+            - name: app-writeable-logs
+              mountPath: /app/logs
+
+      volumes:
+        # Mount an ephemeral in-memory volume for /tmp
+        - name: ephemeral-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+            
+        # Mount an ephemeral in-memory volume for application runtime logs
+        - name: app-writeable-logs
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+---
+# Service Account for the OpenShift Deployment
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clearcutt-openshift-sa
+  namespace: clearcutt-sandbox
+  labels:
+    app: clearcutt-openshift

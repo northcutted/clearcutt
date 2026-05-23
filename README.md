@@ -143,6 +143,12 @@ ClearCutt provides complete deployment and policy manifests under `examples/k8s-
   1. The container image signature is cryptographically signed keylessly by our GitHub Actions OIDC identity.
   2. The image registry metadata contains a valid, signed SPDX SBOM attestation before letting the container deploy on the cluster.
 
+### 5. Red Hat OpenShift Production Deployment
+For deployment onto **Red Hat OpenShift (OCP)**, the project provides dedicated blueprints complying with strict **Security Context Constraints (SCC)** under `examples/openshift-deployment/`.
+
+* **Arbitrary User ID Compliance:** OpenShift's `restricted-v2` SCC allocates random, high-range namespace UIDs at runtime and assigns membership to the `root` group (`gid: 0`). 
+* **Optimized Manifest (`deployment.yaml`):** Omit hardcoded UIDs by removing the `runAsUser` pod spec parameter, enabling `runAsNonRoot: true`, and assigning `runAsGroup: 0` alongside emptyDir ephemeral volume mounts on writeable target paths (`/tmp`, `/app/logs`) to ensure maximum execution compliance.
+
 ---
 
 ## License
