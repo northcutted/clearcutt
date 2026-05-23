@@ -28,7 +28,11 @@ let
     else if language == "dotnet" then
       (if version == "8.0" then [ pkgs.dotnetCorePackages.sdk_8_0 ]
        else if version == "10.0" then [ pkgs.dotnetCorePackages.sdk_10_0 ]
-       else throw "Unsupported .NET version: ${version}")
+       else throw "Unsupported .NET SDK version: ${version}")
+    else if language == "dotnet-runtime" then
+      (if version == "8.0" then [ pkgs.dotnetCorePackages.aspnetcore_8_0 ]
+       else if version == "10.0" then [ pkgs.dotnetCorePackages.aspnetcore_10_0 ]
+       else throw "Unsupported .NET Runtime version: ${version}")
     else
       throw "Unsupported language: ${language}";
 
@@ -50,7 +54,9 @@ in
     clearcuttGo125 = resolveRawPackages { language = "go"; version = "1.25"; };
     clearcuttGo126 = resolveRawPackages { language = "go"; version = "1.26"; };
     clearcuttDotnet8 = resolveRawPackages { language = "dotnet"; version = "8.0"; };
+    clearcuttDotnet8Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "8.0"; };
     clearcuttDotnet10 = resolveRawPackages { language = "dotnet"; version = "10.0"; };
+    clearcuttDotnet10Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "10.0"; };
   };
 
   # Downstream Development Shell Builder

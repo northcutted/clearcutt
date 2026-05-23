@@ -12,6 +12,18 @@ YELLOW="\033[1;33m"
 RED="\033[1;31m"
 RESET="\033[0m"
 
+# Global exit handler to clean up all session resources cleanly.
+# Bypasses fragile local trap overwrites which would wipe out broker cleanup traps.
+verify_exit_handler() {
+  # 1. Clean up credential broker dynamically if sourced
+  if declare -f cleanup_credential_broker >/dev/null; then
+    cleanup_credential_broker 2>/dev/null || true
+  fi
+  # 2. Clean up container structure test files
+  rm -f "/tmp/clearcutt-slim-uncompressed.tar" "/tmp/clearcutt-distroless-uncompressed.tar" 2>/dev/null
+}
+trap verify_exit_handler EXIT INT TERM
+
 log_section() {
   echo -e "\n${BLUE}=== $1 ===${RESET}"
 }
@@ -52,6 +64,11 @@ test_credential_broker() {
   # Source the broker to activate session hooks
   # shellcheck source=lib/credential-broker.sh
   source ./lib/credential-broker.sh
+
+  # Sourcing the broker registers its own trap, which overwrites our global handler.
+  # We restore verify_exit_handler immediately to ensure all subsequent failures
+  # or exits route through the unified global handler (which wraps cleanup_credential_broker).
+  trap verify_exit_handler EXIT INT TERM
 
   # Assert environment variables are compiled correctly
   if [[ "${NPM_CONFIG_USERCONFIG:-}" != *".nix-enterprise-auth-cache/.npmrc" ]]; then
@@ -299,11 +316,11 @@ test_native_nix_integration() {
         overlays = [ flake.overlays.default ];
       };
     in
-      pkgs.clearcuttJava21 != null
+      pkgs.clearcuttJava21 != null && pkgs.clearcuttDotnet8Runtime != null
   ')
 
   if [[ "$overlay_check" != "true" ]]; then
-    log_fail "Nix Native Overlay failed to evaluate clearcuttJava21 attribute."
+    log_fail "Nix Native Overlay failed to evaluate clearcuttJava21 and clearcuttDotnet8Runtime attributes."
   fi
   log_pass "Nix Native overlays default evaluated successfully."
 
@@ -358,9 +375,6 @@ test_container_structure_tests() {
   log_info "Staging and uncompressing distroless image to $distroless_tmp_tar..."
   gzip -d -c "$distroless_tar" > "$distroless_tmp_tar"
 
-  # Setup exit trap to clean up our temporary files
-  trap 'rm -f "$slim_tmp_tar" "$distroless_tmp_tar" 2>/dev/null' EXIT INT TERM
-
   log_info "Executing Container Structure Tests on Slim Tier..."
   container-structure-test test \
     --driver tar \
@@ -373,9 +387,8 @@ test_container_structure_tests() {
     --image "$distroless_tmp_tar" \
     --config ./tests/structure-test-distroless.yaml
 
-  # Explicit clean up
+  # Leverage global verify_exit_handler for absolute guarantees
   rm -f "$slim_tmp_tar" "$distroless_tmp_tar"
-  trap - EXIT INT TERM
 
   log_pass "Container structure verification tests passed flawlessly."
 }

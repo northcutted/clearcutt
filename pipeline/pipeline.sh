@@ -79,11 +79,17 @@ certify_target() {
   local sig_path="$OUTPUT_DIR/$target.sig"
 
   # 1. Compilation phase
-  log_info "Compiling declarative layered OCI image..."
-  if nix build ".#$target" --out-link "$tar_path" --extra-experimental-features "nix-command flakes"; then
+  log_info "Compiling OCI layered image..."
+  local link_path="$OUTPUT_DIR/$target-link"
+  if nix build ".#$target" --out-link "$link_path" --extra-experimental-features "nix-command flakes"; then
+    # Dereference the symlink to copy the actual OCI tarball archive as a regular file.
+    # Prevents misleading out-link naming and resolves read-only permission constraints.
+    cp -L "$link_path" "$tar_path"
+    rm -f "$link_path"
     log_success "OCI Image layered and compiled -> $tar_path"
   else
     log_error "Compilation failed for target $target"
+    rm -f "$link_path" 2>/dev/null || true
     return 1
   fi
 

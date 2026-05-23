@@ -137,7 +137,7 @@ EOF
     unset NETRC
     unset PIP_INDEX_URL
     unset GRADLE_OPTS
-    unalias mvn 2>/dev/null
+    unalias mvn 2>/dev/null || true
     
     # Delete the temporary session cache directory
     # Note: Secure dd overwriting represents security theater on modern filesystems (COW, SSDs, journaling)
