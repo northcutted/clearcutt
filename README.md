@@ -5,48 +5,54 @@
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**ClearCutt Hardened Fleets** is a next-generation declarative supply chain framework and platform engineering blueprint. It compiles, validates, certifies, and cryptographically signs a matrix of zero-CVE target language runtimes across multiple lifecycle tiers (`dev`, `slim`, and `distroless`).
+**ClearCutt Hardened Fleets** is a declarative supply chain framework and platform engineering blueprint. It compiles, validates, certifies, and cryptographically signs a matrix of target language runtimes across multiple lifecycle tiers (`dev`, `slim`, and `distroless`).
 
-By leveraging the declarative power of **Nix**, ClearCutt allows secure runtime layers (e.g. Java, Node.js, Python) to be injected as fully isolated `/nix/store` subpaths directly on top of your existing, mandated corporate base images (such as Amazon Linux 2023, RedHat UBI, or Ubuntu Pro). This completely bypasses the **"OS Migration Tax"** while establishing a traceable, cryptographically verified "Keyboard to Cloud" trust loop.
+By leveraging **Nix**, ClearCutt injects runtime layers (e.g., Java, Node.js, Python) as isolated `/nix/store` closures directly on top of existing, mandated enterprise base images (such as Amazon Linux 2023, RedHat UBI, or Ubuntu Pro). This allows organizations to update runtimes without modifying host operating system layers, while establishing a traceable cryptographic signature and attestation chain verifying origin from code checkout to the cluster admission gateway.
 
 ---
 
-## Technical Architecture & Core Design Decisions
+## Technical Architecture, Core Decisions & Security Trade-offs
 
-Traditional base images force platform teams to choose between bloated operating systems (raising the CVE attack surface) or complex base image migrations. ClearCutt solves this using the following architectural paradigms:
+Traditional base images force platform teams to choose between bloated operating systems (raising the CVE attack surface) or complex base image migrations. ClearCutt addresses this using the following architectural paradigms and documented trade-offs:
 
-### 1. Injected Runtime Overlay (No OS Migration Tax)
+### 1. Injected Runtime Overlay (Nix-Store Hermeticity)
 Instead of forcing downstream applications to migrate to a new OS, ClearCutt packages runtimes into isolated Nix store layers. 
-* Nix compiles target binaries (such as Python interpreters or Node runtimes) with their dynamic links (`RPATH`/`RUNPATH`) and interpreters explicitly bound strictly to the Nix store subpaths.
-* These runtimes execute in complete isolation from the host filesystem's `/lib` or `/usr/lib`, ignoring host OS library mismatches while preserving mandated host configurations, monitoring daemons, and security agents.
+* **Dynamic Linking Isolation:** Nix compiles target binaries (such as Python interpreters or Node runtimes) with their dynamic links (`RPATH`/`RUNPATH`) and interpreters bound strictly to Nix store subpaths. They execute in isolation from the host filesystem's `/lib` or `/usr/lib`, preserving mandated host configurations, monitoring daemons, and security agents.
+* > [!IMPORTANT]
+  > **Technical Assumption:** This architecture assumes downstream applications have no hard dependencies on host operating system libraries outside the Nix store closure. Any application that performs runtime discovery of `/usr/lib` paths, requires host-specific graphic drivers, or loads shared system libraries dynamically will break under this isolated hermetic model.
 
 ### 2. Multi-Tiered Matrix Lifecycle
 ClearCutt generates three distinct lifecycle tiers tailored for different stages of the delivery pipeline:
 *   **`dev` (Builder Tier):** Equipped with raw runtime packages, interactive debugging shells (`bash`), standard utilities (`git`, `curl`), and CA certificates. Includes our integrated transient credential broker.
 *   **`slim` (Diagnostic Runtime Tier):** A lean production execution environment that retains CA certificates, the target language runtime, and basic troubleshooting capabilities (`busybox`, `/bin/bash`).
-*   **`distroless` (Hardened Zero-Utility Tier):** The ultimate production target. Contains **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`). It packages only the target runtime binary and CA certificates. Any potential shell-injection vulnerabilities inside application code are rendered completely inert because there is no shell to spawn.
+*   **`distroless` (Hardened Zero-Utility Tier):** The ultimate production target. Contains **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
+* > [!WARNING]
+  > **Mitigation Boundary:** Removing shell binaries prevents `exec()`-based spawning of system shells (a common vector in remote command injection). However, it **does not mitigate other forms of Remote Code Execution (RCE)**. Code injection that executes direct system calls, spawns bundled executables, utilizes dynamic interpreter APIs (such as Python's `os.execve`), or launches Java processes using a custom-packaged shell binary is unaffected by this boundary.
 
-### 3. Granular Layer-Splitting Caching
+### 3. Layer-Splitting & Caching Overhead
 ClearCutt utilizes Nix's `buildLayeredImage` mechanism with a layer limit set to `maxLayers = 100`. 
-* Instead of copying a monolithic runtime package, dependencies are split into individual OCI store layers.
-* If a Python 3.14 image and a Java 25 image share identical cryptographic store paths (like `glibc` or `openssl`), registry mirrors and cloud nodes download and cache these layers exactly once, drastically reducing deployment times and network overhead.
+* **Granular Layers:** Dependencies are split into individual OCI store layers. If a Python image and a Java image share identical store paths (such as `glibc` or `openssl`), registry mirrors download and cache these layers exactly once.
+* > [!NOTE]
+  > **Network Performance Trade-off:** Caching efficiency assumes a warm registry mirror or a shared network layer cache. In cold-start, highly distributed, or air-gapped environments, having up to 100 layers may introduce connection latency and metadata pull overhead compared to single-layer container archives.
 
 ### 4. Transient Credential Broker
 To secure enterprise builds without exposing build secrets, the `dev` environment includes a credential broker that intercepts environment variables (`ENTERPRISE_MIRROR_*`) and dynamically generates isolated Maven `settings.xml`, NPM `.npmrc`, Pip `.netrc` routing tables, and Gradle configurations inside `.nix-enterprise-auth-cache/`. 
 * The credentials folder is automatically added to Git exclusions (`.git/info/exclude`) to prevent commits, and is wiped cleanly via bash exit traps upon shell termination.
+* > [!CAUTION]
+  > **Security Risk:** Sourcing bootstrap credentials via environment variables is a potential exposure vector in environments where child processes or host `/proc` directories are readable. Platform teams should ensure environment variables are cleared or scrubbed immediately after the broker materializes the configuration files.
 
 ---
 
 ## Supported Matrix & Offering
 
-ClearCutt maintains and continuously gates a wide matrix of modern target language runtimes:
+ClearCutt maintains and continuously gates a wide matrix of modern target language runtimes. **Note on point-in-time metrics:** Gating reduces the CVE attack surface through minimal dependency closures, but cannot guarantee "Zero CVEs"—especially when tracking cutting-edge or pre-release runtimes:
 
 | Language | Supported Versions | dev Tier | slim Tier | distroless Tier |
-| :--- | :--- | :---: | :---: | :---: |
+| :--- | :--- | :--- | :--- | :--- |
 | **Java** | `21`, `25` (LTS) | JDK + Compiler | JRE | Minimal JRE (No JShell) |
 | **Node.js** | `22`, `24` (LTS) | Node + NPM + Yarn | Node Runtime | Pure Node Binary |
-| **Python** | `3.13`, `3.14` (Prerelease) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
-| **Go** | `1.25`, `1.26` | Full Go Toolchain | Go Runtime | Binary Execution Layer |
+| **Python** | `3.13`, `3.14` (Pre-release) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
+| **Go** | `1.25`, `1.26` (Pre-release) | Full Go Toolchain | Go Runtime | Binary Execution Layer |
 | **.NET** | `8.0`, `10.0` | Full .NET SDK | ASP.NET Runtime | Hardened ASP.NET Layer |
 | **Core** | `LTS` | Coreutils + Bash | Bash + BusyBox | CA Certificates Only |
 
@@ -136,18 +142,20 @@ For Nix native developers and downstream clusters, ClearCutt publishes packages 
 ```
 
 ### 4. Kubernetes Native Deployment & Kyverno Admission Gating
-ClearCutt provides complete deployment and policy manifests under `examples/k8s-deployment/` to enforce **Keyboard to Cloud** verification.
+ClearCutt provides complete deployment and policy manifests under `examples/k8s-deployment/` to enforce signature and SBOM verification.
 
 * **Hardened Deployment (`deployment.yaml`):** Uses the secure unprivileged context (`runAsUser: 10001`), drops kernel capabilities, disables privilege escalation, and locks the root layer.
-* **Admission Verification (`kyverno-policy.yaml`):** Enforces a Kyverno `ClusterPolicy` that intercepts Pod creation requests and traceably verifies:
-  1. The container image signature is cryptographically signed keylessly by our GitHub Actions OIDC identity.
-  2. The image registry metadata contains a valid, signed SPDX SBOM attestation before letting the container deploy on the cluster.
+* **Admission Verification (`kyverno-policy.yaml`):** Enforces a Kyverno `ClusterPolicy` that intercepts Pod creation requests and traceably verifies image signatures and signed SPDX SBOMs.
+* > [!CAUTION]
+  > **Webhook Availability Trade-off:** The provided Kyverno policy defaults to a fail-closed configuration (enforced via `validationFailureAction: Enforce`). If the Kyverno admission controller webhook becomes unavailable or crashes, all pod deployment operations matching this policy will be blocked on the cluster. Organizations must evaluate whether to fall back to auditing mode (`validationFailureAction: Audit`) depending on their high-availability and business continuity requirements.
 
 ### 5. Red Hat OpenShift Production Deployment
 For deployment onto **Red Hat OpenShift (OCP)**, the project provides dedicated blueprints complying with strict **Security Context Constraints (SCC)** under `examples/openshift-deployment/`.
 
 * **Arbitrary User ID Compliance:** OpenShift's `restricted-v2` SCC allocates random, high-range namespace UIDs at runtime and assigns membership to the `root` group (`gid: 0`). 
 * **Optimized Manifest (`deployment.yaml`):** Omit hardcoded UIDs by removing the `runAsUser` pod spec parameter, enabling `runAsNonRoot: true`, and assigning `runAsGroup: 0` alongside emptyDir ephemeral volume mounts on writeable target paths (`/tmp`, `/app/logs`) to ensure maximum execution compliance.
+* > [!WARNING]
+  > **Root Group Security Implications:** Running with `runAsGroup: 0` (root group membership) alongside `runAsNonRoot: true` is standard practice on OpenShift to facilitate directory write access for dynamically assigned dynamic UIDs. However, it represents a security trade-off: any host filesystem file or system resource configured with group-write permissions (`g+w`) owned by `root` will be writeable by the unprivileged container user. Platform teams must ensure strict file permission audit controls on host systems to mitigate this risk.
 
 ---
 
