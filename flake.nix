@@ -107,6 +107,7 @@
             hostPkgs.patchelf
             hostPkgs.cosign
             hostPkgs.trivy # Trivy is natively pulled into the dev shell!
+            hostPkgs.container-structure-test
           ];
 
           shellHook = ''

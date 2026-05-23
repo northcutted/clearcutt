@@ -1,0 +1,47 @@
+schemaVersion: "2.0.0"
+
+metadataTest:
+  user: "10001:10001"
+  workdir: "/app"
+  envVars:
+    - key: "HOME"
+      value: "/app"
+    - key: "TMPDIR"
+      value: "/tmp"
+    - key: "SSL_CERT_FILE"
+      value: "/nix/store/.*/etc/ssl/certs/ca-bundle.crt"
+      isRegex: true
+
+fileExistenceTests:
+  - name: 'App Directory'
+    path: '/app'
+    shouldExist: true
+    permissions: 'drwxr-xr-x'
+  - name: 'Tmp Directory'
+    path: '/tmp'
+    shouldExist: true
+  - name: 'Passwd File'
+    path: '/etc/passwd'
+    shouldExist: true
+  - name: 'Group File'
+    path: '/etc/group'
+    shouldExist: true
+  - name: 'CA Certificates Bundle'
+    path: '/etc/ssl/certs/ca-bundle.crt'
+    shouldExist: true
+  - name: 'Bash Shell'
+    path: '/bin/bash'
+    shouldExist: true
+  - name: 'Sh Shell'
+    path: '/bin/sh'
+    shouldExist: true
+
+fileContentTests:
+  - name: 'Passwd App User'
+    path: '/etc/passwd'
+    expectedContents:
+      - ".*appuser:x:10001:10001:ClearCutt Secure App User:/app:/sbin/nologin.*"
+  - name: 'Group App User'
+    path: '/etc/group'
+    expectedContents:
+      - ".*appuser:x:10001:.*"

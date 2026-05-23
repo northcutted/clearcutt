@@ -327,6 +327,59 @@ test_native_nix_integration() {
   log_pass "Nix Native lib.mkHardenedShell derivation generated successfully."
 }
 
+# ----------------------------------------------------
+# 6. Container Structure Verification Tests
+# ----------------------------------------------------
+test_container_structure_tests() {
+  log_section "Security Gate: Container Structure Verification Tests"
+
+  local slim_tar="build-outputs/coreLTS-slim.tar.gz"
+  local distroless_tar="build-outputs/coreLTS-distroless.tar.gz"
+
+  # Ensure both are built
+  if [ ! -f "$slim_tar" ]; then
+    log_info "Slim image not found. Building..."
+    nix build ".#coreLTS-slim" --out-link "$slim_tar" --extra-experimental-features "nix-command flakes"
+  fi
+  if [ ! -f "$distroless_tar" ]; then
+    log_info "Distroless image not found. Building..."
+    nix build ".#coreLTS-distroless" --out-link "$distroless_tar" --extra-experimental-features "nix-command flakes"
+  fi
+
+  # CST has a known parsing limitation with path casing in --image flag
+  # and expects uncompressed tar files for the tar driver.
+  # We stage and gunzip both images to completely lowercase, uncompressed paths in /tmp.
+  local slim_tmp_tar="/tmp/clearcutt-slim-uncompressed.tar"
+  local distroless_tmp_tar="/tmp/clearcutt-distroless-uncompressed.tar"
+
+  log_info "Staging and uncompressing slim image to $slim_tmp_tar..."
+  gzip -d -c "$slim_tar" > "$slim_tmp_tar"
+
+  log_info "Staging and uncompressing distroless image to $distroless_tmp_tar..."
+  gzip -d -c "$distroless_tar" > "$distroless_tmp_tar"
+
+  # Setup exit trap to clean up our temporary files
+  trap 'rm -f "$slim_tmp_tar" "$distroless_tmp_tar" 2>/dev/null' EXIT INT TERM
+
+  log_info "Executing Container Structure Tests on Slim Tier..."
+  container-structure-test test \
+    --driver tar \
+    --image "$slim_tmp_tar" \
+    --config ./tests/structure-test-slim.yaml
+
+  log_info "Executing Container Structure Tests on Distroless Tier..."
+  container-structure-test test \
+    --driver tar \
+    --image "$distroless_tmp_tar" \
+    --config ./tests/structure-test-distroless.yaml
+
+  # Explicit clean up
+  rm -f "$slim_tmp_tar" "$distroless_tmp_tar"
+  trap - EXIT INT TERM
+
+  log_pass "Container structure verification tests passed flawlessly."
+}
+
 # Run all verification tests
 main() {
   log_info "===================================================="
@@ -338,6 +391,7 @@ main() {
   test_dynamic_binary_headers
   test_distroless_boundaries
   test_native_nix_integration
+  test_container_structure_tests
 
   echo -e "\n${GREEN}===================================================="
   echo -e "      ALL CLEARCUTT SECURITY GATING CHECKS PASSED   "
