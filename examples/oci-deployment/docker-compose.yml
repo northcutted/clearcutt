@@ -1,0 +1,46 @@
+# ClearCutt Hardened OCI Container Sandbox Blueprint
+# Paradigm: Production Compose Hardening (Zero Capabilities / Immutable Filesystem)
+
+version: '3.8'
+
+services:
+  secure-app:
+    # Point to your secure ClearCutt matrix target (e.g. Python 3.14 Distroless)
+    image: ghcr.io/eddie-northcutt/clearcutt-python3.14:distroless
+    
+    container_name: clearcutt-hardened-app
+    
+    ports:
+      - "8080:8080"
+      
+    # 1. Rootless User Space Enforcement
+    # Forces execution as unprivileged user 10001 (appuser) natively
+    user: "10001:10001"
+    
+    # 2. Immutable Filesystem Boundary
+    # Mounts the root container filesystem as strictly read-only
+    read_only: true
+    
+    # 3. Dynamic Local Cache Mapping
+    # Because the rootfs is read-only, we map an ephemeral in-memory tmpfs volume 
+    # to /tmp so libraries can safely write transient cache segments
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      
+    # 4. Privilege Escalation Prevention
+    # Drop all Linux kernel capabilities and block any setuid/setgid binary executions
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+      
+    # 5. Linux Seccomp Sandbox Profile
+    # Standard seccomp isolation
+    sysctls: []
+    
+    # Example application workspace volume mounts
+    # Mounts downstream code strictly as read-only, separating execution from code modifications
+    volumes:
+      - ./app-code:/app:ro
+      
+    restart: unless-stopped

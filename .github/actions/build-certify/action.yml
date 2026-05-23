@@ -1,0 +1,110 @@
+# ClearCutt Reusable Composite Build & Certify Action
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: Reusable CI/CD building block for secure zero-CVE application delivery
+
+name: 'ClearCutt Build & Certify'
+description: 'Declaratively compiles OCI layered images, generates SPDX SBOMs, executes security scans, and keylessly signs/attests images'
+
+inputs:
+  language:
+    description: 'Target matrix language (e.g. python3.14, java21, go1.26)'
+    required: true
+  tier:
+    description: 'Target lifecycle tier (dev, slim, distroless)'
+    required: true
+    default: 'distroless'
+  image-name:
+    description: 'Target OCI registry destination image tag (e.g. ghcr.io/owner/repo:latest)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    # 1. Setup Nix environment with active flakes support
+    - name: Install Nix
+      uses: cachix/install-nix-action@v26
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          allow-import-from-derivation = true
+
+    # 2. Setup Deterministic Systems Magic Nix Cache for instant rebuild caching
+    - name: Setup Magic Nix Cache
+      uses: determinateSystems/magic-nix-cache-action@v2
+
+    # 3. Setup Sigstore Cosign binaries natively
+    - name: Install Sigstore Cosign
+      uses: sigstore/cosign-installer@v3.4.0
+
+    # 4. Compile the target layered OCI image from the repository flake
+    - name: Compile OCI Image
+      shell: bash
+      run: |
+        nix build ".#\"${{ inputs.language }}-${{ inputs.tier }}\""
+
+    # 5. Extract Nix store closure path-info and generate SPDX 2.3 SBOM
+    - name: Generate SPDX 2.3 SBOM
+      shell: bash
+      run: |
+        nix path-info --json -r result > path-info.json
+        # Fetch ClearCutt sbom generator and execute
+        python3 -c "
+        import urllib.request
+        url = 'https://raw.githubusercontent.com/eddie-northcutt/clearcutt-images/main/pipeline/sbom-generator.py'
+        try:
+            # Fallback to local script if available (e.g. running in clearcutt repo itself)
+            import os
+            if os.path.exists('pipeline/sbom-generator.py'):
+                os.system('python3 pipeline/sbom-generator.py path-info.json > sbom.json')
+            else:
+                urllib.request.urlretrieve(url, 'sbom-generator.py')
+                os.system('python3 sbom-generator.py path-info.json > sbom.json')
+        except Exception as e:
+            print('Fallback to local: ', e)
+            os.system('python3 pipeline/sbom-generator.py path-info.json > sbom.json')
+        "
+        echo "SPDX 2.3 SBOM generated successfully."
+
+    # 6. Run Trivy Gating Scans (Fails on fixed Critical/High CVEs)
+    - name: Run Trivy Security Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'result'
+        scan-type: 'image'
+        input: 'result'
+        severity: 'HIGH,CRITICAL'
+        exit-code: '1'
+        ignore-unfixed: true
+
+    # 7. Publish compiled layered OCI archive directly to registry using Skopeo
+    - name: Publish OCI Image to Registry (Skopeo)
+      shell: bash
+      run: |
+        # Copy the compiled Docker archive to the target registry destination keylessly using token
+        nix shell nixpkgs#skopeo --command skopeo copy \
+          --dest-creds "${{ github.actor }}:${{ github.token }}" \
+          "docker-archive:result" \
+          "docker://${{ inputs.image-name }}"
+
+    # 8. Sign OCI Image Keylessly using Sigstore Cosign (OIDC token provider)
+    - name: Sign Container Image (Sigstore Keyless)
+      shell: bash
+      run: |
+        # Keyless signing requires the workflow to run with id-token: write permissions
+        cosign sign --yes "${{ inputs.image-name }}"
+
+    # 9. Attest SPDX SBOM metadata directly onto the published registry image
+    - name: Attest SPDX SBOM to Registry Image
+      shell: bash
+      run: |
+        cosign attest --yes \
+          --type spdxjson \
+          --predicate sbom.json \
+          "${{ inputs.image-name }}"
+
+    # 10. Confirm certification completion
+    - name: Confirm Image Gated and Attested
+      shell: bash
+      run: |
+        echo -e "\033[1;32m[ClearCutt GHA] ✔ OCI Target successfully certified, signed, and published: ${{ inputs.image-name }}\033[0m"

@@ -1,0 +1,60 @@
+# ClearCutt Secure K8s Admission Control Policy (Kyverno)
+# Paradigm: Image Verification & SPDX SBOM Attestation Gating (Keyboard to Cloud)
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: clearcutt-verify-provenance
+  annotations:
+    policies.kyverno.io/title: "Verify ClearCutt Image Signatures and SBOMs"
+    policies.kyverno.io/subject: "Pod"
+    policies.kyverno.io/description: >
+      Validates that container images matching the ClearCutt registry namespace
+      have a verified Sigstore Cosign signature and a valid cryptographically signed
+      SPDX SBOM attestation before permitting deployment to the cluster.
+spec:
+  validationFailureAction: Enforce # Block non-compliant containers dynamically
+  background: false
+  rules:
+    - name: verify-sigstore-provenance
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        # Match our image namespace
+        - imageReferences:
+            - "ghcr.io/eddie-northcutt/clearcutt-*"
+            
+          # 1. Cosign Signature Verification
+          # Ensures the image manifest was signed by a trusted identity
+          attestors:
+            - entries:
+                - keyless:
+                    # Keyless OIDC: Asserts that the image was signed strictly inside our 
+                    # non-falsifiable GitHub Actions release pipeline workflow
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subject: "https://github.com/eddie-northcutt/clearcutt-images/.github/workflows/release.yml@refs/heads/main"
+                    
+                # OR fallback to a trusted static public key if signing locally:
+                # - keys:
+                #     publicKeys: |
+                #       -----BEGIN PUBLIC KEY-----
+                #       MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                #       -----END PUBLIC KEY-----
+                
+          # 2. SPDX SBOM Attestation Verification
+          # Asserts that a cryptographically signed SPDX SBOM is attached to the OCI metadata
+          attestations:
+            - predicateType: "https://spdx.dev/Document" # SPDX Standard Predicate Type
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: "https://token.actions.githubusercontent.com"
+                        subject: "https://github.com/eddie-northcutt/clearcutt-images/.github/workflows/release.yml@refs/heads/main"
+                        
+          # Force registry digest resolution to prevent tag mutability/spoofing
+          mutateDigest: true
+          verifyDigest: true
+          required: true

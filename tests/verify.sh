@@ -1,0 +1,347 @@
+#!/usr/bin/env bash
+# ClearCutt Automated Test Verification Suite
+# Author: Eddie Northcutt
+# Verifies all PRD success metrics and technical compliance gates
+
+set -euo pipefail
+
+# Console colors for premium UI/UX feedback
+BLUE="\033[1;34m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+RED="\033[1;31m"
+RESET="\033[0m"
+
+log_section() {
+  echo -e "\n${BLUE}=== $1 ===${RESET}"
+}
+
+log_info() {
+  echo -e "${BLUE}[ClearCutt Test]${RESET} $1"
+}
+
+log_warn() {
+  echo -e "${YELLOW}[ClearCutt Test] ⚠ $1${RESET}"
+}
+
+log_pass() {
+  echo -e "${GREEN}  ✔ PASS: $1${RESET}"
+}
+
+log_fail() {
+  echo -e "${RED}  ✘ FAIL: $1${RESET}" >&2
+  exit 1
+}
+
+# ----------------------------------------------------
+# 1. Credentials Leakage Prevention Test
+# ----------------------------------------------------
+test_credential_broker() {
+  log_section "Vulnerability Gate: Transient Credential Broker Verification"
+
+  # Setup mock credential variables
+  export ENTERPRISE_MIRROR_URL="https://my-nexus.internal/repository/npm-group"
+  export ENTERPRISE_MIRROR_USER="eddie-northcutt"
+  export ENTERPRISE_MIRROR_TOKEN="vault-secured-super-secret-token"
+
+  # Verify the broker script can be loaded
+  if [ ! -f ./lib/credential-broker.sh ]; then
+    log_fail "Credential broker script not found at ./lib/credential-broker.sh"
+  fi
+
+  # Source the broker to activate session hooks
+  # shellcheck source=lib/credential-broker.sh
+  source ./lib/credential-broker.sh
+
+  # Assert environment variables are compiled correctly
+  if [[ "${NPM_CONFIG_USERCONFIG:-}" != *".nix-enterprise-auth-cache/.npmrc" ]]; then
+    log_fail "NPM_CONFIG_USERCONFIG not set to isolated cache path."
+  fi
+  log_pass "NPM Config Userconfig successfully isolated: $NPM_CONFIG_USERCONFIG"
+
+  if [[ "${NETRC:-}" != *".nix-enterprise-auth-cache/.netrc" ]]; then
+    log_fail "NETRC not set to isolated cache path."
+  fi
+  log_pass "NETRC routing table successfully isolated: $NETRC"
+
+  if [[ "${PIP_INDEX_URL:-}" != "https://my-nexus.internal/repository/npm-group" ]]; then
+    log_fail "PIP_INDEX_URL not set to mirror URL."
+  fi
+  log_pass "Pip Index URL successfully routed: $PIP_INDEX_URL"
+
+  if [[ "${GRADLE_OPTS:-}" != *"-I"*".nix-enterprise-auth-cache/init.gradle" ]]; then
+    log_fail "GRADLE_OPTS not routed to init.gradle."
+  fi
+  log_pass "Gradle options successfully routed: $GRADLE_OPTS"
+
+  # Assert file contents are generated securely
+  if [ ! -f "$NPM_CONFIG_USERCONFIG" ]; then
+    log_fail ".npmrc file not materialized."
+  fi
+  if ! grep -q "vault-secured-super-secret-token" "$NPM_CONFIG_USERCONFIG"; then
+    log_fail "Credentials missing in .npmrc."
+  fi
+  log_pass "Secure .npmrc contents verified."
+
+  if [ ! -f "$NETRC" ]; then
+    log_fail ".netrc file not materialized."
+  fi
+  if ! grep -q "vault-secured-super-secret-token" "$NETRC"; then
+    log_fail "Credentials missing in .netrc."
+  fi
+  log_pass "Secure .netrc routing verified."
+
+  # Assert local gitignore exclusion exists
+  if [ -d ".git" ]; then
+    if ! grep -q ".nix-enterprise-auth-cache" .git/info/exclude; then
+      log_fail ".nix-enterprise-auth-cache not in git local exclude."
+    fi
+    log_pass "Git workspace isolation guardrail verified."
+  fi
+
+  # Execute session cleanup trap
+  cleanup_credential_broker
+
+  # Assert variables and files are completely wiped
+  if [[ -n "${NPM_CONFIG_USERCONFIG:-}" ]]; then
+    log_fail "NPM_CONFIG_USERCONFIG not cleared after cleanup."
+  fi
+  if [[ -n "${NETRC:-}" ]]; then
+    log_fail "NETRC not cleared after cleanup."
+  fi
+  if [ -d ".nix-enterprise-auth-cache" ]; then
+    log_fail ".nix-enterprise-auth-cache directory still exists after cleanup."
+  fi
+  log_pass "Transient credential broker session cleanup verified perfectly."
+}
+
+# ----------------------------------------------------
+# 2. OCI Image Config & Rootless Metadata Verification
+# ----------------------------------------------------
+test_rootless_boundaries() {
+  log_section "Security Gate: Rootless & Non-Privileged Metadata Verification"
+
+  local target_image="coreLTS-slim"
+  local build_tar="build-outputs/$target_image.tar.gz"
+
+  if [ ! -f "$build_tar" ]; then
+    log_info "Target image tarball not found. Invoking build runner..."
+    nix build ".#$target_image" --out-link "$build_tar" --extra-experimental-features "nix-command flakes"
+  fi
+
+  # Create temp workspace to unpack OCI metadata
+  local tmp_unpack
+  tmp_unpack=$(mktemp -d)
+  tar -xf "$build_tar" -C "$tmp_unpack"
+
+  # Find the image config JSON file
+  local config_file
+  config_file=$(find "$tmp_unpack" -name "*.json" -not -name "manifest.json" | head -n 1)
+
+  if [ -z "$config_file" ] || [ ! -f "$config_file" ]; then
+    chmod -R +w "$tmp_unpack" 2>/dev/null || true
+    rm -rf "$tmp_unpack"
+    log_fail "OCI Image configuration metadata JSON not found in unpacked layer."
+  fi
+
+  # Inspect metadata using python's built-in json parser (no jq required!)
+  local user_val
+  user_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('User', ''))")
+  local wdir_val
+  wdir_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('WorkingDir', ''))")
+
+  chmod -R +w "$tmp_unpack" 2>/dev/null || true
+  rm -rf "$tmp_unpack"
+
+  if [[ "$user_val" != "10001:10001" ]]; then
+    log_fail "Metadata User mapping mismatch. Got: '$user_val', Expected: '10001:10001'"
+  fi
+  log_pass "Hardcoded rootless user mapped: $user_val"
+
+  if [[ "$wdir_val" != "/app" ]]; then
+    log_fail "Metadata WorkingDir mismatch. Got: '$wdir_val', Expected: '/app'"
+  fi
+  log_pass "Hardcoded rootless working directory mapped: $wdir_val"
+}
+
+# ----------------------------------------------------
+# 3. Dynamic Binary Interpreter RPATH Verification
+# ----------------------------------------------------
+test_dynamic_binary_headers() {
+  log_section "Security Gate: Dynamic Binary RPATH & Interpreter Verification"
+
+  local target_image="coreLTS-slim"
+  local build_tar="build-outputs/$target_image.tar.gz"
+
+  # Create temp workspace to extract image store layers
+  local tmp_unpack
+  tmp_unpack=$(mktemp -d)
+  tar -xf "$build_tar" -C "$tmp_unpack"
+
+  # Find the layer tarballs containing the root filesystem files
+  # In layered docker images, store paths are distributed across tar layers
+  local binary_path=""
+  local layer_tars
+  layer_tars=$(find "$tmp_unpack" -name "layer.tar")
+
+  local tmp_fs
+  tmp_fs=$(mktemp -d)
+
+  for layer in $layer_tars; do
+    tar -xf "$layer" -C "$tmp_fs" 2>/dev/null || true
+  done
+
+  # Search for the compiled bash binary under the nix store in this layer filesystem
+  binary_path=$(find "$tmp_fs" -path "*/nix/store/*/bin/bash" | head -n 1)
+
+  if [ -z "$binary_path" ] || [ ! -f "$binary_path" ]; then
+    chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
+    rm -rf "$tmp_unpack" "$tmp_fs"
+    log_fail "Nix compiled binary 'bash' not found in store layers of image."
+  fi
+
+  log_info "Inspecting ELF binary: $binary_path"
+
+  # Read interpreter and RPATH using patchelf (nix-shell environment)
+  local interpreter
+  interpreter=$(patchelf --print-interpreter "$binary_path")
+  local rpath
+  rpath=$(patchelf --print-rpath "$binary_path")
+
+  chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
+  rm -rf "$tmp_unpack" "$tmp_fs"
+
+  # Verify dynamic interpreter path lies strictly inside the Nix store
+  if [[ "$interpreter" != "/nix/store/"* ]]; then
+    log_fail "Dynamic interpreter path bypasses Nix store! Got: $interpreter"
+  fi
+  log_pass "Dynamic interpreter path fully isolated: $interpreter"
+
+  # Verify dynamic library RPATH contains only Nix store path elements
+  # Splits RPATH by colon and checks each element
+  IFS=':' read -ra ADDR <<< "$rpath"
+  for path in "${ADDR[@]}"; do
+    if [[ -n "$path" ]] && [[ "$path" != "/nix/store/"* ]]; then
+      log_fail "RPATH entry points outside Nix store: $path"
+    fi
+  done
+  log_pass "RPATH dynamic library directories fully isolated: $rpath"
+}
+
+# ----------------------------------------------------
+# 4. Distroless Zero-Utility Boundaries Verification
+# ----------------------------------------------------
+test_distroless_boundaries() {
+  log_section "Security Gate: Distroless Zero-Utility Boundaries Verification"
+
+  local target_image="coreLTS-distroless"
+  local build_tar="build-outputs/$target_image.tar.gz"
+
+  if [ ! -f "$build_tar" ]; then
+    log_info "Target image tarball not found. Invoking build runner..."
+    nix build ".#$target_image" --out-link "$build_tar" --extra-experimental-features "nix-command flakes"
+  fi
+
+  # Create temp workspace to extract distroless layers
+  local tmp_unpack
+  tmp_unpack=$(mktemp -d)
+  tar -xf "$build_tar" -C "$tmp_unpack"
+
+  local tmp_fs
+  tmp_fs=$(mktemp -d)
+  local layer_tars
+  layer_tars=$(find "$tmp_unpack" -name "layer.tar")
+
+  for layer in $layer_tars; do
+    tar -xf "$layer" -C "$tmp_fs" 2>/dev/null || true
+  done
+
+  chmod -R +w "$tmp_unpack" 2>/dev/null || true
+  rm -rf "$tmp_unpack"
+
+  # Assert absolute absence of shell utilities
+  local shell_found=0
+  local problematic_paths=(
+    "bin/sh" "bin/bash" "bin/ash" "bin/zsh"
+    "usr/bin/sh" "usr/bin/bash" "usr/bin/ash" "usr/bin/zsh"
+    "bin/ls" "bin/cat" "usr/bin/ls" "usr/bin/cat"
+  )
+
+  for p in "${problematic_paths[@]}"; do
+    if [ -f "$tmp_fs/$p" ] || [ -L "$tmp_fs/$p" ]; then
+      log_warn "Standard utility found in distroless target: $p"
+      shell_found=1
+    fi
+  done
+
+  chmod -R +w "$tmp_fs" 2>/dev/null || true
+  rm -rf "$tmp_fs"
+
+  if [ "$shell_found" -ne 0 ]; then
+    log_fail "Distroless environment contains interactive shell utilities or coreutils!"
+  fi
+
+  log_pass "Distroless boundaries verified. Zero-shell and zero-utility footprint active."
+}
+
+# ----------------------------------------------------
+# 5. Nix Native Consumer Integration Verification
+# ----------------------------------------------------
+test_native_nix_integration() {
+  log_section "Security Gate: Nix Native Consumer Integration Verification"
+
+  log_info "Verifying Nix Native Overlays default compiler outputs..."
+  local overlay_check
+  overlay_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
+    let
+      flake = builtins.getFlake (toString ./.);
+      pkgs = import <nixpkgs> {
+        overlays = [ flake.overlays.default ];
+      };
+    in
+      pkgs.clearcuttJava21 != null
+  ')
+
+  if [[ "$overlay_check" != "true" ]]; then
+    log_fail "Nix Native Overlay failed to evaluate clearcuttJava21 attribute."
+  fi
+  log_pass "Nix Native overlays default evaluated successfully."
+
+  log_info "Verifying Nix Native lib.mkHardenedShell generator..."
+  local shell_check
+  shell_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
+    let
+      flake = builtins.getFlake (toString ./.);
+      shell = flake.lib.mkHardenedShell {
+        system = "x86_64-linux";
+        language = "java";
+        version = "21";
+      };
+    in
+      shell.drvPath != ""
+  ')
+
+  if [[ "$shell_check" != "true" ]]; then
+    log_fail "Nix Native lib.mkHardenedShell failed to build standard shell derivation."
+  fi
+  log_pass "Nix Native lib.mkHardenedShell derivation generated successfully."
+}
+
+# Run all verification tests
+main() {
+  log_info "===================================================="
+  log_info "     ClearCutt Automated Gating & Test Suite        "
+  log_info "===================================================="
+  
+  test_credential_broker
+  test_rootless_boundaries
+  test_dynamic_binary_headers
+  test_distroless_boundaries
+  test_native_nix_integration
+
+  echo -e "\n${GREEN}===================================================="
+  echo -e "      ALL CLEARCUTT SECURITY GATING CHECKS PASSED   "
+  echo -e "====================================================${RESET}"
+}
+
+main
