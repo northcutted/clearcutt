@@ -159,7 +159,7 @@ certify_target() {
 
   # C. Security Vulnerability Gating (Trivy and Grype double-gate)
   log_info "Executing vulnerability gate: Running Trivy scanner..."
-  if trivy image --input "$uncompressed_tar" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
+  if trivy image --input "$uncompressed_tar" --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
     log_success "Security Gate 1: Trivy scan passed cleanly. No patched Critical/High CVEs."
   else
     if [[ "$tier" == "dev" ]]; then

@@ -22,7 +22,7 @@ runs:
   steps:
     # 1. Setup Nix environment with active flakes support
     - name: Install Nix
-      uses: cachix/install-nix-action@v26
+      uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
       with:
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
@@ -31,11 +31,11 @@ runs:
 
     # 2. Setup Deterministic Systems Magic Nix Cache for instant rebuild caching
     - name: Setup Magic Nix Cache
-      uses: determinateSystems/magic-nix-cache-action@v2
+      uses: determinateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
 
     # 3. Setup Sigstore Cosign binaries natively
     - name: Install Sigstore Cosign
-      uses: sigstore/cosign-installer@v3.4.0
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
     # 4. Delegate all compilation, scanning, signing, and attestation to our unified pipeline
     - name: Run Unified Gating and Release Pipeline

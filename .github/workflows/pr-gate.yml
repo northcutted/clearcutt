@@ -43,10 +43,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v26
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
@@ -54,10 +54,10 @@ jobs:
             allow-import-from-derivation = true
 
       - name: Setup Magic Nix Cache
-        uses: determinateSystems/magic-nix-cache-action@v2
+        uses: determinateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
 
       - name: Install Sigstore Cosign
-        uses: sigstore/cosign-installer@v3.4.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Build, generate SBOM, and scan with Trivy + Grype locally.
       # Omit --publish to prevent any registry copy or keyless OIDC signing.
@@ -69,7 +69,7 @@ jobs:
 
       # Upload the validated SBOM JSON as an artifact for audit checking
       - name: Upload Local SBOM Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
@@ -80,10 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v26
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
@@ -91,11 +91,11 @@ jobs:
             allow-import-from-derivation = true
 
       - name: Setup Magic Nix Cache
-        uses: determinateSystems/magic-nix-cache-action@v2
+        uses: determinateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
 
       # Required for structure tests and patchelf inside the suite
       - name: Install Cosign & Gating Tools
-        uses: sigstore/cosign-installer@v3.4.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Execute Gating Suite
         run: |
