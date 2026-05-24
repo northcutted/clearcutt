@@ -254,6 +254,10 @@ jobs:
     with:
       image: ${{ matrix.target.image }}
       digest: ${{ matrix.target.digest }}
+      registry-username: ${{ github.actor }}
+      private-repository: true
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
 
   finalize-release:
     name: Finalize GitHub Release Assets
