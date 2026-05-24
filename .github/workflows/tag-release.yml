@@ -272,4 +272,73 @@ jobs:
         run: |
           echo "Uploading SBOMs and SLSA Provenance files to release: ${{ github.ref_name }}..."
           gh release upload "${{ github.ref_name }}" build-outputs/*.json --clobber
-          echo "Release finalization completed successfully."
+          echo "Release assets successfully attached."
+
+      # Edit release description to replace staging instructions with certified multi-arch OCI registry links & Nix flake usage
+      - name: Finalize Release Notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          # Fetch the existing release description, stripping staging text and blank lines
+          RAW_CHANGELOG=$(gh release view "$TAG_NAME" --json body --jq '.body' | grep -v 'This draft release represents' | grep -v 'To release these assets:' | grep -v "Simply click 'Publish Release'")
+
+          # Synthesize a beautiful production release report
+          read -r -d '' FINAL_NOTES <<EOF || true
+          # 🚀 ClearCutt Hardened Fleet Release $TAG_NAME
+
+          This release has been **cryptographically certified** with **Zero-CVE** status and **SLSA Level 3 non-falsifiable provenance** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
+
+          All OCI layered manifests have been keylessly signed via Sigstore OIDC, and full SPDX SBOM audits are attached as release assets.
+
+          ---
+
+          ## 🐳 OCI Container Registry Directory
+          Images are published to GHCR. You can pull the multi-architecture manifests directly:
+
+          | Language Target | Distroless Tier (Shell-Less Hardened) | Slim Tier (Runtime-Only Hardened) | Dev Tier (Full Compiler/Tools) |
+          |---|---|---|---|
+          | **Bash / LTS Core** | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:dev\` |
+          | **Node 22** | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:dev\` |
+          | **Node 24** | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:dev\` |
+          | **Python 3.13** | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:dev\` |
+          | **Python 3.14** | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:dev\` |
+          | **Go 1.25** | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:dev\` |
+          | **Go 1.26** | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:dev\` |
+          | **Java 21** | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:dev\` |
+          | **Java 25** | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:dev\` |
+          | **.NET 8** | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:dev\` |
+          | **.NET 10** | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:dev\` |
+
+          > [!NOTE]
+          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/\${REPO_OWNER}/clearcutt-<language>:\${TAG_NAME}-<tier>\`.
+
+          ---
+
+          ## ❄️ Declarative Nix Flake Integration
+          Downstream development projects can consume these exact secure runtime runtimes natively in their Nix flakes:
+
+          \`\`\`nix
+          # Add this repository to your flake inputs:
+          inputs.clearcutt.url = "github:\${REPO_OWNER}/clearcutt/\${TAG_NAME}";
+
+          # In your outputs, use the overlays or raw runtime packages:
+          outputs = { self, nixpkgs, clearcutt, ... }: {
+            devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
+              buildInputs = [
+                # Access secure, identical overlays
+                clearcutt.packages.x86_64-linux.java21-dev
+              ];
+            };
+          };
+          \`\`\`
+
+          ---
+
+          \$RAW_CHANGELOG
+          EOF
+
+          gh release edit "$TAG_NAME" --notes "$FINAL_NOTES"
+          echo "Release notes successfully finalized and beautified."
