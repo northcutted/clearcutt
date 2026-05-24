@@ -276,9 +276,11 @@ EOF
     ensure_cosign_keys
     export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
     
-    # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility
+    # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility.
+    # To work around a Cosign v3 bug where omitting --output-signature when --bundle is passed
+    # causes it to open an empty filename ("open : no such file or directory"), we provide both.
     local bundle_path="$OUTPUT_DIR/$target.sigstore.json"
-    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --bundle "$bundle_path" "$tar_path"; then
+    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --bundle "$bundle_path" --output-signature "$sig_path" "$tar_path"; then
       log_success "SLSA local signature bundle written -> $bundle_path"
     else
       log_error "Cosign local signing failed."
