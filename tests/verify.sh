@@ -205,8 +205,6 @@ test_dynamic_binary_headers() {
   tar -xf "$build_tar" -C "$tmp_unpack"
 
   # Find the layer tarballs containing the root filesystem files
-  # In layered docker images, store paths are distributed across tar layers
-  local binary_path=""
   local layer_tars
   layer_tars=$(find "$tmp_unpack" -name "layer.tar")
 
@@ -217,41 +215,61 @@ test_dynamic_binary_headers() {
     tar -xf "$layer" -C "$tmp_fs" 2>/dev/null || true
   done
 
-  # Search for the compiled bash binary under the nix store in this layer filesystem
-  binary_path=$(find "$tmp_fs" -path "*/nix/store/*/bin/bash" | head -n 1)
+  # Search for all compiled binaries in the OCI store layers
+  log_info "Locating all compiled binaries in the OCI store layers..."
+  local binaries=()
+  while IFS= read -r bin; do
+    binaries+=("$bin")
+  done < <(find "$tmp_fs" -path "*/nix/store/*/bin/*" -type f -perm -111 2>/dev/null || true)
 
-  if [ -z "$binary_path" ] || [ ! -f "$binary_path" ]; then
+  if [ ${#binaries[@]} -eq 0 ]; then
     chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
     rm -rf "$tmp_unpack" "$tmp_fs"
-    log_fail "Nix compiled binary 'bash' not found in store layers of image."
+    log_fail "No compiled binaries found in OCI store layers."
   fi
 
-  log_info "Inspecting ELF binary: $binary_path"
+  log_info "Performing dynamic RPATH and interpreter verification on ${#binaries[@]} binaries..."
+  for bin in "${binaries[@]}"; do
+    # Only run patchelf on valid ELF binaries (skip shell scripts, static configurations, or non-ELFs)
+    if ! file "$bin" 2>/dev/null | grep -q "ELF"; then
+      continue
+    fi
 
-  # Read interpreter and RPATH using patchelf (nix-shell environment)
-  local interpreter
-  interpreter=$(patchelf --print-interpreter "$binary_path")
-  local rpath
-  rpath=$(patchelf --print-rpath "$binary_path")
+    local bin_name
+    bin_name=$(basename "$bin")
+    log_info "Verifying dynamic boundaries for: $bin_name"
+
+    # Verify interpreter (if it exists)
+    local interpreter=""
+    interpreter=$(patchelf --print-interpreter "$bin" 2>/dev/null || true)
+    if [[ -n "$interpreter" ]]; then
+      if [[ "$interpreter" != "/nix/store/"* ]]; then
+        chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
+        rm -rf "$tmp_unpack" "$tmp_fs"
+        log_fail "Vulnerability: Binary $bin_name interpreter links outside Nix store -> $interpreter"
+      fi
+    fi
+
+    # Verify RPATH/RUNPATH (if it exists)
+    local rpath=""
+    rpath=$(patchelf --print-rpath "$bin" 2>/dev/null || true)
+    if [[ -n "$rpath" ]]; then
+      IFS=':' read -ra paths <<< "$rpath"
+      for p in "${paths[@]}"; do
+        # Ignore empty entries or standard relative $ORIGIN flags
+        if [[ -n "$p" ]] && [[ "$p" != "\$ORIGIN"* ]] && [[ "$p" != "/nix/store/"* ]]; then
+          chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
+          rm -rf "$tmp_unpack" "$tmp_fs"
+          log_fail "Vulnerability: Binary $bin_name RPATH references non-hermetic path -> $p"
+        fi
+      done
+    fi
+  done
 
   chmod -R +w "$tmp_unpack" "$tmp_fs" 2>/dev/null || true
   rm -rf "$tmp_unpack" "$tmp_fs"
 
-  # Verify dynamic interpreter path lies strictly inside the Nix store
-  if [[ "$interpreter" != "/nix/store/"* ]]; then
-    log_fail "Dynamic interpreter path bypasses Nix store! Got: $interpreter"
-  fi
-  log_pass "Dynamic interpreter path fully isolated: $interpreter"
-
-  # Verify dynamic library RPATH contains only Nix store path elements
-  # Splits RPATH by colon and checks each element
-  IFS=':' read -ra ADDR <<< "$rpath"
-  for path in "${ADDR[@]}"; do
-    if [[ -n "$path" ]] && [[ "$path" != "/nix/store/"* ]]; then
-      log_fail "RPATH entry points outside Nix store: $path"
-    fi
-  done
-  log_pass "RPATH dynamic library directories fully isolated: $rpath"
+  log_pass "Dynamic interpreter and RPATH library directories fully isolated across all store runtimes."
 }
 
 # ----------------------------------------------------

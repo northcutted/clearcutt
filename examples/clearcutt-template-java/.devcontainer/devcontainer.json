@@ -1,0 +1,24 @@
+{
+  "name": "ClearCutt Hardened Java Workspace",
+  "image": "ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:dev",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "java.configuration.runtimes": [
+          {
+            "name": "JavaSE-21",
+            "path": "/nix/store/*-zulu-ca-jdk-21.0.11",
+            "default": true
+          }
+        ]
+      },
+      "extensions": [
+        "redhat.java",
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-maven"
+      ]
+    }
+  },
+  "remoteUser": "appuser",
+  "containerUser": "appuser"
+}

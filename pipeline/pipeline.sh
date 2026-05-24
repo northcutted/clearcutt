@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ClearCutt Closed-Loop Patch & Release Pipeline
+# ClearCutt Consolidated & Portable Patch, Build, Scan, & Release Pipeline
 # Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: SLSA L3 Compliant Zero-CVE Delivery System
+# Paradigm: Hermetic supply chain pipeline with Trivy+Grype double-gates, Syft SBOMs, and SLSA v1 Provenance
 
 set -euo pipefail
 
@@ -12,144 +12,307 @@ YELLOW="\033[1;33m"
 RED="\033[1;31m"
 RESET="\033[0m"
 
-# Load Nix daemon environment
+# Load Nix daemon environment if available
 if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-else
-  echo -e "${RED}[ClearCutt CI]${RESET} Nix daemon profile not found! Ensure Nix is installed." >&2
-  exit 1
 fi
 
-# Configuration parameters
+# Global Configuration Parameters
 WORKSPACE_DIR="$PWD"
 OUTPUT_DIR="$WORKSPACE_DIR/build-outputs"
 KEYS_DIR="$WORKSPACE_DIR/.nix-enterprise-auth-cache"
 mkdir -p "$OUTPUT_DIR"
 
 log_info() {
-  echo -e "${BLUE}[ClearCutt CI]${RESET} $1"
+  echo -e "${BLUE}[ClearCutt Pipeline]${RESET} $1"
 }
 
 log_success() {
-  echo -e "${GREEN}[ClearCutt CI] ✔ $1${RESET}"
+  echo -e "${GREEN}[ClearCutt Pipeline] ✔ $1${RESET}"
 }
 
 log_warn() {
-  echo -e "${YELLOW}[ClearCutt CI] ⚠ $1${RESET}"
+  echo -e "${YELLOW}[ClearCutt Pipeline] ⚠ $1${RESET}"
 }
 
 log_error() {
-  echo -e "${RED}[ClearCutt CI] ✘ $1${RESET}" >&2
+  echo -e "${RED}[ClearCutt Pipeline] ✘ $1${RESET}" >&2
 }
 
-# Run automated Daily Patch Cycle (nix flake update)
+# ----------------------------------------------------
+# 1. SCM Status Containment (SCM-Specific calls isolated here)
+# ----------------------------------------------------
+report_scm_status() {
+  local state="$1" # pending, success, failure
+  local context="clearcutt-release-pipeline"
+  local desc="$2"
+
+  if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${GITHUB_TOKEN:-}" ]] && [[ -n "${GITHUB_SHA:-}" ]] && [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    log_info "Reporting SCM status to GitHub: $state ($desc)"
+    curl -s -X POST \
+      -H "Authorization: token ${GITHUB_TOKEN}" \
+      -H "Accept: application/vnd.github.v3+json" \
+      https://api.github.com/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA} \
+      -d "{\"state\":\"${state}\",\"context\":\"${context}\",\"description\":\"${desc}\"}" >/dev/null || true
+  fi
+}
+
+# ----------------------------------------------------
+# 2. Daily Flake Channels Patching
+# ----------------------------------------------------
 run_patch_cycle() {
   log_info "Initiating automated daily patch cycle. Fetching upstream channels..."
+  report_scm_status "pending" "Initiating automated daily flake inputs patch cycle"
+  
   if nix flake update --extra-experimental-features "nix-command flakes"; then
-    log_success "Upstream Nix channels refreshed. All flake inputs updated successfully."
+    log_success "Upstream Nix channels refreshed. Flake inputs updated successfully."
+    report_scm_status "success" "Daily flake inputs updated successfully"
   else
     log_error "Failed to refresh Nix flake inputs."
+    report_scm_status "failure" "Daily flake inputs refresh failed"
     exit 1
   fi
 }
 
-# Ensure cryptographic signing keypair is available
+# ----------------------------------------------------
+# 3. Ephemeral Cosign Signing Keys (Local dev/testing fallback)
+# ----------------------------------------------------
 ensure_cosign_keys() {
   mkdir -p "$KEYS_DIR"
   if [[ ! -f "$KEYS_DIR/cosign.key" ]] || [[ ! -f "$KEYS_DIR/cosign.pub" ]]; then
     log_warn "Cosign release keys not found. Materializing ephemeral local key pair..."
-    log_warn "SECURITY NOTE: Local key generation and passphrases are STRICTLY for local testing/dev."
-    log_warn "In production registries, utilize keyless OIDC signing or inject COSIGN_PRIVATE_KEY secrets."
-    # Set dummy password for automated key generation
+    log_warn "SECURITY NOTE: Local key generation is STRICTLY for local development and local test gates."
+    log_warn "In production GHA workflows, keyless OIDC signing is automatically negotiated."
     export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
     cosign generate-key-pair --output-key-prefix "$KEYS_DIR/cosign"
-    log_success "Local signing keypair generated inside isolated session cache."
+    log_success "Ephemeral signing keypair generated inside isolated session cache."
   fi
 }
 
-# Compile and certify a single target
+# ----------------------------------------------------
+# 4. Target Compiler & Gating Pipeline
+# ----------------------------------------------------
 certify_target() {
   local target="$1"
-  log_info "--------------------------------------------------------"
-  log_info "Processing target compiler matrix: ${BLUE}$target${RESET}"
-  log_info "--------------------------------------------------------"
+  local system="$2"
+  local publish="$3"
+  local registry="$4"
+  local repo="$5"
+
+  log_info "========================================================"
+  log_info "Processing matrix target: ${BLUE}$target${RESET} [Platform: ${BLUE}$system${RESET}]"
+  log_info "========================================================"
 
   local tar_path="$OUTPUT_DIR/$target.tar.gz"
   local sbom_path="$OUTPUT_DIR/$target.sbom.json"
   local sig_path="$OUTPUT_DIR/$target.sig"
 
-  # 1. Compilation phase
-  log_info "Compiling OCI layered image..."
+  # A. Nix Compilation Phase
+  log_info "Compiling OCI layered image via Nix..."
   local link_path="$OUTPUT_DIR/$target-link"
-  if nix build ".#$target" --out-link "$link_path" --extra-experimental-features "nix-command flakes"; then
-    # Dereference the symlink to copy the actual OCI tarball archive as a regular file.
-    # Prevents misleading out-link naming and resolves read-only permission constraints.
+  local build_attr=""
+  
+  # Determine correct Nix flake target path based on platform
+  if [[ "$system" == "aarch64-darwin" ]] || [[ "$system" == "x86_64-darwin" ]]; then
+    # OCI image matrix is only defined on Linux host systems. Darwin builds fallback
+    # to host system platform layers if requested, or compile natively using standard packages.
+    build_attr=".#$target"
+  else
+    build_attr=".#packages.${system}.\"${target}\""
+  fi
+
+  if nix build "$build_attr" --out-link "$link_path" --extra-experimental-features "nix-command flakes"; then
     cp -L "$link_path" "$tar_path"
     rm -f "$link_path"
-    log_success "OCI Image layered and compiled -> $tar_path"
+    log_success "OCI image layered and compiled -> $tar_path"
   else
-    log_error "Compilation failed for target $target"
+    log_error "Compilation failed for target $target on platform $system"
     rm -f "$link_path" 2>/dev/null || true
     return 1
   fi
 
-  # 2. Extract SBOM Phase
-  log_info "Extracting cryptographic dependency graph path-info..."
-  local temp_path_info
-  temp_path_info=$(mktemp)
-  nix path-info --json -r "$tar_path" --extra-experimental-features "nix-command flakes" > "$temp_path_info"
-  
-  log_info "Compiling traceably validated SPDX 2.3 SBOM..."
-  python3 "$WORKSPACE_DIR/pipeline/sbom-generator.py" "$temp_path_info" > "$sbom_path"
-  rm -f "$temp_path_info"
-  log_success "SPDX 2.3 SBOM generated -> $sbom_path"
-
-  # 3. Security Vulnerability Gating Phase (Trivy and Grype double-gate)
-  log_info "Executing vulnerability gate: Running Trivy scanner..."
-  # trivy image --input <tar> fails with --exit-code 1 if high/critical CVEs with fixes exist
-  if trivy image --input "$tar_path" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
-    log_success "Security Gate 1: Trivy scan passed cleanly. No Critical/High CVEs with patches."
+  # B. High-Fidelity SPDX SBOM Generation via Syft
+  log_info "Extracting cryptographic dependency graph and generating SPDX SBOM via Syft..."
+  if syft "oci-archive:$tar_path" -o spdx-json > "$sbom_path"; then
+    log_success "Traceable SPDX SBOM compiled -> $sbom_path"
   else
-    log_error "Vulnerability Gate Failed! Trivy found Critical/High CVEs with available patches."
+    log_error "Syft SBOM generation failed."
+    return 1
+  fi
+
+  # C. Security Vulnerability Gating (Trivy and Grype double-gate)
+  log_info "Executing vulnerability gate: Running Trivy scanner..."
+  if trivy image --input "$tar_path" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
+    log_success "Security Gate 1: Trivy scan passed cleanly. No patched Critical/High CVEs."
+  else
+    log_error "Vulnerability Gate Failed! Trivy identified Critical/High CVEs with available patches."
     return 1
   fi
 
   log_info "Executing vulnerability gate: Running Grype scanner..."
-  # grype <tar> fails with exit code if fixed high/critical CVEs exist
-  if grype "docker-archive:$tar_path" --fail-on high --only-fixed; then
+  if grype "oci-archive:$tar_path" --fail-on high --only-fixed; then
     log_success "Security Gate 2: Grype scan passed cleanly. Double-gate verified."
   else
-    log_error "Vulnerability Gate Failed! Grype found Critical/High CVEs with available patches."
+    log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
     return 1
   fi
 
-  # 4. Cryptographic Provenance Signatures (SLSA L3)
-  log_info "Executing post-build signing phase: Running Sigstore Cosign..."
-  ensure_cosign_keys
-  export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
-  
-  # Cryptographically sign the local OCI tarball binary and save signature
-  if cosign sign-blob --key "$KEYS_DIR/cosign.key" --output-signature "$sig_path" "$tar_path"; then
-    log_success "SLSA L3 signature appended securely -> $sig_path"
+  # D. Registry Distribution & Cryptographic Signature/Attestation Phase
+  if [[ "$publish" == "true" ]]; then
+    local lang
+    lang=$(echo "$target" | cut -d'-' -f1)
+    local tier
+    tier=$(echo "$target" | cut -d'-' -f2)
+    local image_tag="$registry/$repo/clearcutt-$lang:$tier"
+
+    log_info "Publishing certified OCI archive to registry -> $image_tag"
+    
+    local skopeo_creds=()
+    local actor="${REGISTRY_USER:-${GITHUB_ACTOR:-}}"
+    local token="${REGISTRY_TOKEN:-${GITHUB_TOKEN:-}}"
+    if [[ -n "$actor" ]] && [[ -n "$token" ]]; then
+      skopeo_creds=(--dest-creds "${actor}:${token}")
+    fi
+
+    if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$image_tag"; then
+      log_success "OCI Image successfully copied to registry."
+    else
+      log_error "Skopeo registry publishing failed."
+      return 1
+    fi
+
+    # Cosign cryptographic signing
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+      log_info "Signing container image keylessly via GHA OIDC provider..."
+      cosign sign --yes "$image_tag"
+      
+      log_info "Attesting SPDX SBOM predicate to registry manifest..."
+      cosign attest --yes --type spdxjson --predicate "$sbom_path" "$image_tag"
+    else
+      log_info "Signing container image locally using ephemeral key pair..."
+      ensure_cosign_keys
+      export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
+      cosign sign --yes --key "$KEYS_DIR/cosign.key" "$image_tag"
+      
+      log_info "Attesting SPDX SBOM locally to registry manifest..."
+      cosign attest --yes --key "$KEYS_DIR/cosign.key" --type spdxjson --predicate "$sbom_path" "$image_tag"
+    fi
+
+    # E. SLSA v1 Provenance (GHA only)
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+      log_info "Generating secure SLSA v1 Provenance..."
+      local image_digest
+      image_digest=$(skopeo inspect --creds "${actor}:${token}" "docker://${image_tag}" --format "{{.Digest}}" | cut -d':' -f2)
+      
+      local lock_hash
+      lock_hash=$(sha256sum "$WORKSPACE_DIR/flake.lock" | cut -d' ' -f1)
+      local git_ref
+      git_ref=$(git rev-parse HEAD 2>/dev/null || echo "${GITHUB_SHA:-unknown}")
+
+      local provenance_path="$OUTPUT_DIR/$target.provenance.json"
+      cat <<EOF > "$provenance_path"
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "docker://${registry}/${repo}/clearcutt-${lang}",
+      "digest": {
+        "sha256": "${image_digest}"
+      }
+    }
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://github.com/eddie-northcutt/clearcutt-images/pipeline@v1",
+      "externalParameters": {
+        "flakeGitRef": "${git_ref}",
+        "flakeLockHash": "${lock_hash}"
+      }
+    }
+  }
+}
+EOF
+      log_success "SLSA v1 Provenance compiled -> $provenance_path"
+      
+      log_info "Attesting SLSA v1 Provenance to registry..."
+      cosign attest --yes --type slsaprovenance --predicate "$provenance_path" "$image_tag"
+    fi
   else
-    log_error "Cosign signing failed."
-    return 1
+    # Local-only fallback signature
+    log_info "Signing OCI archive locally..."
+    ensure_cosign_keys
+    export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
+    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --output-signature "$sig_path" "$tar_path"; then
+      log_success "SLSA local signature file written -> $sig_path"
+    else
+      log_error "Cosign local signing failed."
+      return 1
+    fi
   fi
 
   log_success "Target matrix successfully certified for distribution: $target"
 }
 
-# Main command dispatcher
+# ----------------------------------------------------
+# 5. CLI Command Dispatcher
+# ----------------------------------------------------
 main() {
   local run_patch=false
+  local publish=false
+  # Detect current system platform natively
+  local current_system
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if [[ "$(uname -m)" == "arm64" ]]; then
+      current_system="aarch64-darwin"
+    else
+      current_system="x86_64-darwin"
+    fi
+  else
+    if [[ "$(uname -m)" == "aarch64" ]]; then
+      current_system="aarch64-linux"
+    else
+      current_system="x86_64-linux"
+    fi
+  fi
+  local system="$current_system"
+  local registry="ghcr.io"
+  
+  # Auto-detect repository owner/path
+  local repo=""
+  if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
+    repo="${GITHUB_REPOSITORY,,}" # lowercase GHA repo
+  else
+    repo="eddie-northcutt/clearcutt-images"
+  fi
+
   local target_list=()
 
-  # Command line parsing
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --patch-cycle)
         run_patch=true
         shift
+        ;;
+      --system)
+        system="$2"
+        shift 2
+        ;;
+      --publish)
+        publish=true
+        shift
+        ;;
+      --registry)
+        registry="$2"
+        shift 2
+        ;;
+      --repo)
+        repo="${2,,}"
+        shift 2
         ;;
       *)
         target_list+=("$1")
@@ -158,31 +321,33 @@ main() {
     esac
   done
 
-  # Run daily patch cycle if requested
-  if [ "$run_patch" = true ]; then
+  if [[ "$run_patch" == "true" ]]; then
     run_patch_cycle
   fi
 
-  # Default target if none provided
   if [ ${#target_list[@]} -eq 0 ]; then
-    log_warn "No compile targets specified. Defaulting to testing target: coreLTS-slim"
+    log_warn "No compile targets specified. Defaulting to: coreLTS-slim"
     target_list+=("coreLTS-slim")
   fi
 
   local failed=0
   for target in "${target_list[@]}"; do
-    if ! certify_target "$target"; then
-      log_error "Certification failed for $target."
+    report_scm_status "pending" "Running compile and scan certification for $target"
+    if certify_target "$target" "$system" "$publish" "$registry" "$repo"; then
+      report_scm_status "success" "Certified matrix target $target successfully"
+    else
+      log_error "Certification failed for target $target"
+      report_scm_status "failure" "Certification gating failed for target $target"
       failed=1
       break
     fi
   done
 
   if [ "$failed" -eq 0 ]; then
-    log_success "Pipeline completed. All target architectures certified."
+    log_success "Pipeline completed successfully."
     exit 0
   else
-    log_error "Pipeline failed during certification gating."
+    log_error "Pipeline aborted due to errors."
     exit 1
   fi
 }

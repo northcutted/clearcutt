@@ -109,7 +109,10 @@
             hostPkgs.curl
             hostPkgs.patchelf
             hostPkgs.cosign
-            hostPkgs.trivy # Trivy is natively pulled into the dev shell!
+            hostPkgs.trivy
+            hostPkgs.grype
+            hostPkgs.syft
+            hostPkgs.skopeo
             hostPkgs.container-structure-test
           ];
 

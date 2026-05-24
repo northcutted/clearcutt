@@ -3,11 +3,11 @@
 # Paradigm: Reusable CI/CD building block for secure zero-CVE application delivery
 
 name: 'ClearCutt Build & Certify'
-description: 'Declaratively compiles OCI layered images, generates SPDX SBOMs, executes security scans, and keylessly signs/attests images'
+description: 'Declaratively compiles OCI layered images, generates SPDX SBOMs, executes security scans, and keylessly signs/attests images using the unified pipeline script'
 
 inputs:
   language:
-    description: 'Target matrix language (e.g. python3.14, java21, go1.26)'
+    description: 'Target matrix language (e.g. java21, python3.13, go1.25)'
     required: true
   tier:
     description: 'Target lifecycle tier (dev, slim, distroless)'
@@ -37,58 +37,22 @@ runs:
     - name: Install Sigstore Cosign
       uses: sigstore/cosign-installer@v3.4.0
 
-    # 4. Compile the target layered OCI image from the repository flake
-    - name: Compile OCI Image
+    # 4. Delegate all compilation, scanning, signing, and attestation to our unified pipeline
+    - name: Run Unified Gating and Release Pipeline
       shell: bash
       run: |
-        nix build ".#\"${{ inputs.language }}-${{ inputs.tier }}\""
+        IMAGE_REF="${{ inputs.image-name }}"
+        REGISTRY=$(echo "$IMAGE_REF" | cut -d'/' -f1)
+        REPO_TAG=$(echo "$IMAGE_REF" | cut -d'/' -f2-)
+        REPO=$(echo "$REPO_TAG" | cut -d':' -f1)
 
-    # 5. Extract Nix store closure path-info and generate SPDX 2.3 SBOM
-    - name: Generate SPDX 2.3 SBOM
-      shell: bash
-      run: |
-        nix path-info --json -r result > path-info.json
-        python3 "${{ github.action_path }}/sbom-generator.py" path-info.json > sbom.json
-        echo "SPDX 2.3 SBOM generated successfully."
+        nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+          --publish \
+          --registry "$REGISTRY" \
+          --repo "$REPO" \
+          "${{ inputs.language }}-${{ inputs.tier }}"
 
-    # 6. Run Trivy Gating Scans (Fails on fixed Critical/High CVEs)
-    - name: Run Trivy Security Scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'result'
-        scan-type: 'image'
-        input: 'result'
-        severity: 'HIGH,CRITICAL'
-        exit-code: '1'
-        ignore-unfixed: true
-
-    # 7. Publish compiled layered OCI archive directly to registry using Skopeo
-    - name: Publish OCI Image to Registry (Skopeo)
-      shell: bash
-      run: |
-        # Copy the compiled Docker archive to the target registry destination keylessly using token
-        nix shell nixpkgs#skopeo --command skopeo copy \
-          --dest-creds "${{ github.actor }}:${{ github.token }}" \
-          "docker-archive:result" \
-          "docker://${{ inputs.image-name }}"
-
-    # 8. Sign OCI Image Keylessly using Sigstore Cosign (OIDC token provider)
-    - name: Sign Container Image (Sigstore Keyless)
-      shell: bash
-      run: |
-        # Keyless signing requires the workflow to run with id-token: write permissions
-        cosign sign --yes "${{ inputs.image-name }}"
-
-    # 9. Attest SPDX SBOM metadata directly onto the published registry image
-    - name: Attest SPDX SBOM to Registry Image
-      shell: bash
-      run: |
-        cosign attest --yes \
-          --type spdxjson \
-          --predicate sbom.json \
-          "${{ inputs.image-name }}"
-
-    # 10. Confirm certification completion
+    # 5. Confirm certification completion
     - name: Confirm Image Gated and Attested
       shell: bash
       run: |

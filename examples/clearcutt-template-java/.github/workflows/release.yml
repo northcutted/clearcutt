@@ -1,0 +1,27 @@
+name: Secure Build & Certify
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build-and-certify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      # In downstream projects, this would reference the canonical repository:
+      # uses: eddie-northcutt/clearcutt-images/.github/actions/build-certify@v1
+      - name: Run ClearCutt Build & Certify Reusable Action
+        uses: ./.github/actions/build-certify
+        with:
+          language: 'java21'
+          tier: 'distroless'
+          image-name: 'ghcr.io/${{ github.repository }}/clearcutt-template-java:latest'

@@ -1,5 +1,5 @@
 # ClearCutt Hardened Fleets Automated Release Pipeline
-# Paradigm: SLSA L3 Compliant OCI Compilation, Gating, & Keyless Attestation
+# Paradigm: SLSA v1 Certified OCI Matrix Compilation, Gating, & Keyless Attestation
 # Brand Owner & Principal Architect: Eddie Northcutt
 
 name: ClearCutt Release Pipeline
@@ -20,20 +20,21 @@ permissions:
 
 jobs:
   certify-matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
+        system: [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
         language: [
           "coreLTS",
           "java21",
           "java25",
           "node22",
-          "node24",
           "python3.13",
-          "python3.14",
           "go1.25",
-          "go1.26",
           "dotnet8.0",
           "dotnet10.0"
         ]
@@ -45,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.1.7
 
       # Setup Nix on the GHA runner
       - name: Install Nix
@@ -72,52 +73,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Compile OCI Layered Image via Nix Flake
-      - name: Compile OCI Layered Image
+      # Execute dynamic pipeline scans, builds, publishing, signing and attestations
+      - name: Run Unified Gating and Release Pipeline
         run: |
-          nix build ".#\"${{ matrix.language }}-${{ matrix.tier }}\""
+          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+            --system "${{ matrix.system }}" \
+            --publish \
+            "${{ matrix.language }}-${{ matrix.tier }}"
 
-      # Extract registry targets and copy via Skopeo
-      - name: Publish OCI Image to GHCR
-        run: |
-          # Convert repository path to lowercase to satisfy registry rules
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_TAG="ghcr.io/${REPO_LOWER}/clearcutt-${{ matrix.language }}:${{ matrix.tier }}"
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
-
-          # Direct registry copy via Skopeo (bypass docker daemon load overhead)
-          nix shell nixpkgs#skopeo --command skopeo copy \
-            --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-            "docker-archive:result" \
-            "docker://${IMAGE_TAG}"
-
-      # Extract cryptographic dependency graph and compile SPDX SBOM
-      - name: Generate SPDX 2.3 SBOM
-        run: |
-          nix path-info --json -r result > path-info.json
-          python3 pipeline/sbom-generator.py path-info.json > sbom.json
-          
-      # Upload SBOM as GHA run artifact for traceability
+      # Upload SPDX SBOM as workflow run artifact for supply chain traceability
       - name: Upload SBOM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-${{ matrix.language }}-${{ matrix.tier }}
-          path: sbom.json
+          name: sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
           retention-days: 14
 
-      # Cosign Cryptographic Appending (OIDC Keyless Signature)
-      - name: Sign Container Image (Sigstore Keyless)
-        run: |
-          # Cosign uses GHA OIDC provider credentials to sign the image keylessly
-          cosign sign --yes "${{ env.IMAGE_TAG }}"
-
-      # Attest SPDX SBOM directly to the OCI Registry Image
-      - name: Attest SPDX SBOM to Registry Manifest
-        run: |
-          cosign attest --yes \
-            --type spdxjson \
-            --predicate sbom.json \
-            "${{ env.IMAGE_TAG }}"
-            
-      - name: Confirm Image Gated, Certified, Signed, and Attested
-        run: echo "Target matrix certified successfully."
+      # Upload SLSA Provenance as workflow run artifact
+      - name: Upload SLSA Provenance Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenance-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.provenance.json
+          retention-days: 14
