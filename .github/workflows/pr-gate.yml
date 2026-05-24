@@ -1,0 +1,102 @@
+# ClearCutt Hardened Fleets Pull Request Gating Workflow
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: Hermetic Build, SBOM Generation, & CVE Scan Gating (No Registry Access)
+
+name: ClearCutt PR Gating
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write # Allows pipeline.sh to report pass/fail status back to the SCM
+
+jobs:
+  validate-matrix:
+    name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
+        language: [
+          "coreLTS",
+          "java21",
+          "java25",
+          "node22",
+          "python3.13",
+          "go1.25",
+          "dotnet8.0",
+          "dotnet10.0"
+        ]
+        tier: [
+          "dev",
+          "slim",
+          "distroless"
+        ]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-import-from-derivation = true
+
+      - name: Setup Magic Nix Cache
+        uses: determinateSystems/magic-nix-cache-action@v2
+
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@v3.4.0
+
+      # Build, generate SBOM, and scan with Trivy + Grype locally.
+      # Omit --publish to prevent any registry copy or keyless OIDC signing.
+      - name: Run Build and Security Gate
+        run: |
+          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+            --system "${{ matrix.system }}" \
+            "${{ matrix.language }}-${{ matrix.tier }}"
+
+      # Upload the validated SBOM JSON as an artifact for audit checking
+      - name: Upload Local SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          retention-days: 7
+
+  integration-checks:
+    name: Run Verification Gating Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-import-from-derivation = true
+
+      - name: Setup Magic Nix Cache
+        uses: determinateSystems/magic-nix-cache-action@v2
+
+      # Required for structure tests and patchelf inside the suite
+      - name: Install Cosign & Gating Tools
+        uses: sigstore/cosign-installer@v3.4.0
+
+      - name: Execute Gating Suite
+        run: |
+          nix develop --extra-experimental-features "nix-command flakes" --command ./tests/verify.sh

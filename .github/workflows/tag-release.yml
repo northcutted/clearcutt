@@ -1,0 +1,170 @@
+# ClearCutt Hardened Fleets Official Tag Release Workflow
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: Cryptographically Certified Publication to GHCR & GitHub Release finalization on Tag Push
+
+name: ClearCutt Tag Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Configure top-level permissions required for GHCR write and Cosign OIDC token request
+permissions:
+  contents: write # Required to upload final assets to the GitHub Release
+  packages: write # Required to push OCI layered images to GHCR
+  id-token: write # CRITICAL: Required for Sigstore Cosign OIDC Keyless signing
+  statuses: write
+
+jobs:
+  publish-matrix:
+    name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
+        language: [
+          "coreLTS",
+          "java21",
+          "java25",
+          "node22",
+          "python3.13",
+          "go1.25",
+          "dotnet8.0",
+          "dotnet10.0"
+        ]
+        tier: [
+          "dev",
+          "slim",
+          "distroless"
+        ]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-import-from-derivation = true
+
+      - name: Setup Magic Nix Cache
+        uses: determinateSystems/magic-nix-cache-action@v2
+
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@v3.4.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Compiles, scans, publishes, signs, and attests images keylessly
+      - name: Run Unified Gating and Release Pipeline
+        run: |
+          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+            --system "${{ matrix.system }}" \
+            --publish \
+            "${{ matrix.language }}-${{ matrix.tier }}"
+
+      # Save the validated SBOM for release attachment
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          retention-days: 7
+
+      # Save the validated SLSA Provenance for release attachment
+      - name: Upload SLSA Provenance Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provenance-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.provenance.json
+          retention-days: 7
+
+      # Save the validated digest JSON for SLSA Level 3 GHA generator
+      - name: Upload Target Digest Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-digest-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.digest.json
+          retention-days: 7
+
+  aggregate-digests:
+    name: Aggregate Target Digests
+    needs: publish-matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.compile.outputs.matrix }}
+    steps:
+      - name: Download all digest files
+        uses: actions/download-artifact@v4
+        with:
+          path: build-outputs/
+          pattern: release-digest-*
+          merge-multiple: true
+
+      - name: Compile Digest Matrix
+        id: compile
+        run: |
+          python3 -c '
+          import os, json
+          digests = []
+          for f in os.listdir("build-outputs"):
+              if f.endswith(".digest.json"):
+                  with open(os.path.join("build-outputs", f)) as j:
+                      digests.append(json.load(j))
+          print(f"matrix={json.dumps(digests)}")
+          ' >> $GITHUB_OUTPUT
+
+  provenance:
+    name: Generate SLSA L3 Provenance
+    needs: aggregate-digests
+    permissions:
+      id-token: write
+      packages: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.aggregate-digests.outputs.matrix) }}
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v1.10.0
+    with:
+      image: ${{ matrix.target.image }}
+      digest: ${{ matrix.target.digest }}
+
+  finalize-release:
+    name: Finalize GitHub Release Assets
+    needs: [publish-matrix, provenance]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      # Download all SBOMs and SLSA Provenance statements
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: build-outputs/
+          pattern: release-*
+          merge-multiple: true
+
+      # Attach finalized artifacts directly to the published Git tag release
+      - name: Upload Certified Assets to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Uploading SBOMs and SLSA Provenance files to release: ${{ github.ref_name }}..."
+          gh release upload "${{ github.ref_name }}" build-outputs/*.json --clobber
+          echo "Release finalization completed successfully."

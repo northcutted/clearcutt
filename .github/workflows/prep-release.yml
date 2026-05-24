@@ -1,0 +1,113 @@
+# ClearCutt Hardened Fleets Prep Release Workflow
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: Automatic Release Gating & Draft Aggregation on Push to Main
+
+name: ClearCutt Prep Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write # CRITICAL: Required to create draft releases and attach assets
+  packages: read
+  statuses: write
+
+jobs:
+  validate-and-gate:
+    name: Build & Gate (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [
+          "x86_64-linux",
+          "aarch64-linux"
+        ]
+        language: [
+          "coreLTS",
+          "java21",
+          "java25",
+          "node22",
+          "python3.13",
+          "go1.25",
+          "dotnet8.0",
+          "dotnet10.0"
+        ]
+        tier: [
+          "dev",
+          "slim",
+          "distroless"
+        ]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v26
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            allow-import-from-derivation = true
+
+      - name: Setup Magic Nix Cache
+        uses: determinateSystems/magic-nix-cache-action@v2
+
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@v3.4.0
+
+      - name: Run Build and Security Gate
+        run: |
+          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+            --system "${{ matrix.system }}" \
+            "${{ matrix.language }}-${{ matrix.tier }}"
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          retention-days: 7
+
+  draft-release:
+    name: Compile Draft Release
+    needs: validate-and-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+
+      # Download all SBOMs generated across the matrix jobs into build-outputs/
+      - name: Download all SBOMs
+        uses: actions/download-artifact@v4
+        with:
+          path: build-outputs/
+          pattern: sbom-*
+          merge-multiple: true
+
+      # Create draft release and upload aggregated SBOMs
+      - name: Create and Populate Draft Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking for old vNext draft release..."
+          gh release delete vNext --yes 2>/dev/null || true
+
+          echo "Compiling and drafting Release vNext..."
+          gh release create vNext \
+            --draft \
+            --title "Release vNext (Draft Prep)" \
+            --generate-notes \
+            --notes "This draft release represents a staging container and is prepped for official release. All OCI matrix images have been compiled, gated, and scanned through Trivy and Grype with zero CVEs. 
+            
+            To release these assets:
+            1. Edit the release tag to a valid semantic version (e.g., v1.0.0).
+            2. Click 'Publish Release'. This will trigger the final publication to GHCR with Sigstore signatures and SLSA provenance." \
+            --target main
+
+          echo "Uploading compiled SPDX SBOM assets to the draft release..."
+          gh release upload vNext build-outputs/*.sbom.json --clobber

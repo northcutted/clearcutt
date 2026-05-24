@@ -204,7 +204,7 @@ certify_target() {
 
     # E. SLSA v1 Provenance (GHA only)
     if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      log_info "Generating secure SLSA v1 Provenance..."
+      log_info "Generating secure SLSA v1 Provenance and Digest metadata..."
       local image_digest
       image_digest=$(skopeo inspect --creds "${actor}:${token}" "docker://${image_tag}" --format "{{.Digest}}" | cut -d':' -f2)
       
@@ -239,8 +239,15 @@ certify_target() {
 EOF
       log_success "SLSA v1 Provenance compiled -> $provenance_path"
       
-      log_info "Attesting SLSA v1 Provenance to registry..."
-      cosign attest --yes --type slsaprovenance --predicate "$provenance_path" "$image_tag"
+      # Write the digest JSON file for downstream SLSA Level 3 GHA generator
+      local digest_json_path="$OUTPUT_DIR/$target.digest.json"
+      cat <<EOF > "$digest_json_path"
+{
+  "image": "${registry}/${repo}/clearcutt-${lang}",
+  "digest": "sha256:${image_digest}"
+}
+EOF
+      log_success "Staged target digest metadata JSON -> $digest_json_path"
     fi
   else
     # Local-only fallback signature

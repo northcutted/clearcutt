@@ -33,9 +33,9 @@ spec:
             - entries:
                 - keyless:
                     # Keyless OIDC: Asserts that the image was signed strictly inside our 
-                    # non-falsifiable GitHub Actions release pipeline workflow
+                    # non-falsifiable GitHub Actions official tag release pipeline workflow
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/release\\.yml@refs/(heads/main|tags/v.*)$"
+                    subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$"
                     
                 # OR fallback to a trusted static public key if signing locally:
                 # - keys:
@@ -52,7 +52,7 @@ spec:
                 - entries:
                     - keyless:
                         issuer: "https://token.actions.githubusercontent.com"
-                        subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/release\\.yml@refs/(heads/main|tags/v.*)$"
+                        subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$"
                         
           # Force registry digest resolution to prevent tag mutability/spoofing
           mutateDigest: true
