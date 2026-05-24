@@ -136,30 +136,42 @@ certify_target() {
   fi
 
   # B. High-Fidelity SPDX SBOM Generation via Syft
+  local uncompressed_tar="$OUTPUT_DIR/$target.tar"
+  log_info "Decompressing OCI layered image for security scans..."
+  if ! gzip -d -c "$tar_path" > "$uncompressed_tar"; then
+    log_error "Decompression of OCI layered image failed."
+    return 1
+  fi
+
   log_info "Extracting cryptographic dependency graph and generating SPDX SBOM via Syft..."
-  if syft "oci-archive:$tar_path" -o spdx-json > "$sbom_path"; then
+  if syft "docker-archive:$uncompressed_tar" -o spdx-json > "$sbom_path"; then
     log_success "Traceable SPDX SBOM compiled -> $sbom_path"
   else
     log_error "Syft SBOM generation failed."
+    rm -f "$uncompressed_tar" 2>/dev/null || true
     return 1
   fi
 
   # C. Security Vulnerability Gating (Trivy and Grype double-gate)
   log_info "Executing vulnerability gate: Running Trivy scanner..."
-  if trivy image --input "$tar_path" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
+  if trivy image --input "$uncompressed_tar" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
     log_success "Security Gate 1: Trivy scan passed cleanly. No patched Critical/High CVEs."
   else
     log_error "Vulnerability Gate Failed! Trivy identified Critical/High CVEs with available patches."
+    rm -f "$uncompressed_tar" 2>/dev/null || true
     return 1
   fi
 
   log_info "Executing vulnerability gate: Running Grype scanner..."
-  if grype "oci-archive:$tar_path" --fail-on high --only-fixed; then
+  if grype "docker-archive:$uncompressed_tar" --fail-on high --only-fixed; then
     log_success "Security Gate 2: Grype scan passed cleanly. Double-gate verified."
   else
     log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
+    rm -f "$uncompressed_tar" 2>/dev/null || true
     return 1
   fi
+
+  rm -f "$uncompressed_tar" 2>/dev/null || true
 
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase
   if [[ "$publish" == "true" ]]; then
