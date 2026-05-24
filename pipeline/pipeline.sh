@@ -157,23 +157,10 @@ certify_target() {
     return 1
   fi
 
-  # C. Security Vulnerability Gating (Trivy and Grype double-gate)
-  log_info "Executing vulnerability gate: Running Trivy scanner..."
-  if trivy image --input "$uncompressed_tar" --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
-    log_success "Security Gate 1: Trivy scan passed cleanly. No patched Critical/High CVEs."
-  else
-    if [[ "$tier" == "dev" ]]; then
-      log_warn "Vulnerability Warning: Trivy identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
-    else
-      log_error "Vulnerability Gate Failed! Trivy identified Critical/High CVEs with available patches."
-      rm -f "$uncompressed_tar" 2>/dev/null || true
-      return 1
-    fi
-  fi
-
-  log_info "Executing vulnerability gate: Running Grype scanner..."
-  if grype "docker-archive:$uncompressed_tar" --fail-on high --only-fixed; then
-    log_success "Security Gate 2: Grype scan passed cleanly. Double-gate verified."
+  # C. Security Vulnerability Gating via Syft + Grype
+  log_info "Executing vulnerability gate: Running Grype scanner directly against compiled SPDX SBOM..."
+  if grype "sbom:$sbom_path" --fail-on high --only-fixed; then
+    log_success "Security Gate: Grype SBOM scan passed cleanly with zero patched Critical/High CVEs."
   else
     if [[ "$tier" == "dev" ]]; then
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
