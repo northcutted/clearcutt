@@ -88,25 +88,127 @@ jobs:
           path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
           retention-days: 7
 
-      # Save the validated SLSA Provenance for release attachment
-      - name: Upload SLSA Provenance Artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-provenance-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.provenance.json
-          retention-days: 7
+      # Save the validated SLSA Provenance for release attachment (Wait, SLSA L3 will be generated downstream on the multi-arch digest)
+      # Save the validated digest JSON for SLSA Level 3 GHA generator (Moving to assemble-multiarch job)
 
-      # Save the validated digest JSON for SLSA Level 3 GHA generator
-      - name: Upload Target Digest Artifact
+  assemble-multiarch:
+    name: Assemble Multi-Arch Manifest (${{ matrix.language }} - ${{ matrix.tier }})
+    needs: publish-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for keyless signing
+      packages: write # Required to push manifests to GHCR
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [
+          "coreLTS",
+          "java21",
+          "java25",
+          "node22",
+          "node24",
+          "python3.13",
+          "python3.14",
+          "go1.25",
+          "go1.26",
+          "dotnet8",
+          "dotnet10"
+        ]
+        tier: [
+          "dev",
+          "slim",
+          "distroless"
+        ]
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Create and Push Multi-Arch Manifest
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}"
+          
+          ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
+          VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+
+          echo "Creating unified multi-arch manifest for rolling tag: ${ROLLING_TARGET}"
+          docker buildx imagetools create -t "${ROLLING_TARGET}" \
+            "${ROLLING_TARGET}-amd64" \
+            "${ROLLING_TARGET}-arm64"
+
+          echo "Creating unified multi-arch manifest for versioned tag: ${VERSIONED_TARGET}"
+          docker buildx imagetools create -t "${VERSIONED_TARGET}" \
+            "${ROLLING_TARGET}-amd64" \
+            "${ROLLING_TARGET}-arm64"
+
+      # Sign both the rolling and versioned multi-arch tags keylessly via OIDC
+      - name: Sign Multi-Arch Manifests
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}"
+          
+          cosign sign --yes "${BASE_TAG}:${{ matrix.tier }}"
+          cosign sign --yes "${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+
+      # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts
+      - name: Download amd64 SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sbom-x86_64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/x86_64/
+
+      - name: Download arm64 SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sbom-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/aarch64/
+
+      # Attest both platform-specific SBOMs directly onto the final multi-arch manifest
+      - name: Attest Multi-Arch SBOMs
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}:${{ matrix.tier }}"
+          
+          cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
+          cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
+
+      # Resolve the final multi-arch digest and write the JSON metadata for the downstream SLSA L3 generator
+      - name: Resolve Multi-Arch Digest
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          ROLLING_TARGET="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}:${{ matrix.tier }}"
+          
+          # Use skopeo to safely extract the multi-arch manifest digest
+          IMAGE_DIGEST=$(skopeo inspect "docker://${ROLLING_TARGET}" --format "{{.Digest}}")
+          echo "Multi-Arch manifest digest resolved: ${IMAGE_DIGEST}"
+
+          mkdir -p build-outputs/digests
+          cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
+          {
+            "image": "ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}",
+            "digest": "${IMAGE_DIGEST}"
+          }
+          EOF
+
+      # Save the validated multi-arch digest JSON for SLSA Level 3 GHA generator
+      - name: Upload Multi-Arch Digest Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-digest-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.digest.json
+          name: release-digest-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json
           retention-days: 7
 
   aggregate-digests:
     name: Aggregate Target Digests
-    needs: publish-matrix
+    needs: assemble-multiarch
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.compile.outputs.matrix }}

@@ -188,7 +188,20 @@ certify_target() {
 
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase
   if [[ "$publish" == "true" ]]; then
-    local image_tag="$registry/$repo/clearcutt-$lang:$tier"
+    local arch_suffix=""
+    if [[ "$system" == *"aarch64"* ]] || [[ "$system" == *"arm64"* ]]; then
+      arch_suffix="arm64"
+    else
+      arch_suffix="amd64"
+    fi
+
+    local image_tag="$registry/$repo/clearcutt-$lang:$tier-$arch_suffix"
+    
+    # Resolve the version tag from GITHUB_REF_NAME (e.g. v1.0.0) if triggered by a Git tag
+    local version_tag=""
+    if [[ -n "${GITHUB_REF_NAME:-}" ]] && [[ "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
+      version_tag="$GITHUB_REF_NAME"
+    fi
 
     log_info "Publishing certified OCI archive to registry -> $image_tag"
     
@@ -199,76 +212,24 @@ certify_target() {
       skopeo_creds=(--dest-creds "${actor}:${token}")
     fi
 
+    # 1. Copy rolling architecture-specific tag
     if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$image_tag"; then
-      log_success "OCI Image successfully copied to registry."
+      log_success "Rolling OCI Image successfully copied to registry."
     else
-      log_error "Skopeo registry publishing failed."
+      log_error "Skopeo rolling registry publishing failed."
       return 1
     fi
 
-    # Cosign cryptographic signing
-    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      log_info "Signing container image keylessly via GHA OIDC provider..."
-      cosign sign --yes "$image_tag"
-      
-      log_info "Attesting SPDX SBOM predicate to registry manifest..."
-      cosign attest --yes --type spdxjson --predicate "$sbom_path" "$image_tag"
-    else
-      log_info "Signing container image locally using ephemeral key pair..."
-      ensure_cosign_keys
-      export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
-      cosign sign --yes --key "$KEYS_DIR/cosign.key" "$image_tag"
-      
-      log_info "Attesting SPDX SBOM locally to registry manifest..."
-      cosign attest --yes --key "$KEYS_DIR/cosign.key" --type spdxjson --predicate "$sbom_path" "$image_tag"
-    fi
-
-    # E. SLSA v1 Provenance (GHA only)
-    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-      log_info "Generating secure SLSA v1 Provenance and Digest metadata..."
-      local image_digest
-      image_digest=$(skopeo inspect --creds "${actor}:${token}" "docker://${image_tag}" --format "{{.Digest}}" | cut -d':' -f2)
-      
-      local lock_hash
-      lock_hash=$(sha256sum "$WORKSPACE_DIR/flake.lock" | cut -d' ' -f1)
-      local git_ref
-      git_ref=$(git rev-parse HEAD 2>/dev/null || echo "${GITHUB_SHA:-unknown}")
-
-      local provenance_path="$OUTPUT_DIR/$target.provenance.json"
-      cat <<EOF > "$provenance_path"
-{
-  "_type": "https://in-toto.io/Statement/v1",
-  "subject": [
-    {
-      "name": "docker://${registry}/${repo}/clearcutt-${lang}",
-      "digest": {
-        "sha256": "${image_digest}"
-      }
-    }
-  ],
-  "predicateType": "https://slsa.dev/provenance/v1",
-  "predicate": {
-    "buildDefinition": {
-      "buildType": "https://github.com/eddie-northcutt/clearcutt-images/pipeline@v1",
-      "externalParameters": {
-        "flakeGitRef": "${git_ref}",
-        "flakeLockHash": "${lock_hash}"
-      }
-    }
-  }
-}
-EOF
-      log_success "SLSA v1 Provenance compiled -> $provenance_path"
-      
-      # Write the digest JSON file for downstream SLSA Level 3 GHA generator
-      local digest_json_path="$OUTPUT_DIR/$target.digest.json"
-      cat <<EOF > "$digest_json_path"
-{
-  "image": "${registry}/${repo}/clearcutt-${lang}",
-  "digest": "sha256:${image_digest}"
-}
-EOF
-      log_success "Staged target digest metadata JSON -> $digest_json_path"
+    # 2. Copy versioned architecture-specific tag (if version tag is active)
+    if [[ -n "$version_tag" ]]; then
+      local version_image_tag="$registry/$repo/clearcutt-$lang:$version_tag-$tier-$arch_suffix"
+      log_info "Publishing versioned OCI archive to registry -> $version_image_tag"
+      if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$version_image_tag"; then
+        log_success "Versioned OCI Image successfully copied to registry."
+      else
+        log_error "Skopeo versioned registry publishing failed."
+        return 1
+      fi
     fi
   else
     # Local-only fallback signature

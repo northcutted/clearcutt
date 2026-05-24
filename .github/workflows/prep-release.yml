@@ -83,6 +83,17 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # CRITICAL: Fetches all history and tags to determine next semantic version
+
+      - name: Calculate Next Version
+        id: versioning
+        uses: paulhatch/semantic-version@9f72830c236b3e8e2b8cb1e39a3f9a7d65b39bf4 # v6.0.2
+        with:
+          tag_prefix: "v"
+          major_pattern: "BREAKING CHANGE"
+          minor_pattern: "feat"
+          version_format: "${major}.${minor}.${patch}"
 
       # Download all SBOMs generated across the matrix jobs into build-outputs/
       - name: Download all SBOMs
@@ -97,20 +108,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Checking for old vNext draft release..."
-          gh release delete vNext --yes 2>/dev/null || true
+          NEXT_TAG="v${{ steps.versioning.outputs.version }}"
+          echo "Determined next version: $NEXT_TAG"
 
-          echo "Compiling and drafting Release vNext..."
-          gh release create vNext \
+          echo "Checking for any old stale draft releases for $NEXT_TAG..."
+          gh release delete "$NEXT_TAG" --yes 2>/dev/null || true
+
+          echo "Compiling and drafting Release $NEXT_TAG..."
+          gh release create "$NEXT_TAG" \
             --draft \
-            --title "Release vNext (Draft Prep)" \
+            --title "Release $NEXT_TAG (Staging Prep)" \
             --generate-notes \
             --notes "This draft release represents a staging container and is prepped for official release. All OCI matrix images have been compiled, gated, and scanned through Trivy and Grype with zero CVEs. 
             
             To release these assets:
-            1. Edit the release tag to a valid semantic version (e.g., v1.0.0).
-            2. Click 'Publish Release'. This will trigger the final publication to GHCR with Sigstore signatures and SLSA provenance." \
+            Simply click 'Publish Release'. This will trigger the final publication to GHCR with Sigstore signatures and SLSA provenance." \
             --target main
 
           echo "Uploading compiled SPDX SBOM assets to the draft release..."
-          gh release upload vNext build-outputs/*.sbom.json --clobber
+          gh release upload "$NEXT_TAG" build-outputs/*.sbom.json --clobber
