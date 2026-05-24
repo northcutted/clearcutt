@@ -39,10 +39,10 @@
         versions = {
           core = [ "LTS" ];
           java = [ "21" "25" ];
-          node = [ "22" ];
-          python = [ "3.13" ];
-          go = [ "1.25" ];
-          dotnet = [ "8.0" "10.0" ];
+          node = [ "22" "24" ];
+          python = [ "3.13" "3.14" ];
+          go = [ "1.25" "1.26" ];
+          dotnet = [ "8" "10" ];
         };
         tiers = [ "dev" "slim" "distroless" ];
 

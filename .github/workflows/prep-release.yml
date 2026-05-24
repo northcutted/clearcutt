@@ -31,10 +31,13 @@ jobs:
           "java21",
           "java25",
           "node22",
+          "node24",
           "python3.13",
+          "python3.14",
           "go1.25",
-          "dotnet8.0",
-          "dotnet10.0"
+          "go1.26",
+          "dotnet8",
+          "dotnet10"
         ]
         tier: [
           "dev",

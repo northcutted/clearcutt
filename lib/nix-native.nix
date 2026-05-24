@@ -24,32 +24,42 @@ let
          (if pkgs ? nodejs_22 then [ pkgs.nodejs_22 ]
           else if pkgs ? nodejs-22_x then [ pkgs.nodejs-22_x ]
           else throw "Node.js 22 is not available in this nixpkgs version")
+       else if version == "24" then
+         (if pkgs ? nodejs_24 then [ pkgs.nodejs_24 ]
+          else if pkgs ? nodejs-24_x then [ pkgs.nodejs-24_x ]
+          else throw "Node.js 24 is not available in this nixpkgs version")
        else throw "Unsupported Node version: ${version}")
     else if language == "python" then
       (if version == "3.13" then
          (if pkgs ? python313 then [ pkgs.python313 ]
           else throw "Python 3.13 is not available in this nixpkgs version")
+       else if version == "3.14" then
+         (if pkgs ? python314 then [ pkgs.python314 ]
+          else throw "Python 3.14 is not available in this nixpkgs version")
        else throw "Unsupported Python version: ${version}")
     else if language == "go" then
       (if version == "1.25" then
          (if pkgs ? go_1_25 then [ pkgs.go_1_25 ]
           else throw "Go 1.25 is not available in this nixpkgs version")
+       else if version == "1.26" then
+         (if pkgs ? go_1_26 then [ pkgs.go_1_26 ]
+          else throw "Go 1.26 is not available in this nixpkgs version")
        else throw "Unsupported Go version: ${version}")
     else if language == "dotnet" then
-      (if version == "8.0" then
+      (if version == "8" then
          (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? sdk_8_0 then [ pkgs.dotnetCorePackages.sdk_8_0 ]
-          else throw ".NET 8.0 SDK is not available in this nixpkgs version")
-       else if version == "10.0" then
+          else throw ".NET 8 SDK is not available in this nixpkgs version")
+       else if version == "10" then
          (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? sdk_10_0 then [ pkgs.dotnetCorePackages.sdk_10_0 ]
-          else throw ".NET 10.0 SDK is not available in this nixpkgs version")
+          else throw ".NET 10 SDK is not available in this nixpkgs version")
        else throw "Unsupported .NET SDK version: ${version}")
     else if language == "dotnet-runtime" then
-      (if version == "8.0" then
+      (if version == "8" then
          (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? aspnetcore_8_0 then [ pkgs.dotnetCorePackages.aspnetcore_8_0 ]
-          else throw ".NET 8.0 Runtime is not available in this nixpkgs version")
-       else if version == "10.0" then
+          else throw ".NET 8 Runtime is not available in this nixpkgs version")
+       else if version == "10" then
          (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? aspnetcore_10_0 then [ pkgs.dotnetCorePackages.aspnetcore_10_0 ]
-          else throw ".NET 10.0 Runtime is not available in this nixpkgs version")
+          else throw ".NET 10 Runtime is not available in this nixpkgs version")
        else throw "Unsupported .NET Runtime version: ${version}")
     else
       throw "Unsupported language: ${language}";
@@ -66,12 +76,15 @@ in
     clearcuttJava21 = resolveRawPackages { language = "java"; version = "21"; };
     clearcuttJava25 = resolveRawPackages { language = "java"; version = "25"; };
     clearcuttNode22 = resolveRawPackages { language = "node"; version = "22"; };
+    clearcuttNode24 = resolveRawPackages { language = "node"; version = "24"; };
     clearcuttPython313 = resolveRawPackages { language = "python"; version = "3.13"; };
+    clearcuttPython314 = resolveRawPackages { language = "python"; version = "3.14"; };
     clearcuttGo125 = resolveRawPackages { language = "go"; version = "1.25"; };
-    clearcuttDotnet8 = resolveRawPackages { language = "dotnet"; version = "8.0"; };
-    clearcuttDotnet8Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "8.0"; };
-    clearcuttDotnet10 = resolveRawPackages { language = "dotnet"; version = "10.0"; };
-    clearcuttDotnet10Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "10.0"; };
+    clearcuttGo126 = resolveRawPackages { language = "go"; version = "1.26"; };
+    clearcuttDotnet8 = resolveRawPackages { language = "dotnet"; version = "8"; };
+    clearcuttDotnet8Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "8"; };
+    clearcuttDotnet10 = resolveRawPackages { language = "dotnet"; version = "10"; };
+    clearcuttDotnet10Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "10"; };
   };
 
   # Downstream Development Shell Builder
