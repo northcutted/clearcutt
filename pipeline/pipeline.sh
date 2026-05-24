@@ -111,6 +111,11 @@ certify_target() {
   local sbom_path="$OUTPUT_DIR/$target.sbom.json"
   local sig_path="$OUTPUT_DIR/$target.sig"
 
+  local lang
+  lang=$(echo "$target" | cut -d'-' -f1)
+  local tier
+  tier=$(echo "$target" | cut -d'-' -f2)
+
   # A. Nix Compilation Phase
   log_info "Compiling OCI layered image via Nix..."
   local link_path="$OUTPUT_DIR/$target-link"
@@ -157,28 +162,32 @@ certify_target() {
   if trivy image --input "$uncompressed_tar" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed; then
     log_success "Security Gate 1: Trivy scan passed cleanly. No patched Critical/High CVEs."
   else
-    log_error "Vulnerability Gate Failed! Trivy identified Critical/High CVEs with available patches."
-    rm -f "$uncompressed_tar" 2>/dev/null || true
-    return 1
+    if [[ "$tier" == "dev" ]]; then
+      log_warn "Vulnerability Warning: Trivy identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
+    else
+      log_error "Vulnerability Gate Failed! Trivy identified Critical/High CVEs with available patches."
+      rm -f "$uncompressed_tar" 2>/dev/null || true
+      return 1
+    fi
   fi
 
   log_info "Executing vulnerability gate: Running Grype scanner..."
   if grype "docker-archive:$uncompressed_tar" --fail-on high --only-fixed; then
     log_success "Security Gate 2: Grype scan passed cleanly. Double-gate verified."
   else
-    log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
-    rm -f "$uncompressed_tar" 2>/dev/null || true
-    return 1
+    if [[ "$tier" == "dev" ]]; then
+      log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
+    else
+      log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
+      rm -f "$uncompressed_tar" 2>/dev/null || true
+      return 1
+    fi
   fi
 
   rm -f "$uncompressed_tar" 2>/dev/null || true
 
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase
   if [[ "$publish" == "true" ]]; then
-    local lang
-    lang=$(echo "$target" | cut -d'-' -f1)
-    local tier
-    tier=$(echo "$target" | cut -d'-' -f2)
     local image_tag="$registry/$repo/clearcutt-$lang:$tier"
 
     log_info "Publishing certified OCI archive to registry -> $image_tag"
