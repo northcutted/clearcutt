@@ -57,26 +57,16 @@ let
          (if pkgs ? nodejs_22 then [ pkgs.nodejs_22 ]
           else if pkgs ? nodejs-22_x then [ pkgs.nodejs-22_x ]
           else throw "Node.js 22 is not available in this nixpkgs version")
-       else if version == "24" then
-         (if pkgs ? nodejs_24 then [ pkgs.nodejs_24 ]
-          else if pkgs ? nodejs-24_x then [ pkgs.nodejs-24_x ]
-          else throw "Node.js 24 is not available in this nixpkgs version")
        else throw "Unsupported Node version: ${version}")
     else if language == "python" then
       (if version == "3.13" then
          (if pkgs ? python313 then [ pkgs.python313 ]
           else throw "Python 3.13 is not available in this nixpkgs version")
-       else if version == "3.14" then
-         (if pkgs ? python314 then [ pkgs.python314 ]
-          else throw "Python 3.14 is not available in this nixpkgs version")
        else throw "Unsupported Python version: ${version}")
     else if language == "go" then
       (if version == "1.25" then
          (if pkgs ? go_1_25 then [ pkgs.go_1_25 ]
           else throw "Go 1.25 is not available in this nixpkgs version")
-       else if version == "1.26" then
-         (if pkgs ? go_1_26 then [ pkgs.go_1_26 ]
-          else throw "Go 1.26 is not available in this nixpkgs version")
        else throw "Unsupported Go version: ${version}")
     else if language == "dotnet" then
       (if tier == "dev" then

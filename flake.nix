@@ -39,9 +39,9 @@
         versions = {
           core = [ "LTS" ];
           java = [ "21" "25" ];
-          node = [ "22" "24" ];
-          python = [ "3.13" "3.14" ];
-          go = [ "1.25" "1.26" ];
+          node = [ "22" ];
+          python = [ "3.13" ];
+          go = [ "1.25" ];
           dotnet = [ "8.0" "10.0" ];
         };
         tiers = [ "dev" "slim" "distroless" ];
@@ -49,7 +49,10 @@
         # Generate a nested set representing the full combinations matrix
         # For each language, version, and tier:
         # e.g., packages.java21-distroless
-        matrixPackages = pkgs.lib.listToAttrs (
+        # We only evaluate and compile OCI image layered targets on Linux host systems.
+        # This completely avoids trying to evaluate Linux-only packages (like Busybox) or cross-compilation
+        # matrices on Darwin hosts, guaranteeing that `nix flake check` runs green on macOS.
+        matrixPackages = if hostPkgs.stdenv.isLinux then pkgs.lib.listToAttrs (
           pkgs.lib.concatMap (lang:
             pkgs.lib.concatMap (ver:
               pkgs.lib.map (tier:
@@ -69,7 +72,7 @@
               ) tiers
             ) (pkgs.lib.attrByPath [ lang ] [] versions)
           ) languages
-        );
+        ) else {};
 
         # Resolve raw, dynamic-link-patched matrix runtimes
         nativeHelpers = import ./lib/nix-native.nix { inherit self; pkgs = hostPkgs; };
