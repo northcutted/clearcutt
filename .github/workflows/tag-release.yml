@@ -135,9 +135,9 @@ jobs:
 
       - name: Create and Push Multi-Arch Manifest
         run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}"
+          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           
           ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
           VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
@@ -155,9 +155,9 @@ jobs:
       # Sign both the rolling and versioned multi-arch tags keylessly via OIDC
       - name: Sign Multi-Arch Manifests
         run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}"
+          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           
           cosign sign --yes "${BASE_TAG}:${{ matrix.tier }}"
           cosign sign --yes "${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
@@ -178,9 +178,9 @@ jobs:
       # Attest both platform-specific SBOMs directly onto the final multi-arch manifest
       - name: Attest Multi-Arch SBOMs
         run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
+          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
           
           cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
           cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
@@ -188,9 +188,9 @@ jobs:
       # Resolve the final multi-arch digest and write the JSON metadata for the downstream SLSA L3 generator
       - name: Resolve Multi-Arch Digest
         run: |
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING_TARGET="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
+          ROLLING_TARGET="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
           
           # Use skopeo to safely extract the multi-arch manifest digest
           IMAGE_DIGEST=$(skopeo inspect "docker://${ROLLING_TARGET}" --format "{{.Digest}}")
@@ -199,7 +199,7 @@ jobs:
           mkdir -p build-outputs/digests
           cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
           {
-            "image": "ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}",
+            "image": "ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}",
             "digest": "${IMAGE_DIGEST}"
           }
           EOF
@@ -286,7 +286,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG_NAME="${{ github.ref_name }}"
-          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           
           # Fetch the existing release description, stripping staging text and blank lines
           RAW_CHANGELOG=$(gh release view "$TAG_NAME" --json body --jq '.body' | grep -v 'This draft release represents' | grep -v 'To release these assets:' | grep -v "Simply click 'Publish Release'")
@@ -306,20 +306,20 @@ jobs:
 
           | Language Target | Distroless Tier (Shell-Less Hardened) | Slim Tier (Runtime-Only Hardened) | Dev Tier (Full Compiler/Tools) |
           |---|---|---|---|
-          | **Bash / LTS Core** | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-corelts:dev\` |
-          | **Node 22** | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node22:dev\` |
-          | **Node 24** | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-node24:dev\` |
-          | **Python 3.13** | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.13:dev\` |
-          | **Python 3.14** | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-python3.14:dev\` |
-          | **Go 1.25** | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.25:dev\` |
-          | **Go 1.26** | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-go1.26:dev\` |
-          | **Java 21** | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java21:dev\` |
-          | **Java 25** | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-java25:dev\` |
-          | **.NET 8** | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet8:dev\` |
-          | **.NET 10** | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:distroless\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:slim\` | \`ghcr.io/\${REPO_OWNER}/clearcutt-dotnet10:dev\` |
+          | **Bash / LTS Core** | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:dev\` |
+          | **Node 22** | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:dev\` |
+          | **Node 24** | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:dev\` |
+          | **Python 3.13** | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:dev\` |
+          | **Python 3.14** | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:dev\` |
+          | **Go 1.25** | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:dev\` |
+          | **Go 1.26** | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:dev\` |
+          | **Java 21** | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:dev\` |
+          | **Java 25** | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:dev\` |
+          | **.NET 8** | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:dev\` |
+          | **.NET 10** | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:dev\` |
 
           > [!NOTE]
-          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/\${REPO_OWNER}/clearcutt-<language>:\${TAG_NAME}-<tier>\`.
+          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/\${REPO_PATH}/clearcutt-<language>:\${TAG_NAME}-<tier>\`.
 
           ---
 
@@ -328,7 +328,7 @@ jobs:
 
           \`\`\`nix
           # Add this repository to your flake inputs:
-          inputs.clearcutt.url = "github:\${REPO_OWNER}/clearcutt/\${TAG_NAME}";
+          inputs.clearcutt.url = "github:\${REPO_PATH}/\${TAG_NAME}";
 
           # In your outputs, use the overlays or raw runtime packages:
           outputs = { self, nixpkgs, clearcutt, ... }: {
