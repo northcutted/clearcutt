@@ -266,8 +266,11 @@ EOF
     log_info "Signing OCI archive locally..."
     ensure_cosign_keys
     export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
-    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --output-signature "$sig_path" "$tar_path"; then
-      log_success "SLSA local signature file written -> $sig_path"
+    
+    # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility
+    local bundle_path="$OUTPUT_DIR/$target.sigstore.json"
+    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --bundle "$bundle_path" "$tar_path"; then
+      log_success "SLSA local signature bundle written -> $bundle_path"
     else
       log_error "Cosign local signing failed."
       return 1
