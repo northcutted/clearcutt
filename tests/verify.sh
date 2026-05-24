@@ -143,7 +143,10 @@ test_rootless_boundaries() {
 
   if [ ! -f "$build_tar" ]; then
     log_info "Target image tarball not found. Invoking build runner..."
-    nix build ".#$target_image" --out-link "$build_tar" --extra-experimental-features "nix-command flakes"
+    local link_path="build-outputs/${target_image}-link"
+    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    cp -L "$link_path" "$build_tar"
+    rm -f "$link_path"
   fi
 
   # Create temp workspace to unpack OCI metadata
@@ -186,6 +189,12 @@ test_rootless_boundaries() {
 # ----------------------------------------------------
 test_dynamic_binary_headers() {
   log_section "Security Gate: Dynamic Binary RPATH & Interpreter Verification"
+
+  # Gracefully skip ELF checks on non-Linux hosts (like Darwin/macOS)
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    log_warn "Non-Linux host detected ($(uname -s)). Skipping ELF dynamic interpreter and RPATH verification."
+    return 0
+  fi
 
   local target_image="coreLTS-slim"
   local build_tar="build-outputs/$target_image.tar.gz"
@@ -256,7 +265,10 @@ test_distroless_boundaries() {
 
   if [ ! -f "$build_tar" ]; then
     log_info "Target image tarball not found. Invoking build runner..."
-    nix build ".#$target_image" --out-link "$build_tar" --extra-experimental-features "nix-command flakes"
+    local link_path="build-outputs/${target_image}-link"
+    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    cp -L "$link_path" "$build_tar"
+    rm -f "$link_path"
   fi
 
   # Create temp workspace to extract distroless layers
@@ -356,11 +368,17 @@ test_container_structure_tests() {
   # Ensure both are built
   if [ ! -f "$slim_tar" ]; then
     log_info "Slim image not found. Building..."
-    nix build ".#coreLTS-slim" --out-link "$slim_tar" --extra-experimental-features "nix-command flakes"
+    local link_path="build-outputs/coreLTS-slim-link"
+    nix build ".#coreLTS-slim" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    cp -L "$link_path" "$slim_tar"
+    rm -f "$link_path"
   fi
   if [ ! -f "$distroless_tar" ]; then
     log_info "Distroless image not found. Building..."
-    nix build ".#coreLTS-distroless" --out-link "$distroless_tar" --extra-experimental-features "nix-command flakes"
+    local link_path="build-outputs/coreLTS-distroless-link"
+    nix build ".#coreLTS-distroless" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    cp -L "$link_path" "$distroless_tar"
+    rm -f "$link_path"
   fi
 
   # CST has a known parsing limitation with path casing in --image flag

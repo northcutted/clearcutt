@@ -21,12 +21,12 @@
           };
         };
 
-        # Secure split: host shell tools remain native, but target images are cross-compiled
-        # to Linux x86_64 when running on Darwin/macOS hosts, completely avoiding platform mismatches.
-        # WARNING: Cross-compiling heavy runtime systems (like JDK, .NET, or Python) from macOS hosts to Linux
-        # OCI layers via pkgsCross is unstable and unsupported by many upstream Nixpkgs derivations. Native
-        # Linux compilation is strongly recommended for production image matrix builds.
-        pkgs = if hostPkgs.stdenv.isDarwin then hostPkgs.pkgsCross.gnu64 else hostPkgs;
+        # Host package alignment: we build native OCI layers using the host system platform
+        # to ensure absolute compilation stability across all runtime systems (JDK, Node, Python, Go, .NET).
+        # We completely avoid unstable pkgsCross cross-compilation on macOS hosts, enabling 100% stable local
+        # testing and development shells natively on Darwin, while relying on native Linux environments (GHA/runners)
+        # for production release matrix compilation.
+        pkgs = hostPkgs;
 
         # Import our custom image compiler
         compiler = import ./lib/build-fleet.nix { inherit pkgs; };
