@@ -38,6 +38,19 @@ let
     chmod 755 $out/app
   '';
 
+  # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes
+  removeNpm = nodePkg: pkgs.symlinkJoin {
+    name = "${nodePkg.name}-no-npm";
+    paths = [ nodePkg ];
+    postBuild = ''
+      rm -f $out/bin/npm
+      rm -f $out/bin/npx
+      rm -f $out/bin/corepack
+      rm -rf $out/lib/node_modules/npm
+      rm -rf $out/lib/node_modules/corepack
+    '';
+  };
+
   # Resolve the exact language packages based on the supported combinations matrix
   resolveLanguagePackage = { language, version, tier }:
     if language == "core" then
@@ -54,9 +67,12 @@ let
        else throw "Unsupported Java version: ${version}")
     else if language == "node" then
       (if version == "22" then
-         (if pkgs ? nodejs_22 then [ pkgs.nodejs_22 ]
-          else if pkgs ? nodejs-22_x then [ pkgs.nodejs-22_x ]
-          else throw "Node.js 22 is not available in this nixpkgs version")
+         (let
+            baseNode = if pkgs ? nodejs_22 then pkgs.nodejs_22
+                       else if pkgs ? nodejs-22_x then pkgs.nodejs-22_x
+                       else throw "Node.js 22 is not available in this nixpkgs version";
+          in
+          if tier == "dev" then [ baseNode ] else [ (removeNpm baseNode) ])
        else throw "Unsupported Node version: ${version}")
     else if language == "python" then
       (if version == "3.13" then
