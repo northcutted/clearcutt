@@ -112,7 +112,7 @@ certify_target() {
   local sig_path="$OUTPUT_DIR/$target.sig"
 
   local lang
-  lang=$(echo "$target" | cut -d'-' -f1)
+  lang=$(echo "$target" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
   local tier
   tier=$(echo "$target" | cut -d'-' -f2)
 

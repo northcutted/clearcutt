@@ -136,7 +136,8 @@ jobs:
       - name: Create and Push Multi-Arch Manifest
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}"
+          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}"
           
           ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
           VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
@@ -155,7 +156,8 @@ jobs:
       - name: Sign Multi-Arch Manifests
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}"
+          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}"
           
           cosign sign --yes "${BASE_TAG}:${{ matrix.tier }}"
           cosign sign --yes "${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
@@ -177,7 +179,8 @@ jobs:
       - name: Attest Multi-Arch SBOMs
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}:${{ matrix.tier }}"
+          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
+          BASE_TAG="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
           
           cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
           cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
@@ -186,7 +189,8 @@ jobs:
       - name: Resolve Multi-Arch Digest
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING_TARGET="ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}:${{ matrix.tier }}"
+          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
+          ROLLING_TARGET="ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
           
           # Use skopeo to safely extract the multi-arch manifest digest
           IMAGE_DIGEST=$(skopeo inspect "docker://${ROLLING_TARGET}" --format "{{.Digest}}")
@@ -195,7 +199,7 @@ jobs:
           mkdir -p build-outputs/digests
           cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
           {
-            "image": "ghcr.io/${REPO_OWNER}/clearcutt-${{ matrix.language }}",
+            "image": "ghcr.io/${REPO_OWNER}/clearcutt-${NORM_LANG}",
             "digest": "${IMAGE_DIGEST}"
           }
           EOF
