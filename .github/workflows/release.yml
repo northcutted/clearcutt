@@ -476,10 +476,10 @@ jobs:
           BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Promoting rolling multi-arch image and its signatures/attestations to production: ${ROLLING_TARGET}"
-          cosign copy --yes "${BOOTSTRAP_ROLLING}" "${ROLLING_TARGET}"
+          cosign copy "${BOOTSTRAP_ROLLING}" "${ROLLING_TARGET}"
 
           echo "Promoting versioned multi-arch image and its signatures/attestations to production: ${VERSIONED_TARGET}"
-          cosign copy --yes "${BOOTSTRAP_VERSIONED}" "${VERSIONED_TARGET}"
+          cosign copy "${BOOTSTRAP_VERSIONED}" "${VERSIONED_TARGET}"
 
       - name: Download and Export SLSA Provenance
         run: |
