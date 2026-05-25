@@ -16,6 +16,7 @@ permissions:
   id-token: write # CRITICAL: Required for Sigstore Cosign OIDC Keyless signing
   statuses: write
   actions: read
+  pages: write # Required to deploy the catalog site to GitHub Pages
 
 jobs:
   check-version:
@@ -522,6 +523,21 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
+      - name: Create Release if not exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ needs.release-gate.outputs.version }}"
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME does not exist. Creating it now..."
+            gh release create "$TAG_NAME" \
+              --title "Release $TAG_NAME" \
+              --generate-notes \
+              --target "main"
+          else
+            echo "Release $TAG_NAME already exists."
+          fi
+
       - name: Upload Certified Assets to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -605,3 +621,9 @@ jobs:
 
           gh release edit "$TAG_NAME" --notes "$FINAL_NOTES"
           echo "Release notes successfully finalized and beautified."
+
+  deploy-site:
+    name: Deploy Catalog Site
+    needs: finalize-release
+    uses: ./.github/workflows/publish-pages.yml
+    secrets: inherit

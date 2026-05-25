@@ -19,12 +19,9 @@ on:
   # Rebuild nightly so CVE / vulnerability data stays fresh as the Grype DB
   # picks up newly-disclosed advisories against pinned package versions in
   # the SBOMs. 06:00 UTC keeps it off the GHA peak hours.
-  # We deliberately do NOT trigger on release: or workflow_run: because the
-  # tag-release workflow runs against tag refs, not main, so a branch-pinned
-  # workflow_run trigger never matches; cron + manual cover the freshness
-  # need without the noise of permanently failing trigger evaluations.
   schedule:
     - cron: "0 6 * * *"
+  workflow_call:
 
 permissions:
   contents: read
