@@ -9,6 +9,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      custom_version:
+        description: "Custom version tag to release (e.g. v1.0.0). If omitted, automatically calculated via conventional commits."
+        required: false
+        default: ""
 
 permissions:
   contents: write # Required to push tags, commits, and upload final assets to the GitHub Release
@@ -23,8 +28,8 @@ jobs:
     name: Check Version Bump
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.versioning.outputs.version }}
-      version_type: ${{ steps.versioning.outputs.version_type }}
+      version: ${{ steps.version-calc.outputs.version }}
+      version_type: ${{ steps.version-calc.outputs.version_type }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -39,6 +44,19 @@ jobs:
           major_pattern: "BREAKING CHANGE"
           minor_pattern: "feat"
           version_format: "${major}.${minor}.${patch}"
+
+      - name: Resolve Version Output
+        id: version-calc
+        run: |
+          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
+          if [ -n "$CUSTOM_INPUT" ]; then
+            RAW_VERSION=$(echo "$CUSTOM_INPUT" | sed 's/^v//')
+            echo "version_type=custom" >> $GITHUB_OUTPUT
+          else
+            RAW_VERSION="${{ steps.versioning.outputs.version }}"
+            echo "version_type=${{ steps.versioning.outputs.version_type }}" >> $GITHUB_OUTPUT
+          fi
+          echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
 
   prep-release-notes:
     name: Commit Staging Notes
@@ -57,12 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           
-          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
-          if [ -n "$CUSTOM_INPUT" ]; then
-            RAW_VERSION=$(echo "$CUSTOM_INPUT" | sed 's/^v//')
-          else
-            RAW_VERSION="${{ needs.check-version.outputs.version }}"
-          fi
+          RAW_VERSION="${{ needs.check-version.outputs.version }}"
           NEXT_TAG="v$RAW_VERSION"
           NOTES_PATH="docs/releases/${NEXT_TAG}.md"
 
@@ -96,8 +109,6 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
     runs-on: ubuntu-latest
     environment: production # <-- Manual approval gate here!
-    outputs:
-      version: ${{ steps.tag-push.outputs.version }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -105,18 +116,12 @@ jobs:
           fetch-depth: 0
 
       - name: Create and Push Git Tag
-        id: tag-push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           
-          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
-          if [ -n "$CUSTOM_INPUT" ]; then
-            RAW_VERSION=$(echo "$CUSTOM_INPUT" | sed 's/^v//')
-          else
-            RAW_VERSION="${{ needs.check-version.outputs.version }}"
-          fi
+          RAW_VERSION="${{ needs.check-version.outputs.version }}"
           VERSION_TAG="v$RAW_VERSION"
           
           echo "Release approved! Tagging commit and pushing $VERSION_TAG..."
@@ -130,8 +135,6 @@ jobs:
             git tag "$VERSION_TAG"
             git push origin "$VERSION_TAG"
           fi
-          
-          echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
 
   publish-matrix:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
@@ -166,7 +169,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: v${{ needs.release-gate.outputs.version }}
+          ref: v${{ needs.check-version.outputs.version }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
@@ -193,7 +196,7 @@ jobs:
 
       - name: Run Unified Gating and Release Pipeline
         env:
-          GITHUB_REF_NAME: v${{ needs.release-gate.outputs.version }}
+          GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
         run: |
           nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
@@ -242,7 +245,7 @@ jobs:
 
   assemble-multiarch:
     name: Assemble Multi-Arch Manifest (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [publish-matrix, release-gate]
+    needs: [check-version, publish-matrix, release-gate]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -286,7 +289,7 @@ jobs:
           BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
           BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:v${{ needs.release-gate.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Creating unified multi-arch manifest for rolling bootstrap tag: ${BOOTSTRAP_ROLLING}"
           docker buildx imagetools create -t "${BOOTSTRAP_ROLLING}" \
@@ -295,8 +298,8 @@ jobs:
 
           echo "Creating unified multi-arch manifest for versioned bootstrap tag: ${BOOTSTRAP_VERSIONED}"
           docker buildx imagetools create -t "${BOOTSTRAP_VERSIONED}" \
-            "${BOOTSTRAP_TAG}:v${{ needs.release-gate.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-amd64" \
-            "${BOOTSTRAP_TAG}:v${{ needs.release-gate.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-arm64"
+            "${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-arm64"
 
       - name: Sign Multi-Arch Manifests
         run: |
@@ -305,7 +308,7 @@ jobs:
           BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
           cosign sign --yes "${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          cosign sign --yes "${BOOTSTRAP_TAG}:v${{ needs.release-gate.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
       - name: Download amd64 SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -422,7 +425,7 @@ jobs:
 
   finalize-tags:
     name: Finalize GHCR UI Tag Ordering (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [provenance, release-gate]
+    needs: [check-version, provenance, release-gate]
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -466,10 +469,10 @@ jobs:
           BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           
           ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
-          VERSIONED_TARGET="${BASE_TAG}:v${{ needs.release-gate.outputs.version }}-${{ matrix.tier }}"
+          VERSIONED_TARGET="${BASE_TAG}:v${{ needs.check-version.outputs.version }}-${{ matrix.tier }}"
 
           BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:v${{ needs.release-gate.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:v${{ needs.check-version.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Promoting rolling multi-arch image and its signatures/attestations to production: ${ROLLING_TARGET}"
           cosign copy --yes "${BOOTSTRAP_ROLLING}" "${ROLLING_TARGET}"
@@ -508,13 +511,13 @@ jobs:
 
   finalize-release:
     name: Finalize GitHub Release Assets
-    needs: [publish-matrix, provenance, finalize-tags, release-gate]
+    needs: [check-version, publish-matrix, provenance, finalize-tags, release-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: v${{ needs.release-gate.outputs.version }}
+          ref: v${{ needs.check-version.outputs.version }}
 
       - name: Download all release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -527,7 +530,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v${{ needs.release-gate.outputs.version }}"
+          TAG_NAME="v${{ needs.check-version.outputs.version }}"
           if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
             echo "Release $TAG_NAME does not exist. Creating it now..."
             gh release create "$TAG_NAME" \
@@ -549,8 +552,8 @@ jobs:
           done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -print0)
           
           if [ ${#files[@]} -gt 0 ]; then
-            echo "Uploading ${#files[@]} certified assets to release: v${{ needs.release-gate.outputs.version }}..."
-            gh release upload "v${{ needs.release-gate.outputs.version }}" "${files[@]}" --clobber
+            echo "Uploading ${#files[@]} certified assets to release: v${{ needs.check-version.outputs.version }}..."
+            gh release upload "v${{ needs.check-version.outputs.version }}" "${files[@]}" --clobber
             echo "Release assets successfully attached."
           else
             echo "No non-empty certified assets found to upload."
@@ -560,7 +563,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v${{ needs.release-gate.outputs.version }}"
+          TAG_NAME="v${{ needs.check-version.outputs.version }}"
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           
           RAW_CHANGELOG=$(gh release view "$TAG_NAME" --json body --jq '.body' | grep -v 'This draft release represents' | grep -v 'To release these assets:' | grep -v "Simply click 'Publish Release'")
