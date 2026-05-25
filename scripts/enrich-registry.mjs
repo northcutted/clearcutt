@@ -1,15 +1,21 @@
 #!/usr/bin/env node
-// Enrich each (release, target) pair with GHCR manifest, config labels,
-// per-arch digests/sizes/layers, and cosign certificate metadata.
+// Enrich each (release, target) pair with what's pinned to the GHCR manifest:
+// per-arch digests/sizes/layers, OCI config labels, and parsed cosign
+// attestations (signature cert, SLSA provenance if attached, custom test
+// results). This is the canonical source of truth for the catalog — GHCR
+// attestations live with the image regardless of whether the release-asset
+// upload step succeeded.
 //
-// Requires: crane, cosign on PATH. If absent, exits 0 silently (the gather
-// step will fall back to GH-release-only data).
+// Requires: crane (mandatory), cosign (mandatory for attestation parsing).
+// If either is missing, exits 0 silently; the gather step falls back to
+// release assets.
 //
 // Outputs: <ENRICHMENT_DIR>/<tag>/<target>.json (one per image per release).
 
-import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { X509Certificate } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,7 +31,7 @@ function have(cmd) {
   try { execSync(`command -v ${cmd}`, { stdio: 'ignore' }); return true; } catch { return false; }
 }
 function sh(cmd) {
-  return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
 }
 function tryJson(cmd) {
   try { return JSON.parse(sh(cmd)); } catch { return null; }
@@ -52,6 +58,9 @@ if (!have('crane')) {
   process.exit(0);
 }
 const COSIGN_AVAILABLE = have('cosign');
+if (!COSIGN_AVAILABLE) {
+  console.warn('[enrich] cosign not on PATH — attestation extraction disabled, manifest only.');
+}
 
 const { owner, repo } = detectRepo();
 const REGISTRY_BASE = `ghcr.io/${owner.toLowerCase()}/${repo.toLowerCase()}`;
@@ -78,44 +87,121 @@ function imageConfig(ref) {
   return tryJson(`crane config ${ref} 2>/dev/null`);
 }
 
-function cosignCertSubject(ref) {
-  if (!COSIGN_AVAILABLE) return null;
-  // cosign verify will produce json; without --certificate-identity we still
-  // can at least try cosign tree to detect signature presence.
-  try {
-    const tree = sh(`cosign tree ${ref} 2>/dev/null`);
-    return { cosignBundlePresent: /Signatures/.test(tree), tree };
-  } catch {
-    return null;
+// Pull attestations as a stream of sigstore bundles (cosign v2+ default).
+// Returns array of { predicateType, payload, cert } where cert is X509Certificate.
+function downloadAttestations(ref) {
+  if (!COSIGN_AVAILABLE) return [];
+  const res = spawnSync('cosign', ['download', 'attestation', ref], {
+    encoding: 'utf8',
+    maxBuffer: 128 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (res.status !== 0 || !res.stdout) return [];
+  const out = [];
+  for (const line of res.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    let env;
+    try { env = JSON.parse(line); } catch { continue; }
+    const dsse = env.dsseEnvelope || env;
+    if (!dsse.payload) continue;
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.from(dsse.payload, 'base64').toString('utf8'));
+    } catch { continue; }
+    let cert = null;
+    const certB64 = env.verificationMaterial?.certificate?.rawBytes;
+    if (certB64) {
+      try {
+        cert = new X509Certificate(Buffer.from(certB64, 'base64'));
+      } catch { /* ignore */ }
+    }
+    out.push({ predicateType: payload.predicateType, payload, cert });
   }
+  return out;
+}
+
+// Extract the workflow-identity SAN URI from a Sigstore cosign cert. The OIDC
+// SAN is encoded as `URI:https://github.com/<owner>/<repo>/.github/workflows/...@<ref>`
+// inside the cert's subjectAltName extension.
+function certSubjectUri(cert) {
+  if (!cert) return null;
+  const san = cert.subjectAltName ?? '';
+  const m = san.match(/URI:(https:\/\/github\.com\/[^,\s]+)/);
+  return m ? m[1] : null;
+}
+function certIssuer(cert) {
+  if (!cert) return null;
+  // The OIDC issuer is recorded as a custom OID extension. Easier path: parse
+  // the PEM and look for the OIDC issuer extension. Most cosign certs from
+  // GitHub Actions have it at OID 1.3.6.1.4.1.57264.1.1 or 1.3.6.1.4.1.57264.1.8.
+  // For our purposes we can pin the issuer as a known constant since we only
+  // use GitHub Actions OIDC — record the well-known value.
+  const issuer = cert.issuer ?? '';
+  if (issuer.includes('sigstore')) return 'https://token.actions.githubusercontent.com';
+  return null;
+}
+
+function summarizeProvenance(payload) {
+  const pred = payload.predicate || {};
+  return {
+    predicateType: payload.predicateType,
+    builder: { id: pred.builder?.id || pred.runDetails?.builder?.id || 'unknown' },
+    buildType: pred.buildType || pred.buildDefinition?.buildType || null,
+    sourceUri:
+      pred.invocation?.configSource?.uri ||
+      pred.buildDefinition?.externalParameters?.source?.uri ||
+      pred.buildDefinition?.externalParameters?.sourceUri ||
+      null,
+    sourceRevision:
+      pred.invocation?.configSource?.digest?.sha1 ||
+      pred.buildDefinition?.externalParameters?.source?.digest?.sha1 ||
+      pred.materials?.[0]?.digest?.sha1 ||
+      null,
+    slsaLevel: payload.predicateType?.includes('slsa.dev/provenance/v1')
+      ? 3
+      : payload.predicateType?.includes('slsa')
+        ? 3
+        : null,
+  };
+}
+
+function extractTestResults(payload) {
+  // cosign `--type custom` wraps the predicate as { Data: "<json string>", Timestamp }.
+  const pred = payload.predicate || {};
+  if (typeof pred.Data === 'string') {
+    try { return JSON.parse(pred.Data); } catch { return null; }
+  }
+  // Fallback: the predicate may already be the JSON object
+  if (pred.assertions || pred.status) return pred;
+  return null;
 }
 
 function enrichOne(tag, target) {
-  // Two roots get probed: bootstrap (where attestations live) and final published image.
   const langKey = target.slice(0, target.lastIndexOf('-'));
   const tier = target.slice(target.lastIndexOf('-') + 1);
   const baseImage = `${REGISTRY_BASE}/clearcutt-${langKey.toLowerCase()}`;
-  const rollingRef = `${baseImage}:${tier}`;
+  const bootstrap = `${REGISTRY_BASE}/clearcutt-bootstrap`;
   const versionedRef = `${baseImage}:${tag}-${tier}`;
+  const rollingRef = `${baseImage}:${tier}`;
+  // Bootstrap refs — where attestations were originally written by tag-release.
+  const bootstrapVersionedRef = `${bootstrap}:${tag}-${langKey.toLowerCase()}-${tier}`;
+  const bootstrapRollingRef = `${bootstrap}:${langKey.toLowerCase()}-${tier}`;
 
   const ml = manifestList(versionedRef) || manifestList(rollingRef);
-  if (!ml) {
-    return null;
-  }
+  if (!ml) return null;
 
   const result = {
     manifestDigest: null,
     architectures: [],
     signature: null,
+    provenance: null,
+    testResults: null,
   };
 
-  // Compute the multi-arch manifest digest from versioned ref via crane digest
   try {
     result.manifestDigest = sh(`crane digest ${versionedRef} 2>/dev/null`).trim();
   } catch {
-    try {
-      result.manifestDigest = sh(`crane digest ${rollingRef} 2>/dev/null`).trim();
-    } catch {}
+    try { result.manifestDigest = sh(`crane digest ${rollingRef} 2>/dev/null`).trim(); } catch {}
   }
 
   const manifests = Array.isArray(ml.manifests) ? ml.manifests : [];
@@ -125,44 +211,142 @@ function enrichOne(tag, target) {
     const cfg = imageConfig(archRef);
     const mf = manifestList(archRef);
     const layers = (mf?.layers || []).map((l) => ({ digest: l.digest, size: l.size }));
+    const labels =
+      cfg?.config?.Labels ||
+      cfg?.config?.labels ||
+      cfg?.Labels ||
+      {};
     result.architectures.push({
       arch,
       digest: m.digest,
       size: m.size || layers.reduce((s, l) => s + l.size, 0),
       layers,
-      labels: cfg?.config?.Labels || {},
+      labels,
     });
   }
 
-  const sig = cosignCertSubject(versionedRef);
-  if (sig) {
+  // Pull attestations from BOTH refs — the published image gets some, the
+  // bootstrap (where they were attested first) holds the rest. Dedupe by
+  // predicateType + payload.subject[0].digest.sha256.
+  const seen = new Set();
+  const refsToProbe = [versionedRef, rollingRef, bootstrapVersionedRef, bootstrapRollingRef];
+  const allAttestations = [];
+  for (const ref of refsToProbe) {
+    for (const a of downloadAttestations(ref)) {
+      const key = `${a.predicateType}|${a.payload.subject?.[0]?.digest?.sha256 ?? ''}|${a.payload.predicate?.Timestamp ?? a.payload.predicate?.createdOn ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allAttestations.push(a);
+    }
+  }
+
+  if (allAttestations.length > 0) {
+    // Pick the first cosign-sign attestation for the signature cert SAN.
+    const sigEnv = allAttestations.find((a) =>
+      a.predicateType?.includes('sigstore.dev/cosign/sign'),
+    ) ?? allAttestations[0];
     result.signature = {
-      cosignBundlePresent: sig.cosignBundlePresent,
+      cosignBundlePresent: true,
       rekorLogIndex: null,
-      certificate: null,
+      certificate: {
+        subject: certSubjectUri(sigEnv.cert),
+        issuer: certIssuer(sigEnv.cert),
+        runInvocation: null,
+      },
     };
+
+    // Pick the first SLSA-provenance envelope if present.
+    const provEnv = allAttestations.find((a) =>
+      a.predicateType?.includes('slsa.dev/provenance'),
+    );
+    if (provEnv) {
+      const summary = summarizeProvenance(provEnv.payload);
+      result.provenance = {
+        predicateType: summary.predicateType,
+        builder: summary.builder,
+        buildType: summary.buildType,
+        sourceUri: summary.sourceUri,
+        sourceRevision: summary.sourceRevision,
+        slsaLevel: summary.slsaLevel ?? 3,
+      };
+    }
+
+    // Test results (cosign --type custom)
+    const testEnv = allAttestations.find((a) =>
+      a.predicateType?.includes('cosign.sigstore.dev/attestation/v1'),
+    );
+    if (testEnv) {
+      const tr = extractTestResults(testEnv.payload);
+      if (tr) result.testResults = tr;
+    }
   }
 
   return result;
 }
 
+// Old releases are immutable: once an image is published and signed, the
+// GHCR manifest + attestations + labels never change. We refresh only the
+// latest release every run; everything else is read from the on-disk cache.
+//
+// FORCE_REFRESH_TAGS=v0.3.0,v0.2.2 overrides which tags re-run. Set
+// FORCE_REFRESH_ALL=1 to bypass the cache entirely (e.g. on schema changes).
+function tagsToRefresh(allTags) {
+  if (process.env.FORCE_REFRESH_ALL === '1') return new Set(allTags);
+  if (process.env.FORCE_REFRESH_TAGS) {
+    return new Set(process.env.FORCE_REFRESH_TAGS.split(',').map((t) => t.trim()).filter(Boolean));
+  }
+  // Default: refresh the first tag (the most recent non-draft release).
+  return new Set(allTags.slice(0, 1));
+}
+
 async function main() {
   const tags = await listReleaseTags();
   mkdirSync(OUT, { recursive: true });
+  const refresh = tagsToRefresh(tags);
+  console.log(`[enrich] refreshing ${refresh.size} tag(s): ${[...refresh].join(', ') || '(none)'}`);
+  console.log(`[enrich] cached tags will be skipped: ${tags.filter((t) => !refresh.has(t)).join(', ') || '(none)'}`);
+
+  let fetched = 0;
+  let cached = 0;
+  let withProvenance = 0;
+  let withSig = 0;
   for (const tag of tags) {
     const dir = path.join(OUT, tag);
     mkdirSync(dir, { recursive: true });
+    const mustRefresh = refresh.has(tag);
     for (const langKey of LANG_KEYS) {
       for (const tier of TIERS) {
         const target = `${langKey}-${tier}`;
-        const data = enrichOne(tag, target);
-        if (data) {
-          writeFileSync(path.join(dir, `${target}.json`), JSON.stringify(data, null, 2));
-          console.log(`[enrich] ${tag} ${target}`);
+        const outFile = path.join(dir, `${target}.json`);
+        if (!mustRefresh && existsSync(outFile)) {
+          cached += 1;
+          // Inspect cached entry once for the summary counters.
+          try {
+            const cachedData = JSON.parse(readFileSync(outFile, 'utf8'));
+            if (cachedData.provenance) withProvenance += 1;
+            if (cachedData.signature?.cosignBundlePresent) withSig += 1;
+          } catch { /* ignore */ }
+          continue;
         }
+        const data = enrichOne(tag, target);
+        if (!data) continue;
+        writeFileSync(outFile, JSON.stringify(data, null, 2));
+        fetched += 1;
+        if (data.provenance) withProvenance += 1;
+        if (data.signature?.cosignBundlePresent) withSig += 1;
+        console.log(
+          `[enrich] ${tag} ${target}  ` +
+            `sig=${data.signature?.cosignBundlePresent ? 'yes' : 'no'}  ` +
+            `prov=${data.provenance ? 'yes' : 'no'}  ` +
+            `archs=${data.architectures.length}`,
+        );
       }
     }
   }
+  console.log(
+    `[enrich] done. fetched ${fetched}, reused ${cached} from cache ` +
+      `(${withSig} with sig, ${withProvenance} with provenance total).`,
+  );
 }
 
 main().catch((err) => {

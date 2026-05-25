@@ -265,7 +265,7 @@ function archForSystem(system) {
   return 'amd64';
 }
 
-async function buildImageRecord(target, releases) {
+async function buildImageRecord(target, releases, refreshSet) {
   const meta = targetMeta(target);
   if (!meta) return null;
   const { langKey, tier } = meta;
@@ -277,6 +277,7 @@ async function buildImageRecord(target, releases) {
   let isLatestSet = false;
 
   for (const rel of releases) {
+    const mustRefresh = refreshSet.has(rel.tag);
     // Prefer arch-suffixed assets (clean, post-fix); fall back to unsuffixed
     // for old releases where same-name SBOMs raced and corrupted each other.
     const archSuffixed = rel.assets.filter(
@@ -307,12 +308,22 @@ async function buildImageRecord(target, releases) {
     // Collect per-arch payloads
     const archMap = new Map();
     for (const a of sbomAssets) {
+      // Cache hit path: if this release is not in the refresh set AND a
+      // cached SBOM exists on disk, skip the GH download entirely. Old
+      // release assets are immutable, so disk is canonical for them.
+      const arch = guessArchFromAsset(a.name);
+      const cachePath = path.join(SBOM_CACHE_DIR, rel.tag, `${target}-${arch}.sbom.json`);
       let buf;
-      try {
-        buf = await downloadAsset(a);
-      } catch (err) {
-        console.warn(`[gather]   skip ${a.name}: download failed: ${err.message}`);
-        continue;
+      if (!mustRefresh && existsSync(cachePath)) {
+        try { buf = readFileSync(cachePath); } catch { buf = null; }
+      }
+      if (!buf) {
+        try {
+          buf = await downloadAsset(a);
+        } catch (err) {
+          console.warn(`[gather]   skip ${a.name}: download failed: ${err.message}`);
+          continue;
+        }
       }
       let spdx;
       try {
@@ -321,16 +332,15 @@ async function buildImageRecord(target, releases) {
         console.warn(`[gather]   skip ${a.name}: parse failed (${err.message})`);
         continue;
       }
-      const arch = guessArchFromAsset(a.name, spdx);
-      // Persist the SBOM to disk so the vulnerability scanner can read it.
-      try {
-        mkdirSync(path.join(SBOM_CACHE_DIR, rel.tag), { recursive: true });
-        await fs.writeFile(
-          path.join(SBOM_CACHE_DIR, rel.tag, `${target}-${arch}.sbom.json`),
-          buf,
-        );
-      } catch (err) {
-        console.warn(`[gather]   warn: could not persist SBOM for ${target} ${arch}: ${err.message}`);
+      // Persist the SBOM to disk so the vulnerability scanner can read it
+      // (only on miss; cached path already has the file).
+      if (mustRefresh || !existsSync(cachePath)) {
+        try {
+          mkdirSync(path.join(SBOM_CACHE_DIR, rel.tag), { recursive: true });
+          await fs.writeFile(cachePath, buf);
+        } catch (err) {
+          console.warn(`[gather]   warn: could not persist SBOM for ${target} ${arch}: ${err.message}`);
+        }
       }
       archMap.set(arch, {
         arch,
@@ -390,7 +400,9 @@ async function buildImageRecord(target, releases) {
       try { manifestDigest = JSON.parse(buf.toString('utf8')).digest || null; } catch {}
     }
 
-    // Merge in enrichment (manifest, layers, labels, signatures) if available
+    // Merge in enrichment (manifest, layers, labels, signatures, attestations)
+    // if available. Enrichment is the canonical source for provenance/signature
+    // since those live on the GHCR manifest, not the release-asset upload.
     const enrich = loadEnrichment(rel.tag, target);
     if (enrich) {
       manifestDigest = enrich.manifestDigest || manifestDigest;
@@ -405,6 +417,32 @@ async function buildImageRecord(target, releases) {
         v.layerCount = archEnr.layers?.length ?? v.layerCount;
         v.layers = archEnr.layers ?? v.layers;
         v.labels = archEnr.labels ?? v.labels;
+      }
+      // Fall back to enrichment provenance if no release-asset intoto.jsonl
+      // was found. Attestations on the GHCR manifest are the authoritative
+      // source — release assets are a duplicate copy that can fail to upload.
+      if (!provenance && enrich.provenance) {
+        provenance = {
+          predicateType: enrich.provenance.predicateType,
+          builder: enrich.provenance.builder,
+          buildType: enrich.provenance.buildType,
+          sourceUri: enrich.provenance.sourceUri,
+          sourceRevision: enrich.provenance.sourceRevision,
+          slsaLevel: enrich.provenance.slsaLevel ?? 3,
+          raw: null,
+        };
+      }
+      // Same fallback for test results when the cosign --type custom envelope
+      // is present on the image even if the release-asset was racy/missing.
+      if (enrich.testResults) {
+        for (const v of archMap.values()) {
+          if (v.testResults) continue;
+          v.testResults = {
+            status: enrich.testResults.status ?? 'unknown',
+            timestamp: enrich.testResults.timestamp ?? null,
+            assertions: enrich.testResults.assertions ?? [],
+          };
+        }
       }
     }
 
@@ -486,6 +524,19 @@ function guessArchFromAsset(filename, spdx) {
   return 'amd64';
 }
 
+// Same cache-bypass semantics as enrich-registry.mjs: we always refresh the
+// most recent release (its assets could still be edited), and read older
+// releases from the on-disk SBOM cache. Override with FORCE_REFRESH_TAGS=
+// or FORCE_REFRESH_ALL=1.
+function refreshTagSet(releases) {
+  if (process.env.FORCE_REFRESH_ALL === '1') return new Set(releases.map((r) => r.tag));
+  if (process.env.FORCE_REFRESH_TAGS) {
+    return new Set(process.env.FORCE_REFRESH_TAGS.split(',').map((t) => t.trim()).filter(Boolean));
+  }
+  const latest = releases.find((r) => !r.prerelease) || releases[0];
+  return new Set(latest ? [latest.tag] : []);
+}
+
 async function main() {
   mkdirSync(IMG_DIR, { recursive: true });
 
@@ -493,7 +544,9 @@ async function main() {
   if (releases.length === 0) {
     console.warn('[gather] No releases found; writing empty catalog.');
   }
-  console.log(`[gather] Found ${releases.length} releases. Building image records...`);
+  const refreshSet = refreshTagSet(releases);
+  console.log(`[gather] Found ${releases.length} releases. Refresh: ${[...refreshSet].join(', ') || '(none)'}`);
+  console.log(`[gather] Cached tags reused from disk: ${releases.filter((r) => !refreshSet.has(r.tag)).map((r) => r.tag).join(', ') || '(none)'}`);
 
   // The full target enumeration
   const targets = [];
@@ -510,7 +563,7 @@ async function main() {
     const results = await Promise.all(
       slice.map(async (t) => {
         try {
-          const rec = await buildImageRecord(t, releases);
+          const rec = await buildImageRecord(t, releases, refreshSet);
           if (rec) {
             await fs.writeFile(
               path.join(IMG_DIR, `${t}.json`),

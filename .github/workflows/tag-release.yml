@@ -173,30 +173,30 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
-          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Creating unified multi-arch manifest for rolling bootstrap tag: ${BOOTSTRAP_ROLLING}"
           docker buildx imagetools create -t "${BOOTSTRAP_ROLLING}" \
-            "${BOOTSTRAP_TAG}:${{ matrix.tier }}-amd64" \
-            "${BOOTSTRAP_TAG}:${{ matrix.tier }}-arm64"
+            "${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}-arm64"
 
           echo "Creating unified multi-arch manifest for versioned bootstrap tag: ${BOOTSTRAP_VERSIONED}"
           docker buildx imagetools create -t "${BOOTSTRAP_VERSIONED}" \
-            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}-amd64" \
-            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}-arm64"
+            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}-arm64"
 
       # Sign both the rolling and versioned multi-arch tags keylessly via OIDC inside the bootstrap repo
       - name: Sign Multi-Arch Manifests
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
-          cosign sign --yes "${BOOTSTRAP_TAG}:${{ matrix.tier }}"
-          cosign sign --yes "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
 
       # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts.
       # We pull the legacy unsuffixed artifact (used for cosign attest predicate paths).
@@ -217,7 +217,7 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap:${NORM_LANG}-${{ matrix.tier }}"
           
           cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
           cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
@@ -241,7 +241,7 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap:${NORM_LANG}-${{ matrix.tier }}"
           
           cosign attest --yes --type custom --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${BOOTSTRAP_ROLLING}"
           cosign attest --yes --type custom --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${BOOTSTRAP_ROLLING}"
@@ -251,7 +251,7 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap:${NORM_LANG}-${{ matrix.tier }}"
           
           # Use skopeo to safely extract the multi-arch manifest digest
           IMAGE_DIGEST=$(skopeo inspect "docker://${BOOTSTRAP_ROLLING}" --format "{{.Digest}}")
@@ -260,7 +260,7 @@ jobs:
           mkdir -p build-outputs/digests
           cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
           {
-            "image": "ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}",
+            "image": "ghcr.io/${REPO_PATH}/clearcutt-bootstrap",
             "digest": "${IMAGE_DIGEST}"
           }
           EOF
@@ -362,27 +362,27 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           
           ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
           VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
 
-          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
 
-          echo "Promoting rolling multi-arch tag to production: ${ROLLING_TARGET}"
-          docker buildx imagetools create -t "${ROLLING_TARGET}" "${BOOTSTRAP_ROLLING}"
+          echo "Promoting rolling multi-arch image and its signatures/attestations to production: ${ROLLING_TARGET}"
+          cosign copy --yes "${BOOTSTRAP_ROLLING}" "${ROLLING_TARGET}"
 
-          echo "Promoting versioned multi-arch tag to production: ${VERSIONED_TARGET}"
-          docker buildx imagetools create -t "${VERSIONED_TARGET}" "${BOOTSTRAP_VERSIONED}"
+          echo "Promoting versioned multi-arch image and its signatures/attestations to production: ${VERSIONED_TARGET}"
+          cosign copy --yes "${BOOTSTRAP_VERSIONED}" "${VERSIONED_TARGET}"
 
       # Download the signed SLSA provenance envelope directly from the bootstrap registry
       - name: Download and Export SLSA Provenance
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap:${NORM_LANG}-${{ matrix.tier }}"
 
           mkdir -p build-outputs/
           echo "Downloading SLSA L3 provenance for ${BOOTSTRAP_ROLLING}..."

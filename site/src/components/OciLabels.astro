@@ -11,7 +11,10 @@ const entries = Object.entries(labels);
   <h2 class="heading text-lg">OCI labels</h2>
   {entries.length === 0 ? (
     <p class="text-sm text-ink-300">
-      No labels enriched yet — these populate after the publish-pages workflow probes GHCR.
+      This image declares no <code class="font-mono text-ink-100">org.opencontainers.image.*</code>
+      labels in its config. Nix-built layered images don't add labels by default; the
+      provenance and source information you'd normally find here is attached as cosign
+      attestations on the manifest instead.
     </p>
   ) : (
     <div class="surface-soft overflow-hidden">

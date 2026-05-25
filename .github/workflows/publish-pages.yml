@@ -5,21 +5,24 @@
 name: ClearCutt Catalog Site
 
 on:
-  release:
-    types: [published, edited, released]
   workflow_dispatch:
     inputs:
       release_limit:
         description: "How many recent releases to ingest"
         required: false
         default: "10"
-  workflow_run:
-    workflows: ["ClearCutt Tag Release"]
-    types: [completed]
-    branches: [main]
-  # Rebuild nightly so CVE / vulnerability data stays fresh as the
-  # Grype database picks up newly-disclosed advisories against pinned package
-  # versions in the SBOMs. 06:00 UTC keeps it off the GHA peak hours.
+      force_refresh_all:
+        description: "Ignore the cache and re-fetch enrichment + SBOMs for every release (slow; use when schema changes or attestations are re-attached)"
+        required: false
+        default: "false"
+        type: boolean
+  # Rebuild nightly so CVE / vulnerability data stays fresh as the Grype DB
+  # picks up newly-disclosed advisories against pinned package versions in
+  # the SBOMs. 06:00 UTC keeps it off the GHA peak hours.
+  # We deliberately do NOT trigger on release: or workflow_run: because the
+  # tag-release workflow runs against tag refs, not main, so a branch-pinned
+  # workflow_run trigger never matches; cron + manual cover the freshness
+  # need without the noise of permanently failing trigger evaluations.
   schedule:
     - cron: "0 6 * * *"
 
@@ -86,6 +89,27 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # Cache the per-release enrichment + SBOM downloads. Old releases are
+      # immutable: once an image is published, its manifest digests, layers,
+      # OCI labels, and cosign attestations never change. The gather + enrich
+      # scripts refresh only the most recent tag (controlled via FORCE_REFRESH_*
+      # env vars) and read everything older straight off disk.
+      #
+      # Cache key scheme: the run_id makes each saved entry immutable (GH
+      # Actions cache keys can't be overwritten); restore-keys do a prefix
+      # match so the most recent prior cache is restored. The script hash in
+      # the prefix busts the cache on any data-layer schema change.
+      - name: Restore catalog data cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            site/src/data/enrichment
+            site/src/data/sboms
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          restore-keys: |
+            catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-
+
       - name: Set release limit
         id: params
         run: echo "limit=${{ github.event.inputs.release_limit || '10' }}" >> "$GITHUB_OUTPUT"
@@ -96,6 +120,7 @@ jobs:
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
+          FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
         working-directory: ${{ github.workspace }}
         run: node scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
 
@@ -104,6 +129,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
+          FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
         run: node scripts/enrich-registry.mjs
 
       # Scans each cached SBOM with grype. CVE data freshness comes from the
@@ -119,6 +145,9 @@ jobs:
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
+          # No FORCE_REFRESH_ALL here: by this point SBOMs are already on disk
+          # from the first pass, and we just need to re-fold the enrichment
+          # and vulnerability scan output into per-image records.
         run: node scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
 
       - name: Upload catalog artifact
