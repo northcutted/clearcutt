@@ -1,6 +1,6 @@
 # ClearCutt Hardened Fleets Official Tag Release Workflow
 # Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Cryptographically Certified Publication to GHCR & GitHub Release finalization on Tag Push
+# Paradigm: Cryptographically Certified Publication to GHCR & GitHub Release finalization on Tag Push / Manual Release
 
 name: ClearCutt Tag Release
 
@@ -9,17 +9,84 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      custom_version:
+        description: "Specify a custom version tag to release (e.g. 1.2.3). If left empty, the next version will be calculated automatically based on commits."
+        required: false
+        type: string
 
-# Configure top-level permissions required for GHCR write and Cosign OIDC token request
+# Configure top-level permissions required for GHCR write, tag creation, and Cosign OIDC token request
 permissions:
-  contents: write # Required to upload final assets to the GitHub Release
+  contents: write # Required to push git tags and upload final assets to the GitHub Release
   packages: write # Required to push OCI layered images to GHCR
   id-token: write # CRITICAL: Required for Sigstore Cosign OIDC Keyless signing
   statuses: write
 
 jobs:
+  prep-release:
+    name: Prepare Release Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version-setup.outputs.version }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Next Version
+        id: versioning
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.custom_version == '' }}
+        uses: paulhatch/semantic-version@8da30f99b5b2e7a26ced60b1dad2e41756d6edf4 # v6.0.2
+        with:
+          tag_prefix: "v"
+          major_pattern: "BREAKING CHANGE"
+          minor_pattern: "feat"
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Setup Version and Create Tag
+        id: version-setup
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Tag push trigger
+            VERSION_TAG="${{ github.ref_name }}"
+            echo "Triggered by git tag push. Version tag is $VERSION_TAG"
+          else
+            # Manual workflow dispatch trigger
+            CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
+            if [ -n "$CUSTOM_INPUT" ]; then
+              if [[ "$CUSTOM_INPUT" =~ ^v ]]; then
+                VERSION_TAG="$CUSTOM_INPUT"
+              else
+                VERSION_TAG="v$CUSTOM_INPUT"
+              fi
+            else
+              VERSION_TAG="v${{ steps.versioning.outputs.version }}"
+            fi
+            
+            echo "Triggered manually. Calculated version tag is $VERSION_TAG"
+            
+            # Check if tag already exists
+            if git rev-parse "$VERSION_TAG" >/dev/null 2>&1; then
+              echo "Tag $VERSION_TAG already exists in repository. Proceeding to compile and publish against it."
+            else
+              echo "Creating and pushing tag $VERSION_TAG..."
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git tag "$VERSION_TAG"
+              git push origin "$VERSION_TAG"
+            fi
+          fi
+          
+          echo "version=$VERSION_TAG" >> $GITHUB_OUTPUT
+
   publish-matrix:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
+    needs: prep-release
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -50,6 +117,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prep-release.outputs.version }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
@@ -126,12 +195,9 @@ jobs:
           path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
           retention-days: 7
 
-      # Save the validated SLSA Provenance for release attachment (Wait, SLSA L3 will be generated downstream on the multi-arch digest)
-      # Save the validated digest JSON for SLSA Level 3 GHA generator (Moving to assemble-multiarch job)
-
   assemble-multiarch:
     name: Assemble Multi-Arch Manifest (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: publish-matrix
+    needs: [publish-matrix, prep-release]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for keyless signing
@@ -176,7 +242,7 @@ jobs:
           BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
           BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ needs.prep-release.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Creating unified multi-arch manifest for rolling bootstrap tag: ${BOOTSTRAP_ROLLING}"
           docker buildx imagetools create -t "${BOOTSTRAP_ROLLING}" \
@@ -185,8 +251,8 @@ jobs:
 
           echo "Creating unified multi-arch manifest for versioned bootstrap tag: ${BOOTSTRAP_VERSIONED}"
           docker buildx imagetools create -t "${BOOTSTRAP_VERSIONED}" \
-            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}-amd64" \
-            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}-arm64"
+            "${BOOTSTRAP_TAG}:${{ needs.prep-release.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:${{ needs.prep-release.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}-arm64"
 
       # Sign both the rolling and versioned multi-arch tags keylessly via OIDC inside the bootstrap repo
       - name: Sign Multi-Arch Manifests
@@ -196,7 +262,7 @@ jobs:
           BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap"
           
           cosign sign --yes "${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          cosign sign --yes "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:${{ needs.prep-release.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
       # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts.
       # We pull the legacy unsuffixed artifact (used for cosign attest predicate paths).
@@ -322,7 +388,7 @@ jobs:
 
   finalize-tags:
     name: Finalize GHCR UI Tag Ordering (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: provenance
+    needs: [provenance, prep-release]
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -366,10 +432,10 @@ jobs:
           BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           
           ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
-          VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          VERSIONED_TARGET="${BASE_TAG}:${{ needs.prep-release.outputs.version }}-${{ matrix.tier }}"
 
           BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${NORM_LANG}-${{ matrix.tier }}"
-          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${NORM_LANG}-${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ needs.prep-release.outputs.version }}-${NORM_LANG}-${{ matrix.tier }}"
 
           echo "Promoting rolling multi-arch image and its signatures/attestations to production: ${ROLLING_TARGET}"
           cosign copy --yes "${BOOTSTRAP_ROLLING}" "${ROLLING_TARGET}"
@@ -412,11 +478,13 @@ jobs:
 
   finalize-release:
     name: Finalize GitHub Release Assets
-    needs: [publish-matrix, provenance, finalize-tags]
+    needs: [publish-matrix, provenance, finalize-tags, prep-release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.prep-release.outputs.version }}
 
       # Download all SBOMs and SLSA Provenance statements
       - name: Download all release assets
@@ -438,8 +506,8 @@ jobs:
           done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -print0)
           
           if [ ${#files[@]} -gt 0 ]; then
-            echo "Uploading ${#files[@]} certified assets to release: ${{ github.ref_name }}..."
-            gh release upload "${{ github.ref_name }}" "${files[@]}" --clobber
+            echo "Uploading ${#files[@]} certified assets to release: ${{ needs.prep-release.outputs.version }}..."
+            gh release upload "${{ needs.prep-release.outputs.version }}" "${files[@]}" --clobber
             echo "Release assets successfully attached."
           else
             echo "No non-empty certified assets found to upload."
@@ -450,7 +518,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="${{ github.ref_name }}"
+          TAG_NAME="${{ needs.prep-release.outputs.version }}"
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           
           # Fetch the existing release description, stripping staging text and blank lines
@@ -508,7 +576,7 @@ jobs:
 
           ---
 
-          \$RAW_CHANGELOG
+          $RAW_CHANGELOG
           EOF
 
           gh release edit "$TAG_NAME" --notes "$FINAL_NOTES"
