@@ -201,6 +201,7 @@ jobs:
           nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
             --publish \
+            --version-tag "v${{ needs.check-version.outputs.version }}" \
             "${{ matrix.language }}-${{ matrix.tier }}"
 
       - name: Stage arch-suffixed release assets

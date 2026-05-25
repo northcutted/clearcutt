@@ -213,9 +213,11 @@ EOF
 
     local image_tag="$registry/$repo/clearcutt-bootstrap:${lang}-${tier}-${arch_suffix}"
     
-    # Resolve the version tag from GITHUB_REF_NAME (e.g. v1.0.0) if triggered by a Git tag
+    # Resolve the version tag from VERSION_TAG or GITHUB_REF_NAME (e.g. v1.0.0)
     local version_tag=""
-    if [[ -n "${GITHUB_REF_NAME:-}" ]] && [[ "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
+    if [[ -n "${VERSION_TAG:-}" ]] && [[ "$VERSION_TAG" =~ ^v[0-9] ]]; then
+      version_tag="$VERSION_TAG"
+    elif [[ -n "${GITHUB_REF_NAME:-}" ]] && [[ "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
       version_tag="$GITHUB_REF_NAME"
     fi
 
@@ -322,6 +324,10 @@ main() {
         ;;
       --repo)
         repo="${2,,}"
+        shift 2
+        ;;
+      --version-tag)
+        export VERSION_TAG="$2"
         shift 2
         ;;
       *)
