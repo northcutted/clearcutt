@@ -431,9 +431,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Uploading SBOMs and SLSA Provenance files to release: ${{ github.ref_name }}..."
-          find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -exec gh release upload "${{ github.ref_name }}" {} --clobber +
-          echo "Release assets successfully attached."
+          echo "Gathering SBOMs, test-results, and SLSA Provenance assets for upload..."
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -print0)
+          
+          if [ ${#files[@]} -gt 0 ]; then
+            echo "Uploading ${#files[@]} certified assets to release: ${{ github.ref_name }}..."
+            gh release upload "${{ github.ref_name }}" "${files[@]}" --clobber
+            echo "Release assets successfully attached."
+          else
+            echo "No non-empty certified assets found to upload."
+          fi
 
       # Edit release description to replace staging instructions with certified multi-arch OCI registry links & Nix flake usage
       - name: Finalize Release Notes
