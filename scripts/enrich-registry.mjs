@@ -135,7 +135,13 @@ function enrichOne(tag, target) {
   }
 
   const sig = cosignCertSubject(versionedRef);
-  if (sig) result.signature = { cosignBundlePresent: sig.cosignBundlePresent, certificate: null };
+  if (sig) {
+    result.signature = {
+      cosignBundlePresent: sig.cosignBundlePresent,
+      rekorLogIndex: null,
+      certificate: null,
+    };
+  }
 
   return result;
 }

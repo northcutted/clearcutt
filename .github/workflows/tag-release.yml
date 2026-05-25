@@ -386,7 +386,7 @@ jobs:
 
           mkdir -p build-outputs/
           echo "Downloading SLSA L3 provenance for ${BOOTSTRAP_ROLLING}..."
-          cosign download attestation --type slsaprovenance "${BOOTSTRAP_ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl"
+          cosign download attestation --predicate-type slsaprovenance "${BOOTSTRAP_ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl"
           echo "SLSA L3 provenance attestation successfully downloaded."
 
       # Save the validated SLSA L3 provenance for release attachment

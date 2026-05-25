@@ -81,14 +81,31 @@ function langIcon(id: string) {
                 {img.architectures.map((a) => <span class="chip text-[10px]">{a}</span>)}
                 {img.signed && <span class="chip-accent text-[10px]">cosign</span>}
                 {img.provenance && <span class="chip-accent text-[10px]">SLSA L3</span>}
-                {img.passed
-                  ? <span class="chip-accent text-[10px]">Grype ✓</span>
-                  : <span class="chip-warn text-[10px]">unverified</span>}
+                {img.vulnSummary ? (
+                  (() => {
+                    const c = img.vulnSummary.critical;
+                    const h = img.vulnSummary.high;
+                    if (c > 0) return <span class="chip-danger text-[10px]">{c} critical · {h} high</span>;
+                    if (h > 0) return <span class="chip-warn text-[10px]">{h} high</span>;
+                    return <span class="chip-accent text-[10px]">0 high CVEs</span>;
+                  })()
+                ) : img.passed ? (
+                  <span class="chip-accent text-[10px]">Grype ✓</span>
+                ) : (
+                  <span class="chip-warn text-[10px]">unverified</span>
+                )}
               </div>
-              <div class="mt-3 text-[11px] text-ink-300">
-                {img.latestPackageCount > 0
-                  ? `${img.latestPackageCount} packages in SBOM`
-                  : 'SBOM pending'}
+              <div class="mt-3 flex items-center justify-between text-[11px] text-ink-300">
+                <span>
+                  {img.latestPackageCount > 0
+                    ? `${img.latestPackageCount} packages`
+                    : 'SBOM pending'}
+                </span>
+                {img.vulnSummary?.scannedAt && (
+                  <span title={`Scanned ${img.vulnSummary.scannedAt}`}>
+                    scan {new Date(img.vulnSummary.scannedAt).toUTCString().split(' ').slice(1, 4).join(' ')}
+                  </span>
+                )}
               </div>
             </a>
           );

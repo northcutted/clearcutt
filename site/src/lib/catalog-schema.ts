@@ -36,6 +36,36 @@ export const ArchPayload = z.object({
       assertions: z.array(z.object({ name: z.string(), status: z.string() })),
     })
     .nullable(),
+  vulnerabilities: z
+    .object({
+      scannedAt: z.string(),
+      scanner: z.string(),
+      dbBuiltAt: z.string().nullable(),
+      countsBySeverity: z.object({
+        critical: z.number(),
+        high: z.number(),
+        medium: z.number(),
+        low: z.number(),
+        negligible: z.number(),
+        unknown: z.number(),
+      }),
+      findings: z.array(
+        z.object({
+          id: z.string(),
+          severity: z.string(),
+          packageName: z.string(),
+          packageVersion: z.string(),
+          purl: z.string().nullable(),
+          fixedIn: z.string().nullable(),
+          fixState: z.string(),
+          dataSource: z.string().nullable(),
+          namespace: z.string().nullable(),
+          description: z.string().nullable(),
+        }),
+      ),
+    })
+    .nullable()
+    .optional(),
 });
 export type ArchPayload = z.infer<typeof ArchPayload>;
 
@@ -49,14 +79,15 @@ export const ReleaseEntry = z.object({
   signature: z
     .object({
       cosignBundlePresent: z.boolean(),
-      rekorLogIndex: z.number().nullable(),
+      rekorLogIndex: z.number().nullable().optional(),
       certificate: z
         .object({
-          subject: z.string().nullable(),
-          issuer: z.string().nullable(),
-          runInvocation: z.string().nullable(),
+          subject: z.string().nullable().optional(),
+          issuer: z.string().nullable().optional(),
+          runInvocation: z.string().nullable().optional(),
         })
-        .nullable(),
+        .nullable()
+        .optional(),
     })
     .nullable(),
   provenance: z
@@ -141,6 +172,16 @@ export const CatalogIndex = z.object({
       signed: z.boolean(),
       provenance: z.boolean(),
       passed: z.boolean(),
+      vulnSummary: z
+        .object({
+          critical: z.number(),
+          high: z.number(),
+          medium: z.number(),
+          low: z.number(),
+          scannedAt: z.string().nullable(),
+        })
+        .nullable()
+        .optional(),
     }),
   ),
 });

@@ -17,6 +17,11 @@ on:
     workflows: ["ClearCutt Tag Release"]
     types: [completed]
     branches: [main]
+  # Rebuild nightly so CVE / vulnerability data stays fresh as the
+  # Grype database picks up newly-disclosed advisories against pinned package
+  # versions in the SBOMs. 06:00 UTC keeps it off the GHA peak hours.
+  schedule:
+    - cron: "0 6 * * *"
 
 permissions:
   contents: read
@@ -45,7 +50,7 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      - name: Install crane and cosign
+      - name: Install crane, cosign, grype
         run: |
           set -euo pipefail
           # crane via go-containerregistry release tarball
@@ -53,11 +58,29 @@ jobs:
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin crane
           crane version
-          # cosign via official installer action would be heavier; binary is fine here
+          # cosign binary
           COSIGN_VERSION=v2.4.1
           curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
           chmod +x /tmp/cosign && sudo mv /tmp/cosign /usr/local/bin/cosign
           cosign version
+          # grype via official install script
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+          grype version
+
+      # Cache the grype vuln DB so scheduled runs aren't paying 250MB+ of
+      # download every nightly tick. Cache key tied to the day so the DB
+      # naturally refreshes once per day.
+      - name: Restore grype DB cache
+        id: grype-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/grype
+          key: grype-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            grype-db-${{ runner.os }}-
+
+      - name: Refresh grype DB
+        run: grype db update
 
       - name: Authenticate crane to GHCR
         run: |
@@ -83,7 +106,14 @@ jobs:
           GH_REPO: ${{ github.event.repository.name }}
         run: node scripts/enrich-registry.mjs
 
-      - name: Re-run gather to fold enrichment in
+      # Scans each cached SBOM with grype. CVE data freshness comes from the
+      # grype DB (refreshed above), not from the SBOMs themselves — so this
+      # surfaces newly-disclosed vulnerabilities against pinned package
+      # versions every time the workflow runs (including nightly cron).
+      - name: Scan SBOMs with grype
+        run: node scripts/scan-vulnerabilities.mjs
+
+      - name: Re-run gather to fold enrichment + vulnerabilities in
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_OWNER: ${{ github.repository_owner }}
@@ -98,6 +128,7 @@ jobs:
           path: |
             site/src/data/catalog
             site/src/data/enrichment
+            site/src/data/vulnerabilities
           retention-days: 7
 
   build:

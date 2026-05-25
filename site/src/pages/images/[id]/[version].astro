@@ -4,6 +4,7 @@ import ImageHeader from '../../../components/ImageHeader.astro';
 import UsageTabs from '../../../components/UsageTabs.astro';
 import VerifyBlock from '../../../components/VerifyBlock.astro';
 import SbomTable from '../../../components/SbomTable.tsx';
+import VulnerabilityTable from '../../../components/VulnerabilityTable.tsx';
 import TestResults from '../../../components/TestResults.astro';
 import OciLabels from '../../../components/OciLabels.astro';
 import LayersTable from '../../../components/LayersTable.astro';
@@ -37,6 +38,7 @@ const sbomUrls = release.assetUrls.sbom || {};
     <ImageHeader image={image} selectedTag={release.tag} />
     <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
     <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
+    <VulnerabilityTable architectures={release.architectures} client:load />
     <SbomTable architectures={release.architectures} rawSbomUrls={sbomUrls} client:load />
     <TestResults architectures={release.architectures} />
     <ProvenanceBlock release={release} ownerRepo={ownerRepo} />

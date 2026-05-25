@@ -23,6 +23,12 @@ const OUT_DIR = path.join(ROOT, 'site', 'src', 'data', 'catalog');
 const IMG_DIR = path.join(OUT_DIR, 'images');
 const ENRICHMENT_DIR =
   process.env.ENRICHMENT_DIR || path.join(ROOT, 'site', 'src', 'data', 'enrichment');
+// Downloaded SBOMs are persisted here so scan-vulnerabilities.mjs can run
+// grype against local files without re-fetching from GitHub.
+const SBOM_CACHE_DIR =
+  process.env.SBOM_CACHE_DIR || path.join(ROOT, 'site', 'src', 'data', 'sboms');
+const VULN_DIR =
+  process.env.VULN_DIR || path.join(ROOT, 'site', 'src', 'data', 'vulnerabilities');
 
 const LANGUAGES = {
   coreLTS: { id: 'core', display: 'Core', version: 'LTS' },
@@ -244,6 +250,16 @@ function loadEnrichment(tag, target) {
   }
 }
 
+function loadVulnerabilities(tag, target, arch) {
+  const p = path.join(VULN_DIR, tag, `${target}-${arch}.json`);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function archForSystem(system) {
   if (system.includes('aarch64') || system.includes('arm64')) return 'arm64';
   return 'amd64';
@@ -306,6 +322,16 @@ async function buildImageRecord(target, releases) {
         continue;
       }
       const arch = guessArchFromAsset(a.name, spdx);
+      // Persist the SBOM to disk so the vulnerability scanner can read it.
+      try {
+        mkdirSync(path.join(SBOM_CACHE_DIR, rel.tag), { recursive: true });
+        await fs.writeFile(
+          path.join(SBOM_CACHE_DIR, rel.tag, `${target}-${arch}.sbom.json`),
+          buf,
+        );
+      } catch (err) {
+        console.warn(`[gather]   warn: could not persist SBOM for ${target} ${arch}: ${err.message}`);
+      }
       archMap.set(arch, {
         arch,
         os: 'linux',
@@ -380,6 +406,12 @@ async function buildImageRecord(target, releases) {
         v.layers = archEnr.layers ?? v.layers;
         v.labels = archEnr.labels ?? v.labels;
       }
+    }
+
+    // Fold in vulnerability scan output if available (second-pass run).
+    for (const [arch, v] of archMap.entries()) {
+      const vuln = loadVulnerabilities(rel.tag, target, arch);
+      if (vuln) v.vulnerabilities = vuln;
     }
 
     const architectures = Array.from(archMap.values()).sort((a, b) =>
@@ -529,6 +561,24 @@ async function main() {
           Math.max(1, latestRel.architectures.length) || 0;
       const passed =
         latestRel.architectures.every((a) => !a.testResults || a.testResults.status === 'passed');
+      // Roll up vulnerability counts across all architectures for the index pill.
+      let vulnSummary = null;
+      const archsWithVulns = latestRel.architectures.filter((a) => a.vulnerabilities);
+      if (archsWithVulns.length > 0) {
+        const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+        let scannedAt = null;
+        for (const a of archsWithVulns) {
+          const c = a.vulnerabilities.countsBySeverity;
+          counts.critical += c.critical || 0;
+          counts.high += c.high || 0;
+          counts.medium += c.medium || 0;
+          counts.low += c.low || 0;
+          if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
+            scannedAt = a.vulnerabilities.scannedAt;
+          }
+        }
+        vulnSummary = { ...counts, scannedAt };
+      }
       return {
         id: img.id,
         language: img.language.id,
@@ -541,6 +591,7 @@ async function main() {
         signed: latestRel.signature?.cosignBundlePresent ?? !!latestRel.provenance,
         provenance: !!latestRel.provenance,
         passed,
+        vulnSummary,
       };
     }),
   };
