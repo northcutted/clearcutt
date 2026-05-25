@@ -137,30 +137,30 @@ jobs:
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
           
-          ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
-          VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
 
-          echo "Creating unified multi-arch manifest for rolling tag: ${ROLLING_TARGET}"
-          docker buildx imagetools create -t "${ROLLING_TARGET}" \
-            "${BASE_TAG}/bootstrap:${{ matrix.tier }}-amd64" \
-            "${BASE_TAG}/bootstrap:${{ matrix.tier }}-arm64"
+          echo "Creating unified multi-arch manifest for rolling bootstrap tag: ${BOOTSTRAP_ROLLING}"
+          docker buildx imagetools create -t "${BOOTSTRAP_ROLLING}" \
+            "${BOOTSTRAP_TAG}:${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:${{ matrix.tier }}-arm64"
 
-          echo "Creating unified multi-arch manifest for versioned tag: ${VERSIONED_TARGET}"
-          docker buildx imagetools create -t "${VERSIONED_TARGET}" \
-            "${BASE_TAG}/bootstrap:${{ github.ref_name }}-${{ matrix.tier }}-amd64" \
-            "${BASE_TAG}/bootstrap:${{ github.ref_name }}-${{ matrix.tier }}-arm64"
+          echo "Creating unified multi-arch manifest for versioned bootstrap tag: ${BOOTSTRAP_VERSIONED}"
+          docker buildx imagetools create -t "${BOOTSTRAP_VERSIONED}" \
+            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}-amd64" \
+            "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}-arm64"
 
-      # Sign both the rolling and versioned multi-arch tags keylessly via OIDC
+      # Sign both the rolling and versioned multi-arch tags keylessly via OIDC inside the bootstrap repo
       - name: Sign Multi-Arch Manifests
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
           
-          cosign sign --yes "${BASE_TAG}:${{ matrix.tier }}"
-          cosign sign --yes "${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:${{ matrix.tier }}"
+          cosign sign --yes "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
 
       # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts
       - name: Download amd64 SBOM
@@ -175,48 +175,31 @@ jobs:
           name: release-sbom-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/aarch64/
 
-      # Attest both platform-specific SBOMs directly onto the final multi-arch manifest
+      # Attest both platform-specific SBOMs directly onto the bootstrap multi-arch manifest
       - name: Attest Multi-Arch SBOMs
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
           
-          cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
-          cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BASE_TAG}"
+          cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
+          cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
 
-      # Touch/Re-push the multi-arch manifests so they have the newest timestamp in GHCR,
-      # ensuring GHCR's package UI defaults to showing our clean production tags instead of the .att/.sig tags.
-      - name: Finalize GHCR UI Tag Ordering
-        run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
-          
-          ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
-          VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
-
-          echo "Re-pushing rolling tag to update GHCR timestamp: ${ROLLING_TARGET}"
-          docker buildx imagetools create -t "${ROLLING_TARGET}" "${ROLLING_TARGET}"
-
-          echo "Re-pushing versioned tag to update GHCR timestamp: ${VERSIONED_TARGET}"
-          docker buildx imagetools create -t "${VERSIONED_TARGET}" "${VERSIONED_TARGET}"
-
-      # Resolve the final multi-arch digest and write the JSON metadata for the downstream SLSA L3 generator
+      # Resolve the final multi-arch digest from the bootstrap tag and write the JSON metadata for the downstream SLSA L3 generator
       - name: Resolve Multi-Arch Digest
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING_TARGET="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
+          BOOTSTRAP_ROLLING="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}:${{ matrix.tier }}"
           
           # Use skopeo to safely extract the multi-arch manifest digest
-          IMAGE_DIGEST=$(skopeo inspect "docker://${ROLLING_TARGET}" --format "{{.Digest}}")
+          IMAGE_DIGEST=$(skopeo inspect "docker://${BOOTSTRAP_ROLLING}" --format "{{.Digest}}")
           echo "Multi-Arch manifest digest resolved: ${IMAGE_DIGEST}"
 
           mkdir -p build-outputs/digests
           cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
           {
-            "image": "ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}",
+            "image": "ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}",
             "digest": "${IMAGE_DIGEST}"
           }
           EOF
@@ -276,9 +259,63 @@ jobs:
     secrets:
       registry-password: ${{ secrets.GITHUB_TOKEN }}
 
+  finalize-tags:
+    name: Finalize GHCR UI Tag Ordering (${{ matrix.language }} - ${{ matrix.tier }})
+    needs: provenance
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [
+          "coreLTS",
+          "java21",
+          "java25",
+          "node22",
+          "node24",
+          "python3.13",
+          "python3.14",
+          "go1.25",
+          "go1.26",
+          "dotnet8",
+          "dotnet10"
+        ]
+        tier: [
+          "dev",
+          "slim",
+          "distroless"
+        ]
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote and publish clean production tags
+        run: |
+          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
+          BOOTSTRAP_TAG="ghcr.io/${REPO_PATH}/clearcutt-bootstrap-${NORM_LANG}"
+          BASE_TAG="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
+          
+          ROLLING_TARGET="${BASE_TAG}:${{ matrix.tier }}"
+          VERSIONED_TARGET="${BASE_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+
+          BOOTSTRAP_ROLLING="${BOOTSTRAP_TAG}:${{ matrix.tier }}"
+          BOOTSTRAP_VERSIONED="${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
+
+          echo "Promoting rolling multi-arch tag to production: ${ROLLING_TARGET}"
+          docker buildx imagetools create -t "${ROLLING_TARGET}" "${BOOTSTRAP_ROLLING}"
+
+          echo "Promoting versioned multi-arch tag to production: ${VERSIONED_TARGET}"
+          docker buildx imagetools create -t "${VERSIONED_TARGET}" "${BOOTSTRAP_VERSIONED}"
+
   finalize-release:
     name: Finalize GitHub Release Assets
-    needs: [publish-matrix, provenance]
+    needs: [publish-matrix, provenance, finalize-tags]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -327,20 +364,20 @@ jobs:
 
           | Language Target | Distroless Tier (Shell-Less Hardened) | Slim Tier (Runtime-Only Hardened) | Dev Tier (Full Compiler/Tools) |
           |---|---|---|---|
-          | **Bash / LTS Core** | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-corelts:dev\` |
-          | **Node 22** | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node22:dev\` |
-          | **Node 24** | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-node24:dev\` |
-          | **Python 3.13** | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.13:dev\` |
-          | **Python 3.14** | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-python3.14:dev\` |
-          | **Go 1.25** | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.25:dev\` |
-          | **Go 1.26** | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-go1.26:dev\` |
-          | **Java 21** | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java21:dev\` |
-          | **Java 25** | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-java25:dev\` |
-          | **.NET 8** | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet8:dev\` |
-          | **.NET 10** | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:distroless\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:slim\` | \`ghcr.io/\${REPO_PATH}/clearcutt-dotnet10:dev\` |
+          | **Bash / LTS Core** | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:dev\` |
+          | **Node 22** | \`ghcr.io/${REPO_PATH}/clearcutt-node22:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-node22:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-node22:dev\` |
+          | **Node 24** | \`ghcr.io/${REPO_PATH}/clearcutt-node24:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-node24:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-node24:dev\` |
+          | **Python 3.13** | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:dev\` |
+          | **Python 3.14** | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:dev\` |
+          | **Go 1.25** | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:dev\` |
+          | **Go 1.26** | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:dev\` |
+          | **Java 21** | \`ghcr.io/${REPO_PATH}/clearcutt-java21:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-java21:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-java21:dev\` |
+          | **Java 25** | \`ghcr.io/${REPO_PATH}/clearcutt-java25:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:dev\` |
+          | **.NET 8** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:dev\` |
+          | **.NET 10** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:dev\` |
 
           > [!NOTE]
-          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/\${REPO_PATH}/clearcutt-<language>:\${TAG_NAME}-<tier>\`.
+          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/${REPO_PATH}/clearcutt-<language>:${TAG_NAME}-<tier>\`.
 
           ---
 
@@ -349,7 +386,7 @@ jobs:
 
           \`\`\`nix
           # Add this repository to your flake inputs:
-          inputs.clearcutt.url = "github:\${REPO_PATH}/\${TAG_NAME}";
+          inputs.clearcutt.url = "github:${REPO_PATH}/${TAG_NAME}";
 
           # In your outputs, use the overlays or raw runtime packages:
           outputs = { self, nixpkgs, clearcutt, ... }: {
