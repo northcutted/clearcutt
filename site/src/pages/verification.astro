@@ -7,7 +7,24 @@ let index;
 try { index = loadIndex(); } catch { index = null; }
 const sample = index?.images[0];
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'OWNER/REPO';
-const sampleRef = sample ? `${index!.registryBase}/clearcutt-${sample.language}${sample.languageVersion}:${sample.tier}` : `ghcr.io/${ownerRepo}/clearcutt-coreLTS:slim`;
+const latestTag = index?.latestTag ?? 'vX.Y.Z';
+
+// Build a real, valid pull-ref for the example. OCI repository names are
+// lowercase only; the catalog already stores the lowercased form so we use
+// that rather than reconstructing from (language, version, tier).
+const sampleImageName = sample
+  ? `clearcutt-${sample.language}${sample.languageVersion}`.toLowerCase()
+  : 'clearcutt-corelts';
+const sampleRegistryBase = index?.registryBase ?? `ghcr.io/${ownerRepo.toLowerCase()}`;
+const sampleRefVersioned = `${sampleRegistryBase}/${sampleImageName}:${latestTag}-${sample?.tier ?? 'slim'}`;
+
+// The cert SAN baked in by GitHub Actions OIDC is the exact workflow file URL
+// at the ref that built the image. Pin the same regex for BOTH the signature
+// and the SBOM attestation so an attacker who somehow got a different workflow
+// signed in this repo can't satisfy the check.
+const workflowIdentityRegex =
+  `^https://github\\.com/${ownerRepo}/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$`;
+const oidcIssuer = 'https://token.actions.githubusercontent.com';
 ---
 <Base title="Verification guide">
   <article class="space-y-10 max-w-3xl">
@@ -19,31 +36,40 @@ const sampleRef = sample ? `${index!.registryBase}/clearcutt-${sample.language}$
         provenance from the official slsa-github-generator. You verify them with the standard
         upstream tools — no custom binaries required.
       </p>
+      <p class="text-sm text-ink-300">
+        The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>
+        pinned to <code class="font-mono text-ink-100">{latestTag}</code>. Swap in any image
+        from the catalog — the verification flow is identical.
+      </p>
     </header>
 
     <section class="space-y-3">
       <h2 class="heading text-xl">1. Install tools</h2>
-      <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane`} />
+      <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane jq`} />
       <p class="text-sm text-ink-300">
-        Pinned versions in CI: cosign v3, slsa-verifier v2.7+, crane v0.20+.
+        Pinned versions in CI: cosign v2.4+, slsa-verifier v2.7+, crane v0.20+.
       </p>
     </section>
 
     <section class="space-y-3">
       <h2 class="heading text-xl">2. Verify the signature</h2>
       <p class="text-sm text-ink-200">
-        ClearCutt uses keyless OIDC — there's no static public key. Instead you assert who
-        signed the image (the GitHub Actions workflow) and which OIDC issuer issued the cert.
+        ClearCutt uses keyless OIDC — there's no static public key. Instead you assert which
+        workflow file built the image (the cert SAN) and which OIDC issuer signed the cert.
+        The regex below pins both pieces literally; everything except the tag suffix is fixed.
       </p>
-      <CopyBlock language="shell" code={`cosign verify ${sampleRef} \\\n  --certificate-identity-regexp \"^https://github.com/${ownerRepo}/.github/workflows/tag-release\\.yml@refs/tags/v.*$\" \\\n  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'`} />
+      <CopyBlock language="shell" code={`cosign verify ${sampleRefVersioned} \\\n  --certificate-identity-regexp '${workflowIdentityRegex}' \\\n  --certificate-oidc-issuer '${oidcIssuer}'`} />
     </section>
 
     <section class="space-y-3">
       <h2 class="heading text-xl">3. Verify the SBOM attestation</h2>
       <p class="text-sm text-ink-200">
-        Confirms that the SPDX SBOM on the manifest was produced by the same workflow run.
+        Confirms the SPDX SBOM on the manifest was produced by the same workflow run that
+        signed the image. Same identity regex as step 2 — never loosen it (matching any
+        workflow under the repo would let any reusable workflow signed in this repo satisfy
+        the check, which defeats the point).
       </p>
-      <CopyBlock language="shell" code={`cosign verify-attestation ${sampleRef} \\\n  --type spdxjson \\\n  --certificate-identity-regexp \"^https://github.com/${ownerRepo}/.+\" \\\n  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\\n  | jq '.payload | @base64d | fromjson | .predicate'`} />
+      <CopyBlock language="shell" code={`cosign verify-attestation ${sampleRefVersioned} \\\n  --type spdxjson \\\n  --certificate-identity-regexp '${workflowIdentityRegex}' \\\n  --certificate-oidc-issuer '${oidcIssuer}' \\\n  | jq '.payload | @base64d | fromjson | .predicate'`} />
     </section>
 
     <section class="space-y-3">
@@ -51,8 +77,9 @@ const sampleRef = sample ? `${index!.registryBase}/clearcutt-${sample.language}$
       <p class="text-sm text-ink-200">
         Confirms the build was non-falsifiable — produced by the upstream
         slsa-github-generator running on hosted GitHub runners, from the exact source tag.
+        The source-tag must match the image tag.
       </p>
-      <CopyBlock language="shell" code={`# Resolve the multi-arch digest first\nDIGEST=$(crane digest ${sampleRef})\nslsa-verifier verify-image ${sampleRef.split(':')[0]}@$DIGEST \\\n  --source-uri 'github.com/${ownerRepo}' \\\n  --source-tag 'v0.1.2'`} />
+      <CopyBlock language="shell" code={`# Resolve the multi-arch digest first\nDIGEST=$(crane digest ${sampleRefVersioned})\nslsa-verifier verify-image ${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --source-uri 'github.com/${ownerRepo}' \\\n  --source-tag '${latestTag}'`} />
     </section>
 
     <section class="space-y-3">
@@ -60,7 +87,8 @@ const sampleRef = sample ? `${index!.registryBase}/clearcutt-${sample.language}$
       <p class="text-sm text-ink-200">
         For Kubernetes, every image detail page exposes a copy-pasteable Kyverno
         <code class="font-mono text-ink-100">ClusterPolicy</code> that wires the same
-        certificate identity and issuer into a cluster-side admission gate.
+        certificate identity and issuer into a cluster-side admission gate. The policy uses
+        a literal subject (not a regex) for an exact pin.
       </p>
     </section>
   </article>

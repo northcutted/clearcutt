@@ -74,3 +74,13 @@
     @apply bg-ink-800/40;
   }
 }
+
+/* Matrix filter views. Hiding individual cells keeps the language label
+   columns in place — the header row stays a stable mental anchor while the
+   user narrows down the slot view. */
+[data-matrix-root].view-production .matrix-cell[data-tier='dev'] { display: none; }
+[data-matrix-root].view-current .matrix-cell[data-state='lagging'],
+[data-matrix-root].view-current .matrix-cell[data-state='pending'] { display: none; }
+[data-matrix-root].view-cve .matrix-cell[data-vuln='clean'],
+[data-matrix-root].view-cve .matrix-cell[data-vuln='none']   { display: none; }
+

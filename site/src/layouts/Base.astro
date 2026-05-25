@@ -71,15 +71,15 @@ const url = base;
     <main class="mx-auto max-w-7xl px-6 pb-24 pt-10">
       <slot />
     </main>
-    <footer class="border-t border-ink-800/80 py-10 text-center text-xs text-ink-300">
+    <footer class="border-t border-ink-800/80 py-8 text-center text-xs text-ink-300">
       <div class="mx-auto max-w-7xl px-6">
         {index ? (
-          <>
-            <p>Generated {new Date(index.generatedAt).toUTCString()} · Latest release {index.latestTag}</p>
-            <p class="mt-1">
-              All images signed via Sigstore keyless OIDC. SLSA Level 3 provenance attached on the multi-arch manifest.
-            </p>
-          </>
+          <p>
+            Catalog rebuilt {new Date(index.generatedAt).toUTCString()} ·
+            <a href={index.repoUrl} class="ml-1 text-ink-200 hover:text-accent-soft" target="_blank" rel="noreferrer">
+              source on GitHub
+            </a>
+          </p>
         ) : (
           <p>Run <code>scripts/gather-catalog.mjs</code> to populate the catalog.</p>
         )}

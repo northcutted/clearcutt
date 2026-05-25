@@ -6,20 +6,35 @@ import { loadIndex } from '../lib/catalog';
 let index;
 let error: string | null = null;
 try { index = loadIndex(); } catch (e: any) { error = e.message; }
+
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
+const releaseTags = index?.releases.map((r) => r.tag) ?? [];
+const published = index ? index.images.filter((i) => i.latestTag === index.latestTag).length : 0;
+const lagging = index ? index.images.filter((i) => i.latestTag !== index.latestTag).length : 0;
+const totalSlots = 11 * 3; // 11 languages × 3 tiers; kept in sync with flake.nix matrix.
+const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
 ---
 <Base title="Catalog">
-  <section class="space-y-6 pb-12">
+  <section class="space-y-8 pb-10">
     <div class="space-y-4 max-w-3xl">
-      <span class="chip-accent">SLSA Level 3 · Cosign signed · Multi-arch</span>
+      <span class="chip-accent">For platform &amp; security engineers shipping enterprise containers</span>
       <h1 class="heading text-4xl sm:text-5xl">Hardened images you can verify.</h1>
       <p class="text-base text-ink-200">
-        Every image is built from a hermetic Nix store layer on top of a mandated enterprise base.
-        We attach SPDX SBOMs and SLSA L3 in-toto provenance, sign keylessly with Sigstore, and
-        publish per-arch manifests to GHCR. Pick a target below to see the full chain.
+        A multi-arch base image fleet (Linux <code class="font-mono text-ink-100">amd64</code>
+        and <code class="font-mono text-ink-100">arm64</code>) built declaratively from Nix
+        store layers on top of a mandated enterprise OS base. Every <em>published</em> image
+        carries an SPDX SBOM, SLSA Level 3 in-toto provenance, and a keyless Sigstore signature
+        — all attached to the GHCR manifest and re-verifiable with the standard upstream tools.
       </p>
-      <div class="flex flex-wrap gap-3">
-        <a href={`${(import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')}/verification`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>
-        <a href={`${(import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')}/about`} class="chip">What these tiers mean →</a>
+      <p class="text-sm text-ink-300">
+        CVE counts on the catalog are rescanned nightly against a fresh Grype database, so
+        a stable SBOM picks up newly-disclosed advisories without a new release. Dev-tier
+        images include full toolchains and are deliberately not optimized for CVE surface
+        area; never deploy them.
+      </p>
+      <div class="flex flex-wrap gap-3 pt-1">
+        <a href={`${base}verification`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>
+        <a href={`${base}about`} class="chip">What these tiers mean →</a>
       </div>
     </div>
 
@@ -30,13 +45,87 @@ try { index = loadIndex(); } catch (e: any) { error = e.message; }
       </div>
     ) : (
       <>
-        <div data-pagefind-body class="space-y-6">
-          <MatrixGrid index={index!} />
+        <div class="surface-soft flex flex-wrap items-center justify-between gap-4 px-5 py-3 text-xs text-ink-200">
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span>
+              <strong class="text-ink-50">{published}</strong> on {index!.latestTag}
+            </span>
+            {lagging > 0 && (
+              <span>
+                <strong class="text-warn">{lagging}</strong> lagging
+                <span class="text-ink-300"> (showing older release)</span>
+              </span>
+            )}
+            {pending > 0 && (
+              <span>
+                <strong class="text-ink-100">{pending}</strong> pending
+              </span>
+            )}
+            <span class="text-ink-300">of {totalSlots} target slots</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="text-ink-300">Releases:</span>
+            {releaseTags.map((tag, i) => (
+              <a
+                href={`${index!.repoUrl}/releases/tag/${tag}`}
+                class="font-mono text-ink-100 hover:text-accent-soft"
+                target="_blank" rel="noreferrer"
+              >{tag}{i === 0 && <span class="ml-1 text-[10px] text-accent-soft">latest</span>}</a>
+            ))}
+          </div>
         </div>
-        <div class="surface-soft mt-4 px-5 py-4 text-xs text-ink-300">
-          {index!.images.length} images · {index!.releases.length} releases tracked ·
-          generated {new Date(index!.generatedAt).toUTCString()}
+
+        <div data-pagefind-body class="space-y-3">
+          <div class="surface-soft flex flex-wrap items-center gap-3 px-5 py-3 text-xs text-ink-200" data-matrix-filters>
+            <span class="text-ink-300">View:</span>
+            <button type="button" data-filter-btn="all" data-active="true" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+              All ({totalSlots})
+            </button>
+            <button type="button" data-filter-btn="production" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+              Production only (hide dev)
+            </button>
+            <button type="button" data-filter-btn="current" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+              On {index!.latestTag} only
+            </button>
+            <button type="button" data-filter-btn="cve" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+              Has critical/high CVEs
+            </button>
+            <span class="ml-auto text-ink-300">Filters are stacked: each adds to the selection above.</span>
+          </div>
+          <div data-matrix-root data-view="all">
+            <MatrixGrid index={index!} />
+          </div>
         </div>
+        <script is:inline>
+          (function () {
+            const root = document.querySelector('[data-matrix-root]');
+            const buttons = document.querySelectorAll('[data-filter-btn]');
+            if (!root) return;
+            const state = { production: false, current: false, cve: false };
+            const sync = () => {
+              const classes = [];
+              if (state.production) classes.push('view-production');
+              if (state.current)    classes.push('view-current');
+              if (state.cve)        classes.push('view-cve');
+              root.className = classes.join(' ');
+              buttons.forEach((b) => {
+                const k = b.getAttribute('data-filter-btn');
+                if (k === 'all') {
+                  b.dataset.active = (!state.production && !state.current && !state.cve) ? 'true' : 'false';
+                } else {
+                  b.dataset.active = state[k] ? 'true' : 'false';
+                }
+              });
+            };
+            buttons.forEach((b) => b.addEventListener('click', () => {
+              const k = b.getAttribute('data-filter-btn');
+              if (k === 'all') { state.production = state.current = state.cve = false; }
+              else { state[k] = !state[k]; }
+              sync();
+            }));
+            sync();
+          })();
+        </script>
       </>
     )}
   </section>

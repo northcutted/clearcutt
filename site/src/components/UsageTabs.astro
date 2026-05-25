@@ -11,7 +11,15 @@ interface Props {
 const { image, release, ownerRepo } = Astro.props;
 const rolling = `${image.fullName}:${image.tier.id}`;
 const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
-const langKey = image.language.id === 'core' ? 'coreLTS' : `${image.language.id}${image.language.version}`;
+
+// Nix overlay attribute names follow PascalCase + no-dot pattern (see
+// lib/nix-native.nix): clearcuttCore, clearcuttJava21, clearcuttPython313,
+// clearcuttGo125, clearcuttDotnet8, etc.
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const nixAttr =
+  image.language.id === 'core'
+    ? 'clearcuttCore'
+    : `clearcutt${cap(image.language.id)}${image.language.version.replace(/\./g, '')}`;
 
 const dockerRun = `docker run --rm \\
   --read-only \\
@@ -66,7 +74,7 @@ const nixFlake = `{
         overlays = [ clearcutt.overlays.default ];
       };
     in pkgs.mkShell {
-      buildInputs = [ pkgs.clearcutt${langKey} ];
+      buildInputs = [ pkgs.${nixAttr} ];
     };
   };
 }`;

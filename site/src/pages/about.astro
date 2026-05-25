@@ -1,15 +1,28 @@
 ---
 import Base from '../layouts/Base.astro';
+import { loadIndex } from '../lib/catalog';
+
+let index;
+try { index = loadIndex(); } catch { index = null; }
+const decisionsUrl = index ? `${index.repoUrl}/blob/main/docs/decisions.md` : 'https://github.com';
 ---
 <Base title="About">
   <article class="prose-invert max-w-3xl space-y-8 text-ink-200">
     <header class="space-y-2">
       <h1 class="heading text-3xl">About this catalog</h1>
       <p>
-        ClearCutt Hardened Fleets is a declarative supply chain pipeline that compiles
-        target language runtimes as isolated <code class="font-mono text-ink-100">/nix/store</code>
-        closures on top of mandated enterprise base images. Every artifact you see here is the
-        output of a single hermetic build, signed, attested, and re-verifiable.
+        <strong class="text-ink-50">Who this is for:</strong> platform and security engineers
+        operating Kubernetes/OCP estates who need to ship language runtimes on top of a
+        mandated enterprise base OS (Amazon Linux 2023, RedHat UBI, Ubuntu Pro) and want
+        in-cluster verification of every image. If you are looking for a public unopinionated
+        base image fleet (Chainguard Images, distroless.dev, Docker Official Images),
+        ClearCutt is not that — it deliberately sits on top of <em>your</em> base, not a new one.
+      </p>
+      <p>
+        ClearCutt is a declarative supply chain pipeline that compiles target language
+        runtimes as isolated <code class="font-mono text-ink-100">/nix/store</code> closures
+        on top of mandated enterprise base images. Every artifact you see here is the output
+        of a single hermetic build, signed, attested, and re-verifiable.
       </p>
     </header>
 
@@ -46,9 +59,9 @@ import Base from '../layouts/Base.astro';
       <p class="text-sm">
         Distroless removes <code class="font-mono">exec()</code>-style shell escapes but does
         <em>not</em> mitigate every RCE class. Direct syscalls, bundled interpreter APIs, or
-        statically-linked shells inside an application binary are unaffected. See
-        <code class="font-mono">docs/decisions.md</code> in the repo for the full architectural
-        trade-off log.
+        statically-linked shells inside an application binary are unaffected. See the
+        <a href={decisionsUrl} target="_blank" rel="noreferrer">architectural decisions log</a>
+        in the repo for the full trade-off discussion.
       </p>
     </section>
   </article>
