@@ -144,13 +144,13 @@ jobs:
 
           echo "Creating unified multi-arch manifest for rolling tag: ${ROLLING_TARGET}"
           docker buildx imagetools create -t "${ROLLING_TARGET}" \
-            "${ROLLING_TARGET}-amd64" \
-            "${ROLLING_TARGET}-arm64"
+            "${BASE_TAG}/bootstrap:${{ matrix.tier }}-amd64" \
+            "${BASE_TAG}/bootstrap:${{ matrix.tier }}-arm64"
 
           echo "Creating unified multi-arch manifest for versioned tag: ${VERSIONED_TARGET}"
           docker buildx imagetools create -t "${VERSIONED_TARGET}" \
-            "${ROLLING_TARGET}-amd64" \
-            "${ROLLING_TARGET}-arm64"
+            "${BASE_TAG}/bootstrap:${{ github.ref_name }}-${{ matrix.tier }}-amd64" \
+            "${BASE_TAG}/bootstrap:${{ github.ref_name }}-${{ matrix.tier }}-arm64"
 
       # Sign both the rolling and versioned multi-arch tags keylessly via OIDC
       - name: Sign Multi-Arch Manifests

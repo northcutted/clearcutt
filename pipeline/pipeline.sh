@@ -182,7 +182,7 @@ certify_target() {
       arch_suffix="amd64"
     fi
 
-    local image_tag="$registry/$repo/clearcutt-$lang:$tier-$arch_suffix"
+    local image_tag="$registry/$repo/clearcutt-$lang/bootstrap:$tier-$arch_suffix"
     
     # Resolve the version tag from GITHUB_REF_NAME (e.g. v1.0.0) if triggered by a Git tag
     local version_tag=""
@@ -209,7 +209,7 @@ certify_target() {
 
     # 2. Copy versioned architecture-specific tag (if version tag is active)
     if [[ -n "$version_tag" ]]; then
-      local version_image_tag="$registry/$repo/clearcutt-$lang:$version_tag-$tier-$arch_suffix"
+      local version_image_tag="$registry/$repo/clearcutt-$lang/bootstrap:$version_tag-$tier-$arch_suffix"
       log_info "Publishing versioned OCI archive to registry -> $version_image_tag"
       if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$version_image_tag"; then
         log_success "Versioned OCI Image successfully copied to registry."
