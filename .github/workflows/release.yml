@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.versioning.outputs.version }}
-      bumped: ${{ steps.versioning.outputs.bumped }}
+      version_type: ${{ steps.versioning.outputs.version_type }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -42,7 +42,7 @@ jobs:
   prep-release-notes:
     name: Commit Staging Notes
     needs: check-version
-    if: ${{ needs.check-version.outputs.bumped == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -55,7 +55,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          NEXT_TAG="v${{ needs.check-version.outputs.version }}"
+          
+          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
+          if [ -n "$CUSTOM_INPUT" ]; then
+            RAW_VERSION=$(echo "$CUSTOM_INPUT" | sed 's/^v//')
+          else
+            RAW_VERSION="${{ needs.check-version.outputs.version }}"
+          fi
+          NEXT_TAG="v$RAW_VERSION"
           NOTES_PATH="docs/releases/${NEXT_TAG}.md"
 
           # Generate notes via GitHub API
@@ -85,11 +92,11 @@ jobs:
   release-gate:
     name: Staging Gate (Approve to Release v${{ needs.check-version.outputs.version }})
     needs: [check-version, prep-release-notes]
-    if: ${{ needs.check-version.outputs.bumped == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
     runs-on: ubuntu-latest
     environment: production # <-- Manual approval gate here!
     outputs:
-      version: ${{ needs.check-version.outputs.version }}
+      version: ${{ steps.tag-push.outputs.version }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -97,11 +104,20 @@ jobs:
           fetch-depth: 0
 
       - name: Create and Push Git Tag
+        id: tag-push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION_TAG="v${{ needs.check-version.outputs.version }}"
+          
+          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
+          if [ -n "$CUSTOM_INPUT" ]; then
+            RAW_VERSION=$(echo "$CUSTOM_INPUT" | sed 's/^v//')
+          else
+            RAW_VERSION="${{ needs.check-version.outputs.version }}"
+          fi
+          VERSION_TAG="v$RAW_VERSION"
+          
           echo "Release approved! Tagging commit and pushing $VERSION_TAG..."
 
           git config user.name "github-actions[bot]"
@@ -113,6 +129,8 @@ jobs:
             git tag "$VERSION_TAG"
             git push origin "$VERSION_TAG"
           fi
+          
+          echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
 
   publish-matrix:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
