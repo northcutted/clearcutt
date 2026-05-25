@@ -1,0 +1,69 @@
+---
+import type { ReleaseEntry } from '../lib/catalog-schema';
+interface Props {
+  release: ReleaseEntry;
+  ownerRepo: string;
+}
+const { release, ownerRepo } = Astro.props;
+const prov = release.provenance;
+---
+<section class="space-y-3">
+  <header class="flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="heading text-lg">Provenance &amp; signatures</h2>
+    {release.assetUrls.provenance && (
+      <a href={release.assetUrls.provenance} class="text-xs text-ink-300 hover:text-accent-soft" target="_blank" rel="noreferrer">
+        raw in-toto JSONL ↗
+      </a>
+    )}
+  </header>
+  {!prov ? (
+    <p class="text-sm text-ink-300">
+      No provenance attached to this release. SLSA L3 in-toto envelopes are uploaded by the tag-release workflow.
+    </p>
+  ) : (
+    <div class="surface-soft px-5 py-4">
+      <dl class="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-[max-content_1fr]">
+        <dt class="text-xs uppercase tracking-wider text-ink-300">SLSA level</dt>
+        <dd><span class="chip-accent">Level {prov.slsaLevel}</span></dd>
+
+        <dt class="text-xs uppercase tracking-wider text-ink-300">Predicate</dt>
+        <dd class="font-mono text-xs break-all">{prov.predicateType}</dd>
+
+        <dt class="text-xs uppercase tracking-wider text-ink-300">Build type</dt>
+        <dd class="font-mono text-xs break-all">{prov.buildType ?? '—'}</dd>
+
+        <dt class="text-xs uppercase tracking-wider text-ink-300">Builder</dt>
+        <dd class="font-mono text-xs break-all">
+          <a href={prov.builder.id} class="text-ink-100 hover:text-accent-soft" target="_blank" rel="noreferrer">
+            {prov.builder.id}
+          </a>
+        </dd>
+
+        <dt class="text-xs uppercase tracking-wider text-ink-300">Source</dt>
+        <dd class="font-mono text-xs break-all">
+          {prov.sourceUri ?? `github.com/${ownerRepo}`}
+          {prov.sourceRevision && (<>
+            <br />
+            <span class="text-ink-300">@</span> {prov.sourceRevision}
+          </>)}
+        </dd>
+
+        {release.signature && (
+          <>
+            <dt class="text-xs uppercase tracking-wider text-ink-300">Cosign</dt>
+            <dd>
+              {release.signature.cosignBundlePresent
+                ? <span class="chip-accent">Signature present</span>
+                : <span class="chip-warn">No signature detected</span>}
+              {release.signature.certificate?.subject && (
+                <div class="mt-2 font-mono text-[11px] text-ink-200 break-all">
+                  identity: {release.signature.certificate.subject}
+                </div>
+              )}
+            </dd>
+          </>
+        )}
+      </dl>
+    </div>
+  )}
+</section>

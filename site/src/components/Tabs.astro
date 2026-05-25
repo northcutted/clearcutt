@@ -1,0 +1,46 @@
+---
+interface Tab { id: string; label: string }
+interface Props {
+  tabs: Tab[];
+  defaultTab?: string;
+  name: string;
+}
+const { tabs, defaultTab, name } = Astro.props;
+const active = defaultTab ?? tabs[0]?.id;
+---
+<div class="surface overflow-hidden" data-tabs={name}>
+  <div class="flex flex-wrap border-b border-ink-700/70 bg-ink-900/60" role="tablist">
+    {tabs.map((t) => (
+      <button
+        type="button"
+        role="tab"
+        data-tab-id={t.id}
+        data-tab-active={t.id === active ? 'true' : 'false'}
+        class="px-4 py-2.5 text-sm font-medium text-ink-200 transition data-[tab-active=true]:bg-ink-800/60 data-[tab-active=true]:text-ink-50 data-[tab-active=true]:shadow-[inset_0_-2px_0_0_theme(colors.accent.DEFAULT)] hover:text-ink-50"
+      >
+        {t.label}
+      </button>
+    ))}
+  </div>
+  <div class="p-4" data-tabs-panels>
+    <slot />
+  </div>
+</div>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root) => {
+    const buttons = root.querySelectorAll<HTMLButtonElement>('[data-tab-id]');
+    const panels = root.querySelectorAll<HTMLElement>('[data-panel-id]');
+    const activate = (id: string) => {
+      buttons.forEach((b) => (b.dataset.tabActive = b.dataset.tabId === id ? 'true' : 'false'));
+      panels.forEach((p) => {
+        const match = p.dataset.panelId === id;
+        p.dataset.panelActive = match ? 'true' : 'false';
+        p.style.display = match ? '' : 'none';
+      });
+    };
+    // Set initial visibility based on data-tab-active on buttons.
+    const initial = Array.from(buttons).find((b) => b.dataset.tabActive === 'true')?.dataset.tabId;
+    if (initial) activate(initial);
+    buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.dataset.tabId!)));
+  });
+</script>

@@ -1,0 +1,67 @@
+---
+import Base from '../layouts/Base.astro';
+import CopyBlock from '../components/CopyBlock.astro';
+import { loadIndex } from '../lib/catalog';
+
+let index;
+try { index = loadIndex(); } catch { index = null; }
+const sample = index?.images[0];
+const ownerRepo = index ? `${index.owner}/${index.repo}` : 'OWNER/REPO';
+const sampleRef = sample ? `${index!.registryBase}/clearcutt-${sample.language}${sample.languageVersion}:${sample.tier}` : `ghcr.io/${ownerRepo}/clearcutt-coreLTS:slim`;
+---
+<Base title="Verification guide">
+  <article class="space-y-10 max-w-3xl">
+    <header class="space-y-3">
+      <h1 class="heading text-3xl">Verifying ClearCutt images</h1>
+      <p class="text-ink-200">
+        Every ClearCutt image carries three independent attestations stored alongside the
+        manifest in GHCR: a Sigstore signature (keyless OIDC), an SPDX SBOM, and SLSA Level 3
+        provenance from the official slsa-github-generator. You verify them with the standard
+        upstream tools — no custom binaries required.
+      </p>
+    </header>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">1. Install tools</h2>
+      <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane`} />
+      <p class="text-sm text-ink-300">
+        Pinned versions in CI: cosign v3, slsa-verifier v2.7+, crane v0.20+.
+      </p>
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">2. Verify the signature</h2>
+      <p class="text-sm text-ink-200">
+        ClearCutt uses keyless OIDC — there's no static public key. Instead you assert who
+        signed the image (the GitHub Actions workflow) and which OIDC issuer issued the cert.
+      </p>
+      <CopyBlock language="shell" code={`cosign verify ${sampleRef} \\\n  --certificate-identity-regexp \"^https://github.com/${ownerRepo}/.github/workflows/tag-release\\.yml@refs/tags/v.*$\" \\\n  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'`} />
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">3. Verify the SBOM attestation</h2>
+      <p class="text-sm text-ink-200">
+        Confirms that the SPDX SBOM on the manifest was produced by the same workflow run.
+      </p>
+      <CopyBlock language="shell" code={`cosign verify-attestation ${sampleRef} \\\n  --type spdxjson \\\n  --certificate-identity-regexp \"^https://github.com/${ownerRepo}/.+\" \\\n  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\\n  | jq '.payload | @base64d | fromjson | .predicate'`} />
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">4. Verify SLSA L3 provenance</h2>
+      <p class="text-sm text-ink-200">
+        Confirms the build was non-falsifiable — produced by the upstream
+        slsa-github-generator running on hosted GitHub runners, from the exact source tag.
+      </p>
+      <CopyBlock language="shell" code={`# Resolve the multi-arch digest first\nDIGEST=$(crane digest ${sampleRef})\nslsa-verifier verify-image ${sampleRef.split(':')[0]}@$DIGEST \\\n  --source-uri 'github.com/${ownerRepo}' \\\n  --source-tag 'v0.1.2'`} />
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">5. Enforce at admission</h2>
+      <p class="text-sm text-ink-200">
+        For Kubernetes, every image detail page exposes a copy-pasteable Kyverno
+        <code class="font-mono text-ink-100">ClusterPolicy</code> that wires the same
+        certificate identity and issuer into a cluster-side admission gate.
+      </p>
+    </section>
+  </article>
+</Base>

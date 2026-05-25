@@ -1,0 +1,51 @@
+---
+import CopyBlock from './CopyBlock.astro';
+import type { ImageRecord, ReleaseEntry } from '../lib/catalog-schema';
+interface Props {
+  image: ImageRecord;
+  release: ReleaseEntry;
+  ownerRepo: string;
+}
+const { image, release, ownerRepo } = Astro.props;
+const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
+const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifestDigest}` : versioned;
+const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/tag-release.yml@refs/tags/${release.tag}`;
+const issuer = release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com';
+
+const cosignVerify = `cosign verify ${versioned} \\
+  --certificate-identity '${subject}' \\
+  --certificate-oidc-issuer '${issuer}' \\
+  --output json`;
+
+const cosignAttest = `cosign verify-attestation ${versioned} \\
+  --type spdxjson \\
+  --certificate-identity '${subject}' \\
+  --certificate-oidc-issuer '${issuer}' \\
+  | jq '.payload | @base64d | fromjson | .predicate'`;
+
+const slsa = `slsa-verifier verify-image ${digestRef} \\
+  --source-uri 'github.com/${ownerRepo}' \\
+  --source-tag '${release.tag}'`;
+---
+<section class="space-y-4">
+  <header class="space-y-1">
+    <h2 class="heading text-lg">Verify before use</h2>
+    <p class="text-sm text-ink-200">
+      Three independent checks. Run them and you've confirmed who built this image, on which workflow, from which source revision.
+    </p>
+  </header>
+  <div class="grid gap-4 lg:grid-cols-3">
+    <div class="space-y-2">
+      <div class="text-xs uppercase tracking-wider text-ink-300">1 · Cosign signature</div>
+      <CopyBlock language="shell" code={cosignVerify} />
+    </div>
+    <div class="space-y-2">
+      <div class="text-xs uppercase tracking-wider text-ink-300">2 · Verify SBOM attestation</div>
+      <CopyBlock language="shell" code={cosignAttest} />
+    </div>
+    <div class="space-y-2">
+      <div class="text-xs uppercase tracking-wider text-ink-300">3 · SLSA L3 provenance</div>
+      <CopyBlock language="shell" code={slsa} />
+    </div>
+  </div>
+</section>

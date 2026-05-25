@@ -1,0 +1,89 @@
+---
+import '../styles/global.css';
+import { loadIndex } from '../lib/catalog';
+
+interface Props {
+  title?: string;
+  description?: string;
+  noIndex?: boolean;
+}
+
+const { title, description, noIndex } = Astro.props;
+let index;
+try { index = loadIndex(); } catch { index = null; }
+
+const fullTitle = title ? `${title} · ClearCutt Catalog` : 'ClearCutt Hardened Fleet Catalog';
+const desc =
+  description ??
+  'Cryptographically certified, SLSA Level 3 multi-arch container images. Browse SBOMs, attestations, and provenance for every release.';
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
+const url = base;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <title>{fullTitle}</title>
+    <meta name="description" content={desc} />
+    {noIndex && <meta name="robots" content="noindex" />}
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#070b0a" />
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  </head>
+  <body class="font-sans">
+    <header class="sticky top-0 z-30 border-b border-ink-800/80 bg-ink-950/85 backdrop-blur">
+      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <a href={url} class="group flex items-center gap-3 no-underline">
+          <span class="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-accent/30 bg-gradient-to-br from-accent/15 via-ink-800 to-ink-900 text-accent-soft">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7l8-4 8 4-8 4-8-4z"/>
+              <path d="M4 12l8 4 8-4"/>
+              <path d="M4 17l8 4 8-4"/>
+            </svg>
+          </span>
+          <div class="leading-tight">
+            <div class="text-sm font-semibold text-ink-50">ClearCutt</div>
+            <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Hardened Fleet Catalog</div>
+          </div>
+        </a>
+        <nav class="flex items-center gap-6 text-sm">
+          <a href={url} class="text-ink-200 hover:text-ink-50">Catalog</a>
+          <a href={`${base}verification`} class="text-ink-200 hover:text-ink-50">Verify</a>
+          <a href={`${base}about`} class="text-ink-200 hover:text-ink-50">About</a>
+          {index && (
+            <a
+              href={index.repoUrl}
+              class="chip border-ink-700/60 hover:border-accent/40"
+              target="_blank" rel="noreferrer"
+            >
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.72-.5.05-.49.05-.49.8.06 1.22.83 1.22.83.71 1.21 1.87.86 2.33.66.07-.51.28-.86.5-1.06-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.66 7.66 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <span>{`${index.owner}/${index.repo}`}</span>
+            </a>
+          )}
+        </nav>
+      </div>
+    </header>
+    <main class="mx-auto max-w-7xl px-6 pb-24 pt-10">
+      <slot />
+    </main>
+    <footer class="border-t border-ink-800/80 py-10 text-center text-xs text-ink-300">
+      <div class="mx-auto max-w-7xl px-6">
+        {index ? (
+          <>
+            <p>Generated {new Date(index.generatedAt).toUTCString()} · Latest release {index.latestTag}</p>
+            <p class="mt-1">
+              All images signed via Sigstore keyless OIDC. SLSA Level 3 provenance attached on the multi-arch manifest.
+            </p>
+          </>
+        ) : (
+          <p>Run <code>scripts/gather-catalog.mjs</code> to populate the catalog.</p>
+        )}
+      </div>
+    </footer>
+  </body>
+</html>

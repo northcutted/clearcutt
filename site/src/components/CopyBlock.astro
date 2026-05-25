@@ -1,0 +1,44 @@
+---
+interface Props {
+  code: string;
+  language?: string;
+  label?: string;
+}
+const { code, language = 'shell', label } = Astro.props;
+---
+<div class="copy-block group" data-copy-root>
+  {label && (
+    <div class="flex items-center justify-between border-b border-ink-700/60 bg-ink-900/80 px-4 py-2 text-xs uppercase tracking-wider text-ink-300">
+      <span>{label}</span>
+      <span class="font-mono text-[10px] text-ink-300">{language}</span>
+    </div>
+  )}
+  <pre data-copy-source><code>{code}</code></pre>
+  <button
+    type="button"
+    class="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-ink-700/60 bg-ink-900/80 px-2 py-1 text-xs text-ink-200 opacity-0 transition group-hover:opacity-100 hover:border-accent/50 hover:text-accent-soft"
+    data-copy-btn
+  >
+    <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+    <span>Copy</span>
+  </button>
+</div>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-copy-root]').forEach((root) => {
+    const btn = root.querySelector<HTMLButtonElement>('[data-copy-btn]');
+    const src = root.querySelector<HTMLElement>('[data-copy-source]');
+    if (!btn || !src) return;
+    btn.addEventListener('click', async () => {
+      const text = src.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        const label = btn.querySelector('span');
+        if (label) {
+          const old = label.textContent;
+          label.textContent = 'Copied';
+          setTimeout(() => { label.textContent = old; }, 1200);
+        }
+      } catch {}
+    });
+  });
+</script>

@@ -82,19 +82,47 @@ jobs:
             --publish \
             "${{ matrix.language }}-${{ matrix.tier }}"
 
-      # Save the validated SBOM for release attachment
-      - name: Upload SBOM Artifact
+      # Stage arch-suffixed copies so that `merge-multiple` downloads in finalize-release
+      # do not race-overwrite same-named files from the sibling arch job.
+      - name: Stage arch-suffixed release assets
+        run: |
+          set -euo pipefail
+          ARCH_SUFFIX="amd64"
+          if [[ "${{ matrix.system }}" == *"aarch64"* ]] || [[ "${{ matrix.system }}" == *"arm64"* ]]; then
+            ARCH_SUFFIX="arm64"
+          fi
+          cp "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" \
+             "build-outputs/${{ matrix.language }}-${{ matrix.tier }}-${ARCH_SUFFIX}.sbom.json"
+          cp "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" \
+             "build-outputs/${{ matrix.language }}-${{ matrix.tier }}-${ARCH_SUFFIX}.test-results.json"
+
+      - name: Upload SBOM Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.sbom.json
           retention-days: 7
 
-      # Save the validated test results for release attachment and OCI attestation
-      - name: Upload Test Results Artifact
+      - name: Upload Test Results Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-test-results-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.test-results.json
+          retention-days: 7
+
+      # Keep the un-suffixed file uploaded as a separate artifact so the existing
+      # multi-arch attestation download paths in assemble-multiarch continue to work.
+      - name: Upload SBOM Artifact (legacy unsuffixed for attestation)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: attestation-sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          retention-days: 7
+
+      - name: Upload Test Results Artifact (legacy unsuffixed for attestation)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: attestation-test-results-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
           retention-days: 7
 
@@ -170,17 +198,18 @@ jobs:
           cosign sign --yes "${BOOTSTRAP_TAG}:${{ matrix.tier }}"
           cosign sign --yes "${BOOTSTRAP_TAG}:${{ github.ref_name }}-${{ matrix.tier }}"
 
-      # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts
+      # Download both platform-specific SBOMs into isolated directories to prevent overwrite conflicts.
+      # We pull the legacy unsuffixed artifact (used for cosign attest predicate paths).
       - name: Download amd64 SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-sbom-x86_64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          name: attestation-sbom-x86_64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/x86_64/
 
       - name: Download arm64 SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-sbom-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          name: attestation-sbom-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/aarch64/
 
       # Attest both platform-specific SBOMs directly onto the bootstrap multi-arch manifest
@@ -193,17 +222,18 @@ jobs:
           cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
           cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${BOOTSTRAP_ROLLING}"
 
-      # Download both platform-specific test results into isolated directories to prevent overwrite conflicts
+      # Download both platform-specific test results into isolated directories to prevent overwrite conflicts.
+      # We pull the legacy unsuffixed artifact (used for cosign attest predicate paths).
       - name: Download amd64 Test Results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-test-results-x86_64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          name: attestation-test-results-x86_64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/x86_64/
 
       - name: Download arm64 Test Results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-test-results-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
+          name: attestation-test-results-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/aarch64/
 
       # Attest both platform-specific test results directly onto the bootstrap multi-arch manifest

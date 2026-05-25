@@ -1,0 +1,67 @@
+---
+import type { ImageRecord } from '../lib/catalog-schema';
+import StatusPill from './StatusPill.astro';
+
+interface Props {
+  image: ImageRecord;
+  selectedTag: string;
+}
+const { image, selectedTag } = Astro.props;
+const release = image.releases.find((r) => r.tag === selectedTag) ?? image.releases[0];
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
+const arches = release.architectures.map((a) => a.arch);
+const passed = release.architectures.every((a) => !a.testResults || a.testResults.status === 'passed');
+const allReleases = image.releases;
+---
+<section class="surface px-6 py-6 sm:px-8 sm:py-8">
+  <div class="flex flex-wrap items-start justify-between gap-6">
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.18em] text-ink-300">
+        <span>{image.language.displayName} {image.language.version}</span>
+        <span class="text-ink-500">·</span>
+        <span>{image.tier.name}</span>
+      </div>
+      <h1 class="heading text-2xl sm:text-3xl">
+        <span class="font-mono text-ink-50">{image.imageName}</span>
+        <span class="text-ink-300">:</span>
+        <span class="text-accent-soft">{image.tier.id}</span>
+      </h1>
+      <p class="max-w-2xl text-sm text-ink-200">{image.tier.blurb}</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="chip">{release.tag}</span>
+        {arches.map((a) => <span class="chip">{a}</span>)}
+        {release.provenance && <StatusPill kind="ok" label="SLSA L3" />}
+        {release.signature?.cosignBundlePresent && <StatusPill kind="ok" label="Cosign signed" />}
+        {passed
+          ? <StatusPill kind="ok" label="Grype gate passed" />
+          : <StatusPill kind="warn" label="Gate pending" />}
+      </div>
+    </div>
+    <div class="flex flex-col items-end gap-3">
+      <label class="text-[11px] uppercase tracking-wider text-ink-300">Release</label>
+      <div class="relative">
+        <select
+          class="appearance-none rounded-lg border border-ink-700 bg-ink-900 px-4 py-2 pr-10 font-mono text-sm text-ink-100 focus:border-accent focus:outline-none"
+          data-version-switcher={image.id}
+        >
+          {allReleases.map((r) => (
+            <option value={r.tag} selected={r.tag === selectedTag}>{r.tag}</option>
+          ))}
+        </select>
+        <svg viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <p class="text-[11px] text-ink-300">Published {new Date(release.publishedAt).toUTCString()}</p>
+    </div>
+  </div>
+</section>
+<script is:inline define:vars={{ base, imageId: image.id, latestTag: image.releases[0].tag }}>
+  document.querySelectorAll('[data-version-switcher]').forEach((sel) => {
+    sel.addEventListener('change', (e) => {
+      const tag = e.target.value;
+      const target = tag === latestTag
+        ? base + 'images/' + imageId
+        : base + 'images/' + imageId + '/' + tag;
+      window.location.href = target;
+    });
+  });
+</script>

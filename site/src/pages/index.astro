@@ -1,0 +1,43 @@
+---
+import Base from '../layouts/Base.astro';
+import MatrixGrid from '../components/MatrixGrid.astro';
+import { loadIndex } from '../lib/catalog';
+
+let index;
+let error: string | null = null;
+try { index = loadIndex(); } catch (e: any) { error = e.message; }
+---
+<Base title="Catalog">
+  <section class="space-y-6 pb-12">
+    <div class="space-y-4 max-w-3xl">
+      <span class="chip-accent">SLSA Level 3 · Cosign signed · Multi-arch</span>
+      <h1 class="heading text-4xl sm:text-5xl">Hardened images you can verify.</h1>
+      <p class="text-base text-ink-200">
+        Every image is built from a hermetic Nix store layer on top of a mandated enterprise base.
+        We attach SPDX SBOMs and SLSA L3 in-toto provenance, sign keylessly with Sigstore, and
+        publish per-arch manifests to GHCR. Pick a target below to see the full chain.
+      </p>
+      <div class="flex flex-wrap gap-3">
+        <a href={`${(import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')}/verification`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>
+        <a href={`${(import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')}/about`} class="chip">What these tiers mean →</a>
+      </div>
+    </div>
+
+    {error ? (
+      <div class="surface-soft px-5 py-6 text-sm text-ink-200">
+        <p class="font-medium text-warn">Catalog data missing.</p>
+        <p class="mt-1 text-ink-300">{error}</p>
+      </div>
+    ) : (
+      <>
+        <div data-pagefind-body class="space-y-6">
+          <MatrixGrid index={index!} />
+        </div>
+        <div class="surface-soft mt-4 px-5 py-4 text-xs text-ink-300">
+          {index!.images.length} images · {index!.releases.length} releases tracked ·
+          generated {new Date(index!.generatedAt).toUTCString()}
+        </div>
+      </>
+    )}
+  </section>
+</Base>

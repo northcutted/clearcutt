@@ -1,0 +1,53 @@
+---
+import type { ArchPayload } from '../lib/catalog-schema';
+interface Props { architectures: ArchPayload[] }
+const { architectures } = Astro.props;
+const merged = new Map<string, { name: string; statuses: Record<string, string> }>();
+for (const a of architectures) {
+  if (!a.testResults) continue;
+  for (const x of a.testResults.assertions) {
+    if (!merged.has(x.name)) merged.set(x.name, { name: x.name, statuses: {} });
+    merged.get(x.name)!.statuses[a.arch] = x.status;
+  }
+}
+const rows = Array.from(merged.values());
+const archs = architectures.map((a) => a.arch);
+---
+<section class="space-y-3">
+  <header class="flex items-baseline justify-between">
+    <h2 class="heading text-lg">Gating &amp; test results</h2>
+    <div class="text-xs text-ink-300">
+      {architectures.map((a) => a.testResults?.timestamp).filter(Boolean)[0]
+        ? `Run ${architectures.find((a) => a.testResults?.timestamp)?.testResults?.timestamp}`
+        : 'No timestamp'}
+    </div>
+  </header>
+  <div class="surface-soft overflow-hidden">
+    {rows.length === 0 ? (
+      <div class="px-4 py-6 text-center text-sm text-ink-300">No test predicate attached.</div>
+    ) : (
+      <table class="table-clean">
+        <thead>
+          <tr>
+            <th>Assertion</th>
+            {archs.map((a) => <th>{a}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr>
+              <td class="font-medium">{r.name}</td>
+              {archs.map((a) => {
+                const s = r.statuses[a];
+                if (!s) return <td class="text-ink-300">—</td>;
+                if (s === 'passed') return <td><span class="chip-accent text-[11px]">passed</span></td>;
+                if (s === 'failed') return <td><span class="chip-danger text-[11px]">failed</span></td>;
+                return <td><span class="chip-warn text-[11px]">{s}</span></td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+</section>

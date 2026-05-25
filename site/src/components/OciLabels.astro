@@ -1,0 +1,31 @@
+---
+import type { ArchPayload } from '../lib/catalog-schema';
+interface Props { architectures: ArchPayload[] }
+const { architectures } = Astro.props;
+// Prefer amd64 labels but fall back to whatever is present.
+const primary = architectures.find((a) => a.arch === 'amd64') ?? architectures[0];
+const labels = primary?.labels ?? {};
+const entries = Object.entries(labels);
+---
+<section class="space-y-3">
+  <h2 class="heading text-lg">OCI labels</h2>
+  {entries.length === 0 ? (
+    <p class="text-sm text-ink-300">
+      No labels enriched yet — these populate after the publish-pages workflow probes GHCR.
+    </p>
+  ) : (
+    <div class="surface-soft overflow-hidden">
+      <table class="table-clean">
+        <thead><tr><th>Key</th><th>Value</th></tr></thead>
+        <tbody>
+          {entries.map(([k, v]) => (
+            <tr>
+              <td class="font-mono text-xs">{k}</td>
+              <td class="font-mono text-xs break-all">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</section>

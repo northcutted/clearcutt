@@ -1,0 +1,38 @@
+---
+import Base from '../../layouts/Base.astro';
+import ImageHeader from '../../components/ImageHeader.astro';
+import UsageTabs from '../../components/UsageTabs.astro';
+import VerifyBlock from '../../components/VerifyBlock.astro';
+import SbomTable from '../../components/SbomTable.tsx';
+import TestResults from '../../components/TestResults.astro';
+import OciLabels from '../../components/OciLabels.astro';
+import LayersTable from '../../components/LayersTable.astro';
+import ProvenanceBlock from '../../components/ProvenanceBlock.astro';
+import VersionHistory from '../../components/VersionHistory.astro';
+import { listImageIds, loadImage, loadIndex } from '../../lib/catalog';
+
+export async function getStaticPaths() {
+  return listImageIds().map((id) => ({ params: { id } }));
+}
+
+const { id } = Astro.params;
+const image = loadImage(id!);
+const index = loadIndex();
+const release = image.releases[0];
+const ownerRepo = `${index.owner}/${index.repo}`;
+const sbomUrls = release.assetUrls.sbom || {};
+---
+<Base title={`${image.imageName}:${image.tier.id}`}>
+  <div class="space-y-6" data-pagefind-body>
+    <span class="hidden" data-pagefind-meta={`image:${image.id}`}></span>
+    <ImageHeader image={image} selectedTag={release.tag} />
+    <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
+    <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
+    <SbomTable architectures={release.architectures} rawSbomUrls={sbomUrls} client:load />
+    <TestResults architectures={release.architectures} />
+    <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
+    <OciLabels architectures={release.architectures} />
+    <LayersTable architectures={release.architectures} />
+    <VersionHistory image={image} currentTag={release.tag} />
+  </div>
+</Base>

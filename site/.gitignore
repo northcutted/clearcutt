@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+.pagefind/
+src/data/catalog/index.json
+src/data/catalog/images/
+src/data/enrichment/
+.DS_Store
