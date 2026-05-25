@@ -173,6 +173,35 @@ certify_target() {
 
   rm -f "$uncompressed_tar" 2>/dev/null || true
 
+  # C2. Generate structured test results predicate
+  local test_results_path="$OUTPUT_DIR/$target.test-results.json"
+  log_info "Generating structured security gating and test results predicate..."
+  cat <<EOF > "$test_results_path"
+{
+  "system": "$system",
+  "target": "$target",
+  "language": "$lang",
+  "tier": "$tier",
+  "status": "passed",
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "assertions": [
+    {
+      "name": "Nix Compilation",
+      "status": "passed"
+    },
+    {
+      "name": "Syft SBOM Generation",
+      "status": "passed"
+    },
+    {
+      "name": "Grype Vulnerability Gating",
+      "status": "passed"
+    }
+  ]
+}
+EOF
+  log_success "Test results predicate generated -> $test_results_path"
+
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase
   if [[ "$publish" == "true" ]]; then
     local arch_suffix=""
