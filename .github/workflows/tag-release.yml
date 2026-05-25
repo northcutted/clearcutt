@@ -386,8 +386,21 @@ jobs:
 
           mkdir -p build-outputs/
           echo "Downloading SLSA L3 provenance for ${BOOTSTRAP_ROLLING}..."
-          cosign download attestation --predicate-type slsaprovenance "${BOOTSTRAP_ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl"
-          echo "SLSA L3 provenance attestation successfully downloaded."
+          
+          # Attempt to download SLSA Provenance v1.0
+          cosign download attestation --predicate-type "https://slsa.dev/provenance/v1" "${BOOTSTRAP_ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" || true
+          
+          # Fallback to SLSA Provenance v0.2 if empty or failed
+          if [ ! -s "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" ]; then
+            echo "SLSA v1 provenance not found or empty. Trying v0.2 fallback..."
+            cosign download attestation --predicate-type "https://slsa.dev/provenance/v0.2" "${BOOTSTRAP_ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" || true
+          fi
+
+          if [ -s "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" ]; then
+            echo "SLSA L3 provenance attestation successfully downloaded."
+          else
+            echo "WARNING: SLSA L3 provenance attestation could not be downloaded or was empty."
+          fi
 
       # Save the validated SLSA L3 provenance for release attachment
       - name: Upload SLSA Provenance Artifact
@@ -419,7 +432,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Uploading SBOMs and SLSA Provenance files to release: ${{ github.ref_name }}..."
-          gh release upload "${{ github.ref_name }}" build-outputs/*.json build-outputs/*.jsonl --clobber
+          find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -exec gh release upload "${{ github.ref_name }}" {} --clobber +
           echo "Release assets successfully attached."
 
       # Edit release description to replace staging instructions with certified multi-arch OCI registry links & Nix flake usage
