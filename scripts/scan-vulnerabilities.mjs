@@ -101,6 +101,16 @@ function normalize(grypeResult, scannedAt) {
     if (Array.isArray(a.purl)) purl = a.purl[0] ?? null;
     else if (typeof a.purl === 'string') purl = a.purl;
 
+    // Stage 1/5 Classification: Determine if package is Nix-managed (runtime) or Base OS (base)
+    let layer = 'base';
+    if (purl && (purl.startsWith('pkg:nix') || purl.includes('outputhash='))) {
+      layer = 'runtime';
+    } else if (a.sourceInfo && a.sourceInfo.includes('/nix/store/')) {
+      layer = 'runtime';
+    } else if (a.name && (a.name.startsWith('nix') || a.name.includes('clearcutt'))) {
+      layer = 'runtime';
+    }
+
     const cvss = pickCvss(v.cvss);
     const epss = pickEpss(v.epss);
 
@@ -110,6 +120,7 @@ function normalize(grypeResult, scannedAt) {
       packageName: a.name || '',
       packageVersion: a.version || '',
       purl,
+      layer, // Add the layer classification field
       fixedIn: Array.isArray(fix.versions) && fix.versions.length > 0 ? fix.versions.join(', ') : null,
       fixState: fix.state || 'unknown',
       dataSource: v.dataSource || null,

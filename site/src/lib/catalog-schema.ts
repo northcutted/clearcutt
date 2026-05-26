@@ -56,6 +56,7 @@ export const ArchPayload = z.object({
           packageName: z.string(),
           packageVersion: z.string(),
           purl: z.string().nullable(),
+          layer: z.enum(['runtime', 'base']).default('base'), // Add the layer classification field
           fixedIn: z.string().nullable(),
           fixState: z.string(),
           dataSource: z.string().nullable(),
@@ -80,6 +81,7 @@ export type ArchPayload = z.infer<typeof ArchPayload>;
 export const ReleaseEntry = z.object({
   tag: z.string(),
   publishedAt: z.string(),
+  lastRebuiltAt: z.string().nullable().optional(), // Add lastRebuiltAt rebuild timestamp field
   isLatest: z.boolean(),
   manifestDigest: z.string().nullable(),
   totalSize: z.number().nullable(),

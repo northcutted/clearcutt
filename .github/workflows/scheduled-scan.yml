@@ -1,0 +1,42 @@
+# ClearCutt Scheduled Vulnerability Scan & Triage Gateway
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: Ephemeral hourly cron scanning with automatic classification
+
+name: ClearCutt Scheduled Scan
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  scan:
+    name: Run Scheduled CVE Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
+          grype version
+
+      - name: Run Scheduled Scan
+        run: ./scripts/scheduled-scan.sh
+
+      - name: Commit Scanned Vulnerabilities
+        run: |
+          git config --global user.name "ClearCutt Automated Subsystem"
+          git config --global user.email "bot@clearcutt.internal"
+          git add site/src/data/vulnerabilities/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: automated scheduled CVE detection scan" && git push)

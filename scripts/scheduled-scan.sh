@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# ClearCutt Scheduled Vulnerability Scan and Detection Script
+# Author: Eddie Northcutt
+# Paradigm: Automated Scheduled CVE Scanning & Isolation Gating (Stage 1)
+
+set -euo pipefail
+
+BLUE="\033[1;34m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+RED="\033[1;31m"
+RESET="\033[0m"
+
+log_info() { echo -e "${BLUE}[Scheduled Scan]${RESET} $1"; }
+log_pass() { echo -e "${GREEN}[Scheduled Scan] ✔ $1${RESET}"; }
+log_warn() { echo -e "${YELLOW}[Scheduled Scan] ⚠ $1${RESET}"; }
+log_fail() { echo -e "${RED}[Scheduled Scan] ✘ $1${RESET}" >&2; exit 1; }
+
+# Source Nix environment if available to keep commands accessible
+if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+elif [ -f /Users/eddie/.nix-profile/etc/profile.d/nix.sh ]; then
+  source /Users/eddie/.nix-profile/etc/profile.d/nix.sh
+fi
+
+log_info "Initiating Stage 1 scheduled detection scan..."
+
+# 1. Update Grype vulnerability database
+if command -v grype &>/dev/null; then
+  log_info "Updating Grype vulnerability database..."
+  grype db update || log_warn "Grype database update failed, proceeding with active local database"
+else
+  log_fail "Grype CLI is missing. Install Grype to execute scheduled scans."
+fi
+
+# 2. Invoke vulnerabilities scanner with Node.js
+if [[ -f ./scripts/scan-vulnerabilities.mjs ]]; then
+  log_info "Running SBOM vulnerability scans and classifications..."
+  node ./scripts/scan-vulnerabilities.mjs
+else
+  log_fail "vulnerability scanning script 'scripts/scan-vulnerabilities.mjs' is missing!"
+fi
+
+log_pass "SBOM vulnerability scanning and runtime vs base classification completed successfully."

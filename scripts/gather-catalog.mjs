@@ -449,9 +449,13 @@ async function buildImageRecord(target, releases, refreshSet) {
     }
 
     // Fold in vulnerability scan output if available (second-pass run).
+    let lastRebuiltAt = rel.publishedAt;
     for (const [arch, v] of archMap.entries()) {
       const vuln = loadVulnerabilities(rel.tag, target, arch);
-      if (vuln) v.vulnerabilities = vuln;
+      if (vuln) {
+        v.vulnerabilities = vuln;
+        if (vuln.scannedAt) lastRebuiltAt = vuln.scannedAt;
+      }
     }
 
     const architectures = Array.from(archMap.values()).sort((a, b) =>
@@ -468,6 +472,7 @@ async function buildImageRecord(target, releases, refreshSet) {
     releaseEntries.push({
       tag: rel.tag,
       publishedAt: rel.publishedAt,
+      lastRebuiltAt,
       isLatest,
       manifestDigest,
       totalSize: architectures.reduce((s, a) => s + (a.imageSize || 0), 0) || null,

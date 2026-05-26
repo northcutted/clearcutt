@@ -13,6 +13,11 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const arches = release.architectures.map((a) => a.arch);
 const passed = release.architectures.every((a) => !a.testResults || a.testResults.status === 'passed');
 const allReleases = image.releases;
+
+// Stage 5 dead-man's-switch check (30 days threshold)
+const lastRebuiltAt = release.lastRebuiltAt || release.publishedAt;
+const lastRebuiltDate = new Date(lastRebuiltAt);
+const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 60 * 60 * 1000);
 ---
 <section class="surface px-6 py-6 sm:px-8 sm:py-8">
   <div class="flex flex-wrap items-start justify-between gap-6">
@@ -40,6 +45,7 @@ const allReleases = image.releases;
         {passed
           ? <StatusPill kind="ok" label="Grype gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
+        {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>
       </div>
     </div>
@@ -57,6 +63,7 @@ const allReleases = image.releases;
         <svg viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <p class="text-[11px] text-ink-300">Published {new Date(release.publishedAt).toUTCString()}</p>
+      <p class="text-[11px] text-accent-soft" title="Last successful scan/rebuild of this runtime overlay layer">Last Rebuild {lastRebuiltDate.toUTCString()}</p>
     </div>
   </div>
 </section>
