@@ -22,6 +22,7 @@ permissions:
   statuses: write
   actions: read
   pages: write # Required to deploy the catalog site to GitHub Pages
+  attestations: write # Required to create first-party GitHub Attestations
 
 jobs:
   check-version:
@@ -251,6 +252,7 @@ jobs:
     permissions:
       id-token: write
       packages: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -354,6 +356,7 @@ jobs:
           cosign attest --yes --type custom --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${BOOTSTRAP_ROLLING}"
 
       - name: Resolve Multi-Arch Digest
+        id: resolve-digest
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
@@ -361,6 +364,7 @@ jobs:
           
           IMAGE_DIGEST=$(skopeo inspect "docker://${BOOTSTRAP_ROLLING}" --format "{{.Digest}}")
           echo "Multi-Arch manifest digest resolved: ${IMAGE_DIGEST}"
+          echo "digest=${IMAGE_DIGEST}" >> $GITHUB_OUTPUT
 
           mkdir -p build-outputs/digests
           cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
@@ -369,6 +373,29 @@ jobs:
             "digest": "${IMAGE_DIGEST}"
           }
           EOF
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
+          subject-digest: ${{ steps.resolve-digest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest amd64 SBOM
+        uses: actions/attest-sbom@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
+          subject-digest: ${{ steps.resolve-digest.outputs.digest }}
+          sbom-path: "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json"
+          push-to-registry: true
+
+      - name: Attest arm64 SBOM
+        uses: actions/attest-sbom@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
+          subject-digest: ${{ steps.resolve-digest.outputs.digest }}
+          sbom-path: "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json"
+          push-to-registry: true
 
       - name: Upload Multi-Arch Digest Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

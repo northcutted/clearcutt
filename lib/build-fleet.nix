@@ -190,6 +190,19 @@ in
 
     allContents = baseContents ++ tierPkgs ++ extraPackages;
 
+    # Define standard OCI Annotations/Labels (compliant with opencontainers image-spec)
+    ociLabels = {
+      "org.opencontainers.image.title" = "clearcutt-${language}-${version}";
+      "org.opencontainers.image.description" = "Hardened ClearCutt Base Image for ${language} (${version}) - Tier: ${tier}";
+      "org.opencontainers.image.url" = "https://github.com/northcutted/clearcutt";
+      "org.opencontainers.image.source" = "https://github.com/northcutted/clearcutt";
+      "org.opencontainers.image.version" = version;
+      "org.opencontainers.image.vendor" = "Eddie Northcutt";
+      "org.opencontainers.image.authors" = "Eddie Northcutt";
+      "org.opencontainers.image.licenses" = "Proprietary";
+      "org.opencontainers.image.ref.name" = tier;
+    };
+
     # OCI Image Config block mapping non-root execution parameters
     defaultConfig = {
       User = "${uid}:${gid}";
@@ -200,6 +213,7 @@ in
         "TMPDIR=/tmp"
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       ];
+      Labels = ociLabels;
     };
 
     # Merge OCI configuration overrides
