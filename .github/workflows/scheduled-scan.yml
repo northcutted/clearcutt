@@ -34,9 +34,9 @@ jobs:
       - name: Run Scheduled Scan
         run: ./scripts/scheduled-scan.sh
 
-      - name: Commit Scanned Vulnerabilities
-        run: |
-          git config --global user.name "ClearCutt Automated Subsystem"
-          git config --global user.email "bot@clearcutt.internal"
-          git add site/src/data/vulnerabilities/
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: automated scheduled CVE detection scan" && git push)
+      - name: Upload Scanned Vulnerabilities
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerabilities-data
+          path: site/src/data/vulnerabilities/
+          retention-days: 7

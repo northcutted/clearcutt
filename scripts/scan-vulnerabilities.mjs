@@ -105,9 +105,9 @@ function normalize(grypeResult, scannedAt) {
     let layer = 'base';
     if (purl && (purl.startsWith('pkg:nix') || purl.includes('outputhash='))) {
       layer = 'runtime';
-    } else if (a.sourceInfo && a.sourceInfo.includes('/nix/store/')) {
+    } else if (typeof a.sourceInfo === 'string' && a.sourceInfo.includes('/nix/store/')) {
       layer = 'runtime';
-    } else if (a.name && (a.name.startsWith('nix') || a.name.includes('clearcutt'))) {
+    } else if (typeof a.name === 'string' && (a.name.startsWith('nix') || a.name.includes('clearcutt'))) {
       layer = 'runtime';
     }
 
