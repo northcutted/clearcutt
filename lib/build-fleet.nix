@@ -199,7 +199,7 @@ in
       "org.opencontainers.image.version" = version;
       "org.opencontainers.image.vendor" = "Eddie Northcutt";
       "org.opencontainers.image.authors" = "Eddie Northcutt";
-      "org.opencontainers.image.licenses" = "Proprietary";
+      "org.opencontainers.image.licenses" = "Apache-2.0";
       "org.opencontainers.image.ref.name" = tier;
     };
 
