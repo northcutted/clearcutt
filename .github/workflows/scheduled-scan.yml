@@ -31,6 +31,26 @@ jobs:
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
           grype version
 
+      # Cache the per-release enrichment + SBOM downloads to keep hourly scans fast and optimized.
+      - name: Restore catalog data cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            site/src/data/enrichment
+            site/src/data/sboms
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          restore-keys: |
+            catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-
+
+      - name: Gather release assets → catalog JSON
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          RELEASE_LIMIT: "10"
+        run: node scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
+
       - name: Run Scheduled Scan
         run: ./scripts/scheduled-scan.sh
 
