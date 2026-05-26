@@ -36,7 +36,9 @@ jobs:
           "go1.25",
           "go1.26",
           "dotnet8",
-          "dotnet10"
+          "dotnet10",
+          "rust1.95",
+          "cc15"
         ]
         tier: [
           "dev",

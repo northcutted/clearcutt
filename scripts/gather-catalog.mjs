@@ -42,6 +42,8 @@ const LANGUAGES = {
   'go1.26': { id: 'go', display: 'Go', version: '1.26' },
   dotnet8: { id: 'dotnet', display: '.NET', version: '8' },
   dotnet10: { id: 'dotnet', display: '.NET', version: '10' },
+  'rust1.95': { id: 'rust', display: 'Rust', version: '1.95' },
+  'cc15': { id: 'cc', display: 'C/C++', version: '15' },
 };
 
 const TIERS = {

@@ -35,7 +35,7 @@
         mkPackageName = lang: ver: tier: "${lang}${ver}-${tier}";
 
         # Matrix specifications
-        languages = [ "core" "java" "node" "python" "go" "dotnet" ];
+        languages = [ "core" "java" "node" "python" "go" "dotnet" "rust" "cc" ];
         versions = {
           core = [ "LTS" ];
           java = [ "21" "25" ];
@@ -43,6 +43,8 @@
           python = [ "3.13" "3.14" ];
           go = [ "1.25" "1.26" ];
           dotnet = [ "8" "10" ];
+          rust = [ "1.95" ];
+          cc = [ "15" ];
         };
         tiers = [ "dev" "slim" "distroless" ];
 

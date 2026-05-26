@@ -61,6 +61,15 @@ let
          (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? aspnetcore_10_0 then [ pkgs.dotnetCorePackages.aspnetcore_10_0 ]
           else throw ".NET 10 Runtime is not available in this nixpkgs version")
        else throw "Unsupported .NET Runtime version: ${version}")
+    else if language == "rust" then
+      (if version == "1.95" then
+         (if pkgs ? rustc && pkgs ? cargo then [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.clippy ]
+          else throw "Rust 1.95 is not available in this nixpkgs version")
+       else throw "Unsupported Rust version: ${version}")
+    else if language == "cc" then
+      (if version == "15" then
+         [ pkgs.gcc pkgs.gnumake pkgs.cmake pkgs.ninja ]
+       else throw "Unsupported C/C++ version: ${version}")
     else
       throw "Unsupported language: ${language}";
 
@@ -85,6 +94,8 @@ in
     clearcuttDotnet8Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "8"; };
     clearcuttDotnet10 = resolveRawPackages { language = "dotnet"; version = "10"; };
     clearcuttDotnet10Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "10"; };
+    clearcuttRust195 = resolveRawPackages { language = "rust"; version = "1.95"; };
+    clearcuttCc15 = resolveRawPackages { language = "cc"; version = "15"; };
   };
 
   # Downstream Development Shell Builder

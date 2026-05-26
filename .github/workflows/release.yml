@@ -159,7 +159,9 @@ jobs:
           "go1.25",
           "go1.26",
           "dotnet8",
-          "dotnet10"
+          "dotnet10",
+          "rust1.95",
+          "cc15"
         ]
         tier: [
           "dev",
@@ -267,7 +269,9 @@ jobs:
           "go1.25",
           "go1.26",
           "dotnet8",
-          "dotnet10"
+          "dotnet10",
+          "rust1.95",
+          "cc15"
         ]
         tier: [
           "dev",
@@ -471,7 +475,9 @@ jobs:
           "go1.25",
           "go1.26",
           "dotnet8",
-          "dotnet10"
+          "dotnet10",
+          "rust1.95",
+          "cc15"
         ]
         tier: [
           "dev",
@@ -621,6 +627,8 @@ jobs:
           | **Java 25** | \`ghcr.io/${REPO_PATH}/clearcutt-java25:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:dev\` |
           | **.NET 8** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:dev\` |
           | **.NET 10** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:dev\` |
+          | **Rust 1.95** | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:dev\` |
+          | **C/C++ 15** | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:dev\` |
 
           > [!NOTE]
           > All image tiers are also published under versioned tags matching this release: \`ghcr.io/${REPO_PATH}/clearcutt-<language>:${TAG_NAME}-<tier>\`.

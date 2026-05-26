@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { loadIndex } from '../lib/catalog';
+import ThemeToggle from '../components/ThemeToggle.astro';
 
 interface Props {
   title?: string;
@@ -24,6 +25,22 @@ const url = base;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/*
+      FOUC-prevention: resolves the user's theme synchronously before the
+      stylesheet renders so we never flash light-on-dark or dark-on-light.
+      Reads explicit preference from localStorage('theme'); falls back to
+      `prefers-color-scheme`. Kept tiny and dependency-free on purpose.
+    */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme');
+          var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var dark = stored === 'dark' || (stored !== 'light' && systemDark);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
     <title>{fullTitle}</title>
     <meta name="description" content={desc} />
@@ -31,9 +48,15 @@ const url = base;
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={desc} />
     <meta property="og:type" content="website" />
-    <meta name="theme-color" content="#070b0a" />
+    {/* theme-color matches Catppuccin Latte Base for light OS preference
+        and Mocha Base for dark. The FOUC script will sync `.dark` on
+        <html> before paint when the user has an explicit preference. */}
+    <meta name="theme-color" content="#eff1f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1e1e2e" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="preconnect" href="https://fonts.bunny.net" />
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=space-grotesk:500,600,700" />
   </head>
   <body class="font-sans">
     <header class="sticky top-0 z-30 border-b border-ink-800/80 bg-ink-950/85 backdrop-blur">
@@ -58,13 +81,14 @@ const url = base;
           {index && (
             <a
               href={index.repoUrl}
-              class="chip border-ink-700/60 hover:border-accent/40"
+              class="chip border-ink-600/60 hover:border-accent/40"
               target="_blank" rel="noreferrer"
             >
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.72-.5.05-.49.05-.49.8.06 1.22.83 1.22.83.71 1.21 1.87.86 2.33.66.07-.51.28-.86.5-1.06-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.66 7.66 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.72-.5.05-.49.05-.49.8.06 1.22.83 1.22.83.71 1.21 1.87.86 2.33.66.07-.51.28-.86.5-1.06-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.66 7.66 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
               <span>{`${index.owner}/${index.repo}`}</span>
             </a>
           )}
+          <ThemeToggle />
         </nav>
       </div>
     </header>

@@ -136,6 +136,19 @@ let
              else throw ".NET 10 Base Runtime is not available in this nixpkgs version")
           else throw "Unsupported .NET Base Runtime version: ${version}")
        else throw "Unsupported lifecycle tier: ${tier}")
+    else if language == "rust" then
+      (if tier == "dev" then
+         (if version == "1.95" then
+            (if pkgs ? rustc && pkgs ? cargo then [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.clippy ]
+             else throw "Rust 1.95 is not available in this nixpkgs version")
+          else throw "Unsupported Rust version: ${version}")
+       else [])
+    else if language == "cc" then
+      (if tier == "dev" then
+         (if version == "15" then
+            [ pkgs.gcc pkgs.gnumake pkgs.cmake pkgs.ninja ]
+          else throw "Unsupported C/C++ version: ${version}")
+       else [])
     else
       throw "Unsupported language matrix target: ${language}";
 

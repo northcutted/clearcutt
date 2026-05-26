@@ -24,6 +24,7 @@ const OUT = process.env.ENRICHMENT_DIR || path.join(ROOT, 'site', 'src', 'data',
 const LANG_KEYS = [
   'coreLTS', 'java21', 'java25', 'node22', 'node24',
   'python3.13', 'python3.14', 'go1.25', 'go1.26', 'dotnet8', 'dotnet10',
+  'rust1.95', 'cc15',
 ];
 const TIERS = ['dev', 'slim', 'distroless'];
 

@@ -34,18 +34,22 @@ const slsa = `slsa-verifier verify-image ${digestRef} \\
       Three independent checks. Run them and you've confirmed who built this image, on which workflow, from which source revision.
     </p>
   </header>
-  <div class="grid gap-4 lg:grid-cols-3">
-    <div class="space-y-2">
+  {/* grid auto-rows-fr makes every cell match the tallest one's height, and
+      each child is a flex column so the CopyBlock can flex-1 into all the
+      vertical space below the step label. Result: three uniformly-sized
+      code boxes regardless of command length differences. */}
+  <div class="grid gap-4 auto-rows-fr lg:grid-cols-3">
+    <div class="flex flex-col gap-2">
       <div class="text-xs uppercase tracking-wider text-ink-300">1 · Cosign signature</div>
-      <CopyBlock language="shell" code={cosignVerify} />
+      <CopyBlock language="shell" code={cosignVerify} class="flex-1" />
     </div>
-    <div class="space-y-2">
+    <div class="flex flex-col gap-2">
       <div class="text-xs uppercase tracking-wider text-ink-300">2 · Verify SBOM attestation</div>
-      <CopyBlock language="shell" code={cosignAttest} />
+      <CopyBlock language="shell" code={cosignAttest} class="flex-1" />
     </div>
-    <div class="space-y-2">
+    <div class="flex flex-col gap-2">
       <div class="text-xs uppercase tracking-wider text-ink-300">3 · SLSA L3 provenance</div>
-      <CopyBlock language="shell" code={slsa} />
+      <CopyBlock language="shell" code={slsa} class="flex-1" />
     </div>
   </div>
 </section>
