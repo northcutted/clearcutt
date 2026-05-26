@@ -231,7 +231,7 @@ EOF
     fi
 
     # 1. Copy rolling architecture-specific tag
-    if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$image_tag"; then
+    if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$image_tag"; then
       log_success "Rolling OCI Image successfully copied to registry."
     else
       log_error "Skopeo rolling registry publishing failed."
@@ -242,7 +242,7 @@ EOF
     if [[ -n "$version_tag" ]]; then
       local version_image_tag="$registry/$repo/clearcutt-bootstrap:${version_tag}-${lang}-${tier}-${arch_suffix}"
       log_info "Publishing versioned OCI archive to registry -> $version_image_tag"
-      if skopeo copy "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$version_image_tag"; then
+      if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$version_image_tag"; then
         log_success "Versioned OCI Image successfully copied to registry."
       else
         log_error "Skopeo versioned registry publishing failed."
