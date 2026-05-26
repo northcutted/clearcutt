@@ -1,6 +1,7 @@
 ---
 import type { ImageRecord } from '../lib/catalog-schema';
 import StatusPill from './StatusPill.astro';
+import LangIcon from './LangIcon.astro';
 
 interface Props {
   image: ImageRecord;
@@ -15,7 +16,11 @@ const allReleases = image.releases;
 ---
 <section class="surface px-6 py-6 sm:px-8 sm:py-8">
   <div class="flex flex-wrap items-start justify-between gap-6">
-    <div class="space-y-3">
+    <div class="flex items-start gap-4">
+      <span class="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-ink-700/60 bg-ink-800/60 p-3">
+        <LangIcon language={image.language.id} class="h-8 w-8" />
+      </span>
+      <div class="space-y-3">
       <div class="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.18em] text-ink-300">
         <span>{image.language.displayName} {image.language.version}</span>
         <span class="text-ink-500">·</span>
@@ -35,6 +40,7 @@ const allReleases = image.releases;
         {passed
           ? <StatusPill kind="ok" label="Grype gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
+      </div>
       </div>
     </div>
     <div class="flex flex-col items-end gap-3">

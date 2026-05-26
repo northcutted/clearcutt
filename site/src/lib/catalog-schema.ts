@@ -61,6 +61,14 @@ export const ArchPayload = z.object({
           dataSource: z.string().nullable(),
           namespace: z.string().nullable(),
           description: z.string().nullable(),
+          // Quantitative risk fields — all optional because older scans
+          // didn't capture them and grype doesn't always have them per CVE.
+          cvssScore: z.number().nullable().optional(),
+          cvssVersion: z.string().nullable().optional(),
+          cvssVector: z.string().nullable().optional(),
+          epssScore: z.number().nullable().optional(),
+          epssPercentile: z.number().nullable().optional(),
+          riskScore: z.number().nullable().optional(),
         }),
       ),
     })

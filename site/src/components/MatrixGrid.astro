@@ -1,5 +1,6 @@
 ---
 import type { CatalogIndex } from '../lib/catalog-schema';
+import LangIcon from './LangIcon.astro';
 
 interface Props { index: CatalogIndex }
 const { index } = Astro.props;
@@ -7,19 +8,17 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 
 const tierOrder: Array<'distroless' | 'slim' | 'dev'> = ['distroless', 'slim', 'dev'];
 
-// Canonical language order + version enumeration. Kept in sync with the
-// flake.nix matrix and the tag-release.yml workflow so missing slots can be
-// rendered explicitly rather than hidden.
-const LANG_ROWS: Array<{ id: string; display: string; icon: string; versions: string[] }> = [
-  { id: 'core',   display: 'Core',    icon: '◯', versions: ['LTS'] },
-  { id: 'java',   display: 'Java',    icon: '☕', versions: ['21', '25'] },
-  { id: 'node',   display: 'Node.js', icon: '⬢', versions: ['22', '24'] },
-  { id: 'python', display: 'Python',  icon: '🐍', versions: ['3.13', '3.14'] },
-  { id: 'go',     display: 'Go',      icon: '🐹', versions: ['1.25', '1.26'] },
-  { id: 'dotnet', display: '.NET',    icon: '◆', versions: ['8', '10'] },
+// One row per language. Versions stack inside each tier cell so the home page
+// is one screen of language groups instead of 11 separate rows.
+const LANG_ROWS: Array<{ id: string; display: string; versions: string[] }> = [
+  { id: 'core',   display: 'Core',    versions: ['LTS'] },
+  { id: 'java',   display: 'Java',    versions: ['21', '25'] },
+  { id: 'node',   display: 'Node.js', versions: ['22', '24'] },
+  { id: 'python', display: 'Python',  versions: ['3.13', '3.14'] },
+  { id: 'go',     display: 'Go',      versions: ['1.25', '1.26'] },
+  { id: 'dotnet', display: '.NET',    versions: ['8', '10'] },
 ];
 
-// Build a lookup by image id for O(1) slot resolution.
 const byId = new Map(index.images.map((img) => [img.id, img]));
 
 function slotState(img: ReturnType<typeof byId.get>) {
@@ -27,7 +26,6 @@ function slotState(img: ReturnType<typeof byId.get>) {
   if (img.latestTag === index.latestTag) return 'current' as const;
   return 'lagging' as const;
 }
-
 function langKeyFor(langId: string, version: string): string {
   if (langId === 'core') return 'coreLTS';
   return `${langId}${version}`;
@@ -47,12 +45,13 @@ function vulnBadgeClass(v: VulnSummary | null | undefined): string {
   return 'chip-accent';
 }
 function vulnBadgeLabel(v: VulnSummary | null | undefined): string {
-  if (!v) return 'no scan yet';
+  if (!v) return 'no scan';
   return `${v.critical} crit · ${v.high} high`;
 }
 ---
 <div class="surface overflow-hidden">
-  <div class="grid grid-cols-[minmax(180px,1fr)_repeat(3,minmax(220px,1fr))] border-b border-ink-700/70 bg-ink-900/60 text-xs uppercase tracking-wider text-ink-300">
+  <!-- Header row -->
+  <div class="grid grid-cols-[minmax(180px,0.9fr)_repeat(3,minmax(260px,1fr))] border-b border-ink-700/70 bg-ink-900/60 text-xs uppercase tracking-wider text-ink-300">
     <div class="px-5 py-3">Language</div>
     {tierOrder.map((t) => (
       <div class="matrix-cell px-5 py-3 border-l border-ink-700/40" data-tier={t} data-state="header">
@@ -65,92 +64,100 @@ function vulnBadgeLabel(v: VulnSummary | null | undefined): string {
       </div>
     ))}
   </div>
-  {LANG_ROWS.flatMap((row) => row.versions.map((ver) => (
-    <div class="grid grid-cols-[minmax(180px,1fr)_repeat(3,minmax(220px,1fr))] border-b border-ink-800 last:border-b-0">
-      <div class="flex items-center gap-3 px-5 py-4">
-        <span class="text-2xl leading-none">{row.icon}</span>
-        <div>
+
+  {LANG_ROWS.map((row) => (
+    <div class="grid grid-cols-[minmax(180px,0.9fr)_repeat(3,minmax(260px,1fr))] border-b border-ink-800 last:border-b-0">
+      <div class="flex items-start gap-3 px-5 py-4">
+        <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-ink-700/60 bg-ink-800/60 p-2">
+          <LangIcon language={row.id} class="h-6 w-6" />
+        </span>
+        <div class="leading-tight">
           <div class="text-sm font-semibold text-ink-50">{row.display}</div>
-          <div class="text-xs text-ink-300">{ver}</div>
+          <div class="mt-1 flex flex-wrap gap-1.5">
+            {row.versions.map((v) => (
+              <span class="chip text-[10px] text-ink-200">{v}</span>
+            ))}
+          </div>
         </div>
       </div>
-      {tierOrder.map((tier) => {
-        const id = targetIdFor(row.id, ver, tier);
-        const img = byId.get(id);
-        const state = slotState(img);
-        const repo = ociRepoFor(row.id, ver);
+      {tierOrder.map((tier) => (
+        <div class="border-l border-ink-800/70 px-2 py-2 space-y-2">
+          {row.versions.map((ver) => {
+            const id = targetIdFor(row.id, ver, tier);
+            const img = byId.get(id);
+            const state = slotState(img);
+            const repo = ociRepoFor(row.id, ver);
+            const isDev = tier === 'dev';
 
-        if (state === 'pending') {
-          return (
-            <div
-              class="matrix-cell border-l border-ink-800/70 px-5 py-4 opacity-60"
-              data-tier={tier}
-              data-state="pending"
-              data-vuln="none"
-              data-pagefind-ignore
-            >
-              <div class="flex items-center justify-between">
-                <span class="font-mono text-xs text-ink-300 truncate">{repo}:{tier}</span>
-                <span class="font-mono text-[10px] text-ink-300">—</span>
-              </div>
-              <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                <span class="chip border-ink-700 text-[10px] text-ink-300">pending publication</span>
-              </div>
-              <div class="mt-3 text-[11px] text-ink-300">Not yet in {index.latestTag}.</div>
-            </div>
-          );
-        }
+            if (state === 'pending') {
+              return (
+                <div
+                  class="matrix-cell rounded-md border border-dashed border-ink-700/60 px-3 py-2 opacity-60"
+                  data-tier={tier}
+                  data-state="pending"
+                  data-vuln="none"
+                  data-pagefind-ignore
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-mono text-[11px] text-ink-300 truncate">
+                      {row.versions.length > 1 && <span class="text-ink-500">{ver}: </span>}
+                      {repo}:{tier}
+                    </span>
+                    <span class="font-mono text-[9px] text-ink-300">—</span>
+                  </div>
+                  <div class="mt-1 text-[10px] text-ink-300">Not yet in {index.latestTag}</div>
+                </div>
+              );
+            }
 
-        // We know img is defined for current+lagging.
-        const linkHref = `${base}images/${img!.id}`;
-        const tagShown = img!.latestTag;
-        const isDev = tier === 'dev';
-        const vs = img!.vulnSummary;
-        const vulnBucket =
-          !vs ? 'none' : vs.critical > 0 ? 'critical' : vs.high > 0 ? 'high' : 'clean';
-        return (
-          <a
-            href={linkHref}
-            class={`matrix-cell group block border-l border-ink-800/70 px-5 py-4 no-underline transition hover:bg-ink-800/50 ${state === 'lagging' ? 'bg-ink-800/30' : ''}`}
-            data-tier={tier}
-            data-state={state}
-            data-vuln={vulnBucket}
-          >
-            <div class="flex items-center justify-between">
-              <span class="font-mono text-xs text-ink-100 group-hover:text-accent-soft truncate">
-                {repo}:{tier}
-              </span>
-              <span class="font-mono text-[10px] text-ink-300 group-hover:text-ink-100">{tagShown}</span>
-            </div>
-            <div class="mt-2 flex flex-wrap items-center gap-1.5">
-              {img!.architectures.map((a) => <span class="chip text-[10px]">{a}</span>)}
-              {img!.signed && <span class="chip-accent text-[10px]">cosign</span>}
-              {img!.provenance && <span class="chip-accent text-[10px]">SLSA L3</span>}
-              <span class={`${vulnBadgeClass(img!.vulnSummary ?? null)} text-[10px]`}>
-                {vulnBadgeLabel(img!.vulnSummary ?? null)}
-              </span>
-              {state === 'lagging' && (
-                <span class="chip-warn text-[10px]" title={`No clean SBOM in ${index.latestTag} yet. Showing data from ${tagShown}.`}>
-                  not in {index.latestTag}
-                </span>
-              )}
-              {isDev && (
-                <span class="chip text-[10px] text-ink-300" title="Dev tier images include full toolchains and are not meant to run in production. High CVE counts here are expected.">
-                  build-time
-                </span>
-              )}
-            </div>
-            <div class="mt-3 flex items-center justify-between text-[11px] text-ink-300">
-              <span>{img!.latestPackageCount} packages</span>
-              {img!.vulnSummary?.scannedAt && (
-                <span title={`Last grype scan: ${img!.vulnSummary.scannedAt}`}>
-                  scanned {new Date(img!.vulnSummary.scannedAt).toUTCString().split(' ').slice(1, 4).join(' ')}
-                </span>
-              )}
-            </div>
-          </a>
-        );
-      })}
+            const linkHref = `${base}images/${img!.id}`;
+            const tagShown = img!.latestTag;
+            const vs = img!.vulnSummary;
+            const vulnBucket =
+              !vs ? 'none' : vs.critical > 0 ? 'critical' : vs.high > 0 ? 'high' : 'clean';
+            return (
+              <a
+                href={linkHref}
+                class={`matrix-cell group block rounded-md border border-ink-700/50 px-3 py-2 no-underline transition hover:border-accent/40 hover:bg-ink-800/60 ${state === 'lagging' ? 'bg-ink-800/30' : 'bg-ink-900/50'}`}
+                data-tier={tier}
+                data-state={state}
+                data-vuln={vulnBucket}
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="min-w-0 flex items-baseline gap-1.5">
+                    {row.versions.length > 1 && (
+                      <span class="shrink-0 font-mono text-[10px] font-semibold text-accent-soft">{ver}</span>
+                    )}
+                    <span class="truncate font-mono text-[11px] text-ink-100 group-hover:text-accent-soft">
+                      {repo}:{tier}
+                    </span>
+                  </div>
+                  <span class="shrink-0 font-mono text-[9px] text-ink-300 group-hover:text-ink-100">{tagShown}</span>
+                </div>
+                <div class="mt-1.5 flex flex-wrap items-center gap-1">
+                  {img!.architectures.map((a) => <span class="chip text-[9px] px-1.5 py-0">{a}</span>)}
+                  <span class={`${vulnBadgeClass(vs ?? null)} text-[9px] px-1.5 py-0`}>
+                    {vulnBadgeLabel(vs ?? null)}
+                  </span>
+                  {state === 'lagging' && (
+                    <span class="chip-warn text-[9px] px-1.5 py-0" title={`No clean SBOM in ${index.latestTag} yet. Showing data from ${tagShown}.`}>
+                      stale
+                    </span>
+                  )}
+                </div>
+                <div class="mt-1 flex items-center justify-between text-[10px] text-ink-300">
+                  <span>{img!.latestPackageCount} pkgs</span>
+                  {isDev && (
+                    <span class="text-ink-300/80" title="Dev tier images include full toolchains and are not meant to run in production. High CVE counts here are expected.">
+                      build-time
+                    </span>
+                  )}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      ))}
     </div>
-  )))}
+  ))}
 </div>

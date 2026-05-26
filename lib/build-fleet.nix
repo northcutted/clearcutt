@@ -87,7 +87,10 @@ let
     else if language == "python" then
       (let
          pythonPackage = if version == "3.13" then
-                           (if pkgs ? python313 then pkgs.python313 else throw "Python 3.13 is not available")
+                           (if tier == "dev" then
+                              (if pkgs ? python314 then pkgs.python314 else pkgs.python313)
+                            else
+                              (if pkgs ? python313 then pkgs.python313 else throw "Python 3.13 is not available"))
                          else if version == "3.14" then
                            (if pkgs ? python314 then pkgs.python314 else throw "Python 3.14 is not available")
                          else throw "Unsupported Python version: ${version}";

@@ -58,6 +58,31 @@ function runGrype(sbomPath) {
   }
 }
 
+function pickCvss(cvssArr) {
+  if (!Array.isArray(cvssArr) || cvssArr.length === 0) return null;
+  // Prefer Primary entries; fall back to highest baseScore across all entries.
+  const primary = cvssArr.find((c) => (c.type || '').toLowerCase() === 'primary');
+  const candidates = primary ? [primary] : cvssArr;
+  let best = null;
+  for (const c of candidates) {
+    const score = c?.metrics?.baseScore;
+    if (typeof score !== 'number') continue;
+    if (!best || score > best.score) {
+      best = { score, version: c.version || null, vector: c.vector || null };
+    }
+  }
+  return best;
+}
+
+function pickEpss(epssArr) {
+  if (!Array.isArray(epssArr) || epssArr.length === 0) return null;
+  // EPSS entries are typically date-sorted; use the most recent.
+  const sorted = [...epssArr].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  const e = sorted[0];
+  if (typeof e?.epss !== 'number') return null;
+  return { score: e.epss, percentile: typeof e.percentile === 'number' ? e.percentile : null };
+}
+
 function normalize(grypeResult, scannedAt) {
   const matches = grypeResult.matches || [];
   const counts = { critical: 0, high: 0, medium: 0, low: 0, negligible: 0, unknown: 0 };
@@ -76,6 +101,9 @@ function normalize(grypeResult, scannedAt) {
     if (Array.isArray(a.purl)) purl = a.purl[0] ?? null;
     else if (typeof a.purl === 'string') purl = a.purl;
 
+    const cvss = pickCvss(v.cvss);
+    const epss = pickEpss(v.epss);
+
     findings.push({
       id: v.id || 'UNKNOWN',
       severity: v.severity || 'Unknown',
@@ -87,15 +115,26 @@ function normalize(grypeResult, scannedAt) {
       dataSource: v.dataSource || null,
       namespace: v.namespace || null,
       description: v.description || null,
+      cvssScore: cvss?.score ?? null,
+      cvssVersion: cvss?.version ?? null,
+      cvssVector: cvss?.vector ?? null,
+      epssScore: epss?.score ?? null,
+      epssPercentile: epss?.percentile ?? null,
+      // grype emits a single composite `risk` value (severity × EPSS, roughly).
+      riskScore: typeof v.risk === 'number' ? v.risk : null,
     });
   }
 
-  // Stable sort: severity (crit→neg→unknown), then by package name, then id.
+  // Stable sort: severity (crit→neg→unknown), then by CVSS score desc, then
+  // by package name, then id. Higher impact rises in the default view.
   const sevOrder = { critical: 0, high: 1, medium: 2, low: 3, negligible: 4, unknown: 5 };
   findings.sort((a, b) => {
     const sa = sevOrder[a.severity.toLowerCase()] ?? 99;
     const sb = sevOrder[b.severity.toLowerCase()] ?? 99;
     if (sa !== sb) return sa - sb;
+    const csa = a.cvssScore ?? -1;
+    const csb = b.cvssScore ?? -1;
+    if (csa !== csb) return csb - csa;
     if (a.packageName !== b.packageName) return a.packageName.localeCompare(b.packageName);
     return a.id.localeCompare(b.id);
   });
