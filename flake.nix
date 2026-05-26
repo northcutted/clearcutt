@@ -5,6 +5,11 @@
 {
   description = "ClearCutt Hardened Base Image Fleets - Declarative, Zero-CVE Nix Store Layers";
 
+  nixConfig = {
+    extra-substituters = [ "https://nix-cache.clearcutt.dev" ];
+    extra-trusted-public-keys = [ "clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     utils.url = "github:numtide/flake-utils";
@@ -19,6 +24,9 @@
             allowUnfree = true;
             allowBroken = true;
           };
+          overlays = [
+            (import ./overlays/cve-remediation.nix)
+          ];
         };
 
         # Host package alignment: we build native OCI layers using the host system platform

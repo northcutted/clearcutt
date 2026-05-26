@@ -57,6 +57,8 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             allow-import-from-derivation = true
+            substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
@@ -96,6 +98,8 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             allow-import-from-derivation = true
+            substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 
       - name: Setup Magic Nix Cache
         uses: determinateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
