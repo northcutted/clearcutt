@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write
+
+# Only one scheduled scan in flight at a time — concurrent runs would race
+# on `cve-remediation/*` branches and `overlays/patch-cache.json`.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -20,10 +27,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
@@ -34,7 +41,7 @@ jobs:
 
       # Cache the per-release enrichment + SBOM downloads to keep hourly scans fast and optimized.
       - name: Restore catalog data cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             site/src/data/enrichment
@@ -60,18 +67,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-            allow-import-from-derivation = true
-            accept-flake-config = true
-            substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
-            connect-timeout = 5
-            download-attempts = 3
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
 
       # Persist /nix/store between runs. Without this every cold runner has to
       # re-fetch the unpatched base closure from R2 even when nothing in the
@@ -95,12 +92,11 @@ jobs:
           # Cap how many distinct findings one run will attempt. Anything over
           # this gets picked up on the next scheduled run.
           MAX_FINDINGS_PER_RUN: "5"
-        run: |
-          ./scripts/auto-patch-triage.py
+        run: ./scripts/auto-patch-triage.py
 
       - name: Upload Scanned Vulnerabilities
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vulnerabilities-data
           path: site/src/data/vulnerabilities/

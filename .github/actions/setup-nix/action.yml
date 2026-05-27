@@ -1,0 +1,28 @@
+# ClearCutt Composite Action — Install Nix with hardened cache config
+# Brand Owner & Principal Architect: Eddie Northcutt
+# Paradigm: One source of truth for Nix client configuration across all workflows
+
+name: 'ClearCutt Setup Nix'
+description: 'Install Nix with the standard ClearCutt substituter list, trusted keys, and timeout settings'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        # IMPORTANT: `accept-flake-config` is deliberately omitted. Without
+        # it, any flake input that ships `nixConfig.extra-substituters` or
+        # `extra-trusted-public-keys` is rejected at evaluation time — Nix
+        # asks the user (no user in CI → fail). This is the only mitigation
+        # against a malicious transitive flake silently adding a substituter.
+        # If a legitimate input ever needs a new cache, add it explicitly
+        # below.
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          allow-import-from-derivation = true
+          substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
+          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
+          connect-timeout = 5
+          download-attempts = 3

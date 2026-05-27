@@ -82,12 +82,24 @@ run_patch_cycle() {
 # 3. Ephemeral Cosign Signing Keys (Local dev/testing fallback)
 # ----------------------------------------------------
 ensure_cosign_keys() {
+  # Hard guard: never run this branch under CI. Production releases must
+  # use Sigstore keyless OIDC signing — local-dev keys here would shadow it.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    log_error "ensure_cosign_keys() called inside GitHub Actions. Refusing to generate local keys."
+    log_error "This is a bug — the --publish path uses cosign keyless OIDC, not local keys."
+    exit 1
+  fi
+
   mkdir -p "$KEYS_DIR"
   if [[ ! -f "$KEYS_DIR/cosign.key" ]] || [[ ! -f "$KEYS_DIR/cosign.pub" ]]; then
     log_warn "Cosign release keys not found. Materializing ephemeral local key pair..."
-    log_warn "SECURITY NOTE: Local key generation is STRICTLY for local development and local test gates."
-    log_warn "In production GHA workflows, keyless OIDC signing is automatically negotiated."
-    export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
+    log_warn "SECURITY NOTE: Local key generation is STRICTLY for local development."
+    log_warn "Keys land in $KEYS_DIR, which is .gitignored — do not move them."
+    # Random per-session passphrase rather than a hardcoded one. The user
+    # never needs to type this; the key is only used by ./pipeline.sh and
+    # the password is re-exported in this same shell invocation below.
+    COSIGN_PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48)"
+    export COSIGN_PASSWORD
     cosign generate-key-pair --output-key-prefix "$KEYS_DIR/cosign"
     log_success "Ephemeral signing keypair generated inside isolated session cache."
   fi
@@ -253,8 +265,9 @@ EOF
     # Local-only fallback signature
     log_info "Signing OCI archive locally..."
     ensure_cosign_keys
-    export COSIGN_PASSWORD="clearcutt-hardened-key-passphrase"
-    
+    # COSIGN_PASSWORD is already exported by ensure_cosign_keys with a fresh
+    # random value — don't overwrite it here.
+
     # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility.
     # To work around a Cosign v3 bug where omitting --output-signature when --bundle is passed
     # causes it to open an empty filename ("open : no such file or directory"), we provide both.
@@ -299,7 +312,7 @@ main() {
   if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
     repo="${GITHUB_REPOSITORY,,}" # lowercase GHA repo
   else
-    repo="eddie-northcutt/clearcutt-images"
+    repo="northcutted/clearcutt"
   fi
 
   local target_list=()

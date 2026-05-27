@@ -86,70 +86,59 @@ def execute_patch_for_finding(finding):
     cve = finding["cve"]
     ver = finding["installed_version"]
     fix = finding["fixed_version"]
-    
+
     log_info(f"Dispatching AI Patching Agent for: {pkg} ({ver}) -> {cve}...")
-    
+
     env = os.environ.copy()
     env["CVE_ID"] = f"{cve} (use postInstall comment override)"
     env["PACKAGE_NAME"] = pkg
     env["INSTALLED_VERSION"] = ver
     env["FIXED_VERSION"] = fix
-    
-    # Run the patching agent subprocess
+
     res = subprocess.run(
         ["./scripts/cve-draft-agent.py"],
         env=env,
         capture_output=True,
-        text=True
+        text=True,
     )
-    
-    # Print agent stdout/stderr
+
     if res.stdout:
         print(res.stdout)
     if res.stderr:
         print(res.stderr, file=sys.stderr)
-        
+
     if res.returncode != 0:
         log_warn(f"AI Patching Agent failed to draft a patch for {pkg} ({cve}).")
         return False
-        
-    log_pass(f"AI Patching Agent drafted and verified patch for {pkg} ({cve}) successfully!")
-    
-    # Check if a new git branch was created
-    branch_res = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
+
+    log_pass(f"AI Patching Agent drafted a patch for {pkg} ({cve}); checking for branch...")
+
+    branch_res = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True, text=True,
+    )
     branch_name = branch_res.stdout.strip()
-    
-    if branch_name.startswith("cve-remediation/"):
-        log_info(f"Remediation branch '{branch_name}' detected. Pushing to origin...")
-        subprocess.run(["git", "push", "origin", branch_name, "--force"], capture_output=True)
-        
-        log_info("Opening draft Pull Request via GitHub CLI...")
-        pr_body = (
-            f"This Pull Request was automatically drafted and verified by the **ClearCutt Auto-Patch Pipeline**.<br><br>"
-            f"### Details:<br>"
-            f"- **Package:** `{pkg}`<br>"
-            f"- **CVE:** `{cve}`<br>"
-            f"- **Installed Version:** `{ver}`<br>"
-            f"- **Verification Status:** 100% Green (G1-G5 Gates Passed)<br><br>"
-            f"Review the overlay diff in `overlays/cve-remediation.nix` and merge when ready!"
-        )
-        pr_title = f"chore: automated CVE patch remediation for {pkg} ({cve})"
-        subprocess.run([
-            "gh", "pr", "create",
-            "--title", pr_title,
-            "--body", pr_body,
-            "--head", branch_name,
-            "--base", "main",
-            "--draft"
-        ], capture_output=True)
-        log_pass(f"Pull Request successfully opened for {pkg} ({cve})!")
-        
-        # Checkout back to main before processing the next finding
-        subprocess.run(["git", "checkout", "main"], capture_output=True)
-        return True
-    else:
-        log_warn("No active git branch detected from the agent run.")
+
+    if not branch_name.startswith("cve-remediation/"):
+        log_warn("No remediation branch produced by the agent — skipping PR.")
         return False
+
+    # Delegate PR opening to the shared script so the title/body never drifts
+    # between the manual cve-patch-agent workflow and this auto-dispatcher.
+    pr_res = subprocess.run(
+        ["./scripts/open-remediation-pr.sh", branch_name, pkg, cve, ver],
+        capture_output=True, text=True,
+    )
+    if pr_res.stdout:
+        print(pr_res.stdout)
+    if pr_res.stderr:
+        print(pr_res.stderr, file=sys.stderr)
+    if pr_res.returncode != 0:
+        log_warn(f"PR open failed for {pkg} ({cve}) — branch is still pushed.")
+        # Continue so the next finding still gets a chance.
+
+    subprocess.run(["git", "checkout", "main"], capture_output=True)
+    return True
 
 def main():
     log_info("Initializing AI CVE Triage & Auto-Patch Dispatcher...")

@@ -1,3 +1,14 @@
 result
 *.tar.gz
 build-outputs/*
+
+# Local-dev cosign key cache (see pipeline.sh ensure_cosign_keys).
+# Must never be committed — these are signing keys, even if labelled "ephemeral".
+.nix-enterprise-auth-cache/
+
+# Any stray signing material that lands at the repo root.
+cosign.key
+cosign.pub
+*.pem
+secret-key.pem
+secret-key-files/

@@ -1,0 +1,3 @@
+# Per-CVE remediation overlays land here, one file per fix.
+# Written by scripts/cve-draft-agent.py — do not hand-edit unless rolling
+# back a remediation, in which case just `rm` the file and PR the deletion.

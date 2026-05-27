@@ -21,8 +21,12 @@
         hostPkgs = import nixpkgs {
           inherit system;
           config = {
+            # `allowUnfree` is required for JDKs (Zulu/Oracle) and a few fonts.
+            # `allowBroken` was removed: it let Nix produce binaries from
+            # packages maintainers had flagged broken, which is incompatible
+            # with the project's Zero-CVE posture. If a specific package is
+            # incorrectly marked broken, override it inside overlays/cve/.
             allowUnfree = true;
-            allowBroken = true;
           };
           overlays = [
             (import ./overlays/cve-remediation.nix)

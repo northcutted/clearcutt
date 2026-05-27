@@ -24,6 +24,13 @@ permissions:
   pages: write # Required to deploy the catalog site to GitHub Pages
   attestations: write # Required to create first-party GitHub Attestations
 
+# Releases mutate GHCR tags + SLSA provenance — never let two run concurrently.
+# Per-ref grouping lets workflow_dispatch on a non-main ref (e.g. a hotfix
+# branch tag) proceed even while main has a release in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check-version:
     name: Check Version Bump
@@ -59,54 +66,9 @@ jobs:
           fi
           echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
 
-  prep-release-notes:
-    name: Commit Staging Notes
-    needs: check-version
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: Generate and Commit Release Notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          
-          RAW_VERSION="${{ needs.check-version.outputs.version }}"
-          NEXT_TAG="v$RAW_VERSION"
-          NOTES_PATH="docs/releases/${NEXT_TAG}.md"
-
-          # Generate notes via GitHub API
-          echo "Generating release changelog via GitHub API..."
-          BODY=$(gh api repos/${{ github.repository }}/releases/generate-notes -f tag_name="$NEXT_TAG" -f target_commitish="main" --jq '.body')
-
-          mkdir -p docs/releases
-          cat <<EOF > "$NOTES_PATH"
-          # 📋 ClearCutt Hardened Fleet Staging Notes - $NEXT_TAG
-
-          This staging notes document was automatically compiled for release **$NEXT_TAG**.
-
-          ---
-
-          $BODY
-          EOF
-
-          echo "Committing release notes file..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$NOTES_PATH"
-          git commit -m "chore: compile release notes for $NEXT_TAG [skip ci]" || true
-          
-          # Push gracefully, ignoring errors if branch protection blocks direct commits to main
-          git push origin main || echo "WARNING: Direct commit to main blocked by branch protection. Continuing..."
-
   release-gate:
     name: Staging Gate (Approve to Release v${{ needs.check-version.outputs.version }})
-    needs: [check-version, prep-release-notes]
+    needs: [check-version]
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
     runs-on: ubuntu-latest
     environment: production # <-- Manual approval gate here!
@@ -174,21 +136,14 @@ jobs:
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-            allow-import-from-derivation = true
-            accept-flake-config = true
-            substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
 
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('**/flake.lock') }}
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -393,14 +348,14 @@ jobs:
           EOF
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
           push-to-registry: true
 
       - name: Attest amd64 SBOM
-        uses: actions/attest-sbom@v2
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
         with:
           subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -408,7 +363,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SBOM
-        uses: actions/attest-sbom@v2
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
         with:
           subject-name: ghcr.io/${{ github.repository }}/clearcutt-bootstrap
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -673,7 +628,50 @@ jobs:
           EOF
 
           gh release edit "$TAG_NAME" --notes "$FINAL_NOTES"
-          echo "Release notes successfully finalized and beautified."
+          echo "Release notes published to GitHub Releases."
+
+      - name: Archive Release Notes to docs/releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG_NAME="v${{ needs.check-version.outputs.version }}"
+          NOTES_PATH="docs/releases/${TAG_NAME}.md"
+
+          # Read the body back from the just-published release so the archive
+          # mirrors exactly what users see (no chance of drift from the
+          # FINAL_NOTES variable above).
+          BODY=$(gh release view "$TAG_NAME" --json body --jq '.body')
+
+          # The surrounding job is checked out on the version tag (detached
+          # HEAD). Re-clone main into a temp worktree so the archive commit
+          # has main's tip as its parent — not the tag — and can't overwrite
+          # anything that landed on main during the release.
+          WORKTREE=$(mktemp -d)
+          git clone --depth 1 --branch main \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
+            "$WORKTREE"
+
+          mkdir -p "$WORKTREE/docs/releases"
+          printf '%s\n' "$BODY" > "$WORKTREE/$NOTES_PATH"
+
+          cd "$WORKTREE"
+          if git diff --quiet -- "$NOTES_PATH"; then
+            echo "No changes — release notes file already matches published body."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$NOTES_PATH"
+          git commit -m "chore: archive release notes for $TAG_NAME [skip ci]"
+
+          # Branch protection may block direct pushes to main. The GitHub
+          # Release itself is the authoritative copy — the docs/ archive is
+          # a convenience mirror — so swallow the failure rather than break
+          # the release.
+          git push origin main || \
+            echo "WARNING: Direct commit to main blocked by branch protection. Release notes are still live at the GitHub Release page."
 
   deploy-site:
     name: Deploy Catalog Site
