@@ -73,6 +73,8 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_PAID_MODEL: "openrouter/free"
+          OPENROUTER_FALLBACK_MODEL: "openrouter/free"
         run: |
           ./scripts/auto-patch-triage.py
 
