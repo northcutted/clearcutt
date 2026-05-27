@@ -57,6 +57,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             allow-import-from-derivation = true
+            accept-flake-config = true
             substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 
@@ -98,6 +99,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             allow-import-from-derivation = true
+            accept-flake-config = true
             substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 

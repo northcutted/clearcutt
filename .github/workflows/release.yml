@@ -181,6 +181,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             allow-import-from-derivation = true
+            accept-flake-config = true
             substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 
@@ -217,7 +218,7 @@ jobs:
           echo "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
           nix copy --option secret-key-files secret-key.pem \
             --to "s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            .#packages.${{ matrix.system }}."${{ matrix.language }}-${{ matrix.tier }}"
+            .#"${{ matrix.language }}-${{ matrix.tier }}"
           rm secret-key.pem
 
       - name: Stage arch-suffixed release assets
