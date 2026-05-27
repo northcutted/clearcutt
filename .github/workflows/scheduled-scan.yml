@@ -5,8 +5,6 @@
 name: ClearCutt Scheduled Scan
 
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
