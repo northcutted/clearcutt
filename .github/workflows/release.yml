@@ -185,13 +185,6 @@ jobs:
             substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
 
-      - name: Configure Authenticated Nix Cache Access
-        run: |
-          sudo mkdir -p /etc/nix
-          echo "machine nix-cache.clearcutt.dev login clearcutt password ${{ secrets.NIX_R2_HEADER }}" | sudo tee /etc/nix/netrc > /dev/null
-          sudo chmod 600 /etc/nix/netrc
-
-
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:

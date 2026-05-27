@@ -15,6 +15,9 @@ jobs:
   scan:
     name: Run Scheduled CVE Scan
     runs-on: ubuntu-latest
+    # Hard cap on total wall time. The auto-patch loop is the only step that
+    # can plausibly approach this — everything before it finishes in <60s.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,24 +70,36 @@ jobs:
             accept-flake-config = true
             substituters = https://cache.nixos.org https://nix-cache.clearcutt.dev
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
+            connect-timeout = 5
+            download-attempts = 3
 
-      - name: Configure Authenticated Nix Cache Access
-        run: |
-          sudo mkdir -p /etc/nix
-          echo "machine nix-cache.clearcutt.dev login clearcutt password ${{ secrets.NIX_R2_HEADER }}" | sudo tee /etc/nix/netrc > /dev/null
-          sudo chmod 600 /etc/nix/netrc
-
+      # Persist /nix/store between runs. Without this every cold runner has to
+      # re-fetch the unpatched base closure from R2 even when nothing in the
+      # flake.lock changed.
+      - name: Setup Nix Cache
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Run AI CVE Auto-Patch Dispatcher
+        # Bound the LLM/build loop. The job-level cap catches infinite loops;
+        # this step-level cap stops a single agent invocation from eating the
+        # entire 45 min budget if there are many findings.
+        timeout-minutes: 30
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER_PAID_MODEL: "openrouter/free"
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
+          # Cap how many distinct findings one run will attempt. Anything over
+          # this gets picked up on the next scheduled run.
+          MAX_FINDINGS_PER_RUN: "5"
         run: |
           ./scripts/auto-patch-triage.py
 
       - name: Upload Scanned Vulnerabilities
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: vulnerabilities-data

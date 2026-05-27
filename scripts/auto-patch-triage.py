@@ -153,24 +153,35 @@ def execute_patch_for_finding(finding):
 
 def main():
     log_info("Initializing AI CVE Triage & Auto-Patch Dispatcher...")
-    
+
     vuln_dir = find_latest_vulnerability_dir()
     if not vuln_dir:
         log_fail("No scanned vulnerability directories found in site/src/data/vulnerabilities!")
-        
+
     findings = parse_findings(vuln_dir)
     if not findings:
         log_pass("Zero new High or Critical runtime vulnerabilities identified. Triage clean!")
         return
-        
+
     log_info(f"Identified {len(findings)} unique High/Critical runtime vulnerabilities ready for patching.")
-    
+
+    # Bound per-run work so a backlog of findings can't blow past the workflow
+    # timeout. Anything above the cap rolls into the next scheduled run.
+    try:
+        cap = int(os.environ.get("MAX_FINDINGS_PER_RUN", "0"))
+    except ValueError:
+        cap = 0
+    if cap > 0 and len(findings) > cap:
+        log_warn(f"Capping this run at {cap} findings (MAX_FINDINGS_PER_RUN). "
+                 f"Remaining {len(findings) - cap} will be picked up next run.")
+        findings = findings[:cap]
+
     success_count = 0
     for fnd in findings:
         # Prevent runaway parallel API calls by processing findings sequentially
         if execute_patch_for_finding(fnd):
             success_count += 1
-            
+
     log_pass(f"Auto-Patch Dispatcher complete. Patched {success_count}/{len(findings)} vulnerabilities successfully.")
 
 if __name__ == "__main__":
