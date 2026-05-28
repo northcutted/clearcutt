@@ -52,6 +52,7 @@ In your GitHub repository (`northcutted/clearcutt`), navigate to **Settings** ->
 2. `R2_ACCESS_KEY_ID`: Cloudflare R2 Access Key ID (generated under Cloudflare -> R2 -> Manage R2 API Tokens).
 3. `R2_SECRET_ACCESS_KEY`: Cloudflare R2 Secret Access Key.
 4. `CLOUDFLARE_ACCOUNT_ID`: Your 32-character Cloudflare Account ID (visible on the R2 homepage).
+5. `CLOUDFLARE_ZONE_ID`: (Optional) Your 32-character Cloudflare Zone ID (visible on your domain's Overview homepage). Providing this is highly recommended as it avoids requiring the `CLOUDFLARE_API_TOKEN` to have account-wide `Zone:Zone:Read` lookup permissions.
 
 ---
 
@@ -64,6 +65,7 @@ Add this job step to your GitHub Actions workflows (e.g. `.github/workflows/pr-g
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
         run: |
           # 1. Temporarily write the private signing key
           printf '%s\n' "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
