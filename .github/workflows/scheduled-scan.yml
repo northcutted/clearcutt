@@ -1,8 +1,8 @@
-# ClearCutt Scheduled Vulnerability Scan & Triage Gateway
+# ClearCutt Manual Vulnerability Scan & Remediation Gateway
 # Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Ephemeral hourly cron scanning with automatic classification
+# Paradigm: Manual fail-closed remediation scan with brokered AI patch drafting
 
-name: ClearCutt Scheduled Scan
+name: ClearCutt Manual Remediation Scan
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   issues: write
   pull-requests: write
 
-# Only one scheduled scan in flight at a time — concurrent runs would race
+# Only one remediation scan in flight at a time — concurrent runs would race
 # on `cve-remediation/*` branches and `overlays/patch-cache.json`.
 concurrency:
   group: ${{ github.workflow }}
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   scan:
-    name: Run Scheduled CVE Scan
+    name: Run Manual CVE Remediation Scan
     runs-on: ubuntu-latest
     # Hard cap on total wall time. The auto-patch loop is the only step that
     # can plausibly approach this — everything before it finishes in <60s.
@@ -59,7 +59,9 @@ jobs:
           RELEASE_LIMIT: "10"
         run: node scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
 
-      - name: Run Scheduled Scan
+      - name: Run Remediation Scan
+        env:
+          SCAN_MODE: remediation
         run: ./scripts/scheduled-scan.sh
 
       - name: Configure Git Credentials
@@ -79,7 +81,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - name: Run AI CVE Auto-Patch Dispatcher
+      - name: Run Brokered CVE Patch Dispatcher
         # Bound the LLM/build loop. The job-level cap catches infinite loops;
         # this step-level cap stops a single agent invocation from eating the
         # entire 45 min budget if there are many findings.

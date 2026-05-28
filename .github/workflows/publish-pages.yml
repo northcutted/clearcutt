@@ -134,7 +134,9 @@ jobs:
       # surfaces newly-disclosed vulnerabilities against pinned package
       # versions every time the workflow runs (including nightly cron).
       - name: Scan SBOMs with grype
-        run: node scripts/scan-vulnerabilities.mjs
+        env:
+          SCAN_MODE: catalog
+        run: node scripts/scan-vulnerabilities.mjs --mode catalog
 
       - name: Re-run gather to fold enrichment + vulnerabilities in
         env:

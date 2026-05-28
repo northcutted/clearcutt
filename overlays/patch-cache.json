@@ -1,13 +1,4 @@
 {
-  "zlib": {
-    "CVE-2026-MOCK-LLM": {
-      "cve": "CVE-2026-MOCK-LLM",
-      "package": "zlib",
-      "installed_version": "1.3.1",
-      "status": "draft_compiled",
-      "iterations": 1,
-      "remediation_route": "tier3_llm",
-      "override_expression": "# Malformed Nix: Missing a semicolon at the end of the package overlay\nzlib = prev.zlib.overrideAttrs (old: {\n  version = \"1.3.2\";\n});"
-    }
-  }
+  "entries": {},
+  "schema": 2
 }

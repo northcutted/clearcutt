@@ -172,7 +172,7 @@ certify_target() {
   # C. Security Vulnerability Gating via Syft + Grype
   log_info "Executing vulnerability gate: Running Grype scanner directly against compiled SPDX SBOM..."
   if grype "sbom:$sbom_path" --fail-on high --only-fixed; then
-    log_success "Security Gate: Grype SBOM scan passed cleanly with zero patched Critical/High CVEs."
+    log_success "Security Gate: Grype SBOM scan passed with no fixable Critical/High CVEs."
   else
     if [[ "$tier" == "dev" ]]; then
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."

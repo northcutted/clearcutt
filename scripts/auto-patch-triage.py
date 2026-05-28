@@ -6,7 +6,6 @@
 import os
 import sys
 import json
-import glob
 import subprocess
 
 BLUE = "\033[1;34m"
@@ -20,80 +19,46 @@ def log_pass(msg): print(f"{GREEN}[Auto-Patch] ✔ {msg}{RESET}")
 def log_warn(msg): print(f"{YELLOW}[Auto-Patch] ⚠ {msg}{RESET}")
 def log_fail(msg): print(f"{RED}[Auto-Patch] ✘ {msg}{RESET}", file=sys.stderr); sys.exit(1)
 
-def find_latest_vulnerability_dir():
-    vuln_path = "./site/src/data/vulnerabilities"
-    if not os.path.exists(vuln_path):
-        return None
-    
-    # Sort directories by semantic version names
-    dirs = [d for d in os.listdir(vuln_path) if os.path.isdir(os.path.join(vuln_path, d))]
-    if not dirs:
-        return None
-    
-    # Helper to parse version list cleanly (e.g. "v0.5.3" -> [0, 5, 3])
-    def parse_ver(v_str):
-        try:
-            return [int(x) for x in v_str.lstrip("v").split(".")]
-        except Exception:
-            return [0, 0, 0]
-            
-    dirs.sort(key=parse_ver, reverse=True)
-    return os.path.join(vuln_path, dirs[0])
+def load_remediation_plan(cap):
+    plan_path = os.path.join("build-outputs", "remediation-plan.json")
+    cmd = ["./scripts/remediation-broker.py", "--out", plan_path]
+    if cap > 0:
+        cmd.extend(["--limit", str(cap)])
 
-def parse_findings(vuln_dir):
-    json_files = glob.glob(os.path.join(vuln_dir, "*.json"))
-    log_info(f"Scanning {len(json_files)} vulnerability files in {vuln_dir}...")
-    
-    unique_findings = {}
-    for f_path in json_files:
-        try:
-            with open(f_path, "r") as f:
-                data = json.load(f)
-            findings = data.get("findings", [])
-            for fnd in findings:
-                # Filter strictly for Nix-managed "runtime" layer package vulnerabilities
-                if fnd.get("layer") != "runtime":
-                    continue
-                    
-                # Prioritize Critical and High severity CVEs to prevent noise
-                severity = fnd.get("severity", "Unknown").lower()
-                if severity not in ["critical", "high"]:
-                    continue
-                    
-                pkg = fnd.get("packageName")
-                cve = fnd.get("id")
-                ver = fnd.get("packageVersion")
-                fix = fnd.get("fixedIn")
-                
-                if not pkg or not cve:
-                    continue
-                    
-                key = (pkg, cve)
-                if key not in unique_findings:
-                    unique_findings[key] = {
-                        "package": pkg,
-                        "cve": cve,
-                        "installed_version": ver,
-                        "fixed_version": fix if fix else ""
-                    }
-        except Exception as e:
-            log_warn(f"Failed to parse findings in {f_path}: {e}")
-            
-    return list(unique_findings.values())
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.stdout:
+        print(res.stdout)
+    if res.stderr:
+        print(res.stderr, file=sys.stderr)
+    if res.returncode != 0:
+        log_fail("Remediation broker failed to build an actionable campaign plan.")
 
-def execute_patch_for_finding(finding):
-    pkg = finding["package"]
-    cve = finding["cve"]
-    ver = finding["installed_version"]
-    fix = finding["fixed_version"]
+    with open(plan_path, "r") as f:
+        return json.load(f)
+
+def campaign_slug(campaign):
+    package = campaign["package"].lower()
+    cve = campaign["cve"].lower()
+    safe = "".join(ch if ch.isalnum() else "-" for ch in f"{cve}-{package}")
+    return "-".join(part for part in safe.split("-") if part)
+
+def execute_patch_for_campaign(campaign):
+    pkg = campaign["package"]
+    cve = campaign["cve"]
+    ver = campaign["installedVersion"]
+    fix = campaign.get("fixedVersion", "")
 
     log_info(f"Dispatching AI Patching Agent for: {pkg} ({ver}) -> {cve}...")
 
     env = os.environ.copy()
-    env["CVE_ID"] = f"{cve} (use postInstall comment override)"
+    env["CVE_ID"] = cve
     env["PACKAGE_NAME"] = pkg
     env["INSTALLED_VERSION"] = ver
     env["FIXED_VERSION"] = fix
+    env["REMEDIATION_CAMPAIGN"] = json.dumps(campaign, sort_keys=True)
+    env["AFFECTED_TARGETS"] = json.dumps(campaign.get("affectedTargets", []), sort_keys=True)
+    summary_path = os.path.join("build-outputs", f"remediation-summary-{campaign_slug(campaign)}.json")
+    env["REMEDIATION_SUMMARY_PATH"] = summary_path
 
     res = subprocess.run(
         ["./scripts/cve-draft-agent.py"],
@@ -126,7 +91,7 @@ def execute_patch_for_finding(finding):
     # Delegate PR opening to the shared script so the title/body never drifts
     # between the manual cve-patch-agent workflow and this auto-dispatcher.
     pr_res = subprocess.run(
-        ["./scripts/open-remediation-pr.sh", branch_name, pkg, cve, ver],
+        ["./scripts/open-remediation-pr.sh", branch_name, pkg, cve, ver, summary_path],
         capture_output=True, text=True,
     )
     if pr_res.stdout:
@@ -143,35 +108,33 @@ def execute_patch_for_finding(finding):
 def main():
     log_info("Initializing AI CVE Triage & Auto-Patch Dispatcher...")
 
-    vuln_dir = find_latest_vulnerability_dir()
-    if not vuln_dir:
-        log_fail("No scanned vulnerability directories found in site/src/data/vulnerabilities!")
-
-    findings = parse_findings(vuln_dir)
-    if not findings:
-        log_pass("Zero new High or Critical runtime vulnerabilities identified. Triage clean!")
-        return
-
-    log_info(f"Identified {len(findings)} unique High/Critical runtime vulnerabilities ready for patching.")
-
     # Bound per-run work so a backlog of findings can't blow past the workflow
     # timeout. Anything above the cap rolls into the next scheduled run.
     try:
         cap = int(os.environ.get("MAX_FINDINGS_PER_RUN", "0"))
     except ValueError:
         cap = 0
-    if cap > 0 and len(findings) > cap:
-        log_warn(f"Capping this run at {cap} findings (MAX_FINDINGS_PER_RUN). "
-                 f"Remaining {len(findings) - cap} will be picked up next run.")
-        findings = findings[:cap]
+    plan = load_remediation_plan(cap)
+    campaigns = plan.get("campaigns", [])
+    if not campaigns:
+        log_pass("Zero actionable High or Critical runtime vulnerabilities with fixes identified. Triage clean!")
+        return
+
+    log_info(
+        f"Broker selected {len(campaigns)} remediation campaign(s) "
+        f"from {plan.get('sourceDir', 'unknown source')}."
+    )
+    deferred_count = plan.get("summary", {}).get("deferredCount", 0)
+    if deferred_count:
+        log_warn(f"Broker deferred {deferred_count} finding occurrence(s) outside auto-remediation policy.")
 
     success_count = 0
-    for fnd in findings:
+    for campaign in campaigns:
         # Prevent runaway parallel API calls by processing findings sequentially
-        if execute_patch_for_finding(fnd):
+        if execute_patch_for_campaign(campaign):
             success_count += 1
 
-    log_pass(f"Auto-Patch Dispatcher complete. Patched {success_count}/{len(findings)} vulnerabilities successfully.")
+    log_pass(f"Auto-Patch Dispatcher complete. Drafted {success_count}/{len(campaigns)} remediation PR(s).")
 
 if __name__ == "__main__":
     main()

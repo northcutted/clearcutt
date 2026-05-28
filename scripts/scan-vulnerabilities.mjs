@@ -6,10 +6,13 @@
 // Inputs (env):
 //   SBOM_CACHE_DIR  default: site/src/data/sboms
 //   VULN_DIR        default: site/src/data/vulnerabilities
+//   SCAN_MODE       catalog (default), remediation, or release
+//   GRYPE_BIN       grype executable override for tests
 //
 // Requires:
-//   grype on PATH. If absent, the script no-ops (exits 0) so the rest of the
-//   pipeline keeps working with whatever vulnerability data already exists.
+//   grype on PATH. In catalog mode, missing/failed scans are best-effort so
+//   Pages keeps publishing. In remediation/release modes, missing tooling or
+//   failed scans fail closed.
 
 import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
@@ -20,20 +23,50 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SBOM_DIR = process.env.SBOM_CACHE_DIR || path.join(ROOT, 'site', 'src', 'data', 'sboms');
 const OUT_DIR = process.env.VULN_DIR || path.join(ROOT, 'site', 'src', 'data', 'vulnerabilities');
 const GRYPE_OPTS = (process.env.GRYPE_OPTS || '').split(' ').filter(Boolean);
+const GRYPE_BIN = process.env.GRYPE_BIN || 'grype';
+const args = parseArgs(process.argv.slice(2));
+const SCAN_MODE = args.mode || process.env.SCAN_MODE || 'catalog';
+const STRICT_MODES = new Set(['remediation', 'release']);
+const STRICT = STRICT_MODES.has(SCAN_MODE);
 
-function have(cmd) {
-  try { execSync(`command -v ${cmd}`, { stdio: 'ignore' }); return true; } catch { return false; }
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (!a.startsWith('--')) continue;
+    const k = a.slice(2);
+    const v = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : 'true';
+    out[k] = v;
+  }
+  return out;
 }
 
-if (!have('grype')) {
-  console.warn('[scan] grype not on PATH — skipping. Install grype to enable CVE reporting.');
+function failOrWarn(message) {
+  if (STRICT) {
+    console.error(message);
+    process.exit(1);
+  }
+  console.warn(message);
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function have(cmd) {
+  try { execSync(`command -v ${shellQuote(cmd)}`, { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
+if (!have(GRYPE_BIN)) {
+  failOrWarn(`[scan] ${GRYPE_BIN} not on PATH - install Grype to enable CVE reporting.`);
   process.exit(0);
 }
 
 function grypeVersion() {
   try {
-    const v = execSync('grype version -o json 2>/dev/null', { encoding: 'utf8' });
-    const j = JSON.parse(v);
+    const res = spawnSync(GRYPE_BIN, ['version', '-o', 'json'], { encoding: 'utf8' });
+    if (res.status !== 0) throw new Error(res.stderr || res.stdout || 'version failed');
+    const j = JSON.parse(res.stdout);
     return { version: j.version || j.application, dbBuiltAt: j.db?.built || null };
   } catch {
     return { version: 'grype', dbBuiltAt: null };
@@ -44,7 +77,7 @@ console.log(`[scan] grype ${scannerVersion}, db built ${dbBuiltAt ?? 'unknown'}`
 
 function runGrype(sbomPath) {
   const res = spawnSync(
-    'grype',
+    GRYPE_BIN,
     ['sbom:' + sbomPath, '-o', 'json', '--quiet', ...GRYPE_OPTS],
     { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 },
   );
@@ -161,7 +194,7 @@ function normalize(grypeResult, scannedAt) {
 
 async function main() {
   if (!existsSync(SBOM_DIR)) {
-    console.warn(`[scan] no SBOM cache at ${SBOM_DIR} — run gather first.`);
+    failOrWarn(`[scan] no SBOM cache at ${SBOM_DIR} - run gather first.`);
     return;
   }
   mkdirSync(OUT_DIR, { recursive: true });
@@ -200,9 +233,15 @@ async function main() {
     }
   }
   console.log(`[scan] done. ${total} scans succeeded, ${failed} failed.`);
+  if (STRICT && total === 0) {
+    throw new Error(`[scan] strict ${SCAN_MODE} mode found zero SBOMs to scan.`);
+  }
+  if (STRICT && failed > 0) {
+    throw new Error(`[scan] strict ${SCAN_MODE} mode had ${failed} failed scan(s).`);
+  }
 }
 
 main().catch((err) => {
   console.error(err);
-  process.exit(0); // never fail the pipeline on scan errors
+  process.exit(STRICT ? 1 : 0);
 });

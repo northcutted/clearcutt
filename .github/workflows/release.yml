@@ -574,7 +574,9 @@ jobs:
           read -r -d '' FINAL_NOTES <<EOF || true
           # 🚀 ClearCutt Hardened Fleet Release $TAG_NAME
 
-          This release has been **cryptographically certified** with **Zero-CVE** status and **SLSA Level 3 non-falsifiable provenance** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
+          This release has been **cryptographically certified** with **no fixable Critical/High CVEs in gated production tiers at release time** and **SLSA Level 3 non-falsifiable provenance** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
+
+          The public catalog may still show newly disclosed, unfixed, dev-tier, or base-layer findings after release because the site rescans published SBOMs against the latest Grype database.
 
           All OCI layered manifests have been keylessly signed via Sigstore OIDC, and full SPDX SBOM audits are attached as release assets.
 
