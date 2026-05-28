@@ -19,9 +19,19 @@ def log_pass(msg): print(f"{GREEN}[Auto-Patch] ✔ {msg}{RESET}")
 def log_warn(msg): print(f"{YELLOW}[Auto-Patch] ⚠ {msg}{RESET}")
 def log_fail(msg): print(f"{RED}[Auto-Patch] ✘ {msg}{RESET}", file=sys.stderr); sys.exit(1)
 
+def env_int(name, default):
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        log_warn(f"Ignoring invalid integer value for {name}.")
+        return default
+
 def load_remediation_plan(cap):
     plan_path = os.path.join("build-outputs", "remediation-plan.json")
-    cmd = ["./scripts/remediation-broker.py", "--out", plan_path]
+    cmd = ["./scripts/remediation-broker.py", "--out", plan_path, "--quiet"]
+    include_dev_only = os.environ.get("INCLUDE_DEV_ONLY_REMEDIATION", "").lower()
+    if include_dev_only in {"1", "true", "yes"}:
+        cmd.append("--include-dev-only")
     if cap > 0:
         cmd.extend(["--limit", str(cap)])
 
@@ -110,14 +120,24 @@ def main():
 
     # Bound per-run work so a backlog of findings can't blow past the workflow
     # timeout. Anything above the cap rolls into the next scheduled run.
-    try:
-        cap = int(os.environ.get("MAX_FINDINGS_PER_RUN", "0"))
-    except ValueError:
-        cap = 0
+    cap = env_int("MAX_FINDINGS_PER_RUN", 0)
+    max_failures = env_int("MAX_PATCH_FAILURES_PER_RUN", 1)
     plan = load_remediation_plan(cap)
     campaigns = plan.get("campaigns", [])
     if not campaigns:
-        log_pass("Zero actionable High or Critical runtime vulnerabilities with fixes identified. Triage clean!")
+        summary = plan.get("summary", {})
+        dev_only = summary.get("devOnlyCampaignCount", 0)
+        if dev_only:
+            log_pass(
+                "No production remediation campaigns selected; "
+                f"{dev_only} dev-tier-only campaign(s) deferred by policy."
+            )
+            log_info(
+                "Set INCLUDE_DEV_ONLY_REMEDIATION=1, or use the include_dev_only "
+                "workflow input, for an explicit dev-tier remediation run."
+            )
+        else:
+            log_pass("Zero actionable High or Critical runtime vulnerabilities with fixes identified. Triage clean!")
         return
 
     log_info(
@@ -127,14 +147,35 @@ def main():
     deferred_count = plan.get("summary", {}).get("deferredCount", 0)
     if deferred_count:
         log_warn(f"Broker deferred {deferred_count} finding occurrence(s) outside auto-remediation policy.")
+    for index, campaign in enumerate(campaigns, start=1):
+        log_info(
+            f"Campaign {index}: {campaign['package']} {campaign['cve']} "
+            f"{campaign.get('installedVersion', '?')} -> {campaign.get('fixedVersion', '?')} "
+            f"targets={campaign.get('targetCount', len(campaign.get('affectedTargets', [])))} "
+            f"prod_targets={campaign.get('productionTargetCount', 0)}"
+        )
 
     success_count = 0
+    failure_count = 0
     for campaign in campaigns:
         # Prevent runaway parallel API calls by processing findings sequentially
         if execute_patch_for_campaign(campaign):
             success_count += 1
+        else:
+            failure_count += 1
+            if max_failures > 0 and failure_count >= max_failures:
+                remaining = len(campaigns) - success_count - failure_count
+                log_warn(
+                    f"Stopping after {failure_count} failed patch attempt(s); "
+                    f"{remaining} campaign(s) remain queued for a later run."
+                )
+                break
 
-    log_pass(f"Auto-Patch Dispatcher complete. Drafted {success_count}/{len(campaigns)} remediation PR(s).")
+    attempted = success_count + failure_count
+    log_pass(
+        f"Auto-Patch Dispatcher complete. Drafted {success_count}/{attempted} attempted "
+        f"remediation PR(s)."
+    )
 
 if __name__ == "__main__":
     main()

@@ -159,7 +159,7 @@ jobs:
         env:
           GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
         run: |
-          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
             --publish \
             --version-tag "v${{ needs.check-version.outputs.version }}" \
@@ -170,11 +170,32 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          echo "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
-          nix copy --option secret-key-files secret-key.pem \
-            --to "s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            ".#packages.${{ matrix.system }}.\"${{ matrix.language }}-${{ matrix.tier }}\""
-          rm secret-key.pem
+          set -euo pipefail
+          printf '%s\n' '${{ secrets.NIX_CACHE_SECRET_KEY }}' > secret-key.pem
+          chmod 600 secret-key.pem
+          trap 'rm -f secret-key.pem' EXIT
+
+          INSTALLABLE='.#packages.${{ matrix.system }}."${{ matrix.language }}-${{ matrix.tier }}"'
+          OUT_PATH=$(nix path-info --accept-flake-config "$INSTALLABLE")
+          CACHE_STORE="s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com&secret-key=$PWD/secret-key.pem"
+
+          nix copy --accept-flake-config --to "$CACHE_STORE" "$INSTALLABLE"
+
+          STORE_HASH="${OUT_PATH#/nix/store/}"
+          STORE_HASH="${STORE_HASH%%-*}"
+          NARINFO_URL="https://nix-cache.clearcutt.dev/${STORE_HASH}.narinfo"
+
+          for _ in {1..12}; do
+            NARINFO=$(curl -fsSL "$NARINFO_URL" || true)
+            if grep -q '^Sig: clearcutt-cache-1:' <<< "$NARINFO"; then
+              echo "Verified signed cache narinfo: $NARINFO_URL"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Uploaded cache narinfo is missing the clearcutt-cache-1 signature: $NARINFO_URL"
+          exit 1
 
       - name: Stage arch-suffixed release assets
         run: |

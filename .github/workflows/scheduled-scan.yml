@@ -6,6 +6,12 @@ name: ClearCutt Manual Remediation Scan
 
 on:
   workflow_dispatch:
+    inputs:
+      include_dev_only:
+        description: "Also attempt dev-tier-only remediation campaigns"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -93,7 +99,11 @@ jobs:
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
           # Cap how many distinct findings one run will attempt. Anything over
           # this gets picked up on the next scheduled run.
-          MAX_FINDINGS_PER_RUN: "5"
+          MAX_FINDINGS_PER_RUN: "1"
+          # Dev-tier-only campaigns are intentionally not included here. They
+          # can be tested with the include_dev_only workflow dispatch input.
+          INCLUDE_DEV_ONLY_REMEDIATION: ${{ inputs.include_dev_only }}
+          MAX_PATCH_FAILURES_PER_RUN: "1"
         run: ./scripts/auto-patch-triage.py
 
       - name: Upload Scanned Vulnerabilities

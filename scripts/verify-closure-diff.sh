@@ -51,14 +51,14 @@ trap cleanup EXIT INT TERM
 if [[ -f "$OLD_INPUT" ]]; then
   cat "$OLD_INPUT" > "$OLD_LIST"
 else
-  nix path-info -r "$OLD_INPUT" --extra-experimental-features "nix-command flakes" > "$OLD_LIST"
+  nix path-info -r "$OLD_INPUT" --extra-experimental-features "nix-command flakes" --accept-flake-config > "$OLD_LIST"
 fi
 
 # Resolve new closure paths
 if [[ -f "$NEW_INPUT" ]]; then
   cat "$NEW_INPUT" > "$NEW_LIST"
 else
-  nix path-info -r "$NEW_INPUT" --extra-experimental-features "nix-command flakes" > "$NEW_LIST"
+  nix path-info -r "$NEW_INPUT" --extra-experimental-features "nix-command flakes" --accept-flake-config > "$NEW_LIST"
 fi
 
 log_info "Analyzing closure differences for target package: $TARGET_PKG..."
@@ -100,7 +100,7 @@ for p in "${CHANGED_PATHS[@]}"; do
 
   # 2. Does the target package depend on it (is it a legitimate dependency of the target)?
   local target_deps
-  target_deps=$(nix path-info -r "$TARGET_NEW_PATH" --extra-experimental-features "nix-command flakes" 2>/dev/null || true)
+  target_deps=$(nix path-info -r "$TARGET_NEW_PATH" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
   if grep -qF "$p" <<< "$target_deps"; then
     log_info "Legitimate dependency change allowed: $(basename "$p")"
     continue
@@ -108,7 +108,7 @@ for p in "${CHANGED_PATHS[@]}"; do
 
   # 3. Does it depend on the target package (is it a legitimate reverse-dependency)?
   local p_deps
-  p_deps=$(nix path-info -r "$p" --extra-experimental-features "nix-command flakes" 2>/dev/null || true)
+  p_deps=$(nix path-info -r "$p" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
   if grep -qF "$TARGET_NEW_PATH" <<< "$p_deps"; then
     log_info "Legitimate reverse-dependency rebuild allowed: $(basename "$p")"
     continue

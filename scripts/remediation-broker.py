@@ -174,8 +174,16 @@ def normalize_campaigns(vuln_dir):
     return normalized, deferred
 
 
-def build_plan(vuln_dir, limit=0):
+def build_plan(vuln_dir, limit=0, include_dev_only=False):
     campaigns, deferred = normalize_campaigns(vuln_dir)
+    candidate_campaign_count = len(campaigns)
+    dev_only_campaign_count = sum(
+        1 for campaign in campaigns if campaign["productionTargetCount"] == 0
+    )
+    if not include_dev_only:
+        campaigns = [
+            campaign for campaign in campaigns if campaign["productionTargetCount"] > 0
+        ]
     if limit > 0:
         campaigns = campaigns[:limit]
     return {
@@ -185,7 +193,10 @@ def build_plan(vuln_dir, limit=0):
         "deferred": deferred,
         "summary": {
             "campaignCount": len(campaigns),
+            "candidateCampaignCount": candidate_campaign_count,
             "deferredCount": len(deferred),
+            "devOnlyCampaignCount": dev_only_campaign_count,
+            "includeDevOnly": include_dev_only,
             "productionCampaignCount": sum(
                 1 for campaign in campaigns if campaign["productionTargetCount"] > 0
             ),
@@ -203,6 +214,16 @@ def main():
     parser.add_argument("--vuln-dir", default="", help="Specific vulnerability directory to read.")
     parser.add_argument("--limit", type=int, default=0, help="Maximum campaigns to emit.")
     parser.add_argument("--out", default="", help="Optional output JSON path.")
+    parser.add_argument(
+        "--include-dev-only",
+        action="store_true",
+        help="Include dev-tier-only campaigns. By default auto-remediation is production-only.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Write the plan without printing the full JSON payload to stdout.",
+    )
     args = parser.parse_args()
 
     vuln_dir = args.vuln_dir or latest_vulnerability_dir(args.vuln_root)
@@ -213,13 +234,25 @@ def main():
         print(f"[broker] vulnerability directory does not exist: {vuln_dir}", file=sys.stderr)
         return 1
 
-    plan = build_plan(vuln_dir, args.limit)
+    plan = build_plan(vuln_dir, args.limit, include_dev_only=args.include_dev_only)
     rendered = json.dumps(plan, indent=2, sort_keys=True)
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as handle:
             handle.write(rendered + "\n")
-    print(rendered)
+    if args.quiet:
+        summary = plan["summary"]
+        print(
+            "[broker] "
+            f"campaigns={summary['campaignCount']} "
+            f"candidates={summary['candidateCampaignCount']} "
+            f"production={summary['productionCampaignCount']} "
+            f"dev_only={summary['devOnlyCampaignCount']} "
+            f"deferred={summary['deferredCount']} "
+            f"source={vuln_dir}"
+        )
+    else:
+        print(rendered)
     return 0
 
 

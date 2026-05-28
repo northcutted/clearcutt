@@ -80,7 +80,7 @@ jobs:
       # Omit --publish to prevent any registry copy or keyless OIDC signing.
       - name: Run Build and Security Gate
         run: |
-          nix develop --extra-experimental-features "nix-command flakes" --command ./pipeline/pipeline.sh \
+          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
             "${{ matrix.language }}-${{ matrix.tier }}"
 
@@ -115,4 +115,4 @@ jobs:
 
       - name: Execute Gating Suite
         run: |
-          nix develop --extra-experimental-features "nix-command flakes" --command ./tests/verify.sh
+          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh

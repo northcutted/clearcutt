@@ -192,7 +192,7 @@ test_rootless_boundaries() {
   if [ ! -f "$build_tar" ]; then
     log_info "Target image tarball not found. Invoking build runner..."
     local link_path="build-outputs/${target_image}-link"
-    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config
     cp -L "$link_path" "$build_tar"
     rm -f "$link_path"
   fi
@@ -332,7 +332,7 @@ test_distroless_boundaries() {
   if [ ! -f "$build_tar" ]; then
     log_info "Target image tarball not found. Invoking build runner..."
     local link_path="build-outputs/${target_image}-link"
-    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config
     cp -L "$link_path" "$build_tar"
     rm -f "$link_path"
   fi
@@ -435,14 +435,14 @@ test_container_structure_tests() {
   if [ ! -f "$slim_tar" ]; then
     log_info "Slim image not found. Building..."
     local link_path="build-outputs/coreLTS-slim-link"
-    nix build ".#coreLTS-slim" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    nix build ".#coreLTS-slim" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config
     cp -L "$link_path" "$slim_tar"
     rm -f "$link_path"
   fi
   if [ ! -f "$distroless_tar" ]; then
     log_info "Distroless image not found. Building..."
     local link_path="build-outputs/coreLTS-distroless-link"
-    nix build ".#coreLTS-distroless" --out-link "$link_path" --extra-experimental-features "nix-command flakes"
+    nix build ".#coreLTS-distroless" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config
     cp -L "$link_path" "$distroless_tar"
     rm -f "$link_path"
   fi
@@ -490,7 +490,7 @@ test_cve_remediation_gates() {
   log_info "Verifying G1: Hermetic Build Gating..."
   if [ ! -f "$build_tar" ]; then
     local link_path="build-outputs/${target_image}-link"
-    if ! nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes"; then
+    if ! nix build ".#$target_image" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
       log_fail "G1 Gate Failed: Hermetic Nix compilation aborted."
     fi
     cp -L "$link_path" "$build_tar"

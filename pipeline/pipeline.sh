@@ -68,7 +68,7 @@ run_patch_cycle() {
   log_info "Initiating automated daily patch cycle. Fetching upstream channels..."
   report_scm_status "pending" "Initiating automated daily flake inputs patch cycle"
   
-  if nix flake update --extra-experimental-features "nix-command flakes"; then
+  if nix flake update --extra-experimental-features "nix-command flakes" --accept-flake-config; then
     log_success "Upstream Nix channels refreshed. Flake inputs updated successfully."
     report_scm_status "success" "Daily flake inputs updated successfully"
   else
@@ -142,7 +142,7 @@ certify_target() {
     build_attr=".#packages.${system}.\"${target}\""
   fi
 
-  if nix build "$build_attr" --out-link "$link_path" --extra-experimental-features "nix-command flakes"; then
+  if nix build "$build_attr" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
     cp -L "$link_path" "$tar_path"
     rm -f "$link_path"
     log_success "OCI image layered and compiled -> $tar_path"

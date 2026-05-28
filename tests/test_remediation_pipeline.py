@@ -76,6 +76,17 @@ class RemediationPipelineTests(unittest.TestCase):
 
         self.assertIn("python313 =", expr)
 
+    def test_agent_nix_invocations_accept_repo_flake_cache_config(self):
+        setup_action = (ROOT / ".github" / "actions" / "setup-nix" / "action.yml").read_text()
+        release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn("--accept-flake-config", draft_agent.NIX_FLAKE_FLAGS)
+        self.assertIn("accept-flake-config = true", setup_action)
+        self.assertIn("https://nix-cache.clearcutt.dev", setup_action)
+        self.assertIn("clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=", setup_action)
+        self.assertIn("secret-key=$PWD/secret-key.pem", release_workflow)
+        self.assertIn("^Sig: clearcutt-cache-1:", release_workflow)
+
     def test_broker_prioritizes_fixed_runtime_production_campaigns(self):
         vuln_dir = self.tmp_path / "vulnerabilities" / "v1.0.0"
         vuln_dir.mkdir(parents=True)
@@ -104,6 +115,30 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertEqual(campaign["fixedVersion"], "3.13.2")
         self.assertEqual(campaign["productionTargetCount"], 1)
         self.assertEqual(campaign["affectedTargets"][0]["target"], "python3.13-slim")
+
+    def test_broker_defers_dev_only_campaigns_by_default(self):
+        vuln_dir = self.tmp_path / "vulnerabilities" / "v1.0.0"
+        vuln_dir.mkdir(parents=True)
+        finding = {
+            "id": "CVE-2026-67890",
+            "severity": "Critical",
+            "packageName": "gradle",
+            "packageVersion": "9.2.0",
+            "layer": "runtime",
+            "fixedIn": "9.3.0",
+            "fixState": "fixed",
+        }
+        with open(vuln_dir / "java21-dev-amd64.json", "w", encoding="utf-8") as handle:
+            json.dump({"findings": [finding]}, handle)
+
+        default_plan = broker.build_plan(str(vuln_dir))
+        opt_in_plan = broker.build_plan(str(vuln_dir), include_dev_only=True)
+
+        self.assertEqual(default_plan["campaigns"], [])
+        self.assertEqual(default_plan["summary"]["candidateCampaignCount"], 1)
+        self.assertEqual(default_plan["summary"]["devOnlyCampaignCount"], 1)
+        self.assertEqual(len(opt_in_plan["campaigns"]), 1)
+        self.assertEqual(opt_in_plan["campaigns"][0]["package"], "gradle")
 
     def test_remediation_scan_mode_fails_closed_when_grype_missing(self):
         node = shutil.which("node")
