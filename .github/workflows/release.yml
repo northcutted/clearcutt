@@ -171,6 +171,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_NAME: clearcutt.dev
         run: |
           set -euo pipefail
           printf '%s\n' '${{ secrets.NIX_CACHE_SECRET_KEY }}' > secret-key.pem
@@ -184,6 +186,7 @@ jobs:
           STORE_HASH="${OUT_PATH#/nix/store/}"
           STORE_HASH="${STORE_HASH%%-*}"
           NARINFO_URL="https://nix-cache.clearcutt.dev/${STORE_HASH}.narinfo"
+          NARINFO_KEY="${STORE_HASH}.narinfo"
           R2_ENDPOINT="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
 
           nix store sign --recursive --key-file secret-key.pem "$OUT_PATH"
@@ -192,24 +195,64 @@ jobs:
           # correctly. `nix copy` treats an existing narinfo as present and logs
           # "copying 0 paths...", so remove stale metadata first and force Nix
           # to publish a fresh signed narinfo.
-          aws --endpoint-url "$R2_ENDPOINT" s3 rm "s3://clearcutt-nix-cache/${STORE_HASH}.narinfo" || true
+          aws --endpoint-url "$R2_ENDPOINT" s3 rm "s3://clearcutt-nix-cache/${NARINFO_KEY}" || true
 
           nix copy --accept-flake-config --refresh \
             --option narinfo-cache-positive-ttl 0 \
             --option narinfo-cache-negative-ttl 0 \
             --to "$CACHE_STORE" "$OUT_PATH"
 
-          for _ in {1..24}; do
-            NARINFO=$(curl -fsSL "$NARINFO_URL" || true)
-            if grep -q '^Sig: clearcutt-cache-1:' <<< "$NARINFO"; then
-              echo "Verified signed cache narinfo: $NARINFO_URL"
+          ORIGIN_NARINFO=""
+          for _ in {1..12}; do
+            ORIGIN_NARINFO=$(aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://clearcutt-nix-cache/${NARINFO_KEY}" - 2>/dev/null || true)
+            if grep -q '^Sig: clearcutt-cache-1:' <<< "$ORIGIN_NARINFO"; then
+              echo "Verified signed R2 origin narinfo: s3://clearcutt-nix-cache/${NARINFO_KEY}"
+              break
+            fi
+            sleep 5
+          done
+
+          if ! grep -q '^Sig: clearcutt-cache-1:' <<< "$ORIGIN_NARINFO"; then
+            echo "::error::Uploaded R2 origin narinfo is missing the clearcutt-cache-1 signature: s3://clearcutt-nix-cache/${NARINFO_KEY}"
+            printf '%s\n' "$ORIGIN_NARINFO"
+            exit 1
+          fi
+
+          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            ZONE_RESPONSE=$(
+              curl -fsSL \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                "https://api.cloudflare.com/client/v4/zones?name=${CLOUDFLARE_ZONE_NAME}" || true
+            )
+            ZONE_ID=""
+            if [[ -n "$ZONE_RESPONSE" ]]; then
+              ZONE_ID=$(python3 -c 'import json,sys; data=json.load(sys.stdin); zones=data.get("result") or []; print(zones[0].get("id","") if zones else "")' <<< "$ZONE_RESPONSE" || true)
+            fi
+            if [[ -n "$ZONE_ID" ]]; then
+              if ! curl -fsSL -X POST \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/purge_cache" \
+                --data "{\"files\":[\"${NARINFO_URL}\"]}" >/dev/null; then
+                echo "::warning::Cloudflare purge request failed for ${NARINFO_URL}; R2 origin is signed."
+              fi
+            else
+              echo "::warning::Cloudflare zone ${CLOUDFLARE_ZONE_NAME} was not found; R2 origin is signed."
+            fi
+          else
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set; R2 origin is signed, but public edge cache may be stale."
+          fi
+
+          for _ in {1..12}; do
+            EDGE_NARINFO=$(curl -fsSL -H "Cache-Control: no-cache" "$NARINFO_URL" || true)
+            if grep -q '^Sig: clearcutt-cache-1:' <<< "$EDGE_NARINFO"; then
+              echo "Verified signed public cache narinfo: $NARINFO_URL"
               exit 0
             fi
             sleep 5
           done
 
-          echo "::error::Uploaded cache narinfo is missing the clearcutt-cache-1 signature: $NARINFO_URL"
-          exit 1
+          echo "::warning::R2 origin narinfo is signed, but Cloudflare edge still served stale metadata: $NARINFO_URL"
 
       - name: Stage arch-suffixed release assets
         run: |

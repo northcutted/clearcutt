@@ -85,7 +85,10 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertIn("https://nix-cache.clearcutt.dev", setup_action)
         self.assertIn("clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=", setup_action)
         self.assertIn("nix store sign --recursive --key-file secret-key.pem", release_workflow)
-        self.assertIn('s3 rm "s3://clearcutt-nix-cache/${STORE_HASH}.narinfo"', release_workflow)
+        self.assertIn('s3 rm "s3://clearcutt-nix-cache/${NARINFO_KEY}"', release_workflow)
+        self.assertIn('s3 cp "s3://clearcutt-nix-cache/${NARINFO_KEY}" -', release_workflow)
+        self.assertIn("purge_cache", release_workflow)
+        self.assertIn("R2 origin narinfo is signed", release_workflow)
         self.assertIn("secret-key=$PWD/secret-key.pem", release_workflow)
         self.assertIn("^Sig: clearcutt-cache-1:", release_workflow)
 

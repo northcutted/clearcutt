@@ -63,6 +63,7 @@ Add this job step to your GitHub Actions workflows (e.g. `.github/workflows/pr-g
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           # 1. Temporarily write the private signing key
           printf '%s\n' "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
@@ -74,15 +75,22 @@ Add this job step to your GitHub Actions workflows (e.g. `.github/workflows/pr-g
           nix store sign --recursive --key-file secret-key.pem "$OUT_PATH"
           STORE_HASH="${OUT_PATH#/nix/store/}"
           STORE_HASH="${STORE_HASH%%-*}"
-          aws --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            s3 rm "s3://clearcutt-nix-cache/${STORE_HASH}.narinfo" || true
+          NARINFO_KEY="${STORE_HASH}.narinfo"
+          R2_ENDPOINT="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          aws --endpoint-url "$R2_ENDPOINT" s3 rm "s3://clearcutt-nix-cache/${NARINFO_KEY}" || true
           nix copy --accept-flake-config --refresh \
             --option narinfo-cache-positive-ttl 0 \
             --option narinfo-cache-negative-ttl 0 \
             --to "s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com&secret-key=$PWD/secret-key.pem" \
             "$OUT_PATH"
+
+          # 3. Verify the origin object, then purge the public CDN narinfo if available.
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://clearcutt-nix-cache/${NARINFO_KEY}" - |
+            grep '^Sig: clearcutt-cache-1:'
+          # In production, purge https://nix-cache.clearcutt.dev/${NARINFO_KEY}
+          # with CLOUDFLARE_API_TOKEN so edge nodes stop serving stale unsigned metadata.
             
-          # 3. Clean up the private key
+          # 4. Clean up the private key
           rm secret-key.pem
 ```
 
