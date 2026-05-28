@@ -132,15 +132,19 @@ certify_target() {
   log_info "Compiling OCI layered image via Nix..."
   local link_path="$OUTPUT_DIR/$target-link"
   local build_attr=""
-  
-  # Determine correct Nix flake target path based on platform
-  if [[ "$system" == "aarch64-darwin" ]] || [[ "$system" == "x86_64-darwin" ]]; then
-    # OCI image matrix is only defined on Linux host systems. Darwin builds fallback
-    # to host system platform layers if requested, or compile natively using standard packages.
-    build_attr=".#$target"
-  else
-    build_attr=".#packages.${system}.\"${target}\""
+
+  # The OCI image matrix (packages.<system>."<lang><ver>-<tier>") is only
+  # evaluated on Linux hosts — see the `hostPkgs.stdenv.isLinux` guard in
+  # flake.nix. On macOS those attributes simply don't exist, so fail fast with
+  # an actionable message instead of letting Nix emit an opaque
+  # "attribute 'java21-distroless' missing" error several seconds later.
+  if [[ "$system" == *"-darwin" ]]; then
+    log_error "OCI image target '$target' is only buildable on a Linux host."
+    log_error "On macOS, use 'nix build .#<lang><ver>-native' for raw runtime closures,"
+    log_error "or run this pipeline on a Linux runner/VM to produce the image matrix."
+    return 1
   fi
+  build_attr=".#packages.${system}.\"${target}\""
 
   if nix build "$build_attr" --out-link "$link_path" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
     cp -L "$link_path" "$tar_path"

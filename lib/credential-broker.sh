@@ -39,15 +39,23 @@ init_credential_broker() {
   local registry_path
   registry_path=$(echo "$proto_removed" | sed -E 's|/?$|/|') # Ensure trailing slash
 
+  # npm's legacy basic-auth fields expect `_password` to be the base64 of the
+  # password ALONE (it pairs with the plaintext `username`); the combined
+  # base64("user:password") form belongs to the `_auth` field. Emit both the
+  # bearer token (`_authToken`, for token registries) and a correct legacy
+  # basic-auth triple so Nexus/Artifactory in either mode authenticates.
+  local base64_password
+  base64_password=$(printf '%s' "${ENTERPRISE_MIRROR_TOKEN}" | base64)
   local base64_auth
-  base64_auth=$(echo -n "${ENTERPRISE_MIRROR_USER}:${ENTERPRISE_MIRROR_TOKEN}" | base64)
+  base64_auth=$(printf '%s' "${ENTERPRISE_MIRROR_USER}:${ENTERPRISE_MIRROR_TOKEN}" | base64)
 
   # Write token and user-pass variants to cover all NPM/Yarn client types
   cat <<EOF > "$AUTH_CACHE_DIR/.npmrc"
 registry=${ENTERPRISE_MIRROR_URL}
 ${registry_path}:_authToken=${ENTERPRISE_MIRROR_TOKEN}
 ${registry_path}:username=${ENTERPRISE_MIRROR_USER}
-${registry_path}:_password=${base64_auth}
+${registry_path}:_password=${base64_password}
+${registry_path}:_auth=${base64_auth}
 ${registry_path}:always-auth=true
 EOF
   chmod 600 "$AUTH_CACHE_DIR/.npmrc"
@@ -108,7 +116,6 @@ EOF
   cat <<EOF > "$AUTH_CACHE_DIR/init.gradle"
 allprojects {
     repositories {
-        options.compilerArgs << "-Xlint:unchecked"
         all { ArtifactRepository repo ->
             if (repo instanceof MavenArtifactRepository) {
                 repo.url = uri("${ENTERPRISE_MIRROR_URL}")

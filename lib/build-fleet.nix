@@ -38,7 +38,12 @@ let
     chmod 755 $out/app
   '';
 
-  # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes
+  # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes.
+  # symlinkJoin materializes a new store path whose bin/ and lib/ entries are
+  # symlinks into the upstream nodejs derivation; postBuild then unlinks the
+  # package-manager entry points and the npm/corepack module trees so the
+  # production tiers ship the bare `node` binary only. The upstream derivation
+  # is untouched, so this is a cheap, override-free trim.
   removeNpm = nodePkg: pkgs.symlinkJoin {
     name = "${nodePkg.name}-no-npm";
     paths = [ nodePkg ];
@@ -87,12 +92,9 @@ let
     else if language == "python" then
       (let
          pythonPackage = if version == "3.13" then
-                           (if tier == "dev" then
-                              (if pkgs ? python314 then pkgs.python314 else pkgs.python313)
-                            else
-                              (if pkgs ? python313 then pkgs.python313 else throw "Python 3.13 is not available"))
+                           (if pkgs ? python313 then pkgs.python313 else throw "Python 3.13 is not available in this nixpkgs version")
                          else if version == "3.14" then
-                           (if pkgs ? python314 then pkgs.python314 else throw "Python 3.14 is not available")
+                           (if pkgs ? python314 then pkgs.python314 else throw "Python 3.14 is not available in this nixpkgs version")
                          else throw "Unsupported Python version: ${version}";
        in
        if tier == "dev" then

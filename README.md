@@ -56,7 +56,12 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 | **Python** | `3.13`, `3.14` (Pre-release) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
 | **Go** | `1.25`, `1.26` (Pre-release) | Full Go Toolchain | Go Runtime | Binary Execution Layer |
 | **.NET** | `8.0`, `10.0` | Full .NET SDK | ASP.NET Runtime | Hardened ASP.NET Layer |
+| **Rust** | `1.95` | rustc + Cargo + Clippy + rustfmt | Static-binary base | Static-binary base |
+| **C/C++** | `15` (GCC) | GCC + Make + CMake + Ninja | Static-binary base | Static-binary base |
 | **Core** | `LTS` | Coreutils + Bash | Bash + BusyBox | CA Certificates Only |
+
+> [!NOTE]
+> **Compiled-language runtime tiers:** Rust and C/C++ produce statically-linkable binaries, so their `slim`/`distroless` tiers ship a minimal hardened base (CA certificates, plus a shell on `slim`) for you to drop your compiled artifact into — they intentionally omit the compiler toolchain, which lives only in the `dev` tier.
 
 ---
 
@@ -105,7 +110,23 @@ jobs:
           image-name: 'ghcr.io/${{ github.repository }}/my-app:latest'
 ```
 
-### 2. OCI Deployment: Secure Docker Compose Blueprint
+### 2. Adopting ClearCutt Under a Base-Image Mandate
+ClearCutt images are built **from scratch** for maximum hardening, but if your organization mandates a sanctioned base OS (Amazon Linux, UBI, Ubuntu Pro), you don't have to migrate to start benefiting. Because each runtime is a self-contained, `RPATH`-bound `/nix/store` closure, you can graft it directly onto the mandated base without modifying any OS layer or its bundled monitoring/security agents:
+
+```dockerfile
+# examples/base-image-overlay/Dockerfile
+FROM ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless AS clearcutt
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+
+# Graft the hardened runtime closure on top — no /lib, /usr, or /etc/passwd
+# from the mandated base is overwritten.
+COPY --from=clearcutt /nix /nix
+USER 10001:10001
+```
+
+See [`examples/base-image-overlay/`](examples/base-image-overlay/) for the full Dockerfile and an honest comparison of this overlay approach (Path A) versus full migration to the from-scratch images (Path B).
+
+### 3. OCI Deployment: Secure Docker Compose Blueprint
 For container runtimes, the project provides a hardened Compose blueprint enforcing strict Sandboxing:
 
 ```yaml
@@ -123,7 +144,7 @@ services:
       - /tmp:mode=1777            # Mounts ephemeral /tmp into memory
 ```
 
-### 3. Nix Native Flake overlay
+### 4. Nix Native Flake overlay
 For Nix native developers and downstream clusters, ClearCutt publishes packages and devShell libraries natively. Import ClearCutt in your `flake.nix` and apply the default overlay:
 
 ```nix
@@ -143,7 +164,7 @@ For Nix native developers and downstream clusters, ClearCutt publishes packages 
 }
 ```
 
-### 4. Kubernetes Native Deployment & Kyverno Admission Gating
+### 5. Kubernetes Native Deployment & Kyverno Admission Gating
 ClearCutt provides complete deployment and policy manifests under `examples/k8s-deployment/` to enforce signature and SBOM verification.
 
 * **Hardened Deployment (`deployment.yaml`):** Uses the secure unprivileged context (`runAsUser: 10001`), drops kernel capabilities, disables privilege escalation, and locks the root layer.
@@ -151,7 +172,7 @@ ClearCutt provides complete deployment and policy manifests under `examples/k8s-
 * > [!CAUTION]
   > **Webhook Availability Trade-off:** The provided Kyverno policy defaults to a fail-closed configuration (enforced via `validationFailureAction: Enforce`). If the Kyverno admission controller webhook becomes unavailable or crashes, all pod deployment operations matching this policy will be blocked on the cluster. Organizations must evaluate whether to fall back to auditing mode (`validationFailureAction: Audit`) depending on their high-availability and business continuity requirements.
 
-### 5. Red Hat OpenShift Production Deployment
+### 6. Red Hat OpenShift Production Deployment
 For deployment onto **Red Hat OpenShift (OCP)**, the project provides dedicated blueprints complying with strict **Security Context Constraints (SCC)** under `examples/openshift-deployment/`.
 
 * **Arbitrary User ID Compliance:** OpenShift's `restricted-v2` SCC allocates random, high-range namespace UIDs at runtime and assigns membership to the `root` group (`gid: 0`). 

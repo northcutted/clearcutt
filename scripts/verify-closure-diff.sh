@@ -90,32 +90,47 @@ fi
 
 log_info "Found ${#CHANGED_PATHS[@]} modified or added paths in the new closure."
 
+# Decide whether a single changed store path is an explained dependency cascade
+# of the target package. Returns 0 (legitimate) or 1 (unexplained).
+#
+# Defined as a function because `local` is only valid inside one — declaring it
+# at the top level of the script aborts under `set -euo pipefail`, which would
+# silently neuter this whole gate the moment a real closure diff appeared.
+is_legitimate_change() {
+  local p="$1"
+  local target_path="$2"
+
+  # 1. Is it the target package itself?
+  if [[ "$p" == "$target_path" ]]; then
+    return 0
+  fi
+
+  # 2. Does the target package depend on it (legitimate dependency of the target)?
+  local target_deps
+  target_deps=$(nix path-info -r "$target_path" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
+  if grep -qF "$p" <<< "$target_deps"; then
+    log_info "Legitimate dependency change allowed: $(basename "$p")"
+    return 0
+  fi
+
+  # 3. Does it depend on the target package (legitimate reverse-dependency rebuild)?
+  local p_deps
+  p_deps=$(nix path-info -r "$p" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
+  if grep -qF "$target_path" <<< "$p_deps"; then
+    log_info "Legitimate reverse-dependency rebuild allowed: $(basename "$p")"
+    return 0
+  fi
+
+  return 1
+}
+
 # Verify each changed path is legitimate
 UNEXPLAINED_PATHS=()
 for p in "${CHANGED_PATHS[@]}"; do
-  # 1. Is it the target package itself?
-  if [[ "$p" == "$TARGET_NEW_PATH" ]]; then
-    continue
+  if ! is_legitimate_change "$p" "$TARGET_NEW_PATH"; then
+    # None of the dependency relationships matched — flag it as unexplained.
+    UNEXPLAINED_PATHS+=("$p")
   fi
-
-  # 2. Does the target package depend on it (is it a legitimate dependency of the target)?
-  local target_deps
-  target_deps=$(nix path-info -r "$TARGET_NEW_PATH" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
-  if grep -qF "$p" <<< "$target_deps"; then
-    log_info "Legitimate dependency change allowed: $(basename "$p")"
-    continue
-  fi
-
-  # 3. Does it depend on the target package (is it a legitimate reverse-dependency)?
-  local p_deps
-  p_deps=$(nix path-info -r "$p" --extra-experimental-features "nix-command flakes" --accept-flake-config 2>/dev/null || true)
-  if grep -qF "$TARGET_NEW_PATH" <<< "$p_deps"; then
-    log_info "Legitimate reverse-dependency rebuild allowed: $(basename "$p")"
-    continue
-  fi
-
-  # If none of the above match, it is unexplained
-  UNEXPLAINED_PATHS+=("$p")
 done
 
 if [[ ${#UNEXPLAINED_PATHS[@]} -gt 0 ]]; then
