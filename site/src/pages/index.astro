@@ -27,12 +27,12 @@ const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
         — all attached to the GHCR manifest and re-verifiable with the standard upstream tools.
       </p>
       <p class="text-sm text-ink-300">
-        CVE counts on the catalog are rescanned nightly against a fresh Grype database, so
-        a stable SBOM picks up newly-disclosed advisories without a new release. Automated
-        remediation only drafts patches for critical/high findings in the ClearCutt runtime
-        layer when Grype reports a fixed version; base-layer, lower-severity, and unfixed
-        findings remain visible with their policy reason. Dev-tier images include full
-        toolchains and are deliberately not optimized for CVE surface area; never deploy them.
+        CVE counts on the catalog are refreshed nightly against current vulnerability
+        advisories, so a stable SBOM picks up newly-disclosed issues without a new release.
+        Each image page explains whether a safe fix is available, no fix was found yet, the
+        finding comes from the base image, or the finding is listed for awareness. Dev-tier
+        images include full toolchains and are deliberately not optimized for CVE surface area;
+        never deploy them.
       </p>
       <div class="flex flex-wrap gap-3 pt-1">
         <a href={`${base}verification`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>

@@ -47,7 +47,7 @@ const LANGUAGES = {
 };
 
 const TIERS = {
-  dev: { name: 'Dev', blurb: 'Builder tier — full toolchain, shells, debug utilities, credential broker.' },
+  dev: { name: 'Dev', blurb: 'Builder tier — full toolchain, shells, debug utilities, credential helper.' },
   slim: { name: 'Slim', blurb: 'Runtime tier — language runtime plus minimal troubleshooting binaries.' },
   distroless: { name: 'Distroless', blurb: 'Hardened tier — no shells, no coreutils, runtime only.' },
 };
@@ -94,6 +94,24 @@ function remediationBucket(reason) {
     default:
       return 'otherDeferred';
   }
+}
+
+function displayAssertionName(name) {
+  switch (name) {
+    case 'Grype Vulnerability Gating':
+      return 'Vulnerability gate';
+    case 'Syft SBOM Generation':
+      return 'SBOM generation';
+    default:
+      return name;
+  }
+}
+
+function normalizeAssertions(assertions) {
+  return (assertions || []).map((assertion) => ({
+    ...assertion,
+    name: displayAssertionName(assertion.name || ''),
+  }));
 }
 
 function detectRepo() {
@@ -410,7 +428,7 @@ async function buildImageRecord(target, releases, refreshSet) {
       v.testResults = {
         status: tr.status,
         timestamp: tr.timestamp || null,
-        assertions: tr.assertions || [],
+        assertions: normalizeAssertions(tr.assertions),
       };
     }
 
@@ -466,7 +484,7 @@ async function buildImageRecord(target, releases, refreshSet) {
           v.testResults = {
             status: enrich.testResults.status ?? 'unknown',
             timestamp: enrich.testResults.timestamp ?? null,
-            assertions: enrich.testResults.assertions ?? [],
+            assertions: normalizeAssertions(enrich.testResults.assertions),
           };
         }
       }

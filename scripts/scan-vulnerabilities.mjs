@@ -199,7 +199,7 @@ function remediationMetadata({ layer, severityKey, fixedIn, fixState }) {
       status: 'deferred',
       reason: 'base_layer',
       summary:
-        'Outside the ClearCutt runtime overlay scope. Track it as base-image platform risk or replace the mandated base.',
+        'This comes from the underlying base image, so ClearCutt lists it but cannot update it from the runtime layer.',
     };
   }
   if (!highPriority) {
@@ -207,7 +207,7 @@ function remediationMetadata({ layer, severityKey, fixedIn, fixState }) {
       status: 'deferred',
       reason: 'below_priority_threshold',
       summary:
-        'Below the automated remediation threshold. It remains visible in the catalog for awareness.',
+        'This is below the release-blocking severity threshold, so it is listed for awareness.',
     };
   }
   if (!fixedIn) {
@@ -215,14 +215,14 @@ function remediationMetadata({ layer, severityKey, fixedIn, fixState }) {
       status: 'deferred',
       reason: 'no_fixed_version',
       summary:
-        `Grype reports fix state "${fixState || 'unknown'}" and no fixed version. The broker needs upstream fix evidence before patching.`,
+        'No safe fixed version is currently listed for this package. We keep it visible until an upstream fix is available.',
     };
   }
   return {
     status: 'eligible',
     reason: 'fix_available',
     summary:
-      'High-priority runtime finding with a fixed version. Eligible for brokered patch recipe validation.',
+      'A safe fixed version is available for a package ClearCutt adds to this image.',
   };
 }
 

@@ -43,7 +43,7 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         {release.provenance && <StatusPill kind="ok" label="SLSA L3" />}
         {release.signature?.cosignBundlePresent && <StatusPill kind="ok" label="Cosign signed" />}
         {passed
-          ? <StatusPill kind="ok" label="Grype gate passed" />
+          ? <StatusPill kind="ok" label="Vulnerability gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
         {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>

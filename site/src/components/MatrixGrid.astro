@@ -68,13 +68,13 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
   const r = v.remediation;
   if (!r) return 'Open the image page for runtime/base scope and fixed-version details.';
   const parts = [];
-  if (r.eligible) parts.push(`${r.eligible} fixable runtime`);
-  if (r.noFixedVersion) parts.push(`${r.noFixedVersion} no fixed version`);
-  if (r.baseLayer) parts.push(`${r.baseLayer} base-layer`);
-  if (r.belowPriorityThreshold) parts.push(`${r.belowPriorityThreshold} lower-severity`);
-  if (r.otherDeferred) parts.push(`${r.otherDeferred} other deferred`);
+  if (r.eligible) parts.push(`${r.eligible} fix available`);
+  if (r.noFixedVersion) parts.push(`${r.noFixedVersion} no fix found`);
+  if (r.baseLayer) parts.push(`${r.baseLayer} base image`);
+  if (r.belowPriorityThreshold) parts.push(`${r.belowPriorityThreshold} tracked lower severity`);
+  if (r.otherDeferred) parts.push(`${r.otherDeferred} tracked`);
   return parts.length > 0
-    ? `Critical/high remediation status: ${parts.join(', ')}.`
+    ? `Critical/high fix status: ${parts.join(', ')}.`
     : 'No critical/high findings in this catalog scan.';
 }
 ---

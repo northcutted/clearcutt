@@ -3,10 +3,15 @@ import type { ArchPayload } from '../lib/catalog-schema';
 interface Props { architectures: ArchPayload[] }
 const { architectures } = Astro.props;
 const merged = new Map<string, { name: string; statuses: Record<string, string> }>();
+function displayAssertionName(name: string): string {
+  if (name === 'Grype Vulnerability Gating') return 'Vulnerability gate';
+  if (name === 'Syft SBOM Generation') return 'SBOM generation';
+  return name;
+}
 for (const a of architectures) {
   if (!a.testResults) continue;
   for (const x of a.testResults.assertions) {
-    if (!merged.has(x.name)) merged.set(x.name, { name: x.name, statuses: {} });
+    if (!merged.has(x.name)) merged.set(x.name, { name: displayAssertionName(x.name), statuses: {} });
     merged.get(x.name)!.statuses[a.arch] = x.status;
   }
 }
