@@ -34,7 +34,7 @@ const ownerRepo = `${index.owner}/${index.repo}`;
 const sbomUrls = release.assetUrls.sbom || {};
 ---
 <Base title={`${image.imageName}:${image.tier.id} · ${release.tag}`}>
-  <div class="space-y-6" data-pagefind-body>
+  <div class="space-y-12" data-pagefind-body>
     <ImageHeader image={image} selectedTag={release.tag} />
     <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
     <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />

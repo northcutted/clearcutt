@@ -47,6 +47,22 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
           : <StatusPill kind="warn" label="Gate pending" />}
         {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>
+      {release.manifestDigest && (
+        <div class="mt-4 flex flex-wrap items-center gap-3 text-xs">
+          <span class="text-ink-300">Multi-arch Manifest Digest:</span>
+          <div class="flex items-center gap-2 rounded bg-ink-950/80 px-2 py-1 font-mono border border-ink-700/40 text-ink-100" data-digest-copy-root>
+            <span data-digest-val class="text-[11px] truncate max-w-[200px] sm:max-w-xs">{release.manifestDigest}</span>
+            <button
+              type="button"
+              class="text-ink-300 hover:text-accent-soft p-0.5"
+              data-digest-copy-btn
+              title="Copy manifest digest to clipboard"
+            >
+              <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </button>
+          </div>
+        </div>
+      )}
       </div>
     </div>
     <div class="flex flex-col items-end gap-3">
@@ -75,6 +91,20 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         ? base + 'images/' + imageId
         : base + 'images/' + imageId + '/' + tag;
       window.location.href = target;
+    });
+  });
+
+  document.querySelectorAll('[data-digest-copy-root]').forEach((root) => {
+    const btn = root.querySelector('[data-digest-copy-btn]');
+    const val = root.querySelector('[data-digest-val]');
+    if (!btn || !val) return;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(val.textContent.trim());
+        const svg = btn.innerHTML;
+        btn.innerHTML = `<span class="text-[10px] text-accent-soft font-sans font-semibold">Copied</span>`;
+        setTimeout(() => { btn.innerHTML = svg; }, 1200);
+      } catch {}
     });
   });
 </script>

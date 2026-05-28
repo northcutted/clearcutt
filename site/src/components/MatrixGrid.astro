@@ -102,21 +102,40 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
         </span>
         <div class="leading-tight">
           <div class="text-sm font-semibold text-ink-50">{row.display}</div>
-          <div class="mt-1 flex flex-wrap gap-1.5">
-            {row.versions.map((v) => (
-              <span class="chip text-[10px] text-ink-200">{v}</span>
-            ))}
-          </div>
+          {row.versions.length > 1 ? (
+            <div class="flex items-center rounded-lg bg-ink-950/80 p-0.5 border border-ink-700/40 text-[10px] w-fit mt-1.5">
+              {row.versions.map((ver, idx) => {
+                const isNewest = idx === row.versions.length - 1;
+                return (
+                  <button
+                    type="button"
+                    class="px-2 py-0.5 rounded font-mono transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold"
+                    data-version-btn={ver}
+                    data-active={isNewest ? "true" : "false"}
+                  >
+                    {ver}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              {row.versions.map((v) => (
+                <span class="chip text-[10px] text-ink-200">{v}</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {tierOrder.map((tier) => (
         <div class="border-l border-ink-800/70 px-2 py-2 space-y-2">
-          {row.versions.map((ver) => {
+          {row.versions.map((ver, idx) => {
             const id = targetIdFor(row.id, ver, tier);
             const img = byId.get(id);
             const state = slotState(img);
             const repo = ociRepoFor(row.id, ver);
             const isDev = tier === 'dev';
+            const isNewest = idx === row.versions.length - 1;
 
             if (state === 'pending') {
               return (
@@ -126,6 +145,9 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
                   data-state="pending"
                   data-vuln="none"
                   data-pagefind-ignore
+                  data-version-block={ver}
+                  data-active={isNewest ? "true" : "false"}
+                  style={isNewest ? undefined : "display: none;"}
                 >
                   <div class="flex items-center justify-between gap-2">
                     <span class="font-mono text-[11px] text-ink-300 truncate">
@@ -151,6 +173,9 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
                 data-tier={tier}
                 data-state={state}
                 data-vuln={vulnBucket}
+                data-version-block={ver}
+                data-active={isNewest ? "true" : "false"}
+                style={isNewest ? undefined : "display: none;"}
               >
                 <div class="flex items-center justify-between gap-2">
                   <div class="min-w-0 flex items-baseline gap-1.5">
@@ -190,3 +215,33 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
     </div>
   ))}
 </div>
+
+<script is:inline>
+  document.querySelectorAll('[data-version-btn]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const parentRow = btn.closest('.grid');
+      if (!parentRow) return;
+      
+      const selectedVer = btn.getAttribute('data-version-btn');
+      
+      // Update buttons active states in this switcher
+      parentRow.querySelectorAll('[data-version-btn]').forEach(b => {
+        b.setAttribute('data-active', b.getAttribute('data-version-btn') === selectedVer ? 'true' : 'false');
+      });
+      
+      // Update blocks in this row
+      parentRow.querySelectorAll('[data-version-block]').forEach(block => {
+        const isMatch = block.getAttribute('data-version-block') === selectedVer;
+        block.setAttribute('data-active', isMatch ? 'true' : 'false');
+        if (isMatch) {
+          block.style.display = '';
+        } else {
+          block.style.display = 'none';
+        }
+      });
+    });
+  });
+</script>

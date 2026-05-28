@@ -9,6 +9,7 @@ export const PackageEntry = z.object({
   supplier: z.string(),
   nixStorePath: z.string().nullable(),
   spdxId: z.string(),
+  layerDigest: z.string().nullable().optional(),
 });
 export type PackageEntry = z.infer<typeof PackageEntry>;
 

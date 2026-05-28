@@ -116,6 +116,18 @@ spec:
       <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
       <CopyBlock language="shell" code={`docker pull ${versioned}`} />
     </div>
+    {release.manifestDigest && (
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
+        <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+      </div>
+    )}
+    {release.architectures.map((arch) => arch.imageDigest && (
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
+        <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
+      </div>
+    ))}
     <div>
       <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
       <CopyBlock language="shell" code={dockerRun} />

@@ -213,7 +213,29 @@ function pickLicense(pkg) {
   return 'NOASSERTION';
 }
 
+function mapPackageIdToLayerDigest(spdx) {
+  const fileToLayer = new Map();
+  for (const f of spdx.files || []) {
+    if (f.comment && f.comment.startsWith('layerID: ')) {
+      const digest = f.comment.replace('layerID: ', '').trim();
+      fileToLayer.set(f.SPDXID, digest);
+    }
+  }
+
+  const packageToLayer = new Map();
+  for (const r of spdx.relationships || []) {
+    if (r.relationshipType === 'OTHER' && r.spdxElementId && r.relatedSpdxElement) {
+      const layerDigest = fileToLayer.get(r.relatedSpdxElement);
+      if (layerDigest) {
+        packageToLayer.set(r.spdxElementId, layerDigest);
+      }
+    }
+  }
+  return packageToLayer;
+}
+
 function compactPackages(spdx) {
+  const packageToLayer = mapPackageIdToLayerDigest(spdx);
   const items = [];
   for (const p of spdx.packages || []) {
     // Skip the image-root pseudo-package
@@ -233,6 +255,7 @@ function compactPackages(spdx) {
       supplier: p.supplier || 'NOASSERTION',
       nixStorePath: extractNixStorePath(p.sourceInfo),
       spdxId: p.SPDXID,
+      layerDigest: packageToLayer.get(p.SPDXID) || null,
     });
   }
   items.sort((a, b) => a.name.localeCompare(b.name));
