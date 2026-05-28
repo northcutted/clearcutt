@@ -20,6 +20,15 @@ function humanBytes(n: number | null | undefined): string {
   return `${v.toFixed(v < 10 ? 2 : 1)} ${units[i]}`;
 }
 
+function licenseBreakdownFor(pkgs: any[]): [string, number][] {
+  const counts: Record<string, number> = {};
+  pkgs.forEach((p) => {
+    const lic = p.license || 'Unknown';
+    counts[lic] = (counts[lic] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+}
+
 export default function LayerExplorer({ architectures, imageName, tierId }: Props) {
   const archs = architectures.filter((a) => a.layers && a.layers.length > 0);
   const [arch, setArch] = useState(archs[0]?.arch ?? architectures[0]?.arch ?? 'amd64');
@@ -37,7 +46,9 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
   const packages = current?.sbom?.packages ?? [];
   const packagesInLayer = useMemo(() => {
     if (!sel) return [];
-    return packages.filter((p: any) => p.layerDigest === sel.digest);
+    return packages.filter((p: any) => 
+      p.layerDigest === sel.digest || (sel.diffID && p.layerDigest === sel.diffID)
+    );
   }, [sel, packages]);
 
   const vulnsInLayer = useMemo(() => {
@@ -49,12 +60,7 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
   }, [sel, current, packagesInLayer]);
 
   const licenseBreakdown = useMemo(() => {
-    const counts: Record<string, number> = {};
-    packagesInLayer.forEach((p: any) => {
-      const lic = p.license || 'Unknown';
-      counts[lic] = (counts[lic] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return licenseBreakdownFor(packagesInLayer);
   }, [packagesInLayer]);
 
   if (architectures.length === 0) return null;
@@ -90,8 +96,7 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
         <div>
           <h2 className="heading text-lg">Layer explorer</h2>
           <p className="mt-1 text-xs text-ink-300">
-            Click any layer to inspect its digest, size, and position in the image. Bars show
-            relative layer size within the selected architecture.
+            Click any layer card in the cohesive OCI stack below to inspect its digest, size, packages, and vulnerability density.
           </p>
         </div>
         <div className="flex flex-col">
@@ -118,140 +123,134 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3.2fr)_minmax(0,2fr)]">
-        {/* Layer list + Visual Stack */}
-        <div className="surface-soft overflow-hidden flex flex-col md:flex-row">
-          {/* Visual Stack Tower */}
-          <div className="hidden md:flex flex-col justify-end items-center gap-1.5 p-4 border-r border-ink-700/30 bg-ink-950/20 shrink-0 w-[130px] select-none">
-            <div className="text-[10px] uppercase tracking-wider text-ink-300 font-semibold mb-2">Layer Stack</div>
-            <div className="flex-1 flex flex-col justify-end w-full gap-1.5">
-              {layers.map((_, idx) => {
-                const i = layers.length - 1 - idx;
-                const layerItem = layers[i];
-                const isSel = i === selected;
-                
-                const sizeVal = layerItem.size || 0;
-                const minHeight = 26;
-                const maxHeight = 60;
-                const height = totalSize > 0 
-                  ? minHeight + Math.round((Math.log10(sizeVal + 1) / Math.log10(totalSize + 1)) * (maxHeight - minHeight)) 
-                  : minHeight;
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* Cohesive Visual Layer Stack */}
+        <div className="surface-soft flex flex-col min-w-0">
+          <div className="flex items-center justify-between border-b border-ink-700/60 bg-ink-900/80 px-4 py-2.5 text-xs uppercase tracking-wider text-ink-200">
+            <span>OCI Image Layer Stack ({layers.length} layers)</span>
+            <span className="text-ink-300">total {humanBytes(totalSize)}</span>
+          </div>
+          
+          <div className="max-h-[640px] overflow-y-auto p-4 space-y-3 bg-ink-950/20">
+            {layers.map((_, idx) => {
+              // Stack from top (last index, N-1) to bottom (index 0)
+              const i = layers.length - 1 - idx;
+              const layerItem = layers[i];
+              const isSel = i === selected;
+              
+              const sizeVal = layerItem.size || 0;
+              const pct = totalSize > 0 ? Math.max(1, Math.round((sizeVal / totalSize) * 100)) : 0;
 
-                const layerPkgs = packages.filter((p: any) => p.layerDigest === layerItem.digest);
-                const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
-                const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
-                  pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
-                );
+              // Packages & CVEs in this layer
+              const layerPkgs = packages.filter((p: any) => 
+                p.layerDigest === layerItem.digest || (layerItem.diffID && p.layerDigest === layerItem.diffID)
+              );
+              const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
+              const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
+                pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
+              );
 
-                let borderColor = 'border-ink-700/50';
-                let bgColor = 'bg-ink-800/40';
-                let textColor = 'text-ink-300';
-                let glow = '';
+              // Plate design themes
+              let borderColor = 'border-ink-700/40 hover:border-ink-500/70';
+              let bgColor = 'bg-ink-900/30 hover:bg-ink-800/40';
+              let glow = '';
 
-                if (isSel) {
-                  borderColor = 'border-accent';
-                  bgColor = 'bg-accent/20';
-                  textColor = 'text-accent-soft';
-                  glow = 'shadow-[0_0_12px_rgba(var(--accent),0.25)]';
-                } else if (layerVulns.length > 0) {
-                  const hasCriticalOrHigh = layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high');
-                  borderColor = hasCriticalOrHigh ? 'border-danger/30 hover:border-danger/60' : 'border-warn/30 hover:border-warn/60';
-                  bgColor = hasCriticalOrHigh ? 'bg-danger/5 hover:bg-danger/10' : 'bg-warn/5 hover:bg-warn/10';
-                  textColor = hasCriticalOrHigh ? 'text-danger' : 'text-warn';
-                } else {
-                  borderColor = 'border-ink-700/40 hover:border-ink-500/80';
-                  bgColor = 'bg-ink-900/30 hover:bg-ink-800/40';
-                }
+              if (isSel) {
+                borderColor = 'border-accent';
+                bgColor = 'bg-accent/10';
+                glow = 'shadow-[0_0_12px_rgba(var(--accent),0.2)]';
+              } else if (layerVulns.length > 0) {
+                const hasCriticalOrHigh = layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high');
+                borderColor = hasCriticalOrHigh ? 'border-danger/30 hover:border-danger/50' : 'border-warn/30 hover:border-warn/50';
+                bgColor = hasCriticalOrHigh ? 'bg-danger/5 hover:bg-danger/8' : 'bg-warn/5 hover:bg-warn/8';
+              }
 
-                return (
-                  <button
-                    key={layerItem.digest + ':stack:' + i}
-                    type="button"
-                    onClick={() => setSelected(i)}
-                    style={{ height: `${height}px` }}
-                    className={`w-full rounded-md border flex flex-col justify-center px-2 text-left transition-all duration-200 cursor-pointer overflow-hidden ${bgColor} ${borderColor} ${glow}`}
-                    title={`Layer #${i + 1}\nDigest: ${layerItem.digest}\nSize: ${humanBytes(layerItem.size)}\nCVEs: ${layerVulns.length}`}
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span className={`font-mono text-[9px] font-bold ${textColor}`}>L{i + 1}</span>
-                      {layerVulns.length > 0 && (
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high') ? 'bg-danger animate-pulse' : 'bg-warn'
-                        }`} />
+              return (
+                <button
+                  key={layerItem.digest + ':cohesive:' + i}
+                  type="button"
+                  onClick={() => setSelected(i)}
+                  className={`w-full rounded-xl border p-3.5 text-left transition-all duration-200 cursor-pointer flex flex-col gap-2.5 relative overflow-hidden ${bgColor} ${borderColor} ${glow}`}
+                >
+                  {/* Layer top bar: Index, Size, CVE status */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded bg-ink-950/80 border border-ink-800 ${isSel ? 'text-accent-soft border-accent/30' : 'text-ink-200'}`}>
+                        L{i + 1}
+                      </span>
+                      <span className="text-xs font-semibold text-ink-100">
+                        {i === 0 ? 'Base Layer' : i === layers.length - 1 ? 'Top Application Layer' : `Middle Layer #${i + 1}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 font-mono text-xs">
+                      <span className="text-ink-200">{humanBytes(layerItem.size)}</span>
+                      <span className="text-ink-400">({pct}%)</span>
+                    </div>
+                  </div>
+
+                  {/* Digest row */}
+                  <div className="truncate font-mono text-[11px] text-ink-300">
+                    {layerItem.digest}
+                  </div>
+
+                  {/* Nix Package Previews */}
+                  {layerPkgs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-0.5 max-w-full">
+                      {layerPkgs.slice(0, 3).map((p: any) => (
+                        <span 
+                          key={p.name} 
+                          className="px-1.5 py-0.5 rounded bg-ink-950/70 text-ink-200 border border-ink-800 text-[9.5px] font-mono leading-none truncate max-w-[140px]"
+                          title={`${p.name}@${p.version}`}
+                        >
+                          {p.name}
+                        </span>
+                      ))}
+                      {layerPkgs.length > 3 && (
+                        <span className="px-1.5 py-0.5 rounded bg-ink-950/45 text-ink-400 text-[9.5px] font-mono leading-none">
+                          +{layerPkgs.length - 3} more
+                        </span>
                       )}
                     </div>
-                    <span className="text-[8px] text-ink-400 font-mono truncate block mt-0.5">
-                      {humanBytes(layerItem.size)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                  )}
 
-          {/* Layer List Scrollable */}
-          <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex items-center justify-between border-b border-ink-700/60 bg-ink-900/80 px-4 py-2.5 text-xs uppercase tracking-wider text-ink-200">
-              <span>
-                {layers.length} layer{layers.length === 1 ? '' : 's'}
-              </span>
-              <span className="text-ink-300">total {humanBytes(totalSize)}</span>
-            </div>
-            <ol className="max-h-[640px] overflow-auto divide-y divide-ink-800/40">
-              {layers.map((l, i) => {
-                const pct = totalSize > 0 ? Math.max(1, Math.round(((l.size || 0) / totalSize) * 100)) : 0;
-                const isSel = i === selected;
-                
-                const layerPkgs = packages.filter((p: any) => p.layerDigest === l.digest);
-                const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
-                const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
-                  pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
-                );
+                  {/* Relative size progress bar */}
+                  <div className="h-1.5 w-full overflow-hidden rounded bg-ink-950/60 border border-ink-800/30">
+                    <div
+                      className={`h-full ${isSel ? 'bg-accent' : layerVulns.length > 0 ? 'bg-warn' : 'bg-ink-400'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
 
-                return (
-                  <li key={l.digest + ':' + i}>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(i)}
-                      className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
-                        isSel ? 'bg-accent/10' : 'hover:bg-ink-800/50'
-                      }`}
-                    >
-                      <span
-                        className={`shrink-0 font-mono text-xs ${isSel ? 'text-accent-soft' : 'text-ink-300'}`}
-                      >
-                        {String(i + 1).padStart(2, '0')}
+                  {/* Badges footer: packages, CVEs */}
+                  <div className="flex items-center justify-between text-[10px] text-ink-300 font-mono mt-0.5 border-t border-ink-800/40 pt-2 shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <span>{layerPkgs.length} packages</span>
+                      {layerPkgs.length > 0 && licenseBreakdownFor(layerPkgs).length > 0 && (
+                        <>
+                          <span className="text-ink-500">•</span>
+                          <span className="text-ink-400">{licenseBreakdownFor(layerPkgs)[0][0]}</span>
+                        </>
+                      )}
+                    </div>
+                    
+                    {layerVulns.length > 0 ? (
+                      <span className={`px-1.5 py-0.5 rounded-full font-bold uppercase text-[9px] border ${
+                        layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high')
+                          ? 'bg-danger/10 text-danger border-danger/25'
+                          : 'bg-warn/10 text-warn border-warn/25'
+                      }`}>
+                        {layerVulns.length} CVE{layerVulns.length === 1 ? '' : 's'}
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="truncate font-mono text-[11px] text-ink-100" title={l.digest}>
-                            {l.digest.replace(/^sha256:/, '').slice(0, 16)}…
-                          </div>
-                          {layerVulns.length > 0 && (
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
-                              layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high')
-                                ? 'bg-danger/10 text-danger border border-danger/20'
-                                : 'bg-warn/10 text-warn border border-warn/20'
-                            }`}>
-                              {layerVulns.length} cve{layerVulns.length === 1 ? '' : 's'}
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded bg-ink-800">
-                          <div
-                            className={`h-full ${isSel ? 'bg-accent/70' : 'bg-ink-500'}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-mono text-xs text-ink-200">
-                        {humanBytes(l.size)}
+                    ) : (
+                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Secure
                       </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 

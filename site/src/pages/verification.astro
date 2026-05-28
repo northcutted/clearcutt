@@ -34,10 +34,10 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         Every ClearCutt image carries independent attestations stored alongside the manifest in
         GHCR: a Sigstore signature (keyless OIDC), an SPDX SBOM, and SLSA Level 3 provenance from
         the official slsa-github-generator — plus a GitHub-native attestation of the same
-        provenance and SBOM. (GHCR doesn't expose the OCI 1.1 Referrers API, so these are kept
-        under the referrers tag schema against each image digest; cosign v3's new bundle format
-        consolidates them.) You verify with whichever standard upstream tool you already trust;
-        they validate the same signed material, so no single vendor is load-bearing.
+        provenance and SBOM. (GHCR doesn't expose the OCI 1.1 Referrers API, so cosign stores
+        these as tags against each image digest.) You verify with whichever standard upstream
+        tool you already trust; they validate the same signed material, so no single vendor is
+        load-bearing.
       </p>
       <p class="text-sm text-ink-300">
         The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>

@@ -207,7 +207,12 @@ function enrichOne(tag, target) {
     const archRef = `${baseImage}@${m.digest}`;
     const cfg = imageConfig(archRef);
     const mf = manifestList(archRef);
-    const layers = (mf?.layers || []).map((l) => ({ digest: l.digest, size: l.size }));
+    const diffIds = cfg?.rootfs?.diff_ids || cfg?.config?.rootfs?.diff_ids || [];
+    const layers = (mf?.layers || []).map((l, idx) => ({
+      digest: l.digest,
+      size: l.size,
+      diffID: diffIds[idx] || null,
+    }));
     const labels =
       cfg?.config?.Labels ||
       cfg?.config?.labels ||

@@ -20,7 +20,13 @@ export const ArchPayload = z.object({
   imageSize: z.number().nullable(),
   layerCount: z.number().nullable(),
   layers: z
-    .array(z.object({ digest: z.string(), size: z.number() }))
+    .array(
+      z.object({
+        digest: z.string(),
+        size: z.number(),
+        diffID: z.string().nullable().optional(),
+      })
+    )
     .default([]),
   labels: z.record(z.string()).default({}),
   sbom: z.object({

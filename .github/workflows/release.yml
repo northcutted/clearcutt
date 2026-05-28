@@ -344,11 +344,25 @@ jobs:
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          # Pin cosign v3 so signing/attesting uses the new bundle format
-          # (OCI 1.1 referrers) by default. Keep in lockstep with publish-pages.yml.
+          # Pin cosign v3 so signing/attesting uses the new bundle format by
+          # default. Keep in lockstep with publish-pages.yml.
           cosign-release: 'v3.0.6'
 
-      - name: Create and Push Multi-Arch Manifest
+      - name: Install crane
+        run: |
+          set -euo pipefail
+          # crane assembles the multi-arch index as a native OCI image index
+          # (application/vnd.oci.image.index.v1+json). `docker buildx imagetools
+          # create` emits a Docker manifest list, which cosign v3's new bundle
+          # format refuses to sign ("fallback tag manifest is not an OCI image
+          # index"). crane authenticates via the docker config written by the
+          # GHCR login step above.
+          CRANE_VERSION=v0.20.6
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin crane
+          crane version
+
+      - name: Create and Push Multi-Arch OCI Index
         run: |
           REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
@@ -359,16 +373,18 @@ jobs:
           STAGE_AMD64="${IMAGE}:_stage-${{ matrix.tier }}-amd64"
           STAGE_ARM64="${IMAGE}:_stage-${{ matrix.tier }}-arm64"
 
-          # Assemble the multi-arch index directly in the final per-language repo
-          # from the per-arch staging tags pushed by pipeline.sh. No bootstrap
-          # package and no cosign-copy promotion: the production tags ARE the
-          # build output. The _stage-* tags stay (rolling) so the index's child
-          # manifests remain referenced; they carry no signatures of their own.
-          echo "Creating unified multi-arch manifest for rolling tag: ${ROLLING}"
-          docker buildx imagetools create -t "${ROLLING}" "${STAGE_AMD64}" "${STAGE_ARM64}"
+          # Assemble an OCI image index directly in the final per-language repo
+          # from the per-arch staging tags (pushed as OCI by pipeline.sh). crane
+          # index append builds from an OCI empty base, so the result is a true
+          # application/vnd.oci.image.index.v1+json that cosign v3 can sign. No
+          # bootstrap package, no cosign-copy promotion: the production tags ARE
+          # the build output. The _stage-* tags stay (rolling) so the index's
+          # child manifests remain referenced; they carry no signatures.
+          echo "Creating multi-arch OCI index for rolling tag: ${ROLLING}"
+          crane index append -t "${ROLLING}" -m "${STAGE_AMD64}" -m "${STAGE_ARM64}"
 
-          echo "Creating unified multi-arch manifest for versioned tag: ${VERSIONED}"
-          docker buildx imagetools create -t "${VERSIONED}" "${STAGE_AMD64}" "${STAGE_ARM64}"
+          echo "Creating multi-arch OCI index for versioned tag: ${VERSIONED}"
+          crane index append -t "${VERSIONED}" -m "${STAGE_AMD64}" -m "${STAGE_ARM64}"
 
       - name: Sign Multi-Arch Manifests
         run: |
@@ -376,15 +392,14 @@ jobs:
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
           IMAGE="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
 
-          # GHCR does NOT implement the OCI 1.1 Referrers API, so cosign uses
-          # the referrers tag-schema fallback: the signature is stored as a
-          # sha256-<digest> referrers-index tag in THIS repo (required so
-          # `cosign verify <image>` can find it — that's unavoidable on GHCR).
-          # cosign v3's default new bundle format consolidates the signature and
-          # attestations under that single index tag rather than emitting the
-          # legacy separate .sig/.att/.sbom tags. Do NOT pass
-          # --registry-referrers-mode: on v3 it only controls *fetching*, and it
-          # is not a valid flag on `cosign attest` at all.
+          # The subject is now a native OCI image index, so cosign v3's default
+          # new bundle format applies: it consolidates the signature (and the
+          # attestations below) into a single sha256-<digest> referrers-index tag
+          # per digest rather than the legacy separate .sig/.att/.sbom tags. GHCR
+          # has no OCI 1.1 Referrers API, so this lands as that one fallback tag
+          # in THIS repo (required so `cosign verify <image>` can find it). Do
+          # NOT pass --registry-referrers-mode: on v3 it only controls *fetching*
+          # and is not a valid flag on `cosign attest`.
           cosign sign --yes "${IMAGE}:${{ matrix.tier }}"
           cosign sign --yes "${IMAGE}:v${{ needs.check-version.outputs.version }}-${{ matrix.tier }}"
 
@@ -406,9 +421,8 @@ jobs:
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
           ROLLING="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
 
-          # Stored via cosign v3's new bundle format. GHCR has no Referrers API,
-          # so this lands as a referrers-index tag in the repo (consolidated with
-          # the signature above) rather than a separate sha256-<digest>.att tag.
+          # Default new bundle format (subject is an OCI image index). Folds into
+          # the same sha256-<digest> referrers-index tag as the signature above.
           # Both arch SBOMs are attested so `cosign verify-attestation` works for
           # either platform.
           cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${ROLLING}"
@@ -432,8 +446,7 @@ jobs:
           NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
           ROLLING="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
 
-          # Referrers via the default new bundle format (cosign v3), same as the
-          # SBOM attestations above.
+          # Default new bundle format, same as the SBOM attestations above.
           cosign attest --yes --type custom --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${ROLLING}"
           cosign attest --yes --type custom --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${ROLLING}"
 
@@ -445,7 +458,7 @@ jobs:
           IMAGE="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
           ROLLING="${IMAGE}:${{ matrix.tier }}"
 
-          IMAGE_DIGEST=$(skopeo inspect "docker://${ROLLING}" --format "{{.Digest}}")
+          IMAGE_DIGEST=$(crane digest "${ROLLING}")
           echo "Multi-Arch manifest digest resolved: ${IMAGE_DIGEST}"
           echo "digest=${IMAGE_DIGEST}" >> $GITHUB_OUTPUT
           # Expose the lowercased image name so the attestation `uses:` steps

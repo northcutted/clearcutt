@@ -235,17 +235,25 @@ EOF
     # This replaces the old clearcutt-bootstrap staging *package* + cosign-copy
     # promotion: there is no second package to manage. A separate package could
     # never keep the published repo "clean" anyway — `cosign verify <image>`
-    # needs the signature stored against the image digest in THIS repo. GHCR has
-    # no OCI 1.1 Referrers API, so cosign/GitHub use the referrers tag-schema
-    # fallback; cosign v3's new bundle format at least consolidates sig +
-    # attestations into one sha256-<digest> referrers-index tag per digest
-    # instead of the legacy separate .sig/.att/.sbom tags.
+    # needs the signature stored against the image digest in THIS repo.
+    #
+    # We push as OCI media types (--format oci). dockerTools.buildLayeredImage
+    # emits Docker schema-2 manifests, but cosign v3's default new bundle format
+    # requires the signed subject to be an OCI image / OCI image index. Pushing
+    # the per-arch images as OCI (and assembling an OCI image index from them in
+    # the assemble-multiarch job via `crane index append`) lets cosign sign +
+    # attest with the new bundle format, which consolidates the signature and
+    # all attestations into a single sha256-<digest> referrers-index tag per
+    # digest instead of the legacy separate .sig/.att/.sbom tags. (GHCR still has
+    # no OCI 1.1 Referrers API, so it lands as that one fallback tag, not a true
+    # referrer — but it's one tag instead of several.)
+    #
     # The _stage-* tags are rolling (overwritten every serialized release), so
     # exactly 2 per tier exist at any time rather than accumulating per version.
     local image_repo="$registry/$repo/clearcutt-${lang}"
     local stage_tag="${image_repo}:_stage-${tier}-${arch_suffix}"
 
-    log_info "Publishing per-arch staging image to registry -> $stage_tag"
+    log_info "Publishing per-arch staging image to registry (OCI) -> $stage_tag"
 
     local skopeo_creds=()
     local actor="${REGISTRY_USER:-${GITHUB_ACTOR:-}}"
@@ -254,8 +262,8 @@ EOF
       skopeo_creds=(--dest-creds "${actor}:${token}")
     fi
 
-    if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$stage_tag"; then
-      log_success "Per-arch staging image successfully pushed to registry."
+    if skopeo copy --format oci --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$stage_tag"; then
+      log_success "Per-arch staging image successfully pushed to registry (OCI media types)."
     else
       log_error "Skopeo per-arch staging push failed."
       return 1

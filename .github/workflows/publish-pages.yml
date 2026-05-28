@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v6.0.0
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: site/package-lock.json
 
@@ -58,11 +58,11 @@ jobs:
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin crane
           crane version
-          # cosign binary — must be v3.x so `cosign download attestation` in
-          # enrich-registry.mjs can read the OCI 1.1 referrers / new-bundle-format
-          # attestations the release workflow writes (v2.x defaults to legacy tag
-          # discovery and would miss them). Keep this in lockstep with the
-          # cosign-release pinned in release.yml.
+          # cosign binary pinned to match the release workflow's signer
+          # (cosign-release in release.yml). The release signs OCI image indexes
+          # with cosign v3's default new bundle format, so enrich-registry.mjs
+          # must read with the same major to resolve those attestations; pinning
+          # avoids writer/reader format drift.
           COSIGN_VERSION=v3.0.6
           curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
           chmod +x /tmp/cosign && sudo mv /tmp/cosign /usr/local/bin/cosign
@@ -70,18 +70,6 @@ jobs:
           # grype via official install script
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
           grype version
-
-      # Cache the grype vuln DB so scheduled runs aren't paying 250MB+ of
-      # download every nightly tick. Cache key tied to the day so the DB
-      # naturally refreshes once per day.
-      - name: Restore grype DB cache
-        id: grype-cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: ~/.cache/grype
-          key: grype-db-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            grype-db-${{ runner.os }}-
 
       - name: Refresh grype DB
         run: grype db update
@@ -174,7 +162,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v6.0.0
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: site/package-lock.json
 
