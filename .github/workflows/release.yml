@@ -169,6 +169,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
         run: |
           set -euo pipefail
           printf '%s\n' '${{ secrets.NIX_CACHE_SECRET_KEY }}' > secret-key.pem
@@ -179,13 +181,25 @@ jobs:
           OUT_PATH=$(nix path-info --accept-flake-config "$INSTALLABLE")
           CACHE_STORE="s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com&secret-key=$PWD/secret-key.pem"
 
-          nix copy --accept-flake-config --to "$CACHE_STORE" "$INSTALLABLE"
-
           STORE_HASH="${OUT_PATH#/nix/store/}"
           STORE_HASH="${STORE_HASH%%-*}"
           NARINFO_URL="https://nix-cache.clearcutt.dev/${STORE_HASH}.narinfo"
+          R2_ENDPOINT="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
 
-          for _ in {1..12}; do
+          nix store sign --recursive --key-file secret-key.pem "$OUT_PATH"
+
+          # Some existing cache entries were uploaded before signing was wired
+          # correctly. `nix copy` treats an existing narinfo as present and logs
+          # "copying 0 paths...", so remove stale metadata first and force Nix
+          # to publish a fresh signed narinfo.
+          aws --endpoint-url "$R2_ENDPOINT" s3 rm "s3://clearcutt-nix-cache/${STORE_HASH}.narinfo" || true
+
+          nix copy --accept-flake-config --refresh \
+            --option narinfo-cache-positive-ttl 0 \
+            --option narinfo-cache-negative-ttl 0 \
+            --to "$CACHE_STORE" "$OUT_PATH"
+
+          for _ in {1..24}; do
             NARINFO=$(curl -fsSL "$NARINFO_URL" || true)
             if grep -q '^Sig: clearcutt-cache-1:' <<< "$NARINFO"; then
               echo "Verified signed cache narinfo: $NARINFO_URL"

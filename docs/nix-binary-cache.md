@@ -65,12 +65,22 @@ Add this job step to your GitHub Actions workflows (e.g. `.github/workflows/pr-g
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           # 1. Temporarily write the private signing key
-          echo "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
+          printf '%s\n' "${{ secrets.NIX_CACHE_SECRET_KEY }}" > secret-key.pem
+          chmod 600 secret-key.pem
           
-          # 2. Copy the compiled outputs to the R2 bucket using custom endpoint
-          nix copy --to "s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            --secret-key secret-key.pem \
-            .#java21-native .#coreLTS-slim
+          # 2. Sign and copy the compiled output to the R2 bucket using custom endpoint.
+          # The S3 store's `secret-key` setting signs generated narinfo files.
+          OUT_PATH=$(nix path-info --accept-flake-config .#coreLTS-slim)
+          nix store sign --recursive --key-file secret-key.pem "$OUT_PATH"
+          STORE_HASH="${OUT_PATH#/nix/store/}"
+          STORE_HASH="${STORE_HASH%%-*}"
+          aws --endpoint-url "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            s3 rm "s3://clearcutt-nix-cache/${STORE_HASH}.narinfo" || true
+          nix copy --accept-flake-config --refresh \
+            --option narinfo-cache-positive-ttl 0 \
+            --option narinfo-cache-negative-ttl 0 \
+            --to "s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com&secret-key=$PWD/secret-key.pem" \
+            "$OUT_PATH"
             
           # 3. Clean up the private key
           rm secret-key.pem
