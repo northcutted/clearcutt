@@ -181,12 +181,8 @@ function enrichOne(tag, target) {
   const langKey = target.slice(0, target.lastIndexOf('-'));
   const tier = target.slice(target.lastIndexOf('-') + 1);
   const baseImage = `${REGISTRY_BASE}/clearcutt-${langKey.toLowerCase()}`;
-  const bootstrap = `${REGISTRY_BASE}/clearcutt-bootstrap`;
   const versionedRef = `${baseImage}:${tag}-${tier}`;
   const rollingRef = `${baseImage}:${tier}`;
-  // Bootstrap refs — where attestations were originally written by tag-release.
-  const bootstrapVersionedRef = `${bootstrap}:${tag}-${langKey.toLowerCase()}-${tier}`;
-  const bootstrapRollingRef = `${bootstrap}:${langKey.toLowerCase()}-${tier}`;
 
   const ml = manifestList(versionedRef) || manifestList(rollingRef);
   if (!ml) return null;
@@ -226,11 +222,13 @@ function enrichOne(tag, target) {
     });
   }
 
-  // Pull attestations from BOTH refs — the published image gets some, the
-  // bootstrap (where they were attested first) holds the rest. Dedupe by
+  // Signatures and attestations are now written directly to the production
+  // repo (no bootstrap staging package). Probe the versioned + rolling tags;
+  // cosign reads both OCI 1.1 referrers (current releases) and the legacy
+  // tag-based fallback (older releases promoted via cosign copy). Dedupe by
   // predicateType + payload.subject[0].digest.sha256.
   const seen = new Set();
-  const refsToProbe = [versionedRef, rollingRef, bootstrapVersionedRef, bootstrapRollingRef];
+  const refsToProbe = [versionedRef, rollingRef];
   const allAttestations = [];
   for (const ref of refsToProbe) {
     for (const a of downloadAttestations(ref)) {

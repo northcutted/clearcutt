@@ -31,10 +31,13 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
     <header class="space-y-3">
       <h1 class="heading text-3xl">Verifying ClearCutt images</h1>
       <p class="text-ink-200">
-        Every ClearCutt image carries three independent attestations stored alongside the
-        manifest in GHCR: a Sigstore signature (keyless OIDC), an SPDX SBOM, and SLSA Level 3
-        provenance from the official slsa-github-generator. You verify them with the standard
-        upstream tools — no custom binaries required.
+        Every ClearCutt image carries independent attestations stored alongside the manifest in
+        GHCR: a Sigstore signature (keyless OIDC), an SPDX SBOM, and SLSA Level 3 provenance from
+        the official slsa-github-generator — plus a GitHub-native attestation of the same
+        provenance and SBOM. (GHCR doesn't expose the OCI 1.1 Referrers API, so these are kept
+        under the referrers tag schema against each image digest; cosign v3's new bundle format
+        consolidates them.) You verify with whichever standard upstream tool you already trust;
+        they validate the same signed material, so no single vendor is load-bearing.
       </p>
       <p class="text-sm text-ink-300">
         The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>
@@ -45,9 +48,11 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
 
     <section class="space-y-3">
       <h2 class="heading text-xl">1. Install tools</h2>
-      <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane jq`} />
+      <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane jq gh`} />
       <p class="text-sm text-ink-300">
-        Pinned versions in CI: cosign v2.4+, slsa-verifier v2.7+, crane v0.20+.
+        Pinned versions in CI: cosign v3.0+, slsa-verifier v2.7+, crane v0.20+. The
+        <code class="font-mono text-ink-100">gh</code> CLI (step 5) is optional — use it if you
+        prefer GitHub's attestation store over running cosign directly.
       </p>
     </section>
 
@@ -83,7 +88,19 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
     </section>
 
     <section class="space-y-3">
-      <h2 class="heading text-xl">5. Enforce at admission</h2>
+      <h2 class="heading text-xl">5. Verify with the GitHub CLI (alternative to cosign)</h2>
+      <p class="text-sm text-ink-200">
+        The same build provenance and SBOM are also published as GitHub-native attestations.
+        If you'd rather not run cosign, <code class="font-mono text-ink-100">gh attestation
+        verify</code> checks them against GitHub's attestation store and the Sigstore
+        public-good transparency log — pinning the owner so only attestations produced by this
+        org's workflows are trusted.
+      </p>
+      <CopyBlock language="shell" code={`# Resolve the digest, then verify the GitHub-native attestation\nDIGEST=$(crane digest ${sampleRefVersioned})\ngh attestation verify oci://${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --owner ${index?.owner ?? 'OWNER'}`} />
+    </section>
+
+    <section class="space-y-3">
+      <h2 class="heading text-xl">6. Enforce at admission</h2>
       <p class="text-sm text-ink-200">
         For Kubernetes, every image detail page exposes a copy-pasteable Kyverno
         <code class="font-mono text-ink-100">ClusterPolicy</code> that wires the same

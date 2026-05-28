@@ -7,6 +7,7 @@ interface Props {
   ownerRepo: string;
 }
 const { image, release, ownerRepo } = Astro.props;
+const owner = ownerRepo.split('/')[0];
 const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
 const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifestDigest}` : versioned;
 const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/tag-release.yml@refs/tags/${release.tag}`;
@@ -26,30 +27,39 @@ const cosignAttest = `cosign verify-attestation ${versioned} \\
 const slsa = `slsa-verifier verify-image ${digestRef} \\
   --source-uri 'github.com/${ownerRepo}' \\
   --source-tag '${release.tag}'`;
+
+// GitHub-native attestation path: same signed provenance + SBOM, verified
+// against GitHub's attestation store with the gh CLI — no cosign required.
+const ghAttest = `gh attestation verify oci://${digestRef} \\
+  --owner ${owner}`;
 ---
 <section class="space-y-4">
   <header class="space-y-1">
     <h2 class="heading text-lg">Verify before use</h2>
     <p class="text-sm text-ink-200">
-      Three independent checks. Run them and you've confirmed who built this image, on which workflow, from which source revision.
+      Independent checks across the tools you already trust — Sigstore cosign, the GitHub CLI, and the official slsa-verifier. Each one confirms who built this image, on which workflow, from which source revision. Pick whichever fits your toolchain; they validate the same signed material.
     </p>
   </header>
   {/* grid auto-rows-fr makes every cell match the tallest one's height, and
       each child is a flex column so the CopyBlock can flex-1 into all the
-      vertical space below the step label. Result: three uniformly-sized
-      code boxes regardless of command length differences. */}
-  <div class="grid gap-4 auto-rows-fr lg:grid-cols-3">
+      vertical space below the step label. Result: uniformly-sized code boxes
+      regardless of command length differences. */}
+  <div class="grid gap-4 auto-rows-fr md:grid-cols-2">
     <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">1 · Cosign signature</div>
+      <div class="text-xs uppercase tracking-wider text-ink-300">Cosign · signature</div>
       <CopyBlock language="shell" code={cosignVerify} class="flex-1" />
     </div>
     <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">2 · Verify SBOM attestation</div>
+      <div class="text-xs uppercase tracking-wider text-ink-300">Cosign · SBOM attestation</div>
       <CopyBlock language="shell" code={cosignAttest} class="flex-1" />
     </div>
     <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">3 · SLSA L3 provenance</div>
+      <div class="text-xs uppercase tracking-wider text-ink-300">slsa-verifier · SLSA L3 provenance</div>
       <CopyBlock language="shell" code={slsa} class="flex-1" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <div class="text-xs uppercase tracking-wider text-ink-300">GitHub CLI · native attestation</div>
+      <CopyBlock language="shell" code={ghAttest} class="flex-1" />
     </div>
   </div>
 </section>

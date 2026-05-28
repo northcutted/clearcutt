@@ -227,18 +227,26 @@ EOF
       arch_suffix="amd64"
     fi
 
-    local image_tag="$registry/$repo/clearcutt-bootstrap:${lang}-${tier}-${arch_suffix}"
-    
-    # Resolve the version tag from VERSION_TAG or GITHUB_REF_NAME (e.g. v1.0.0)
-    local version_tag=""
-    if [[ -n "${VERSION_TAG:-}" ]] && [[ "$VERSION_TAG" =~ ^v[0-9] ]]; then
-      version_tag="$VERSION_TAG"
-    elif [[ -n "${GITHUB_REF_NAME:-}" ]] && [[ "$GITHUB_REF_NAME" =~ ^v[0-9] ]]; then
-      version_tag="$GITHUB_REF_NAME"
-    fi
+    # Push the single-arch image straight into the final per-language repo under
+    # a rolling "_stage-<tier>-<arch>" tag. The assemble-multiarch job stitches
+    # the amd64/arm64 staging tags into the real multi-arch indexes
+    # (:<tier> and :v<version>-<tier>) and signs/attests THOSE in place.
+    #
+    # This replaces the old clearcutt-bootstrap staging *package* + cosign-copy
+    # promotion: there is no second package to manage. A separate package could
+    # never keep the published repo "clean" anyway — `cosign verify <image>`
+    # needs the signature stored against the image digest in THIS repo. GHCR has
+    # no OCI 1.1 Referrers API, so cosign/GitHub use the referrers tag-schema
+    # fallback; cosign v3's new bundle format at least consolidates sig +
+    # attestations into one sha256-<digest> referrers-index tag per digest
+    # instead of the legacy separate .sig/.att/.sbom tags.
+    # The _stage-* tags are rolling (overwritten every serialized release), so
+    # exactly 2 per tier exist at any time rather than accumulating per version.
+    local image_repo="$registry/$repo/clearcutt-${lang}"
+    local stage_tag="${image_repo}:_stage-${tier}-${arch_suffix}"
 
-    log_info "Publishing certified OCI archive to registry -> $image_tag"
-    
+    log_info "Publishing per-arch staging image to registry -> $stage_tag"
+
     local skopeo_creds=()
     local actor="${REGISTRY_USER:-${GITHUB_ACTOR:-}}"
     local token="${REGISTRY_TOKEN:-${GITHUB_TOKEN:-}}"
@@ -246,24 +254,11 @@ EOF
       skopeo_creds=(--dest-creds "${actor}:${token}")
     fi
 
-    # 1. Copy rolling architecture-specific tag
-    if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$image_tag"; then
-      log_success "Rolling OCI Image successfully copied to registry."
+    if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$stage_tag"; then
+      log_success "Per-arch staging image successfully pushed to registry."
     else
-      log_error "Skopeo rolling registry publishing failed."
+      log_error "Skopeo per-arch staging push failed."
       return 1
-    fi
-
-    # 2. Copy versioned architecture-specific tag (if version tag is active)
-    if [[ -n "$version_tag" ]]; then
-      local version_image_tag="$registry/$repo/clearcutt-bootstrap:${version_tag}-${lang}-${tier}-${arch_suffix}"
-      log_info "Publishing versioned OCI archive to registry -> $version_image_tag"
-      if skopeo copy --retry-times 5 "${skopeo_creds[@]}" "docker-archive:$tar_path" "docker://$version_image_tag"; then
-        log_success "Versioned OCI Image successfully copied to registry."
-      else
-        log_error "Skopeo versioned registry publishing failed."
-        return 1
-      fi
     fi
   else
     # Local-only fallback signature

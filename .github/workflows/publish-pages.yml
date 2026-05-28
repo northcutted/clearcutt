@@ -58,8 +58,12 @@ jobs:
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin crane
           crane version
-          # cosign binary
-          COSIGN_VERSION=v2.4.1
+          # cosign binary — must be v3.x so `cosign download attestation` in
+          # enrich-registry.mjs can read the OCI 1.1 referrers / new-bundle-format
+          # attestations the release workflow writes (v2.x defaults to legacy tag
+          # discovery and would miss them). Keep this in lockstep with the
+          # cosign-release pinned in release.yml.
+          COSIGN_VERSION=v3.0.6
           curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
           chmod +x /tmp/cosign && sudo mv /tmp/cosign /usr/local/bin/cosign
           cosign version
