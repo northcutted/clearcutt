@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react';
 import type { ArchPayload } from '../lib/catalog-schema';
 
-type Props = { architectures: ArchPayload[] };
+type Props = { 
+  architectures: ArchPayload[];
+  imageName?: string;
+  tierId?: string;
+  imageTag?: string;
+};
 
 function humanBytes(n: number | null | undefined): string {
   if (!n && n !== 0) return '—';
@@ -15,16 +20,17 @@ function humanBytes(n: number | null | undefined): string {
   return `${v.toFixed(v < 10 ? 2 : 1)} ${units[i]}`;
 }
 
-export default function LayerExplorer({ architectures }: Props) {
+export default function LayerExplorer({ architectures, imageName, tierId }: Props) {
   const archs = architectures.filter((a) => a.layers && a.layers.length > 0);
   const [arch, setArch] = useState(archs[0]?.arch ?? architectures[0]?.arch ?? 'amd64');
   const current = architectures.find((a) => a.arch === arch) ?? architectures[0];
   const layers = current?.layers ?? [];
   const totalSize = useMemo(() => layers.reduce((s, l) => s + (l.size || 0), 0), [layers]);
-  const maxSize = useMemo(() => layers.reduce((m, l) => Math.max(m, l.size || 0), 0), [layers]);
   const [selected, setSelected] = useState<number>(0);
   const [detailTab, setDetailTab] = useState<'details' | 'packages' | 'vulnerabilities'>('details');
   const [packageSearch, setPackageSearch] = useState('');
+  const [pullTool, setPullTool] = useState<'crane' | 'docker' | 'nix'>('crane');
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const sel = layers[selected];
 
@@ -42,6 +48,15 @@ export default function LayerExplorer({ architectures }: Props) {
     );
   }, [sel, current, packagesInLayer]);
 
+  const licenseBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    packagesInLayer.forEach((p: any) => {
+      const lic = p.license || 'Unknown';
+      counts[lic] = (counts[lic] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [packagesInLayer]);
+
   if (architectures.length === 0) return null;
   if (archs.length === 0) {
     return (
@@ -58,6 +73,16 @@ export default function LayerExplorer({ architectures }: Props) {
   const cumulativeToSel = layers
     .slice(0, selected + 1)
     .reduce((s, l) => s + (l.size || 0), 0);
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 1500);
+  };
+
+  const imageRepoName = imageName || 'clearcutt-corelts';
+  const tierSuffix = tierId ? `:${tierId}` : '';
+  const pullRef = sel ? `ghcr.io/northcutted/${imageRepoName}${tierSuffix}@${sel.digest}` : '';
 
   return (
     <section className="space-y-3">
@@ -93,56 +118,145 @@ export default function LayerExplorer({ architectures }: Props) {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        {/* Layer list */}
-        <div className="surface-soft overflow-hidden">
-          <div className="flex items-center justify-between border-b border-ink-700/60 bg-ink-900/80 px-4 py-2.5 text-xs uppercase tracking-wider text-ink-200">
-            <span>
-              {layers.length} layer{layers.length === 1 ? '' : 's'}
-            </span>
-            <span className="text-ink-300">total {humanBytes(totalSize)}</span>
-          </div>
-          <ol className="max-h-[640px] overflow-auto">
-            {layers.map((l, i) => {
-              const pct = totalSize > 0 ? Math.max(1, Math.round(((l.size || 0) / totalSize) * 100)) : 0;
-              const isSel = i === selected;
-              return (
-                <li key={l.digest + ':' + i}>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3.2fr)_minmax(0,2fr)]">
+        {/* Layer list + Visual Stack */}
+        <div className="surface-soft overflow-hidden flex flex-col md:flex-row">
+          {/* Visual Stack Tower */}
+          <div className="hidden md:flex flex-col justify-end items-center gap-1.5 p-4 border-r border-ink-700/30 bg-ink-950/20 shrink-0 w-[130px] select-none">
+            <div className="text-[10px] uppercase tracking-wider text-ink-300 font-semibold mb-2">Layer Stack</div>
+            <div className="flex-1 flex flex-col justify-end w-full gap-1.5">
+              {layers.map((_, idx) => {
+                const i = layers.length - 1 - idx;
+                const layerItem = layers[i];
+                const isSel = i === selected;
+                
+                const sizeVal = layerItem.size || 0;
+                const minHeight = 26;
+                const maxHeight = 60;
+                const height = totalSize > 0 
+                  ? minHeight + Math.round((Math.log10(sizeVal + 1) / Math.log10(totalSize + 1)) * (maxHeight - minHeight)) 
+                  : minHeight;
+
+                const layerPkgs = packages.filter((p: any) => p.layerDigest === layerItem.digest);
+                const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
+                const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
+                  pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
+                );
+
+                let borderColor = 'border-ink-700/50';
+                let bgColor = 'bg-ink-800/40';
+                let textColor = 'text-ink-300';
+                let glow = '';
+
+                if (isSel) {
+                  borderColor = 'border-accent';
+                  bgColor = 'bg-accent/20';
+                  textColor = 'text-accent-soft';
+                  glow = 'shadow-[0_0_12px_rgba(var(--accent),0.25)]';
+                } else if (layerVulns.length > 0) {
+                  const hasCriticalOrHigh = layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high');
+                  borderColor = hasCriticalOrHigh ? 'border-danger/30 hover:border-danger/60' : 'border-warn/30 hover:border-warn/60';
+                  bgColor = hasCriticalOrHigh ? 'bg-danger/5 hover:bg-danger/10' : 'bg-warn/5 hover:bg-warn/10';
+                  textColor = hasCriticalOrHigh ? 'text-danger' : 'text-warn';
+                } else {
+                  borderColor = 'border-ink-700/40 hover:border-ink-500/80';
+                  bgColor = 'bg-ink-900/30 hover:bg-ink-800/40';
+                }
+
+                return (
                   <button
+                    key={layerItem.digest + ':stack:' + i}
                     type="button"
                     onClick={() => setSelected(i)}
-                    className={`flex w-full items-center gap-3 border-b border-ink-800/70 px-4 py-2.5 text-left transition ${
-                      isSel ? 'bg-accent/10' : 'hover:bg-ink-800/50'
-                    }`}
+                    style={{ height: `${height}px` }}
+                    className={`w-full rounded-md border flex flex-col justify-center px-2 text-left transition-all duration-200 cursor-pointer overflow-hidden ${bgColor} ${borderColor} ${glow}`}
+                    title={`Layer #${i + 1}\nDigest: ${layerItem.digest}\nSize: ${humanBytes(layerItem.size)}\nCVEs: ${layerVulns.length}`}
                   >
-                    <span
-                      className={`shrink-0 font-mono text-xs ${isSel ? 'text-accent-soft' : 'text-ink-300'}`}
-                    >
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-mono text-[11px] text-ink-100" title={l.digest}>
-                        {l.digest.replace(/^sha256:/, '').slice(0, 16)}…
-                      </div>
-                      <div className="mt-1 h-1 w-full overflow-hidden rounded bg-ink-800">
-                        <div
-                          className={`h-full ${isSel ? 'bg-accent/70' : 'bg-ink-500'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+                    <div className="flex items-center justify-between w-full">
+                      <span className={`font-mono text-[9px] font-bold ${textColor}`}>L{i + 1}</span>
+                      {layerVulns.length > 0 && (
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high') ? 'bg-danger animate-pulse' : 'bg-warn'
+                        }`} />
+                      )}
                     </div>
-                    <span className="shrink-0 font-mono text-xs text-ink-200">
-                      {humanBytes(l.size)}
+                    <span className="text-[8px] text-ink-400 font-mono truncate block mt-0.5">
+                      {humanBytes(layerItem.size)}
                     </span>
                   </button>
-                </li>
-              );
-            })}
-          </ol>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Layer List Scrollable */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex items-center justify-between border-b border-ink-700/60 bg-ink-900/80 px-4 py-2.5 text-xs uppercase tracking-wider text-ink-200">
+              <span>
+                {layers.length} layer{layers.length === 1 ? '' : 's'}
+              </span>
+              <span className="text-ink-300">total {humanBytes(totalSize)}</span>
+            </div>
+            <ol className="max-h-[640px] overflow-auto divide-y divide-ink-800/40">
+              {layers.map((l, i) => {
+                const pct = totalSize > 0 ? Math.max(1, Math.round(((l.size || 0) / totalSize) * 100)) : 0;
+                const isSel = i === selected;
+                
+                const layerPkgs = packages.filter((p: any) => p.layerDigest === l.digest);
+                const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
+                const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
+                  pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
+                );
+
+                return (
+                  <li key={l.digest + ':' + i}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(i)}
+                      className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
+                        isSel ? 'bg-accent/10' : 'hover:bg-ink-800/50'
+                      }`}
+                    >
+                      <span
+                        className={`shrink-0 font-mono text-xs ${isSel ? 'text-accent-soft' : 'text-ink-300'}`}
+                      >
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate font-mono text-[11px] text-ink-100" title={l.digest}>
+                            {l.digest.replace(/^sha256:/, '').slice(0, 16)}…
+                          </div>
+                          {layerVulns.length > 0 && (
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                              layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high')
+                                ? 'bg-danger/10 text-danger border border-danger/20'
+                                : 'bg-warn/10 text-warn border border-warn/20'
+                            }`}>
+                              {layerVulns.length} cve{layerVulns.length === 1 ? '' : 's'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded bg-ink-800">
+                          <div
+                            className={`h-full ${isSel ? 'bg-accent/70' : 'bg-ink-500'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-mono text-xs text-ink-200">
+                        {humanBytes(l.size)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </div>
 
         {/* Detail panel */}
-        <div className="surface-soft px-5 py-4 flex flex-col min-h-[450px]">
+        <div className="surface-soft px-5 py-4 flex flex-col min-h-[480px]">
           {sel ? (
             <div className="space-y-4 flex-1 flex flex-col">
               {/* Tab Switcher */}
@@ -225,18 +339,130 @@ export default function LayerExplorer({ architectures }: Props) {
                       </div>
                     </div>
 
-                    <div>
-                      <div className="text-[11px] uppercase tracking-wider text-ink-300">Pull this layer</div>
-                      <div className="mt-1 break-all rounded-md border border-ink-700/60 bg-ink-950/80 p-2 font-mono text-[11px] text-ink-100 select-all">
-                        crane blob {currentImageDigestHint(current)}@{sel.digest}
+                    {/* Pull layer tab selector & commands */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] uppercase tracking-wider text-ink-300">Pull or Inspect Layer</div>
+                        <div className="flex gap-1.5 text-[9px] font-mono">
+                          {(['crane', 'docker', 'nix'] as const).map(t => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setPullTool(t)}
+                              className={`px-1.5 py-0.5 rounded border transition ${
+                                pullTool === t 
+                                  ? 'bg-accent/15 text-accent-soft border-accent/40' 
+                                  : 'bg-ink-950/40 text-ink-300 border-ink-800/50 hover:text-ink-100'
+                              }`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
+                        <span className="break-all leading-normal">
+                          {pullTool === 'crane' && `crane blob ${pullRef}`}
+                          {pullTool === 'docker' && `docker pull ${pullRef}`}
+                          {pullTool === 'nix' && `nix store cat-path ${sel.digest}`}
+                        </span>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const cmd = pullTool === 'crane' 
+                              ? `crane blob ${pullRef}`
+                              : pullTool === 'docker'
+                                ? `docker pull ${pullRef}`
+                                : `nix store cat-path ${sel.digest}`;
+                            handleCopy(cmd);
+                          }}
+                          className="absolute top-1/2 -translate-y-1/2 right-1.5 px-2 py-1 bg-ink-800/80 hover:bg-accent/25 border border-ink-700/60 rounded text-[9px] text-ink-200 hover:text-accent-soft transition duration-150 shrink-0 select-none"
+                        >
+                          {copySuccess ? 'Copied!' : 'Copy'}
+                        </button>
                       </div>
                     </div>
 
-                    <p className="text-[11px] text-ink-300 leading-relaxed">
-                      Nix-built layers are content-addressed by store path closure, so identical layers
-                      across images (same glibc, openssl, etc.) share the same digest and are pulled
-                      exactly once from the registry mirror.
-                    </p>
+                    {/* Security Assessment Card */}
+                    <div className="rounded-lg border border-ink-700/50 bg-ink-950/40 p-3 space-y-2.5">
+                      <div className="text-[11px] uppercase tracking-wider text-ink-300 font-semibold flex items-center justify-between">
+                        <span>Layer Security Status</span>
+                        <span className={`text-[10px] font-bold ${vulnsInLayer.length === 0 ? 'text-emerald-400' : 'text-warn'}`}>
+                          {vulnsInLayer.length === 0 ? '✓ SECURE' : `⚠ ${vulnsInLayer.length} FINDINGS`}
+                        </span>
+                      </div>
+                      {vulnsInLayer.length === 0 ? (
+                        <p className="text-[11.5px] text-ink-200 leading-relaxed">
+                          No known vulnerabilities are introduced by the packages compiled in this specific Nix closure layer.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="h-1.5 w-full bg-ink-800 rounded-full overflow-hidden flex">
+                            {(() => {
+                              const crit = vulnsInLayer.filter(f => f.severity === 'critical').length;
+                              const high = vulnsInLayer.filter(f => f.severity === 'high').length;
+                              const med = vulnsInLayer.filter(f => f.severity === 'medium').length;
+                              const low = vulnsInLayer.filter(f => f.severity === 'low').length;
+                              const total = vulnsInLayer.length;
+                              
+                              return (
+                                <>
+                                  {crit > 0 && <div className="bg-danger h-full" style={{ width: `${(crit / total) * 100}%` }} title={`${crit} Critical`} />}
+                                  {high > 0 && <div className="bg-warn h-full" style={{ width: `${(high / total) * 100}%` }} title={`${high} High`} />}
+                                  {med > 0 && <div className="bg-accent h-full" style={{ width: `${(med / total) * 100}%` }} title={`${med} Medium`} />}
+                                  {low > 0 && <div className="bg-ink-500 h-full" style={{ width: `${(low / total) * 100}%` }} title={`${low} Low`} />}
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-mono text-ink-200">
+                            {vulnsInLayer.filter(f => f.severity === 'critical').length > 0 && (
+                              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" /> {vulnsInLayer.filter(f => f.severity === 'critical').length} Critical</span>
+                            )}
+                            {vulnsInLayer.filter(f => f.severity === 'high').length > 0 && (
+                              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warn" /> {vulnsInLayer.filter(f => f.severity === 'high').length} High</span>
+                            )}
+                            {vulnsInLayer.filter(f => f.severity === 'medium').length > 0 && (
+                              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-accent" /> {vulnsInLayer.filter(f => f.severity === 'medium').length} Med</span>
+                            )}
+                            {vulnsInLayer.filter(f => f.severity === 'low').length > 0 && (
+                              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-ink-500" /> {vulnsInLayer.filter(f => f.severity === 'low').length} Low</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* License Distribution Card */}
+                    {packagesInLayer.length > 0 && (
+                      <div className="rounded-lg border border-ink-700/50 bg-ink-950/40 p-3 space-y-2">
+                        <div className="text-[11px] uppercase tracking-wider text-ink-300 font-semibold">
+                          License Composition
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {licenseBreakdown.map(([license, count]) => {
+                            const isCopyleft = /GPL|AGPL|LGPL|MPL/i.test(license);
+                            const badgeColor = isCopyleft 
+                              ? 'bg-danger/10 text-danger border-danger/25' 
+                              : license === 'Unknown' || license === 'NOASSERTION'
+                                ? 'bg-ink-800/30 text-ink-300 border-ink-700/30'
+                                : 'bg-accent/10 text-accent-soft border-accent/25';
+                            return (
+                              <span 
+                                key={license} 
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono border transition ${badgeColor}`}
+                                title={`${count} package${count === 1 ? '' : 's'} under ${license}`}
+                              >
+                                {license} <span className="opacity-60 font-semibold">({count})</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[9.5px] text-ink-300 leading-relaxed font-sans">
+                          Nix closures trace full direct/transitive dependency trees, meaning all runtime libraries are cataloged with zero-trust cryptographic precision.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -329,10 +555,4 @@ export default function LayerExplorer({ architectures }: Props) {
       </div>
     </section>
   );
-}
-
-function currentImageDigestHint(arch: ArchPayload | undefined): string {
-  if (!arch?.imageDigest) return '<image-ref>';
-  // Use the digest as-is; the user already knows the image name from the page header.
-  return `<image-ref>`;
 }

@@ -41,7 +41,13 @@ const sbomUrls = release.assetUrls.sbom || {};
     <TestResults architectures={release.architectures} />
     <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
     <OciLabels architectures={release.architectures} />
-    <LayerExplorer architectures={release.architectures} client:load />
+    <LayerExplorer
+      architectures={release.architectures}
+      imageName={image.imageName}
+      tierId={image.tier.id}
+      imageTag={release.tag}
+      client:load
+    />
     <VersionHistory image={image} currentTag={release.tag} />
   </div>
 </Base>
