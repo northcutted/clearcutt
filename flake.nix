@@ -3,7 +3,7 @@
 # Paradigm: Declarative OCI Layer Compilation (SLSA L3 Ready)
 
 {
-  description = "ClearCutt Hardened Base Image Fleets - Declarative, Zero-CVE Nix Store Layers";
+  description = "ClearCutt Hardened Base Image Fleets - Declarative, CVE-aware Nix Store Layers";
 
   nixConfig = {
     extra-substituters = [ "https://nix-cache.clearcutt.dev" ];
@@ -24,7 +24,7 @@
             # `allowUnfree` is required for JDKs (Zulu/Oracle) and a few fonts.
             # `allowBroken` was removed: it let Nix produce binaries from
             # packages maintainers had flagged broken, which is incompatible
-            # with the project's Zero-CVE posture. If a specific package is
+            # with the project's fixable-CVE gate. If a specific package is
             # incorrectly marked broken, override it inside overlays/cve/.
             allowUnfree = true;
           };

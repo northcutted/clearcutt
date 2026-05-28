@@ -166,12 +166,79 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("not on PATH", res.stderr)
 
+    def test_python_generic_cpe_is_runtime_owned_in_python_images(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+
+        sbom_dir = self.tmp_path / "sboms" / "v1.0.0"
+        sbom_dir.mkdir(parents=True)
+        (sbom_dir / "python3.13-slim-amd64.sbom.json").write_text("{}", encoding="utf-8")
+
+        fake_grype = self.tmp_path / "fake-grype"
+        fake_grype.write_text(
+            """#!/usr/bin/env bash
+if [[ "$1" == "version" ]]; then
+  echo '{"version":"test-grype","db":{"built":"2026-05-28T00:00:00Z"}}'
+  exit 0
+fi
+cat <<'JSON'
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2026-6100",
+        "severity": "Critical",
+        "fix": {"state": "unknown", "versions": []},
+        "namespace": "nvd:cpe",
+        "description": "CPython runtime advisory"
+      },
+      "artifact": {
+        "name": "python",
+        "version": "3.13.13",
+        "purl": "pkg:generic/python@3.13.13"
+      }
+    }
+  ]
+}
+JSON
+""",
+            encoding="utf-8",
+        )
+        fake_grype.chmod(0o755)
+
+        out_dir = self.tmp_path / "vulns"
+        env = os.environ.copy()
+        env["GRYPE_BIN"] = str(fake_grype)
+        env["SCAN_MODE"] = "remediation"
+        env["SBOM_CACHE_DIR"] = str(self.tmp_path / "sboms")
+        env["VULN_DIR"] = str(out_dir)
+
+        res = subprocess.run(
+            [node, str(ROOT / "scripts" / "scan-vulnerabilities.mjs"), "--mode", "remediation"],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(res.returncode, 0, res.stderr)
+        data = json.loads((out_dir / "v1.0.0" / "python3.13-slim-amd64.json").read_text())
+        finding = data["findings"][0]
+        self.assertEqual(finding["layer"], "runtime")
+        self.assertEqual(finding["remediation"]["reason"], "no_fixed_version")
+        self.assertEqual(finding["inclusion"]["category"], "primary_runtime")
+        self.assertIn("Primary Python 3.13 runtime", finding["inclusion"]["summary"])
+
     def test_release_wording_matches_fixable_cve_policy(self):
+        flake = (ROOT / "flake.nix").read_text()
         release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
         latest_notes = (ROOT / "docs" / "releases" / "v0.11.1.md").read_text()
 
+        self.assertNotIn("Zero-CVE", flake)
         self.assertNotIn("Zero-CVE", release_workflow)
         self.assertNotIn("Zero-CVE", latest_notes)
+        self.assertIn("CVE-aware", flake)
         self.assertIn("no fixable Critical/High CVEs", release_workflow)
         self.assertIn("no fixable Critical/High CVEs", latest_notes)
 

@@ -59,6 +59,19 @@ export const ArchPayload = z.object({
           layer: z.enum(['runtime', 'base']).default('base'), // Add the layer classification field
           fixedIn: z.string().nullable(),
           fixState: z.string(),
+          remediation: z
+            .object({
+              status: z.enum(['eligible', 'deferred']),
+              reason: z.string(),
+              summary: z.string(),
+            })
+            .optional(),
+          inclusion: z
+            .object({
+              category: z.string(),
+              summary: z.string(),
+            })
+            .optional(),
           dataSource: z.string().nullable(),
           namespace: z.string().nullable(),
           description: z.string().nullable(),
@@ -189,6 +202,15 @@ export const CatalogIndex = z.object({
           medium: z.number(),
           low: z.number(),
           scannedAt: z.string().nullable(),
+          remediation: z
+            .object({
+              eligible: z.number(),
+              baseLayer: z.number(),
+              noFixedVersion: z.number(),
+              belowPriorityThreshold: z.number(),
+              otherDeferred: z.number(),
+            })
+            .optional(),
         })
         .nullable()
         .optional(),

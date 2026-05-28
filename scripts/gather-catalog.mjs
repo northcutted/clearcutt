@@ -72,6 +72,30 @@ function sh(cmd) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+function remediationReason(finding) {
+  if (finding.remediation?.reason) return finding.remediation.reason;
+  const sev = String(finding.severity || 'Unknown').toLowerCase();
+  if ((finding.layer || 'base') !== 'runtime') return 'base_layer';
+  if (sev !== 'critical' && sev !== 'high') return 'below_priority_threshold';
+  if (!finding.fixedIn) return 'no_fixed_version';
+  return 'fix_available';
+}
+
+function remediationBucket(reason) {
+  switch (reason) {
+    case 'fix_available':
+      return 'eligible';
+    case 'base_layer':
+      return 'baseLayer';
+    case 'no_fixed_version':
+      return 'noFixedVersion';
+    case 'below_priority_threshold':
+      return 'belowPriorityThreshold';
+    default:
+      return 'otherDeferred';
+  }
+}
+
 function detectRepo() {
   if (process.env.GH_OWNER && process.env.GH_REPO) {
     return { owner: process.env.GH_OWNER, repo: process.env.GH_REPO };
@@ -626,6 +650,13 @@ async function main() {
       const archsWithVulns = latestRel.architectures.filter((a) => a.vulnerabilities);
       if (archsWithVulns.length > 0) {
         const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+        const remediation = {
+          eligible: 0,
+          baseLayer: 0,
+          noFixedVersion: 0,
+          belowPriorityThreshold: 0,
+          otherDeferred: 0,
+        };
         let scannedAt = null;
         for (const a of archsWithVulns) {
           const c = a.vulnerabilities.countsBySeverity;
@@ -633,11 +664,16 @@ async function main() {
           counts.high += c.high || 0;
           counts.medium += c.medium || 0;
           counts.low += c.low || 0;
+          for (const finding of a.vulnerabilities.findings || []) {
+            const sev = String(finding.severity || '').toLowerCase();
+            if (sev !== 'critical' && sev !== 'high') continue;
+            remediation[remediationBucket(remediationReason(finding))] += 1;
+          }
           if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
             scannedAt = a.vulnerabilities.scannedAt;
           }
         }
-        vulnSummary = { ...counts, scannedAt };
+        vulnSummary = { ...counts, scannedAt, remediation };
       }
       return {
         id: img.id,

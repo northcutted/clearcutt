@@ -180,6 +180,15 @@ def build_plan(vuln_dir, limit=0, include_dev_only=False):
     dev_only_campaign_count = sum(
         1 for campaign in campaigns if campaign["productionTargetCount"] == 0
     )
+    deferred_reason_counts = {}
+    production_deferred_reason_counts = {}
+    for item in deferred:
+        reason = item.get("reason", "unknown")
+        deferred_reason_counts[reason] = deferred_reason_counts.get(reason, 0) + 1
+        if item.get("tier") in PRODUCTION_TIERS:
+            production_deferred_reason_counts[reason] = (
+                production_deferred_reason_counts.get(reason, 0) + 1
+            )
     if not include_dev_only:
         campaigns = [
             campaign for campaign in campaigns if campaign["productionTargetCount"] > 0
@@ -195,6 +204,8 @@ def build_plan(vuln_dir, limit=0, include_dev_only=False):
             "campaignCount": len(campaigns),
             "candidateCampaignCount": candidate_campaign_count,
             "deferredCount": len(deferred),
+            "deferredReasonCounts": deferred_reason_counts,
+            "productionDeferredReasonCounts": production_deferred_reason_counts,
             "devOnlyCampaignCount": dev_only_campaign_count,
             "includeDevOnly": include_dev_only,
             "productionCampaignCount": sum(
@@ -249,6 +260,7 @@ def main():
             f"production={summary['productionCampaignCount']} "
             f"dev_only={summary['devOnlyCampaignCount']} "
             f"deferred={summary['deferredCount']} "
+            f"criteria=high-critical-runtime-with-fixed-version "
             f"source={vuln_dir}"
         )
     else:

@@ -38,7 +38,14 @@ const sbomUrls = release.assetUrls.sbom || {};
     <ImageHeader image={image} selectedTag={release.tag} />
     <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
     <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
-    <VulnerabilityTable architectures={release.architectures} client:load />
+    <VulnerabilityTable
+      architectures={release.architectures}
+      imageId={image.id}
+      language={image.language.id}
+      languageVersion={image.language.version}
+      tier={image.tier.id}
+      client:load
+    />
     <SbomSection architectures={release.architectures} rawSbomUrls={sbomUrls} />
     <TestResults architectures={release.architectures} />
     <ProvenanceBlock release={release} ownerRepo={ownerRepo} />

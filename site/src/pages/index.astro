@@ -28,9 +28,11 @@ const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
       </p>
       <p class="text-sm text-ink-300">
         CVE counts on the catalog are rescanned nightly against a fresh Grype database, so
-        a stable SBOM picks up newly-disclosed advisories without a new release. Dev-tier
-        images include full toolchains and are deliberately not optimized for CVE surface
-        area; never deploy them.
+        a stable SBOM picks up newly-disclosed advisories without a new release. Automated
+        remediation only drafts patches for critical/high findings in the ClearCutt runtime
+        layer when Grype reports a fixed version; base-layer, lower-severity, and unfixed
+        findings remain visible with their policy reason. Dev-tier images include full
+        toolchains and are deliberately not optimized for CVE surface area; never deploy them.
       </p>
       <div class="flex flex-wrap gap-3 pt-1">
         <a href={`${base}verification`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>

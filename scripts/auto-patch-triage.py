@@ -127,9 +127,10 @@ def main():
     if not campaigns:
         summary = plan.get("summary", {})
         dev_only = summary.get("devOnlyCampaignCount", 0)
+        prod_deferred = summary.get("productionDeferredReasonCounts", {})
         if dev_only:
             log_pass(
-                "No production remediation campaigns selected; "
+                "No fixable production runtime remediation campaigns selected; "
                 f"{dev_only} dev-tier-only campaign(s) deferred by policy."
             )
             log_info(
@@ -137,7 +138,18 @@ def main():
                 "workflow input, for an explicit dev-tier remediation run."
             )
         else:
-            log_pass("Zero actionable High or Critical runtime vulnerabilities with fixes identified. Triage clean!")
+            log_pass(
+                "Zero fixable High or Critical runtime vulnerabilities selected for "
+                "automated remediation."
+            )
+        if prod_deferred:
+            reason_summary = ", ".join(
+                f"{reason}={count}" for reason, count in sorted(prod_deferred.items())
+            )
+            log_info(
+                "Production findings outside auto-remediation policy: "
+                f"{reason_summary}."
+            )
         return
 
     log_info(

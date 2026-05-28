@@ -45,6 +45,24 @@ const decisionsUrl = index ? `${index.repoUrl}/blob/main/docs/decisions.md` : 'h
     </section>
 
     <section class="space-y-2">
+      <h2 class="heading text-xl text-ink-50">Runtime closure policy</h2>
+      <p class="text-sm">
+        ClearCutt defaults to a compatibility-first runtime closure, then makes the trade-offs
+        explicit. The baseline keeps the primary language runtime, CA trust, required dynamic
+        libraries, and the transitive packages Nix proves are reachable from that runtime.
+        The slim tier adds only a small diagnostic shell/tool surface. Distroless removes that
+        operator surface.
+      </p>
+      <p class="text-sm">
+        Packages that exist mainly for optional features, such as Java printing, AWT, fonts, or
+        image codecs, are tracked as pruning candidates instead of being silently removed. The
+        default image should run ordinary workloads without customization; specialized users can
+        fork the Nix closure or adopt a future minimal profile when they can prove they do not
+        need those compatibility edges.
+      </p>
+    </section>
+
+    <section class="space-y-2">
       <h2 class="heading text-xl text-ink-50">What we attest</h2>
       <ul class="list-disc space-y-1 pl-6 text-sm">
         <li><strong class="text-ink-50">SPDX SBOM</strong> — emitted by Syft from the actual OCI archive, attached to the manifest as a cosign predicate of type <code class="font-mono">spdxjson</code>.</li>

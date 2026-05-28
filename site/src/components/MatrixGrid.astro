@@ -39,7 +39,20 @@ function ociRepoFor(langId: string, version: string): string {
   return `clearcutt-${langKeyFor(langId, version)}`.toLowerCase();
 }
 
-type VulnSummary = { critical: number; high: number; medium: number; low: number; scannedAt: string | null };
+type VulnSummary = {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  scannedAt: string | null;
+  remediation?: {
+    eligible: number;
+    baseLayer: number;
+    noFixedVersion: number;
+    belowPriorityThreshold: number;
+    otherDeferred: number;
+  };
+};
 function vulnBadgeClass(v: VulnSummary | null | undefined): string {
   if (!v) return 'chip border-ink-700 text-ink-300';
   if (v.critical > 0) return 'chip-danger';
@@ -49,6 +62,20 @@ function vulnBadgeClass(v: VulnSummary | null | undefined): string {
 function vulnBadgeLabel(v: VulnSummary | null | undefined): string {
   if (!v) return 'no scan';
   return `${v.critical} crit · ${v.high} high`;
+}
+function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
+  if (!v) return 'No vulnerability scan has been attached yet.';
+  const r = v.remediation;
+  if (!r) return 'Open the image page for runtime/base scope and fixed-version details.';
+  const parts = [];
+  if (r.eligible) parts.push(`${r.eligible} fixable runtime`);
+  if (r.noFixedVersion) parts.push(`${r.noFixedVersion} no fixed version`);
+  if (r.baseLayer) parts.push(`${r.baseLayer} base-layer`);
+  if (r.belowPriorityThreshold) parts.push(`${r.belowPriorityThreshold} lower-severity`);
+  if (r.otherDeferred) parts.push(`${r.otherDeferred} other deferred`);
+  return parts.length > 0
+    ? `Critical/high remediation status: ${parts.join(', ')}.`
+    : 'No critical/high findings in this catalog scan.';
 }
 ---
 <div class="surface overflow-hidden">
@@ -138,7 +165,7 @@ function vulnBadgeLabel(v: VulnSummary | null | undefined): string {
                 </div>
                 <div class="mt-1.5 flex flex-wrap items-center gap-1">
                   {img!.architectures.map((a) => <span class="chip text-[9px] px-1.5 py-0">{a}</span>)}
-                  <span class={`${vulnBadgeClass(vs ?? null)} text-[9px] px-1.5 py-0`}>
+                  <span class={`${vulnBadgeClass(vs ?? null)} text-[9px] px-1.5 py-0`} title={vulnBadgeTitle(vs ?? null)}>
                     {vulnBadgeLabel(vs ?? null)}
                   </span>
                   {state === 'lagging' && (

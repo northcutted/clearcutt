@@ -116,7 +116,176 @@ function pickEpss(epssArr) {
   return { score: e.epss, percentile: typeof e.percentile === 'number' ? e.percentile : null };
 }
 
-function normalize(grypeResult, scannedAt) {
+function targetMetadata(target) {
+  const idx = target.lastIndexOf('-');
+  const runtime = idx === -1 ? target : target.slice(0, idx);
+  const tier = idx === -1 ? 'unknown' : target.slice(idx + 1);
+
+  if (runtime === 'coreLTS') return { target, runtime, language: 'core', version: 'LTS', tier };
+
+  const match = runtime.match(/^([a-z]+)(.+)$/);
+  if (!match) return { target, runtime, language: runtime, version: '', tier };
+  const [, language, version] = match;
+  return { target, runtime, language, version, tier };
+}
+
+function displayLanguage(language) {
+  switch (language) {
+    case 'core':
+      return 'Core';
+    case 'java':
+      return 'Java';
+    case 'node':
+      return 'Node.js';
+    case 'python':
+      return 'Python';
+    case 'go':
+      return 'Go';
+    case 'dotnet':
+      return '.NET';
+    case 'rust':
+      return 'Rust';
+    case 'cc':
+      return 'C/C++';
+    default:
+      return language;
+  }
+}
+
+function isPrimaryRuntimePackage(meta, packageName) {
+  const pkg = String(packageName || '').toLowerCase();
+  switch (meta.language) {
+    case 'python':
+      return pkg === 'python' || /^python[0-9.]*$/.test(pkg);
+    case 'java':
+      return pkg.includes('jdk') || pkg.includes('jre') || pkg.includes('openjdk') || pkg.includes('zulu');
+    case 'node':
+      return pkg === 'node' || pkg === 'nodejs' || pkg.startsWith('nodejs');
+    case 'go':
+      return pkg === 'go' || pkg.startsWith('go-') || /^go_[0-9_]+$/.test(pkg);
+    case 'dotnet':
+      return pkg.includes('dotnet') || pkg.includes('aspnetcore');
+    case 'rust':
+      return pkg === 'rustc' || pkg === 'cargo';
+    case 'cc':
+      return pkg === 'gcc' || pkg === 'clang';
+    default:
+      return false;
+  }
+}
+
+function classifyLayer(meta, artifact, purl) {
+  if (purl && (purl.startsWith('pkg:nix') || purl.includes('outputhash='))) {
+    return 'runtime';
+  }
+  if (typeof artifact.sourceInfo === 'string' && artifact.sourceInfo.includes('/nix/store/')) {
+    return 'runtime';
+  }
+  if (typeof artifact.name === 'string' && (artifact.name.startsWith('nix') || artifact.name.includes('clearcutt'))) {
+    return 'runtime';
+  }
+  // Some Grype CPE matches are emitted as pkg:generic even when the package is
+  // the language runtime ClearCutt intentionally overlays into the image.
+  if (isPrimaryRuntimePackage(meta, artifact.name)) {
+    return 'runtime';
+  }
+  return 'base';
+}
+
+function remediationMetadata({ layer, severityKey, fixedIn, fixState }) {
+  const highPriority = severityKey === 'critical' || severityKey === 'high';
+  if (layer !== 'runtime') {
+    return {
+      status: 'deferred',
+      reason: 'base_layer',
+      summary:
+        'Outside the ClearCutt runtime overlay scope. Track it as base-image platform risk or replace the mandated base.',
+    };
+  }
+  if (!highPriority) {
+    return {
+      status: 'deferred',
+      reason: 'below_priority_threshold',
+      summary:
+        'Below the automated remediation threshold. It remains visible in the catalog for awareness.',
+    };
+  }
+  if (!fixedIn) {
+    return {
+      status: 'deferred',
+      reason: 'no_fixed_version',
+      summary:
+        `Grype reports fix state "${fixState || 'unknown'}" and no fixed version. The broker needs upstream fix evidence before patching.`,
+    };
+  }
+  return {
+    status: 'eligible',
+    reason: 'fix_available',
+    summary:
+      'High-priority runtime finding with a fixed version. Eligible for brokered patch recipe validation.',
+  };
+}
+
+function inclusionMetadata(meta, artifact, layer) {
+  const pkg = String(artifact.name || '').toLowerCase();
+  const lang = displayLanguage(meta.language);
+  const version = meta.version ? ` ${meta.version}` : '';
+  const variant = `${lang}${version} ${meta.tier}`;
+
+  if (layer === 'base') {
+    return {
+      category: 'base_image',
+      summary:
+        'Inherited from the enterprise base image underneath the ClearCutt runtime layer.',
+    };
+  }
+  if (isPrimaryRuntimePackage(meta, pkg)) {
+    return {
+      category: 'primary_runtime',
+      summary: `Primary ${lang}${version} runtime required by this image variant.`,
+    };
+  }
+  if (pkg === 'cacert' || pkg === 'nss-cacert') {
+    return {
+      category: 'trust_store',
+      summary: 'TLS CA trust store required by networked runtimes.',
+    };
+  }
+  if (meta.tier === 'slim' && (pkg === 'bash' || pkg === 'bash-interactive' || pkg === 'busybox')) {
+    return {
+      category: 'tier_tooling',
+      summary:
+        'Intentional slim-tier diagnostic utility. Distroless variants remove shells and core utilities.',
+    };
+  }
+  if (meta.language === 'java' && pkg === 'cups') {
+    return {
+      category: 'java_compatibility',
+      summary:
+        'Pulled by the selected Java runtime closure for printing/AWT compatibility. Candidate for a headless-minimal profile.',
+    };
+  }
+  if (meta.language === 'java' && pkg === 'libtiff') {
+    return {
+      category: 'java_compatibility',
+      summary:
+        'Pulled by the selected Java runtime closure for image/font stack compatibility. Candidate for a headless-minimal profile.',
+    };
+  }
+  if (['glibc', 'gcc-unwrapped', 'libgcc', 'zlib', 'bzip2', 'xz', 'openssl'].includes(pkg)) {
+    return {
+      category: 'runtime_dependency',
+      summary: `Runtime library required by the selected ${variant} closure.`,
+    };
+  }
+  return {
+    category: 'transitive_runtime',
+    summary:
+      `Transitive dependency of the selected ${variant} Nix runtime closure.`,
+  };
+}
+
+function normalize(grypeResult, scannedAt, meta) {
   const matches = grypeResult.matches || [];
   const counts = { critical: 0, high: 0, medium: 0, low: 0, negligible: 0, unknown: 0 };
   const findings = [];
@@ -134,15 +303,9 @@ function normalize(grypeResult, scannedAt) {
     if (Array.isArray(a.purl)) purl = a.purl[0] ?? null;
     else if (typeof a.purl === 'string') purl = a.purl;
 
-    // Stage 1/5 Classification: Determine if package is Nix-managed (runtime) or Base OS (base)
-    let layer = 'base';
-    if (purl && (purl.startsWith('pkg:nix') || purl.includes('outputhash='))) {
-      layer = 'runtime';
-    } else if (typeof a.sourceInfo === 'string' && a.sourceInfo.includes('/nix/store/')) {
-      layer = 'runtime';
-    } else if (typeof a.name === 'string' && (a.name.startsWith('nix') || a.name.includes('clearcutt'))) {
-      layer = 'runtime';
-    }
+    const fixedIn = Array.isArray(fix.versions) && fix.versions.length > 0 ? fix.versions.join(', ') : null;
+    const fixState = fix.state || 'unknown';
+    const layer = classifyLayer(meta, a, purl);
 
     const cvss = pickCvss(v.cvss);
     const epss = pickEpss(v.epss);
@@ -153,9 +316,11 @@ function normalize(grypeResult, scannedAt) {
       packageName: a.name || '',
       packageVersion: a.version || '',
       purl,
-      layer, // Add the layer classification field
-      fixedIn: Array.isArray(fix.versions) && fix.versions.length > 0 ? fix.versions.join(', ') : null,
-      fixState: fix.state || 'unknown',
+      layer,
+      fixedIn,
+      fixState,
+      remediation: remediationMetadata({ layer, severityKey: sevKey, fixedIn, fixState }),
+      inclusion: inclusionMetadata(meta, a, layer),
       dataSource: v.dataSource || null,
       namespace: v.namespace || null,
       description: v.description || null,
@@ -218,7 +383,7 @@ async function main() {
       const outPath = path.join(tagOut, `${target}-${arch}.json`);
       try {
         const grypeJson = runGrype(sbomPath);
-        const norm = normalize(grypeJson, new Date().toISOString());
+        const norm = normalize(grypeJson, new Date().toISOString(), targetMetadata(target));
         writeFileSync(outPath, JSON.stringify(norm, null, 2));
         const c = norm.countsBySeverity;
         console.log(
