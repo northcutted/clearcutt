@@ -5,98 +5,42 @@
 { self, pkgs }:
 
 let
-  # Reusable core language packages resolver
-  resolveRawPackages = { language, version }:
-    if language == "core" then
-      [ (pkgs.coreutils or pkgs.coreutils-full) (pkgs.bashInteractive or pkgs.bash) ]
-    else if language == "java" then
-      (if version == "21" then
-         (if pkgs ? jdk21 then [ pkgs.jdk21 ]
-          else if pkgs ? openjdk21 then [ pkgs.openjdk21 ]
-          else throw "Java 21 is not available in this nixpkgs version")
-       else if version == "25" then
-         (if pkgs ? jdk25 then [ pkgs.jdk25 ]
-          else if pkgs ? openjdk25 then [ pkgs.openjdk25 ]
-          else throw "Java 25 is not available in this nixpkgs version")
-       else throw "Unsupported Java version: ${version}")
-    else if language == "node" then
-      (if version == "22" then
-         (if pkgs ? nodejs_22 then [ pkgs.nodejs_22 ]
-          else if pkgs ? nodejs-22_x then [ pkgs.nodejs-22_x ]
-          else throw "Node.js 22 is not available in this nixpkgs version")
-       else if version == "24" then
-         (if pkgs ? nodejs_24 then [ pkgs.nodejs_24 ]
-          else if pkgs ? nodejs-24_x then [ pkgs.nodejs-24_x ]
-          else throw "Node.js 24 is not available in this nixpkgs version")
-       else throw "Unsupported Node version: ${version}")
-    else if language == "python" then
-      (if version == "3.13" then
-         (if pkgs ? python313 then [ pkgs.python313 ]
-          else throw "Python 3.13 is not available in this nixpkgs version")
-       else if version == "3.14" then
-         (if pkgs ? python314 then [ pkgs.python314 ]
-          else throw "Python 3.14 is not available in this nixpkgs version")
-       else throw "Unsupported Python version: ${version}")
-    else if language == "go" then
-      (if version == "1.25" then
-         (if pkgs ? go_1_25 then [ pkgs.go_1_25 ]
-          else throw "Go 1.25 is not available in this nixpkgs version")
-       else if version == "1.26" then
-         (if pkgs ? go_1_26 then [ pkgs.go_1_26 ]
-          else throw "Go 1.26 is not available in this nixpkgs version")
-       else throw "Unsupported Go version: ${version}")
-    else if language == "dotnet" then
-      (if version == "8" then
-         (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? sdk_8_0 then [ pkgs.dotnetCorePackages.sdk_8_0 ]
-          else throw ".NET 8 SDK is not available in this nixpkgs version")
-       else if version == "10" then
-         (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? sdk_10_0 then [ pkgs.dotnetCorePackages.sdk_10_0 ]
-          else throw ".NET 10 SDK is not available in this nixpkgs version")
-       else throw "Unsupported .NET SDK version: ${version}")
-    else if language == "dotnet-runtime" then
-      (if version == "8" then
-         (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? aspnetcore_8_0 then [ pkgs.dotnetCorePackages.aspnetcore_8_0 ]
-          else throw ".NET 8 Runtime is not available in this nixpkgs version")
-       else if version == "10" then
-         (if pkgs ? dotnetCorePackages && pkgs.dotnetCorePackages ? aspnetcore_10_0 then [ pkgs.dotnetCorePackages.aspnetcore_10_0 ]
-          else throw ".NET 10 Runtime is not available in this nixpkgs version")
-       else throw "Unsupported .NET Runtime version: ${version}")
-    else if language == "rust" then
-      (if version == "1.95" then
-         (if pkgs ? rustc && pkgs ? cargo then [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.clippy ]
-          else throw "Rust 1.95 is not available in this nixpkgs version")
-       else throw "Unsupported Rust version: ${version}")
-    else if language == "cc" then
-      (if version == "15" then
-         [ pkgs.gcc pkgs.gnumake pkgs.cmake pkgs.ninja ]
-       else throw "Unsupported C/C++ version: ${version}")
-    else
-      throw "Unsupported language: ${language}";
+  # Import centralized language and runtime registry
+  registry = import ./registry.nix { inherit pkgs; };
+
+  # Dynamic Overlay Generation
+  # Iterates through languages and versions in the registry to construct the overlay attributes
+  dynamicOverlayAttrs =
+    let
+      # Get all combinations of (lang, version, verSpec)
+      allSpecs = pkgs.lib.concatMap (lang:
+        let
+          langSpec = registry.languages.${lang};
+        in
+        pkgs.lib.mapAttrsToList (ver: verSpec: {
+          inherit lang ver verSpec;
+        }) langSpec.versions
+      ) (builtins.attrNames registry.languages);
+
+      # Filter for specs that specify an overlayName
+      validSpecs = builtins.filter (spec: spec.verSpec ? overlayName) allSpecs;
+
+      # Map each to a name/value pair
+      pairs = map (spec: {
+        name = spec.verSpec.overlayName;
+        value = registry.resolveRaw { language = spec.lang; version = spec.ver; };
+      }) validSpecs;
+    in
+    builtins.listToAttrs pairs;
 
 in
 {
   # Raw package matrix resolver
-  inherit resolveRawPackages;
+  resolveRawPackages = registry.resolveRaw;
 
   # Declarative Overlay
   # Downstreams can apply this overlay to inject ClearCutt's verified package matrix
-  overlay = final: prev: {
-    clearcuttCore = resolveRawPackages { language = "core"; version = "LTS"; };
-    clearcuttJava21 = resolveRawPackages { language = "java"; version = "21"; };
-    clearcuttJava25 = resolveRawPackages { language = "java"; version = "25"; };
-    clearcuttNode22 = resolveRawPackages { language = "node"; version = "22"; };
-    clearcuttNode24 = resolveRawPackages { language = "node"; version = "24"; };
-    clearcuttPython313 = resolveRawPackages { language = "python"; version = "3.13"; };
-    clearcuttPython314 = resolveRawPackages { language = "python"; version = "3.14"; };
-    clearcuttGo125 = resolveRawPackages { language = "go"; version = "1.25"; };
-    clearcuttGo126 = resolveRawPackages { language = "go"; version = "1.26"; };
-    clearcuttDotnet8 = resolveRawPackages { language = "dotnet"; version = "8"; };
-    clearcuttDotnet8Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "8"; };
-    clearcuttDotnet10 = resolveRawPackages { language = "dotnet"; version = "10"; };
-    clearcuttDotnet10Runtime = resolveRawPackages { language = "dotnet-runtime"; version = "10"; };
-    clearcuttRust195 = resolveRawPackages { language = "rust"; version = "1.95"; };
-    clearcuttCc15 = resolveRawPackages { language = "cc"; version = "15"; };
-  };
+  overlay = final: prev: dynamicOverlayAttrs;
 
   # Downstream Development Shell Builder
   # Automatically wraps a host development shell with ClearCutt's transient enterprise credentials broker
@@ -108,7 +52,7 @@ in
     shellHook ? ""
   }:
   let
-    langPkgs = resolveRawPackages { inherit language version; };
+    langPkgs = registry.resolveRaw { inherit language version; };
     allBuildInputs = [
       pkgs.git
       pkgs.curl
@@ -126,6 +70,7 @@ in
       echo -e "Host System: \033[32m${pkgs.system}\033[0m"
       echo -e "Hardened Target: \033[32m${language}-${version}\033[0m"
       echo
+ 
 
       # Source transient credentials broker from the Flake store path!
       if [ -f "${self}/lib/credential-broker.sh" ]; then

@@ -540,12 +540,16 @@ test_cve_remediation_gates() {
     "rust 1.95 slim rust1.95-slim"
     "cc 15 distroless cc15-distroless"
   )
-
   for spec in "${smoke_targets[@]}"; do
     local smoke_lang smoke_ver smoke_tier smoke_target smoke_tar smoke_link
     IFS=' ' read -r smoke_lang smoke_ver smoke_tier smoke_target <<< "$spec"
     smoke_tar="build-outputs/${smoke_target}.tar.gz"
     if [ ! -f "$smoke_tar" ]; then
+      # On non-Linux hosts, we cannot build Linux OCI image targets!
+      if [[ "$(uname -s)" != "Linux" ]]; then
+        log_warn "Non-Linux host detected. Skipping OCI build and smoke test for '${smoke_target}'."
+        continue
+      fi
       smoke_link="build-outputs/${smoke_target}-link"
       if ! nix build ".#${smoke_target}" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
         log_fail "G4 Gate Failed: unable to build ${smoke_target} for smoke testing."

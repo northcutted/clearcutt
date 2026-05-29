@@ -5,9 +5,9 @@
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**ClearCutt Hardened Fleets** is a declarative supply chain framework and platform engineering blueprint. It compiles, validates, certifies, and cryptographically signs a matrix of target language runtimes across multiple lifecycle tiers (`dev`, `slim`, and `distroless`).
+**ClearCutt Hardened Fleets** is a free, open-source base image blueprint and declarative packaging framework designed for platform and security engineers. Rather than shipping a closed, opinionated operating system, ClearCutt operates as a customizable template built with Nix. You can use our secure, hardened runtimes straight out of the box, or easily fork the blueprint to customize and compile your own enterprise-wide base image fleet.
 
-By leveraging **Nix**, ClearCutt injects runtime layers (e.g., Java, Node.js, Python) as isolated `/nix/store` closures directly on top of existing, mandated enterprise base images (such as Amazon Linux 2023, RedHat UBI, or Ubuntu Pro). This allows organizations to update runtimes without modifying host operating system layers, while establishing a traceable cryptographic signature and attestation chain verifying origin from code checkout to the cluster admission gateway.
+By leveraging **Nix**, ClearCutt compiles target language runtimes (e.g., Java, Node.js, Python) as isolated `/nix/store` closures. While we provide secure, distroless images from-scratch, the blueprint also natively supports grafting these isolated layers directly on top of existing, government-mandated enterprise base OS configurations (such as Red Hat UBI, Amazon Linux, or Ubuntu Pro) as a robust compliance bandaid. This empowers platform teams to achieve elite container security postures—establishing a traceable cryptographic signature and attestation chain from source code checkout to the Kubernetes admission gateway—while seamlessly satisfying legacy corporate image constraints.
 
 ---
 

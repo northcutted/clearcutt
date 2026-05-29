@@ -40,24 +40,18 @@
         # for production release matrix compilation.
         pkgs = hostPkgs;
 
+        # Import centralized language and runtime registry
+        registry = import ./lib/registry.nix { inherit pkgs; };
+
         # Import our custom image compiler
         compiler = import ./lib/build-fleet.nix { inherit pkgs; };
 
         # Helper to generate standard package name attributes
         mkPackageName = lang: ver: tier: "${lang}${ver}-${tier}";
 
-        # Matrix specifications
-        languages = [ "core" "java" "node" "python" "go" "dotnet" "rust" "cc" ];
-        versions = {
-          core = [ "LTS" ];
-          java = [ "21" "25" ];
-          node = [ "22" "24" ];
-          python = [ "3.13" "3.14" ];
-          go = [ "1.25" "1.26" ];
-          dotnet = [ "8" "10" ];
-          rust = [ "1.95" ];
-          cc = [ "15" ];
-        };
+        # Matrix specifications - dynamically generated from the central registry
+        languages = builtins.filter (lang: lang != "dotnet-runtime") (builtins.attrNames registry.languages);
+        versions = builtins.mapAttrs (lang: spec: builtins.attrNames spec.versions) registry.languages;
         tiers = [ "dev" "slim" "distroless" ];
 
         # Generate a nested set representing the full combinations matrix
@@ -149,7 +143,7 @@
       # Raw overlays for downstream consumers
       overlays.default = final: prev:
         let
-          helpers = import ./lib/nix-native.nix { inherit self; pkgs = final; };
+          helpers = import ./lib/nix-native.nix { inherit self; pkgs = prev; };
         in
         helpers.overlay final prev;
 
