@@ -7,6 +7,7 @@ interface Props {
 const { release, ownerRepo } = Astro.props;
 const prov = release.provenance;
 const sig = release.signature;
+const attestations = release.attestations || [];
 
 function friendlyPredicate(type: string): string {
   if (!type || type === 'unknown') return 'unknown';
@@ -96,6 +97,41 @@ function displaySourceUri(uri: string | null | undefined, fallback: string): str
     .replace(/@refs\/.*$/, '');
 }
 
+function attestationLabel(kind: string, predicateType: string): string {
+  switch (kind) {
+    case 'slsa-provenance':
+      return 'SLSA provenance';
+    case 'sbom':
+      return 'SBOM';
+    case 'test-results':
+      return 'Test results';
+    default:
+      return friendlyPredicate(predicateType).split('/').pop() || 'Attestation';
+  }
+}
+
+function shortDigest(digest: string | null | undefined): string {
+  if (!digest) return 'unknown';
+  const [alg, value] = digest.split(':');
+  if (!value) return digest.length > 18 ? `${digest.slice(0, 18)}...` : digest;
+  return `${alg}:${value.slice(0, 12)}...`;
+}
+
+function displaySigner(identity: string | null | undefined): string {
+  const parsed = parseOidcSubject(identity);
+  if (parsed) {
+    const workflowFile = parsed.workflow.split('/').pop();
+    const ref = parsed.ref.replace(/^refs\/heads\//, '').replace(/^refs\/tags\//, '');
+    return `${workflowFile}${ref ? ` @ ${ref}` : ''}`;
+  }
+  if (!identity) return 'unknown';
+  return identity.replace(/^https:\/\//, '');
+}
+
+function sourceLabel(source: string): string {
+  return source === 'github' ? 'GitHub' : 'OCI';
+}
+
 const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject) : null;
 ---
 <section class="space-y-4">
@@ -119,160 +155,220 @@ const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject)
       </p>
     </div>
   ) : (
-    <div class="grid gap-5 md:grid-cols-2">
-      {/* CARD 1: Cryptographic Signatures (Cosign) */}
-      <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
-        <div class="space-y-3">
-          <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
-            <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Cryptographic Proof</h3>
+    <>
+      <div class="grid gap-5 md:grid-cols-2">
+        {/* CARD 1: Cryptographic Signatures (Cosign) */}
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Cryptographic Proof</h3>
+              {sig?.cosignBundlePresent ? (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  VERIFIED KEYLESS
+                </span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-warn/10 text-warn border border-warn/25">
+                  <span class="w-1.5 h-1.5 rounded-full bg-warn" />
+                  NO COSIGN SIGNATURE
+                </span>
+              )}
+            </header>
+
             {sig?.cosignBundlePresent ? (
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                VERIFIED KEYLESS
-              </span>
-            ) : (
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-warn/10 text-warn border border-warn/25">
-                <span class="w-1.5 h-1.5 rounded-full bg-warn" />
-                NO COSIGN SIGNATURE
-              </span>
-            )}
-          </header>
+              <div class="divide-y divide-ink-800/30">
+                {oidcDetails && (
+                  <>
+                    <div class="flex items-baseline justify-between text-xs py-2">
+                      <span class="text-ink-300 font-medium">Source Repo</span>
+                      <a href={`https://github.com/${oidcDetails.owner}/${oidcDetails.repo}`} class="text-ink-100 font-mono hover:text-accent-soft underline decoration-accent/40" target="_blank" rel="noreferrer">
+                        {oidcDetails.owner}/{oidcDetails.repo}
+                      </a>
+                    </div>
+                    <div class="flex items-baseline justify-between text-xs py-2">
+                      <span class="text-ink-300 font-medium">Signing Workflow</span>
+                      <span class="text-ink-100 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[260px]" title={oidcDetails.workflow}>
+                        {oidcDetails.workflow.split('/').pop()}
+                      </span>
+                    </div>
+                    <div class="flex items-baseline justify-between text-xs py-2">
+                      <span class="text-ink-300 font-medium">Workflow Ref</span>
+                      <span class="px-1.5 py-0.5 rounded bg-ink-950/60 border border-ink-800 text-[10px] text-ink-200 font-mono">
+                        {oidcDetails.ref}
+                      </span>
+                    </div>
+                  </>
+                )}
 
-          {sig?.cosignBundlePresent ? (
-            <div class="divide-y divide-ink-800/30">
-              {oidcDetails && (
-                <>
+                <div class="flex items-baseline justify-between text-xs py-2">
+                  <span class="text-ink-300 font-medium">OIDC Issuer</span>
+                  <span class="text-ink-200 font-mono text-[10px]">
+                    {sig.certificate?.issuer ? sig.certificate.issuer.replace('https://', '') : 'token.actions.githubusercontent.com'}
+                  </span>
+                </div>
+
+                {sig.rekorLogIndex && (
                   <div class="flex items-baseline justify-between text-xs py-2">
-                    <span class="text-ink-300 font-medium">Source Repo</span>
-                    <a href={`https://github.com/${oidcDetails.owner}/${oidcDetails.repo}`} class="text-ink-100 font-mono hover:text-accent-soft underline decoration-accent/40" target="_blank" rel="noreferrer">
-                      {oidcDetails.owner}/{oidcDetails.repo}
+                    <span class="text-ink-300 font-medium">Rekor Entry</span>
+                    <a href={`https://search.sigstore.dev/?logIndex=${sig.rekorLogIndex}`} class="text-accent-soft font-mono hover:text-accent font-semibold underline decoration-accent/35" target="_blank" rel="noreferrer">
+                      Log Index #{sig.rekorLogIndex} ↗
                     </a>
                   </div>
-                  <div class="flex items-baseline justify-between text-xs py-2">
-                    <span class="text-ink-300 font-medium">Signing Workflow</span>
-                    <span class="text-ink-100 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[260px]" title={oidcDetails.workflow}>
-                      {oidcDetails.workflow.split('/').pop()}
-                    </span>
-                  </div>
-                  <div class="flex items-baseline justify-between text-xs py-2">
-                    <span class="text-ink-300 font-medium">Workflow Ref</span>
-                    <span class="px-1.5 py-0.5 rounded bg-ink-950/60 border border-ink-800 text-[10px] text-ink-200 font-mono">
-                      {oidcDetails.ref}
-                    </span>
-                  </div>
-                </>
-              )}
-              
-              <div class="flex items-baseline justify-between text-xs py-2">
-                <span class="text-ink-300 font-medium">OIDC Issuer</span>
-                <span class="text-ink-200 font-mono text-[10px]">
-                  {sig.certificate?.issuer ? sig.certificate.issuer.replace('https://', '') : 'token.actions.githubusercontent.com'}
-                </span>
+                )}
               </div>
+            ) : (
+              <p class="text-xs text-ink-300 leading-relaxed pt-2">
+                This OCI release has not been signed via standard keyless sigstore/cosign OIDC tokens. Verify local deployment rules to ensure verification blocks are satisfied.
+              </p>
+            )}
+          </div>
 
-              {sig.rekorLogIndex && (
-                <div class="flex items-baseline justify-between text-xs py-2">
-                  <span class="text-ink-300 font-medium">Rekor Entry</span>
-                  <a href={`https://search.sigstore.dev/?logIndex=${sig.rekorLogIndex}`} class="text-accent-soft font-mono hover:text-accent font-semibold underline decoration-accent/35" target="_blank" rel="noreferrer">
-                    Log Index #{sig.rekorLogIndex} ↗
-                  </a>
-                </div>
-              )}
+          {sig?.cosignBundlePresent && sig.certificate?.subject && (
+            <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 break-all leading-normal">
+              <div class="text-[9px] uppercase tracking-wider font-sans font-bold text-ink-400 mb-1 select-none">OIDC Certificate Subject</div>
+              {sig.certificate.subject}
             </div>
-          ) : (
-            <p class="text-xs text-ink-300 leading-relaxed pt-2">
-              This OCI release has not been signed via standard keyless sigstore/cosign OIDC tokens. Verify local deployment rules to ensure verification blocks are satisfied.
-            </p>
           )}
         </div>
 
-        {sig?.cosignBundlePresent && sig.certificate?.subject && (
-          <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 break-all leading-normal">
-            <div class="text-[9px] uppercase tracking-wider font-sans font-bold text-ink-400 mb-1 select-none">OIDC Certificate Subject</div>
-            {sig.certificate.subject}
-          </div>
-        )}
-      </div>
+        {/* CARD 2: SLSA Build Provenance */}
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Supply Chain Provenance</h3>
+              {prov ? (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent/15 text-accent-soft border border-accent/25">
+                  <span class="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_rgba(var(--accent),0.5)]" />
+                  SLSA LEVEL {prov.slsaLevel}
+                </span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-ink-800 text-ink-300 border border-ink-700/50">
+                  NO PROVENANCE
+                </span>
+              )}
+            </header>
 
-      {/* CARD 2: SLSA Build Provenance */}
-      <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
-        <div class="space-y-3">
-          <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
-            <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Supply Chain Provenance</h3>
             {prov ? (
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent/15 text-accent-soft border border-accent/25">
-                <span class="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_rgba(var(--accent),0.5)]" />
-                SLSA LEVEL {prov.slsaLevel}
-              </span>
-            ) : (
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-ink-800 text-ink-300 border border-ink-700/50">
-                NO PROVENANCE
-              </span>
-            )}
-          </header>
-
-          {prov ? (
-            <div class="divide-y divide-ink-800/30">
-              <div class="flex items-baseline justify-between text-xs py-2">
-                <span class="text-ink-300 font-medium">Builder</span>
-                {(() => {
-                  const b = friendlyBuilder(prov.builder.id);
-                  return b.url ? (
-                    <a href={b.url} class="text-ink-100 font-mono hover:text-accent-soft underline decoration-accent/40" target="_blank" rel="noreferrer">
-                      {b.label}
-                    </a>
-                  ) : (
-                    <span class="text-ink-200 font-mono">{b.label}</span>
-                  );
-                })()}
-              </div>
-
-              <div class="flex items-baseline justify-between text-xs py-2">
-                <span class="text-ink-300 font-medium">Build Type</span>
-                <span class="text-ink-200 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[240px]">
-                  {friendlyBuildType(prov.buildType)}
-                </span>
-              </div>
-
-              <div class="flex items-baseline justify-between text-xs py-2">
-                <span class="text-ink-300 font-medium">Predicate Schema</span>
-                <span class="text-ink-200 font-mono text-[10px]">
-                  {friendlyPredicate(prov.predicateType).split('/').pop()}
-                </span>
-              </div>
-
-              <div class="flex items-baseline justify-between text-xs py-2">
-                <span class="text-ink-300 font-medium">Source Material</span>
-                <span class="text-ink-100 font-mono text-[11px]" title={prov.sourceUri || `github.com/${ownerRepo}`}>
-                  {displaySourceUri(prov.sourceUri, `github.com/${ownerRepo}`)}
-                </span>
-              </div>
-
-              {prov.sourceRevision && (
+              <div class="divide-y divide-ink-800/30">
                 <div class="flex items-baseline justify-between text-xs py-2">
-                  <span class="text-ink-300 font-medium">Commit SHA</span>
-                  <a href={`https://github.com/${ownerRepo}/commit/${prov.sourceRevision}`} class="px-1.5 py-0.5 rounded bg-ink-950/60 border border-ink-800 text-[10px] text-accent-soft font-mono font-bold hover:text-accent" target="_blank" rel="noreferrer">
-                    {shortSha(prov.sourceRevision)} ↗
-                  </a>
+                  <span class="text-ink-300 font-medium">Builder</span>
+                  {(() => {
+                    const b = friendlyBuilder(prov.builder.id);
+                    return b.url ? (
+                      <a href={b.url} class="text-ink-100 font-mono hover:text-accent-soft underline decoration-accent/40" target="_blank" rel="noreferrer">
+                        {b.label}
+                      </a>
+                    ) : (
+                      <span class="text-ink-200 font-mono">{b.label}</span>
+                    );
+                  })()}
                 </div>
-              )}
+
+                <div class="flex items-baseline justify-between text-xs py-2">
+                  <span class="text-ink-300 font-medium">Build Type</span>
+                  <span class="text-ink-200 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[240px]">
+                    {friendlyBuildType(prov.buildType)}
+                  </span>
+                </div>
+
+                <div class="flex items-baseline justify-between text-xs py-2">
+                  <span class="text-ink-300 font-medium">Predicate Schema</span>
+                  <span class="text-ink-200 font-mono text-[10px]">
+                    {friendlyPredicate(prov.predicateType).split('/').pop()}
+                  </span>
+                </div>
+
+                <div class="flex items-baseline justify-between text-xs py-2">
+                  <span class="text-ink-300 font-medium">Source Material</span>
+                  <span class="text-ink-100 font-mono text-[11px]" title={prov.sourceUri || `github.com/${ownerRepo}`}>
+                    {displaySourceUri(prov.sourceUri, `github.com/${ownerRepo}`)}
+                  </span>
+                </div>
+
+                {prov.sourceRevision && (
+                  <div class="flex items-baseline justify-between text-xs py-2">
+                    <span class="text-ink-300 font-medium">Commit SHA</span>
+                    <a href={`https://github.com/${ownerRepo}/commit/${prov.sourceRevision}`} class="px-1.5 py-0.5 rounded bg-ink-950/60 border border-ink-800 text-[10px] text-accent-soft font-mono font-bold hover:text-accent" target="_blank" rel="noreferrer">
+                      {shortSha(prov.sourceRevision)} ↗
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p class="text-xs text-ink-300 leading-relaxed pt-2">
+                No formal supply chain build provenance envelope was found. Attesting compiler runs prevents tampering by linking binary digests to cryptographic parent hashes.
+              </p>
+            )}
+          </div>
+
+          {prov && (
+            <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 flex items-center justify-between select-none">
+              <span class="text-ink-400 font-sans font-semibold">Non-falsifiable attestation gate:</span>
+              <span class="text-emerald-400 font-semibold font-mono flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]" /> Passed
+              </span>
             </div>
-          ) : (
-            <p class="text-xs text-ink-300 leading-relaxed pt-2">
-              No formal supply chain build provenance envelope was found. Attesting compiler runs prevents tampering by linking binary digests to cryptographic parent hashes.
-            </p>
           )}
         </div>
-
-        {prov && (
-          <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 flex items-center justify-between select-none">
-            <span class="text-ink-400 font-sans font-semibold">Non-falsifiable attestation gate:</span>
-            <span class="text-emerald-400 font-semibold font-mono flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]" /> Passed
-            </span>
-          </div>
-        )}
       </div>
-    </div>
+
+      {attestations.length > 0 && (
+        <div class="surface-soft overflow-hidden">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink-800/50 px-4 py-3">
+            <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Attestations</h3>
+            <span class="font-mono text-[10px] text-ink-300">{attestations.length} signed statements</span>
+          </div>
+          <div class="divide-y divide-ink-800/50">
+            {attestations.map((attestation) => (
+              <div class="grid gap-3 px-4 py-3 text-xs md:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.1fr)_minmax(12rem,1fr)_auto] md:items-center">
+                <div class="min-w-0">
+                  <div class="font-semibold text-ink-50">{attestationLabel(attestation.kind, attestation.predicateType)}</div>
+                  <div class="mt-1 truncate font-mono text-[10px] text-ink-300" title={attestation.predicateType}>
+                    {friendlyPredicate(attestation.predicateType)}
+                  </div>
+                </div>
+                <div class="min-w-0 font-mono text-[10px] text-ink-200">
+                  <div class="truncate" title={attestation.subjectName || undefined}>
+                    {attestation.subjectName || 'unknown subject'}
+                  </div>
+                  <div class="mt-1 text-ink-300" title={attestation.subjectDigest || undefined}>
+                    {shortDigest(attestation.subjectDigest)}
+                  </div>
+                </div>
+                <div class="min-w-0">
+                  <div class="truncate font-mono text-[10px] text-ink-100" title={attestation.signerIdentity || undefined}>
+                    {displaySigner(attestation.signerIdentity)}
+                  </div>
+                  <div class="mt-1 flex flex-wrap gap-1">
+                    {attestation.sources.map((source) => (
+                      <span class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] uppercase text-ink-300">
+                        {sourceLabel(source)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-1.5 md:justify-end">
+                  {attestation.runUrl && (
+                    <a href={attestation.runUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">run ↗</a>
+                  )}
+                  {!attestation.runUrl && attestation.workflowUrl && (
+                    <a href={attestation.workflowUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">workflow ↗</a>
+                  )}
+                  {attestation.githubApiUrl && (
+                    <a href={attestation.githubApiUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">GitHub API ↗</a>
+                  )}
+                  {attestation.releaseAssetUrl && (
+                    <a href={attestation.releaseAssetUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">asset ↗</a>
+                  )}
+                  {attestation.transparencyUrl && (
+                    <a href={attestation.transparencyUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">Rekor ↗</a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   )}
 </section>

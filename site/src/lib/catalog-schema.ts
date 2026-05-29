@@ -98,6 +98,23 @@ export const ArchPayload = z.object({
 });
 export type ArchPayload = z.infer<typeof ArchPayload>;
 
+export const AttestationEntry = z.object({
+  kind: z.enum(['slsa-provenance', 'sbom', 'test-results', 'custom']),
+  predicateType: z.string(),
+  subjectName: z.string().nullable(),
+  subjectDigest: z.string().nullable(),
+  signerIdentity: z.string().nullable(),
+  issuer: z.string().nullable(),
+  runUrl: z.string().nullable(),
+  workflowUrl: z.string().nullable(),
+  githubApiUrl: z.string().nullable(),
+  releaseAssetUrl: z.string().nullable().optional(),
+  transparencyLogIndex: z.number().nullable(),
+  transparencyUrl: z.string().nullable(),
+  sources: z.array(z.enum(['oci', 'github'])),
+});
+export type AttestationEntry = z.infer<typeof AttestationEntry>;
+
 export const ReleaseEntry = z.object({
   tag: z.string(),
   publishedAt: z.string(),
@@ -131,6 +148,7 @@ export const ReleaseEntry = z.object({
       raw: z.unknown().optional(),
     })
     .nullable(),
+  attestations: z.array(AttestationEntry).default([]),
   assetUrls: z.object({
     sbom: z.record(z.string()).default({}),
     provenance: z.string().nullable(),

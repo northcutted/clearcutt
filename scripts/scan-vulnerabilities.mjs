@@ -14,8 +14,9 @@
 //   Pages keeps publishing. In remediation/release modes, missing tooling or
 //   failed scans fail closed.
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,6 +54,38 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
+// Async subprocess runner — never rejects; returns { status, stdout, stderr }.
+// Output collected as Buffers to safely handle large grype JSON payloads.
+function run(cmd, args = [], opts = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+    const out = [];
+    const err = [];
+    child.stdout.on('data', (d) => out.push(d));
+    child.stderr.on('data', (d) => err.push(d));
+    child.on('error', (e) => resolve({ status: -1, stdout: '', stderr: String(e) }));
+    child.on('close', (code) =>
+      resolve({
+        status: code ?? -1,
+        stdout: Buffer.concat(out).toString('utf8'),
+        stderr: Buffer.concat(err).toString('utf8'),
+      }),
+    );
+  });
+}
+
+// Concurrency-limited worker pool: at most `limit` workers in flight at once.
+async function runPool(items, limit, worker) {
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+}
+
 function have(cmd) {
   try { execSync(`command -v ${shellQuote(cmd)}`, { stdio: 'ignore' }); return true; } catch { return false; }
 }
@@ -75,11 +108,10 @@ function grypeVersion() {
 const { version: scannerVersion, dbBuiltAt } = grypeVersion();
 console.log(`[scan] grype ${scannerVersion}, db built ${dbBuiltAt ?? 'unknown'}`);
 
-function runGrype(sbomPath) {
-  const res = spawnSync(
+async function runGrype(sbomPath) {
+  const res = await run(
     GRYPE_BIN,
     ['sbom:' + sbomPath, '-o', 'json', '--quiet', ...GRYPE_OPTS],
-    { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 },
   );
   if (res.status !== 0 && !res.stdout) {
     throw new Error(`grype exited ${res.status}: ${res.stderr?.slice(0, 200)}`);
@@ -368,8 +400,11 @@ async function main() {
     .filter((d) => d.isDirectory())
     .map((d) => d.name);
 
-  let total = 0;
-  let failed = 0;
+  // Build the full work list up front, then scan concurrently. Each SBOM scan
+  // is an independent grype process; the normalize step is cheap. grype is
+  // CPU-bound (matching against the local DB), so the pool defaults to the
+  // runner's core count — override with SCAN_CONCURRENCY.
+  const work = [];
   for (const tag of tags) {
     const tagOut = path.join(OUT_DIR, tag);
     mkdirSync(tagOut, { recursive: true });
@@ -379,24 +414,40 @@ async function main() {
       const m = f.match(/^(.+)-(amd64|arm64)\.sbom\.json$/);
       if (!m) continue;
       const [, target, arch] = m;
-      const sbomPath = path.join(SBOM_DIR, tag, f);
-      const outPath = path.join(tagOut, `${target}-${arch}.json`);
-      try {
-        const grypeJson = runGrype(sbomPath);
-        const norm = normalize(grypeJson, new Date().toISOString(), targetMetadata(target));
-        writeFileSync(outPath, JSON.stringify(norm, null, 2));
-        const c = norm.countsBySeverity;
-        console.log(
-          `[scan] ${tag}/${target}/${arch}: ${norm.findings.length} findings ` +
-            `(crit=${c.critical} high=${c.high} med=${c.medium} low=${c.low})`,
-        );
-        total += 1;
-      } catch (err) {
-        failed += 1;
-        console.warn(`[scan] ${tag}/${target}/${arch}: ${err.message}`);
-      }
+      work.push({
+        tag,
+        target,
+        arch,
+        sbomPath: path.join(SBOM_DIR, tag, f),
+        outPath: path.join(tagOut, `${target}-${arch}.json`),
+      });
     }
   }
+
+  const concurrency = Math.max(
+    1,
+    parseInt(process.env.SCAN_CONCURRENCY || String(os.cpus().length || 4), 10),
+  );
+  console.log(`[scan] scanning ${work.length} SBOM(s) with concurrency ${concurrency}`);
+
+  let total = 0;
+  let failed = 0;
+  await runPool(work, concurrency, async ({ tag, target, arch, sbomPath, outPath }) => {
+    try {
+      const grypeJson = await runGrype(sbomPath);
+      const norm = normalize(grypeJson, new Date().toISOString(), targetMetadata(target));
+      writeFileSync(outPath, JSON.stringify(norm, null, 2));
+      const c = norm.countsBySeverity;
+      console.log(
+        `[scan] ${tag}/${target}/${arch}: ${norm.findings.length} findings ` +
+          `(crit=${c.critical} high=${c.high} med=${c.medium} low=${c.low})`,
+      );
+      total += 1;
+    } catch (err) {
+      failed += 1;
+      console.warn(`[scan] ${tag}/${target}/${arch}: ${err.message}`);
+    }
+  });
   console.log(`[scan] done. ${total} scans succeeded, ${failed} failed.`);
   if (STRICT && total === 0) {
     throw new Error(`[scan] strict ${SCAN_MODE} mode found zero SBOMs to scan.`);

@@ -119,20 +119,73 @@ if (!COSIGN_AVAILABLE) {
 
 const { owner, repo } = detectRepo();
 const REGISTRY_BASE = `ghcr.io/${owner.toLowerCase()}/${repo.toLowerCase()}`;
+const GITHUB_API_VERSION = '2022-11-28';
+let cachedGithubToken;
 
 async function listReleaseTags() {
   if (process.env.GATHER_TAGS) {
     return process.env.GATHER_TAGS.split(',').map((t) => t.trim()).filter(Boolean);
   }
-  const headers = { Accept: 'application/vnd.github+json' };
-  if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/releases?per_page=10`,
-    { headers },
+    { headers: githubHeaders() },
   );
   if (!res.ok) throw new Error(`gh releases: ${res.status}`);
   const data = await res.json();
   return data.filter((r) => !r.draft).map((r) => r.tag_name);
+}
+
+function githubHeaders() {
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': GITHUB_API_VERSION,
+  };
+  const token = githubToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+function githubToken() {
+  if (cachedGithubToken !== undefined) return cachedGithubToken;
+  cachedGithubToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+  if (!cachedGithubToken && have('gh')) {
+    try {
+      cachedGithubToken = execSync('gh auth token', {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      cachedGithubToken = '';
+    }
+  }
+  return cachedGithubToken;
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url, { headers: githubHeaders() });
+  if (!res.ok) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function listGithubAttestations(subjectDigest) {
+  if (!subjectDigest) return [];
+  const scopes = [`users/${owner}`, `orgs/${owner}`];
+  for (const scope of scopes) {
+    const apiUrl = `https://api.github.com/${scope}/attestations/${subjectDigest}`;
+    const data = await fetchJson(apiUrl);
+    if (!data) continue;
+    return (data.attestations || []).map((attestation) => ({
+      bundle: attestation.bundle,
+      githubApiUrl: apiUrl,
+      initiator: attestation.initiator || null,
+      repositoryId: attestation.repository_id || null,
+    }));
+  }
+  return [];
 }
 
 function manifestList(ref) {
@@ -166,7 +219,7 @@ async function downloadAttestations(ref) {
         cert = new X509Certificate(Buffer.from(certB64, 'base64'));
       } catch { /* ignore */ }
     }
-    out.push({ predicateType: payload.predicateType, payload, cert });
+    out.push({ predicateType: payload.predicateType, payload, cert, bundle: env });
   }
   return out;
 }
@@ -245,6 +298,145 @@ function firstGitDependency(pred) {
   ).find((dep) => typeof dep?.uri === 'string' && dep.uri.includes('github.com'));
 }
 
+function certificateFromBundle(bundle) {
+  const certB64 = bundle?.verificationMaterial?.certificate?.rawBytes;
+  if (!certB64) return null;
+  try {
+    return new X509Certificate(Buffer.from(certB64, 'base64'));
+  } catch {
+    return null;
+  }
+}
+
+function payloadFromBundle(bundle) {
+  const dsse = bundle?.dsseEnvelope || bundle;
+  if (!dsse?.payload) return null;
+  try {
+    return JSON.parse(Buffer.from(dsse.payload, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function subjectDigest(payload) {
+  const digest = payload?.subject?.[0]?.digest || {};
+  const alg = Object.keys(digest)[0];
+  return alg ? `${alg}:${digest[alg]}` : null;
+}
+
+function subjectName(payload) {
+  return payload?.subject?.[0]?.name || null;
+}
+
+function attestationKind(payload) {
+  const type = payload?.predicateType || 'unknown';
+  if (type.includes('spdx.dev/Document')) return 'sbom';
+  if (type.includes('slsa.dev/provenance')) return 'slsa-provenance';
+  if (type.includes('cosign.sigstore.dev/attestation')) {
+    const testResults = extractTestResults(payload);
+    return testResults ? 'test-results' : 'custom';
+  }
+  return 'custom';
+}
+
+function attestationRunUrl(payload) {
+  return payload?.predicate?.runDetails?.metadata?.invocationId || null;
+}
+
+function attestationWorkflowUrl(signerIdentity) {
+  if (!signerIdentity) return null;
+  const match = signerIdentity.match(/github\.com\/([^/]+)\/([^/]+)\/\.github\/workflows\/([^@\s]+)@(.*)/);
+  if (!match) return null;
+  return `https://github.com/${match[1]}/${match[2]}/actions/workflows/${match[3]}`;
+}
+
+function transparencyLogIndex(bundle) {
+  const entry = bundle?.verificationMaterial?.tlogEntries?.[0];
+  const raw = entry?.logIndex;
+  if (raw == null) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function transparencyUrl(logIndex) {
+  return logIndex == null ? null : `https://search.sigstore.dev/?logIndex=${logIndex}`;
+}
+
+function normalizeAttestation({ payload, cert, bundle, source, githubApiUrl = null }) {
+  if (!payload) return null;
+  const signerIdentity = certSubjectUri(cert);
+  const logIndex = transparencyLogIndex(bundle);
+  return {
+    kind: attestationKind(payload),
+    predicateType: payload.predicateType || 'unknown',
+    subjectName: subjectName(payload),
+    subjectDigest: subjectDigest(payload),
+    signerIdentity,
+    issuer: certIssuer(cert) || 'https://token.actions.githubusercontent.com',
+    runUrl: attestationRunUrl(payload),
+    workflowUrl: attestationWorkflowUrl(signerIdentity),
+    githubApiUrl,
+    transparencyLogIndex: logIndex,
+    transparencyUrl: transparencyUrl(logIndex),
+    sources: [source],
+  };
+}
+
+function normalizeGithubAttestation(attestation) {
+  const payload = payloadFromBundle(attestation.bundle);
+  const cert = certificateFromBundle(attestation.bundle);
+  return normalizeAttestation({
+    payload,
+    cert,
+    bundle: attestation.bundle,
+    source: 'github',
+    githubApiUrl: attestation.githubApiUrl,
+  });
+}
+
+function normalizeOciAttestation(attestation) {
+  return normalizeAttestation({
+    payload: attestation.payload,
+    cert: attestation.cert,
+    bundle: attestation.bundle,
+    source: 'oci',
+  });
+}
+
+function attestationMergeKey(attestation) {
+  return [
+    attestation.kind,
+    attestation.predicateType,
+    attestation.subjectDigest,
+    attestation.signerIdentity,
+    attestation.runUrl,
+    attestation.transparencyLogIndex,
+  ].join('|');
+}
+
+function mergeAttestations(attestations) {
+  const byKey = new Map();
+  for (const attestation of attestations.filter(Boolean)) {
+    const key = attestationMergeKey(attestation);
+    if (!byKey.has(key)) {
+      byKey.set(key, attestation);
+      continue;
+    }
+    const existing = byKey.get(key);
+    for (const source of attestation.sources) {
+      if (!existing.sources.includes(source)) existing.sources.push(source);
+    }
+    existing.githubApiUrl ||= attestation.githubApiUrl;
+    existing.workflowUrl ||= attestation.workflowUrl;
+    existing.runUrl ||= attestation.runUrl;
+    existing.transparencyUrl ||= attestation.transparencyUrl;
+  }
+  return Array.from(byKey.values()).sort((a, b) => {
+    const order = ['slsa-provenance', 'sbom', 'test-results', 'custom'];
+    return order.indexOf(a.kind) - order.indexOf(b.kind) || a.predicateType.localeCompare(b.predicateType);
+  });
+}
+
 function summarizeProvenance(payload) {
   const pred = payload.predicate || {};
   const buildDefinition = pred.buildDefinition || {};
@@ -304,6 +496,7 @@ async function enrichOne(tag, target) {
     signature: null,
     provenance: null,
     testResults: null,
+    attestations: [],
   };
 
   try {
@@ -403,22 +596,33 @@ async function enrichOne(tag, target) {
     }
   }
 
+  const githubAttestations = await listGithubAttestations(result.manifestDigest);
+  result.attestations = mergeAttestations([
+    ...allAttestations.map(normalizeOciAttestation),
+    ...githubAttestations.map(normalizeGithubAttestation),
+  ]);
+
   return result;
 }
 
-// Old releases are immutable: once an image is published and signed, the
-// GHCR manifest + attestations + labels never change. We refresh only the
-// latest release every run; everything else is read from the on-disk cache.
+// Every release is immutable: once an image is published and signed, the GHCR
+// manifest + attestations + labels never change. So by default we refresh
+// NOTHING from the network — every tag is read from the on-disk cache, and
+// only tags whose per-target files are missing (i.e. brand-new releases not
+// yet in the restored cache) get fetched. Vulnerability data, which *does*
+// change between runs, is handled separately by the grype scan step.
 //
-// FORCE_REFRESH_TAGS=v0.3.0,v0.2.2 overrides which tags re-run. Set
+// FORCE_REFRESH_TAGS=v0.3.0,v0.2.2 re-fetches specific tags (use when
+// attestations were re-attached to an existing release). Set
 // FORCE_REFRESH_ALL=1 to bypass the cache entirely (e.g. on schema changes).
 function tagsToRefresh(allTags) {
   if (process.env.FORCE_REFRESH_ALL === '1') return new Set(allTags);
   if (process.env.FORCE_REFRESH_TAGS) {
     return new Set(process.env.FORCE_REFRESH_TAGS.split(',').map((t) => t.trim()).filter(Boolean));
   }
-  // Default: refresh the first tag (the most recent non-draft release).
-  return new Set(allTags.slice(0, 1));
+  // Default: refresh nothing — cached tags are reused, missing tags are fetched
+  // by the cache-miss path in main().
+  return new Set();
 }
 
 async function main() {

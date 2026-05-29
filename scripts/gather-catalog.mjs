@@ -457,6 +457,17 @@ function summarizeProvenance(intotoJsonl) {
   return best || fallback;
 }
 
+function attachReleaseAssetLinks(attestations, { provenanceUrl }) {
+  return (attestations || []).map((attestation) => ({
+    ...attestation,
+    releaseAssetUrl:
+      attestation.releaseAssetUrl ||
+      (attestation.kind === 'slsa-provenance' && attestation.sources?.includes('oci')
+        ? provenanceUrl || null
+        : null),
+  }));
+}
+
 function loadEnrichment(tag, target) {
   const p = path.join(ENRICHMENT_DIR, tag, `${target}.json`);
   if (!existsSync(p)) return null;
@@ -695,6 +706,9 @@ async function buildImageRecord(target, releases, refreshSet) {
       architectures,
       signature: enrich?.signature || null,
       provenance,
+      attestations: attachReleaseAssetLinks(enrich?.attestations, {
+        provenanceUrl: provAsset?.url ?? null,
+      }),
       assetUrls: {
         sbom: Object.fromEntries(sbomAssets.map((a) => [guessArchFromAsset(a.name), a.url])),
         provenance: provAsset?.url ?? null,
