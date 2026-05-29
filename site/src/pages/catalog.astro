@@ -12,7 +12,9 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const releaseTags = index?.releases.map((r) => r.tag) ?? [];
 const published = index ? index.images.filter((i) => i.latestTag === index.latestTag).length : 0;
 const lagging = index ? index.images.filter((i) => i.latestTag !== index.latestTag).length : 0;
-const totalSlots = 13 * 3; // 13 languages × 3 tiers; kept in sync with flake.nix matrix.
+// One slot per language-version × tier, read from the catalog index so it can't
+// drift from the flake matrix.
+const totalSlots = index ? index.languages.length * index.tiers.length : 0;
 const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
 const evidenceCoverage = index
   ? {

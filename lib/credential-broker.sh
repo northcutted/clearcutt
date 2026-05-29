@@ -109,8 +109,12 @@ EOF
 EOF
   chmod 600 "$AUTH_CACHE_DIR/settings.xml"
 
-  # Setup alias for Maven shell execution
-  alias mvn="mvn -s $AUTH_CACHE_DIR/settings.xml"
+  # Route Maven via MAVEN_ARGS rather than a shell alias. An alias only applies
+  # in interactive shells, so it would silently miss CI, scripts, and build
+  # tools that invoke `mvn` directly. MAVEN_ARGS (honored by the mvn wrapper
+  # since Maven 3.9) is an environment variable, so it propagates to every
+  # child process the way the npm/pip/gradle routes already do.
+  export MAVEN_ARGS="-s $AUTH_CACHE_DIR/settings.xml"
   
   # Inject Gradle configuration overlay
   cat <<EOF > "$AUTH_CACHE_DIR/init.gradle"
@@ -132,7 +136,7 @@ EOF
 
   # Export gradle initialization parameter
   export GRADLE_OPTS="-I $AUTH_CACHE_DIR/init.gradle"
-  echo -e "  \033[32m✔\033[0m Java Maven/Gradle routed -> \033[36msettings.xml\033[0m (via alias) & \033[36m\$GRADLE_OPTS\033[0m"
+  echo -e "  \033[32m✔\033[0m Java Maven/Gradle routed -> \033[36m\$MAVEN_ARGS\033[0m & \033[36m\$GRADLE_OPTS\033[0m"
 
   # ----------------------------------------------------
   # 4. Cleanup and Exit Guardrails
@@ -144,7 +148,7 @@ EOF
     unset NETRC
     unset PIP_INDEX_URL
     unset GRADLE_OPTS
-    unalias mvn 2>/dev/null || true
+    unset MAVEN_ARGS
     
     # Delete the temporary session cache directory
     # Note: Secure dd overwriting represents security theater on modern filesystems (COW, SSDs, journaling)

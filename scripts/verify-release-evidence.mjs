@@ -14,6 +14,7 @@ const oidcIssuer = args['oidc-issuer'] || 'https://token.actions.githubuserconte
 const sourceRef = args['source-ref'] || 'refs/heads/main';
 const sourceBranch = args['source-branch'] || sourceRef.replace(/^refs\/heads\//, '');
 const digestRef = expectedDigest ? `${imageRepository(ref)}@${expectedDigest}` : null;
+const commandMaxBuffer = parsePositiveInt(process.env.EVIDENCE_COMMAND_MAX_BUFFER_BYTES, 64 * 1024 * 1024);
 
 function parseArgs(argv) {
   const out = {};
@@ -41,18 +42,25 @@ function imageRepository(imageRef) {
   return lastColon > lastSlash ? withoutDigest.slice(0, lastColon) : withoutDigest;
 }
 
-function run(label, command, commandArgs, { allowFailure = false } = {}) {
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function run(label, command, commandArgs, { allowFailure = false, captureStdout = true } = {}) {
+  // cosign verify-attestation prints the full verified DSSE payload on stdout.
+  // Large dev-tier SBOMs can exceed Node's buffer even though the check passed.
   const res = spawnSync(command, commandArgs, {
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
+    maxBuffer: commandMaxBuffer,
   });
   if (res.status === 0) {
     console.log(`[evidence] ok: ${label}`);
-    return res.stdout;
+    return captureStdout ? res.stdout : '';
   }
   if (allowFailure) return null;
-  const detail = [res.stdout, res.stderr].filter(Boolean).join('\n').trim();
+  const detail = [captureStdout ? res.stdout : '', res.stderr].filter(Boolean).join('\n').trim();
   console.error(`[evidence] failed: ${label}`);
   if (detail) console.error(detail);
   process.exit(res.status || 1);
@@ -81,7 +89,7 @@ run('Sigstore keyless signature', 'cosign', [
   ...cosignIdentityArgs(),
   '--output',
   'json',
-]);
+], { captureStdout: false });
 
 run('SPDX SBOM attestation', 'cosign', [
   'verify-attestation',
@@ -89,7 +97,7 @@ run('SPDX SBOM attestation', 'cosign', [
   '--type',
   'spdxjson',
   ...cosignIdentityArgs(),
-]);
+], { captureStdout: false });
 
 run('test-results attestation', 'cosign', [
   'verify-attestation',
@@ -97,7 +105,7 @@ run('test-results attestation', 'cosign', [
   '--type',
   'custom',
   ...cosignIdentityArgs(),
-]);
+], { captureStdout: false });
 
 // The SLSA generator publishes provenance that is validated end-to-end by
 // slsa-verifier. Keep cosign checks focused on ClearCutt's own release
@@ -109,7 +117,7 @@ run('slsa-verifier provenance check', 'slsa-verifier', [
   `github.com/${githubRepo}`,
   '--source-branch',
   sourceBranch,
-]);
+], { captureStdout: false });
 
 run('GitHub-native provenance attestation', 'gh', [
   'attestation',
@@ -121,6 +129,6 @@ run('GitHub-native provenance attestation', 'gh', [
   workflowIdentity,
   '--source-ref',
   sourceRef,
-]);
+], { captureStdout: false });
 
 console.log(`[evidence] complete: ${immutableRef}`);

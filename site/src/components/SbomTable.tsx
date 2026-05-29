@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useRef } from 'react';
 import type { ArchPayload, PackageEntry } from '../lib/catalog-schema';
+import { displayLanguage, isPrimaryRuntimePackage } from '../lib/runtime-taxonomy';
 
 type Props = {
   architectures: ArchPayload[];
@@ -14,34 +15,6 @@ type SortKey = 'name' | 'version' | 'license' | 'cpes';
 type SortDir = 'asc' | 'desc';
 
 type PackageCategory = 'runtime' | 'system_tool' | 'security' | 'library' | 'dependency';
-
-function displayLanguage(language: string): string {
-  switch (language) {
-    case 'core': return 'Core';
-    case 'java': return 'Java';
-    case 'node': return 'Node.js';
-    case 'python': return 'Python';
-    case 'go': return 'Go';
-    case 'dotnet': return '.NET';
-    case 'rust': return 'Rust';
-    case 'cc': return 'C/C++';
-    default: return language;
-  }
-}
-
-function isPrimaryRuntimePackage(language: string, packageName: string): boolean {
-  const pkg = packageName.toLowerCase();
-  switch (language) {
-    case 'python': return pkg === 'python' || /^python[0-9.]*$/.test(pkg);
-    case 'java': return pkg.includes('jdk') || pkg.includes('jre') || pkg.includes('openjdk') || pkg.includes('zulu');
-    case 'node': return pkg === 'node' || pkg === 'nodejs' || pkg.startsWith('nodejs');
-    case 'go': return pkg === 'go' || pkg.startsWith('go-') || /^go_[0-9_]+$/.test(pkg);
-    case 'dotnet': return pkg.includes('dotnet') || pkg.includes('aspnetcore');
-    case 'rust': return pkg === 'rustc' || pkg === 'cargo';
-    case 'cc': return pkg === 'gcc' || pkg === 'clang';
-    default: return false;
-  }
-}
 
 function classifyPackage(name: string): PackageCategory {
   const n = name.toLowerCase();
@@ -441,7 +414,7 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
                     
                     <div className="px-4 py-3 font-mono text-ink-100 flex items-center">{p.version}</div>
                     
-                    <div className="truncate px-4 py-3 text-ink-150 flex items-center font-mono text-xs" title={p.license}>
+                    <div className="truncate px-4 py-3 text-ink-100 flex items-center font-mono text-xs" title={p.license}>
                       {licenseLabel(p.license)}
                     </div>
                     

@@ -23,16 +23,21 @@ const LANG_ROWS: Array<{ id: string; display: string; versions: string[] }> = [
 
 const byId = new Map(index.images.map((img) => [img.id, img]));
 
-const LANGUAGE_LINKS: Record<string, { flakeLine: number; builderLine: number }> = {
-  core:   { flakeLine: 52, builderLine: 61 },
-  java:   { flakeLine: 53, builderLine: 63 },
-  node:   { flakeLine: 54, builderLine: 79 },
-  python: { flakeLine: 55, builderLine: 92 },
-  go:     { flakeLine: 56, builderLine: 104 },
-  dotnet: { flakeLine: 57, builderLine: 112 },
-  rust:   { flakeLine: 58, builderLine: 141 },
-  cc:     { flakeLine: 59, builderLine: 148 },
+// Per-language source-of-truth lines in lib/registry.nix (where each runtime
+// and its versions are actually declared). The compiler that turns those specs
+// into OCI layers is shared, so every row links to the one buildFleetImage
+// entrypoint rather than fabricated per-language lines.
+const REGISTRY_LINES: Record<string, number> = {
+  core:   40,
+  java:   49,
+  node:   66,
+  python: 81,
+  go:     96,
+  dotnet: 111,
+  rust:   142,
+  cc:     152,
 };
+const BUILDER_LINE = 70; // lib/build-fleet.nix buildFleetImage entrypoint
 
 function slotState(img: ReturnType<typeof byId.get>) {
   if (!img) return 'pending' as const;
@@ -87,9 +92,6 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
   return parts.length > 0
     ? `Critical/high fix status: ${parts.join(', ')}.`
     : 'No critical/high findings in this catalog scan.';
-}
-function evidenceBadgeClass(ok: boolean | undefined): string {
-  return ok ? 'chip-accent' : 'chip-warn';
 }
 function evidenceTitle(label: string, ok: boolean | undefined): string {
   return ok ? `${label} evidence is present for this release.` : `${label} evidence is missing or incomplete for this release.`;
@@ -156,27 +158,27 @@ function evidenceTitle(label: string, ok: boolean | undefined): string {
                 .{`#`}{langKeyFor(row.id, row.versions[row.versions.length - 1])}-distroless
               </span>
             </div>
-            <a 
-              href={`${index?.repoUrl}/blob/main/flake.nix#L${LANGUAGE_LINKS[row.id]?.flakeLine ?? 1}`}
+            <a
+              href={`${index?.repoUrl}/blob/main/lib/registry.nix#L${REGISTRY_LINES[row.id] ?? 1}`}
               target="_blank"
               rel="noreferrer"
               class="flex items-center justify-between text-ink-300 hover:text-accent-soft group"
             >
-              <span>Source Flake:</span>
+              <span>Registry:</span>
               <span class="underline flex items-center gap-0.5 text-ink-100 group-hover:text-accent-soft font-sans">
-                flake.nix#L{LANGUAGE_LINKS[row.id]?.flakeLine}
+                registry.nix#L{REGISTRY_LINES[row.id]}
                 <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
               </span>
             </a>
-            <a 
-              href={`${index?.repoUrl}/blob/main/lib/build-fleet.nix#L${LANGUAGE_LINKS[row.id]?.builderLine ?? 1}`}
+            <a
+              href={`${index?.repoUrl}/blob/main/lib/build-fleet.nix#L${BUILDER_LINE}`}
               target="_blank"
               rel="noreferrer"
               class="flex items-center justify-between text-ink-300 hover:text-accent-soft group"
             >
               <span>Nix Builder:</span>
               <span class="underline flex items-center gap-0.5 text-ink-100 group-hover:text-accent-soft font-sans">
-                build-fleet.nix#L{LANGUAGE_LINKS[row.id]?.builderLine}
+                build-fleet.nix#L{BUILDER_LINE}
                 <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
               </span>
             </a>
@@ -190,7 +192,6 @@ function evidenceTitle(label: string, ok: boolean | undefined): string {
             const img = byId.get(id);
             const state = slotState(img);
             const repo = ociRepoFor(row.id, ver);
-            const isDev = tier === 'dev';
             const isNewest = idx === row.versions.length - 1;
 
             if (state === 'pending') {

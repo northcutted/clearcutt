@@ -23,15 +23,9 @@ export function getImageMetadata(
   fullName: string,
   tag: string
 ): ImageMetadata {
-  const versioned = `${fullName}:${tag}-${tierId}`;
   const devImage = `${fullName}:${tag}-dev`;
   const runtimeImage = `${fullName}:${tag}-${tierId}`;
   const nixAttr = getNixAttr(languageId, languageVersion);
-
-  // Common language displays
-  let langDisplay = languageId === 'cc' ? 'C/C++' : cap(languageId);
-  if (languageId === 'dotnet') langDisplay = '.NET';
-  if (languageId === 'node') langDisplay = 'Node.js';
 
   // 1. GENERATE TIER GUARANTEES AND DESCRIPTION COPY
   let description = '';

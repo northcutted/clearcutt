@@ -161,6 +161,12 @@ function targetMetadata(target) {
   return { target, runtime, language, version, tier };
 }
 
+// This script is the authoritative producer of each finding's `inclusion` and
+// `remediation` metadata; the catalog UI only recomputes it as a fallback. The
+// pure predicates below (displayLanguage, isPrimaryRuntimePackage) are mirrored
+// in site/src/lib/runtime-taxonomy.ts — they can't be shared directly because
+// this runs as a plain Node process outside the site's TS build, so keep the
+// two copies in sync when changing the runtime taxonomy.
 function displayLanguage(language) {
   switch (language) {
     case 'core':

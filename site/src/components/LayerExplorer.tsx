@@ -432,10 +432,10 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                     </div>
 
                     {/* Pull layer tab selector & commands */}
-                    <div class="space-y-2">
-                      <div class="flex items-center justify-between">
-                        <div class="text-[11px] uppercase tracking-wider text-ink-300">Pull or Inspect Layer</div>
-                        <div class="flex gap-1.5 text-[9px] font-mono">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] uppercase tracking-wider text-ink-300">Pull or Inspect Layer</div>
+                        <div className="flex gap-1.5 text-[9px] font-mono">
                           {(['crane', 'docker', 'nix'] as const).map(t => (
                             <button
                               key={t}
@@ -452,8 +452,8 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                           ))}
                         </div>
                       </div>
-                      <div class="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
-                        <span class="break-all leading-normal">
+                      <div className="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
+                        <span className="break-all leading-normal">
                           {pullTool === 'crane' && `crane blob ${layerRef}`}
                           {pullTool === 'docker' && `docker pull ${imageRef}`}
                           {pullTool === 'nix' && `nix store cat-path ${sel.digest}`}

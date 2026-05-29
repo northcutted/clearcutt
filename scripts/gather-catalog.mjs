@@ -160,6 +160,23 @@ function summarizeImageForIndex(img) {
   let vulnSummary = null;
   const archsWithVulns = latestRel.architectures.filter((a) => a.vulnerabilities);
   if (archsWithVulns.length > 0) {
+    // amd64 and arm64 share an identical Nix closure, so the same CVE is
+    // reported once per arch. Union findings by identity (CVE id + package +
+    // version) before counting so the catalog badge reflects DISTINCT findings
+    // — summing per-arch countsBySeverity would ~double every number and
+    // disagree with the per-image table (which shows a single arch at a time).
+    const distinct = new Map();
+    let scannedAt = null;
+    for (const a of archsWithVulns) {
+      for (const finding of a.vulnerabilities.findings || []) {
+        const key = `${finding.id}::${finding.packageName}::${finding.packageVersion}`;
+        if (!distinct.has(key)) distinct.set(key, finding);
+      }
+      if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
+        scannedAt = a.vulnerabilities.scannedAt;
+      }
+    }
+
     const counts = { critical: 0, high: 0, medium: 0, low: 0 };
     const remediation = {
       eligible: 0,
@@ -168,20 +185,11 @@ function summarizeImageForIndex(img) {
       belowPriorityThreshold: 0,
       otherDeferred: 0,
     };
-    let scannedAt = null;
-    for (const a of archsWithVulns) {
-      const c = a.vulnerabilities.countsBySeverity;
-      counts.critical += c.critical || 0;
-      counts.high += c.high || 0;
-      counts.medium += c.medium || 0;
-      counts.low += c.low || 0;
-      for (const finding of a.vulnerabilities.findings || []) {
-        const sev = String(finding.severity || '').toLowerCase();
-        if (sev !== 'critical' && sev !== 'high') continue;
+    for (const finding of distinct.values()) {
+      const sev = String(finding.severity || '').toLowerCase();
+      if (sev in counts) counts[sev] += 1;
+      if (sev === 'critical' || sev === 'high') {
         remediation[remediationBucket(remediationReason(finding))] += 1;
-      }
-      if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
-        scannedAt = a.vulnerabilities.scannedAt;
       }
     }
     vulnSummary = { ...counts, scannedAt, remediation };
