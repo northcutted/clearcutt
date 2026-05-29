@@ -55,17 +55,23 @@ const sbomUrls = release.assetUrls.sbom || {};
         </div>
       </header>
 
-      <div class="space-y-8">
-        <TestResults architectures={release.architectures} rawTestResultsUrls={release.assetUrls.testResults} />
-        <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
-        <VulnerabilityTable
-          architectures={release.architectures}
-          imageId={image.id}
-          language={image.language.id}
-          languageVersion={image.language.version}
-          tier={image.tier.id}
-          client:load
-        />
+      <div class="space-y-10">
+        <div>
+          <TestResults architectures={release.architectures} rawTestResultsUrls={release.assetUrls.testResults} />
+        </div>
+        <div class="border-t border-ink-800/60 pt-10">
+          <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
+        </div>
+        <div class="border-t border-ink-800/60 pt-10">
+          <VulnerabilityTable
+            architectures={release.architectures}
+            imageId={image.id}
+            language={image.language.id}
+            languageVersion={image.language.version}
+            tier={image.tier.id}
+            client:load
+          />
+        </div>
       </div>
     </section>
 
@@ -81,23 +87,31 @@ const sbomUrls = release.assetUrls.sbom || {};
         </div>
       </header>
 
-      <div class="space-y-8">
-        <SbomSection 
-          architectures={release.architectures} 
-          rawSbomUrls={sbomUrls} 
-          language={image.language.id} 
-          tier={image.tier.id} 
-        />
-        <LayerExplorer
-          architectures={release.architectures}
-          fullName={image.fullName}
-          imageName={image.imageName}
-          tierId={image.tier.id}
-          imageTag={release.tag}
-          client:load
-        />
-        <OciLabels architectures={release.architectures} />
-        <VersionHistory image={image} currentTag={release.tag} />
+      <div class="space-y-10">
+        <div>
+          <SbomSection
+            architectures={release.architectures}
+            rawSbomUrls={sbomUrls}
+            language={image.language.id}
+            tier={image.tier.id}
+          />
+        </div>
+        <div class="border-t border-ink-800/60 pt-10">
+          <LayerExplorer
+            architectures={release.architectures}
+            fullName={image.fullName}
+            imageName={image.imageName}
+            tierId={image.tier.id}
+            imageTag={release.tag}
+            client:load
+          />
+        </div>
+        <div class="border-t border-ink-800/60 pt-10">
+          <OciLabels architectures={release.architectures} />
+        </div>
+        <div class="border-t border-ink-800/60 pt-10">
+          <VersionHistory image={image} currentTag={release.tag} />
+        </div>
       </div>
     </section>
   </div>

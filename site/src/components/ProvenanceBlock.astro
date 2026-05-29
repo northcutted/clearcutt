@@ -128,11 +128,136 @@ function displaySigner(identity: string | null | undefined): string {
   return identity.replace(/^https:\/\//, '');
 }
 
-function sourceLabel(source: string): string {
-  return source === 'github' ? 'GitHub' : 'OCI';
-}
 
 const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject) : null;
+
+// Attestations share one subject digest and one signer across every statement;
+// what differs is the kind (what it proves), the source it was read from, and
+// the individual Rekor transparency-log entry. So we group by kind, state the
+// shared facts once, and surface the per-statement Rekor entries compactly —
+// that's what makes the seemingly-duplicate rows meaningful.
+const KIND_ORDER = ['slsa-provenance', 'sbom', 'test-results', 'custom'] as const;
+const KIND_META: Record<string, { label: string; blurb: string; dot: string }> = {
+  'slsa-provenance': {
+    label: 'Build provenance',
+    blurb: 'How and where the image was built — binds this digest to the exact workflow run, commit, and builder.',
+    dot: 'bg-accent',
+  },
+  sbom: {
+    label: 'SBOM',
+    blurb: 'Software Bill of Materials — the full inventory of packages baked into the image.',
+    dot: 'bg-sky-400',
+  },
+  'test-results': {
+    label: 'Test results',
+    blurb: 'Signed evidence that the release-gate test suite passed for this exact digest.',
+    dot: 'bg-emerald-400',
+  },
+  custom: {
+    label: 'Cosign signature',
+    blurb: 'The keyless cosign signature statement covering the image index.',
+    dot: 'bg-ink-400',
+  },
+};
+
+interface AttGroup {
+  kind: string;
+  meta: { label: string; blurb: string; dot: string };
+  predicateType: string;
+  count: number;
+  sources: string[];
+  links: { run: string | null; workflow: string | null; githubApi: string | null; asset: string | null };
+  entries: { index: number | null; url: string | null }[];
+}
+
+function groupAttestations(atts: typeof attestations): AttGroup[] {
+  const map = new Map<string, AttGroup>();
+  for (const a of atts) {
+    let g = map.get(a.kind);
+    if (!g) {
+      g = {
+        kind: a.kind,
+        meta: KIND_META[a.kind] || {
+          label: attestationLabel(a.kind, a.predicateType),
+          blurb: '',
+          dot: 'bg-ink-400',
+        },
+        predicateType: a.predicateType,
+        count: 0,
+        sources: [],
+        links: { run: null, workflow: null, githubApi: null, asset: null },
+        entries: [],
+      };
+      map.set(a.kind, g);
+    }
+    g.count += 1;
+    for (const s of a.sources) if (!g.sources.includes(s)) g.sources.push(s);
+    g.links.run ||= a.runUrl;
+    g.links.workflow ||= a.workflowUrl;
+    g.links.githubApi ||= a.githubApiUrl;
+    g.links.asset ||= a.releaseAssetUrl ?? null;
+    g.entries.push({ index: a.transparencyLogIndex, url: a.transparencyUrl });
+  }
+  // Newest transparency entry first within each group.
+  for (const g of map.values()) g.entries.sort((x, y) => (y.index ?? 0) - (x.index ?? 0));
+  const ordered: AttGroup[] = [];
+  for (const k of KIND_ORDER) { const g = map.get(k); if (g) ordered.push(g); }
+  for (const g of map.values()) if (!KIND_ORDER.includes(g.kind as (typeof KIND_ORDER)[number])) ordered.push(g);
+  return ordered;
+}
+
+const attestationGroups = groupAttestations(attestations);
+const attSubjectName = attestations.find((a) => a.subjectName)?.subjectName ?? null;
+const attDigests = [...new Set(attestations.map((a) => a.subjectDigest).filter(Boolean))] as string[];
+const attSigners = [...new Set(attestations.map((a) => a.signerIdentity).filter(Boolean))] as string[];
+
+// Architectures covered by the multi-arch manifest index (the signed subject).
+const attArches = Array.from(new Set((release.architectures || []).map((a) => a.arch))).filter(Boolean);
+
+// Copy-paste verification commands bound to the exact signed subject (the
+// multi-arch index digest), so each "Verify with" badge yields a runnable line.
+const attRef = attSubjectName && attDigests.length === 1 ? `${attSubjectName}@${attDigests[0]}` : null;
+const attSubject = attSigners[0] ?? `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
+const attIssuer = 'https://token.actions.githubusercontent.com';
+
+function verifyOptions(g: AttGroup): VerifyOption[] {
+  const out: VerifyOption[] = [];
+  const idArgs = `--certificate-identity '${attSubject}' --certificate-oidc-issuer '${attIssuer}'`;
+  if (g.sources.includes('oci')) {
+    const cmd = !attRef
+      ? ''
+      : g.kind === 'custom'
+        ? `cosign verify ${attRef} ${idArgs}`
+        : `cosign verify-attestation ${attRef} --type ${COSIGN_ATTEST_TYPE[g.kind] ?? 'custom'} ${idArgs}`;
+    out.push({ tool: 'cosign', source: 'OCI', cmd });
+  }
+  if (g.sources.includes('github')) {
+    const pred = GH_PREDICATE_TYPE[g.kind] ? ` --predicate-type ${GH_PREDICATE_TYPE[g.kind]}` : '';
+    const cmd = !attRef
+      ? ''
+      : `gh attestation verify oci://${attRef} --repo ${ownerRepo} --cert-identity '${attSubject}' --source-ref refs/heads/main${pred}`;
+    out.push({ tool: 'gh CLI', source: 'GitHub', cmd });
+  }
+  return out;
+}
+
+// A record's discovery sources map onto the verification ecosystem a user is
+// likely to already know. Both toolchains attest the same claim in our release
+// flow, so a viewer can verify with whichever they trust:
+//   oci    → cosign reads the attestation from the image's OCI referrers
+//   github → GitHub first-party attestation, verifiable with the gh CLI
+type VerifyOption = { tool: string; source: string; cmd: string };
+// cosign verify-attestation --type value per attestation kind.
+const COSIGN_ATTEST_TYPE: Record<string, string> = {
+  'slsa-provenance': 'slsaprovenance',
+  sbom: 'spdxjson',
+  'test-results': 'custom',
+};
+// gh attestation --predicate-type filter, where a GitHub attestation exists.
+const GH_PREDICATE_TYPE: Record<string, string> = {
+  'slsa-provenance': 'https://slsa.dev/provenance/v1',
+  sbom: 'https://spdx.dev/Document/v2.3',
+};
 ---
 <section class="space-y-4">
   <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink-800/40 pb-2">
@@ -315,60 +440,169 @@ const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject)
       {attestations.length > 0 && (
         <div class="surface-soft overflow-hidden">
           <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink-800/50 px-4 py-3">
-            <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Attestations</h3>
-            <span class="font-mono text-[10px] text-ink-300">{attestations.length} signed statements</span>
+            <div>
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Attestations</h3>
+              <p class="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-ink-400">
+                {attestationGroups.length} kinds of evidence for this image. The counts are how many times each was independently signed into the public transparency log — <span class="text-ink-300">not</span> how many distinct artifacts exist.
+              </p>
+            </div>
+            <span class="flex shrink-0 items-baseline gap-1.5 font-mono text-ink-400">
+              <span class="text-2xl font-bold leading-none text-ink-50">{attestations.length}</span>
+              <span class="text-[10px] uppercase tracking-wider">signed records</span>
+            </span>
           </div>
-          <div class="divide-y divide-ink-800/50">
-            {attestations.map((attestation) => (
-              <div class="grid gap-3 px-4 py-3 text-xs md:grid-cols-[minmax(12rem,1fr)_minmax(14rem,1.1fr)_minmax(12rem,1fr)_auto] md:items-center">
-                <div class="min-w-0">
-                  <div class="font-semibold text-ink-50">{attestationLabel(attestation.kind, attestation.predicateType)}</div>
-                  <div class="mt-1 truncate font-mono text-[10px] text-ink-300" title={attestation.predicateType}>
-                    {friendlyPredicate(attestation.predicateType)}
+
+          {/* Shared across every statement below — stated once instead of repeated per row. */}
+          <div class="border-b border-ink-800/40 bg-ink-950/30 px-4 py-2.5">
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[10px]">
+              {attSubjectName && (
+                <span class="inline-flex min-w-0 items-center gap-1.5">
+                  <span class="uppercase tracking-wider text-ink-500">Subject</span>
+                  <span class="truncate font-mono text-ink-100" title={attSubjectName}>{attSubjectName}</span>
+                </span>
+              )}
+              {attDigests.length === 1 && (
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="uppercase tracking-wider text-ink-500">Digest</span>
+                  <span class="font-mono text-ink-200" title={attDigests[0]}>{shortDigest(attDigests[0])}</span>
+                  <span class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-sans text-[9px] text-ink-300" title="The signed subject is the multi-arch image index, not a single architecture.">
+                    multi-arch index{attArches.length ? ` · ${attArches.join(' + ')}` : ''}
+                  </span>
+                </span>
+              )}
+              {attSigners.length === 1 && (
+                <span class="inline-flex min-w-0 items-center gap-1.5">
+                  <span class="uppercase tracking-wider text-ink-500">Signed by</span>
+                  <span class="truncate font-mono text-ink-100" title={attSigners[0]}>{displaySigner(attSigners[0])}</span>
+                  <span class="font-mono text-emerald-400">keyless ✓</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Legend: the two axes that explain the record counts — verification
+              ecosystem and architecture. Stated once, up top. */}
+          <div class="border-b border-ink-800/40 px-4 py-3 text-[11px] leading-relaxed text-ink-400">
+            <div class="mb-1.5 font-semibold uppercase tracking-wider text-ink-300 text-[10px]">Two ways to verify — pick the ecosystem you know</div>
+            <div class="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              <div class="flex items-start gap-2">
+                <span class="mt-px shrink-0 rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[10px] text-ink-200">cosign · OCI</span>
+                <span>Attestation lives with the image in the registry. Verify with <code class="font-mono text-ink-300">cosign verify-attestation</code>.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="mt-px shrink-0 rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[10px] text-ink-200">gh CLI · GitHub</span>
+                <span>GitHub first-party attestation. Verify with <code class="font-mono text-ink-300">gh attestation verify</code>.</span>
+              </div>
+            </div>
+            <p class="mt-2 text-ink-400">
+              The subject above is the <span class="text-ink-300">multi-arch index</span>{attArches.length > 1 ? <> ({attArches.join(' + ')})</> : null}. Each architecture's SBOM is attested separately, in <span class="text-ink-300">both</span> ecosystems — so one SBOM naturally appears as several signed records below.
+            </p>
+          </div>
+
+          <div class="divide-y divide-ink-800/60">
+            {attestationGroups.map((g) => (
+              <div class="px-4 py-5">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex min-w-0 items-start gap-2.5">
+                    <span class={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${g.meta.dot}`} />
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span class="text-sm font-semibold text-ink-50">{g.meta.label}</span>
+                        <span class="truncate font-mono text-[9px] text-ink-400" title={g.predicateType}>{g.predicateType.replace(/^https:\/\//, '')}</span>
+                      </div>
+                      {g.meta.blurb && <p class="mt-1 text-[11px] leading-snug text-ink-300">{g.meta.blurb}</p>}
+                    </div>
                   </div>
+                  <span class="flex shrink-0 items-baseline gap-1 rounded-full border border-ink-600/70 bg-ink-800/80 px-3 py-1 text-ink-400" title={`Signed and logged ${g.count} time${g.count === 1 ? '' : 's'} in the public transparency log`}>
+                    <span class="text-base font-bold leading-none text-ink-100">{g.count}×</span>
+                    <span class="text-[10px]">signed</span>
+                  </span>
                 </div>
-                <div class="min-w-0 font-mono text-[10px] text-ink-200">
-                  <div class="truncate" title={attestation.subjectName || undefined}>
-                    {attestation.subjectName || 'unknown subject'}
-                  </div>
-                  <div class="mt-1 text-ink-300" title={attestation.subjectDigest || undefined}>
-                    {shortDigest(attestation.subjectDigest)}
-                  </div>
-                </div>
-                <div class="min-w-0">
-                  <div class="truncate font-mono text-[10px] text-ink-100" title={attestation.signerIdentity || undefined}>
-                    {displaySigner(attestation.signerIdentity)}
-                  </div>
-                  <div class="mt-1 flex flex-wrap gap-1">
-                    {attestation.sources.map((source) => (
-                      <span class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] uppercase text-ink-300">
-                        {sourceLabel(source)}
-                      </span>
+
+                <div class="mt-3.5 grid grid-cols-[5.5rem_1fr] items-center gap-x-3 gap-y-2.5 pl-[22px]">
+                  <span class="text-[9px] uppercase tracking-wider text-ink-500" title="Click a badge to copy a ready-to-run verification command.">Verify with</span>
+                  <div class="flex flex-wrap gap-1.5">
+                    {verifyOptions(g).map((e) => (
+                      <button
+                        type="button"
+                        data-verify-copy
+                        data-cmd={e.cmd}
+                        title={e.cmd ? `Click to copy:\n${e.cmd}` : `${e.tool} · ${e.source}`}
+                        class="group/vc inline-flex items-baseline gap-1 rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-ink-200 transition hover:border-accent/50 hover:text-accent-soft focus-visible:border-accent/50 focus:outline-none"
+                      >
+                        {e.tool}<span class="text-ink-500">· {e.source}</span>
+                        <span data-vc-icon aria-hidden="true" class="text-ink-500 transition group-hover/vc:text-accent-soft">⧉</span>
+                      </button>
                     ))}
                   </div>
-                </div>
-                <div class="flex flex-wrap gap-1.5 md:justify-end">
-                  {attestation.runUrl && (
-                    <a href={attestation.runUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">run ↗</a>
+
+                  {(g.links.run || g.links.workflow || g.links.githubApi || g.links.asset) && (
+                    <>
+                      <span class="text-[9px] uppercase tracking-wider text-ink-500" title="Open the source artifacts behind these records.">Inspect</span>
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        {g.links.run ? (
+                          <a href={g.links.run} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">run ↗</a>
+                        ) : g.links.workflow ? (
+                          <a href={g.links.workflow} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">workflow ↗</a>
+                        ) : null}
+                        {g.links.githubApi && (
+                          <a href={g.links.githubApi} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">GitHub API ↗</a>
+                        )}
+                        {g.links.asset && (
+                          <a href={g.links.asset} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">asset ↗</a>
+                        )}
+                      </div>
+                    </>
                   )}
-                  {!attestation.runUrl && attestation.workflowUrl && (
-                    <a href={attestation.workflowUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">workflow ↗</a>
-                  )}
-                  {attestation.githubApiUrl && (
-                    <a href={attestation.githubApiUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">GitHub API ↗</a>
-                  )}
-                  {attestation.releaseAssetUrl && (
-                    <a href={attestation.releaseAssetUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">asset ↗</a>
-                  )}
-                  {attestation.transparencyUrl && (
-                    <a href={attestation.transparencyUrl} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">Rekor ↗</a>
+
+                  {g.entries.some((e) => e.url) && (
+                    <>
+                      <span class="self-start pt-1 text-[9px] uppercase tracking-wider text-ink-500" title="Each record is an independent entry in the Sigstore Rekor public transparency log.">Rekor log</span>
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        {g.entries.map((e) => (e.url ? (
+                          <a href={e.url} class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-accent-soft hover:border-accent/40 hover:text-accent" target="_blank" rel="noreferrer" title={`Inspect this statement in the public transparency log · index ${e.index}`}>#{e.index} ↗</a>
+                        ) : null))}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
             ))}
+          </div>
+
+          <div class="border-t border-ink-800/60 bg-ink-950/30 px-4 py-3 text-[11px] leading-relaxed text-ink-400">
+            Records also accumulate as the image is rebuilt — each release re-signs into the log afresh. Every entry is independent and publicly verifiable: click any
+            <span class="font-mono text-accent-soft">#index</span>
+            to inspect it in <span class="text-ink-200">Sigstore Rekor</span>, or see
+            <a href="#verify" class="font-medium text-accent-soft underline decoration-accent/40 hover:text-accent">Verify Cryptographic Identity ↑</a>
+            for copy-paste <span class="font-mono text-ink-300">cosign</span> and <span class="font-mono text-ink-300">gh</span> commands.
           </div>
         </div>
       )}
     </>
   )}
 </section>
+
+<script>
+  // Click-to-copy for the "Verify with" badges: copies the full, runnable
+  // verification command and flashes a check in place of the copy glyph.
+  document.querySelectorAll<HTMLButtonElement>('[data-verify-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const cmd = btn.getAttribute('data-cmd');
+      if (!cmd) return;
+      try {
+        await navigator.clipboard.writeText(cmd);
+        const icon = btn.querySelector<HTMLElement>('[data-vc-icon]');
+        if (icon) {
+          const prev = icon.textContent;
+          icon.textContent = '✓';
+          icon.classList.add('text-emerald-400');
+          window.setTimeout(() => {
+            icon.textContent = prev;
+            icon.classList.remove('text-emerald-400');
+          }, 1200);
+        }
+      } catch { /* clipboard unavailable */ }
+    });
+  });
+</script>

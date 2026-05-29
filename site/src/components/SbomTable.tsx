@@ -139,15 +139,16 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
             className="mt-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-sm text-ink-100 placeholder:text-ink-300 focus:border-accent focus:outline-none"
           />
         </div>
-        <div className="flex flex-col">
+        <div className="flex w-full flex-col sm:w-56">
           <label className="text-[11px] uppercase tracking-wider text-ink-300">License</label>
           <select
             value={licenseFilter}
             onChange={(e) => setLicenseFilter(e.target.value)}
-            className="mt-1 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-sm text-ink-100 focus:border-accent focus:outline-none"
+            title={licenseFilter === 'all' ? undefined : licenseFilter}
+            className="mt-1 w-full truncate rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-sm text-ink-100 focus:border-accent focus:outline-none"
           >
             <option value="all">All ({licenses.length})</option>
-            {licenses.map((l) => <option key={l} value={l}>{l}</option>)}
+            {licenses.map((l) => <option key={l} value={l} title={l}>{licenseLabel(l)}</option>)}
           </select>
         </div>
         <label className="mt-5 inline-flex select-none items-center gap-2 text-sm text-ink-200 cursor-pointer">
@@ -211,7 +212,7 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
                     </div>
                   </div>
                   <div className="px-4 py-3 font-mono text-ink-100 flex items-center">{p.version}</div>
-                  <div className="truncate px-4 py-3 text-ink-100 flex items-center">{p.license}</div>
+                  <div className="truncate px-4 py-3 text-ink-100 flex items-center" title={p.license}>{licenseLabel(p.license)}</div>
                   <div className="px-4 py-3 text-ink-200 flex items-center font-mono text-xs">{p.cpes.length}</div>
                 </div>
               );
@@ -238,4 +239,12 @@ function labelFor(k: SortKey): string {
     case 'license': return 'License';
     case 'cpes': return 'CPEs';
   }
+}
+
+// SPDX `LicenseRef-<64-hex>` identifiers (and `… AND …` expressions of them)
+// are unreadable at full length and blow out the <select> width. Collapse each
+// hash to a short prefix and cap the overall label for the dropdown.
+function licenseLabel(license: string): string {
+  const short = license.replace(/LicenseRef-([0-9a-f]{6})[0-9a-f]+/gi, 'LicenseRef-$1…');
+  return short.length > 48 ? `${short.slice(0, 47)}…` : short;
 }
