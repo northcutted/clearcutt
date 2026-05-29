@@ -115,7 +115,7 @@ ClearCutt images are built **from scratch** for maximum hardening, but if your o
 
 ```dockerfile
 # examples/base-image-overlay/Dockerfile
-FROM ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless AS clearcutt
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless AS clearcutt
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 
 # Graft the hardened runtime closure on top — no /lib, /usr, or /etc/passwd
@@ -133,7 +133,7 @@ For container runtimes, the project provides a hardened Compose blueprint enforc
 # examples/oci-deployment/docker-compose.yml
 services:
   secure-app:
-    image: ghcr.io/eddie-northcutt/clearcutt-python3.14:distroless
+    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.14:distroless
     read_only: true               # Locks container root (Nix store is immutable)
     security_opt:
       - no-new-privileges:true    # Prevents runtime privilege escalation
@@ -149,7 +149,7 @@ For Nix native developers and downstream clusters, ClearCutt publishes packages 
 
 ```nix
 {
-  inputs.clearcutt.url = "github:eddie-northcutt/clearcutt-images";
+  inputs.clearcutt.url = "github:northcutted/clearcutt";
   outputs = { self, nixpkgs, clearcutt }: {
     devShells.x86_64-linux.default = let
       pkgs = import nixpkgs {

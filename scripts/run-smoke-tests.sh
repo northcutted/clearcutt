@@ -95,10 +95,38 @@ case "$LANG" in
     TEST_CMD=("dotnet" "--version")
     ;;
   rust)
-    TEST_CMD=("cargo" "--version")
+    if [[ "$TIER" == "dev" ]]; then
+      TEST_CMD=("cargo" "--version")
+    elif [[ "$TIER" == "slim" ]]; then
+      TEST_CMD=("bash" "-c" "if command -v cargo >/dev/null 2>&1 || command -v rustc >/dev/null 2>&1; then exit 1; fi; echo 'ok'")
+      log_info "Verifying slim Rust image omits compiler toolchain..."
+    else
+      TEST_CMD=("sh" "-c" "echo 'should fail'")
+      log_info "Verifying distroless Rust image has no shell or compiler payload..."
+      if $RUNTIME run --rm "$IMAGE_TAG" "${TEST_CMD[@]}" &>/dev/null; then
+        log_fail "Security Violation: Distroless Rust image allowed shell execution!"
+      else
+        log_pass "Distroless Rust zero-utility boundary verified."
+        exit 0
+      fi
+    fi
     ;;
   cc)
-    TEST_CMD=("gcc" "--version")
+    if [[ "$TIER" == "dev" ]]; then
+      TEST_CMD=("gcc" "--version")
+    elif [[ "$TIER" == "slim" ]]; then
+      TEST_CMD=("bash" "-c" "if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then exit 1; fi; echo 'ok'")
+      log_info "Verifying slim C/C++ image omits compiler toolchain..."
+    else
+      TEST_CMD=("sh" "-c" "echo 'should fail'")
+      log_info "Verifying distroless C/C++ image has no shell or compiler payload..."
+      if $RUNTIME run --rm "$IMAGE_TAG" "${TEST_CMD[@]}" &>/dev/null; then
+        log_fail "Security Violation: Distroless C/C++ image allowed shell execution!"
+      else
+        log_pass "Distroless C/C++ zero-utility boundary verified."
+        exit 0
+      fi
+    fi
     ;;
   *)
     log_warn "Unknown language runtime '$LANG'. Falling back to default entrypoint check."

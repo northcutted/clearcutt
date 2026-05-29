@@ -35,28 +35,70 @@ const sbomUrls = release.assetUrls.sbom || {};
 ---
 <Base title={`${image.imageName}:${image.tier.id} · ${release.tag}`}>
   <div class="space-y-12" data-pagefind-body>
+    <span class="hidden" data-pagefind-meta={`image:${image.id}`}></span>
     <ImageHeader image={image} selectedTag={release.tag} />
+    {/* Step 1: Pull */}
     <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
+
+    {/* Step 2: Verify */}
     <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
-    <VulnerabilityTable
-      architectures={release.architectures}
-      imageId={image.id}
-      language={image.language.id}
-      languageVersion={image.language.version}
-      tier={image.tier.id}
-      client:load
-    />
-    <SbomSection architectures={release.architectures} rawSbomUrls={sbomUrls} />
-    <TestResults architectures={release.architectures} />
-    <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
-    <OciLabels architectures={release.architectures} />
-    <LayerExplorer
-      architectures={release.architectures}
-      imageName={image.imageName}
-      tierId={image.tier.id}
-      imageTag={release.tag}
-      client:load
-    />
-    <VersionHistory image={image} currentTag={release.tag} />
+
+    {/* Step 3: Secure */}
+    <section class="space-y-4">
+      <header class="flex items-center gap-3">
+        <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
+          3
+        </span>
+        <div>
+          <h2 class="heading text-lg">Secure &amp; Audit Compliance</h2>
+          <p class="text-xs text-ink-300">Inspect vulnerability reports, cryptographically signed metadata, and compilation gates.</p>
+        </div>
+      </header>
+
+      <div class="space-y-8">
+        <TestResults architectures={release.architectures} />
+        <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
+        <VulnerabilityTable
+          architectures={release.architectures}
+          imageId={image.id}
+          language={image.language.id}
+          languageVersion={image.language.version}
+          tier={image.tier.id}
+          client:load
+        />
+      </div>
+    </section>
+
+    {/* Step 4: Details */}
+    <section class="space-y-4">
+      <header class="flex items-center gap-3">
+        <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
+          4
+        </span>
+        <div>
+          <h2 class="heading text-lg">Deep-Dive &amp; OCI Specifications</h2>
+          <p class="text-xs text-ink-300">Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.</p>
+        </div>
+      </header>
+
+      <div class="space-y-8">
+        <SbomSection 
+          architectures={release.architectures} 
+          rawSbomUrls={sbomUrls} 
+          language={image.language.id} 
+          tier={image.tier.id} 
+        />
+        <LayerExplorer
+          architectures={release.architectures}
+          fullName={image.fullName}
+          imageName={image.imageName}
+          tierId={image.tier.id}
+          imageTag={release.tag}
+          client:load
+        />
+        <OciLabels architectures={release.architectures} />
+        <VersionHistory image={image} currentTag={release.tag} />
+      </div>
+    </section>
   </div>
 </Base>

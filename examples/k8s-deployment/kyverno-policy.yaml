@@ -25,17 +25,17 @@ spec:
       verifyImages:
         # Match our image namespace
         - imageReferences:
-            - "ghcr.io/eddie-northcutt/clearcutt-*"
+            - "ghcr.io/northcutted/clearcutt/clearcutt-*"
             
           # 1. Cosign Signature Verification
           # Ensures the image manifest was signed by a trusted identity
           attestors:
             - entries:
                 - keyless:
-                    # Keyless OIDC: Asserts that the image was signed strictly inside our 
-                    # non-falsifiable GitHub Actions official tag release pipeline workflow
+                    # Keyless OIDC: Asserts that the image was signed strictly inside our
+                    # official GitHub Actions release workflow.
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$"
+                    subjectRegexp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
                     
                 # OR fallback to a trusted static public key if signing locally:
                 # - keys:
@@ -52,7 +52,7 @@ spec:
                 - entries:
                     - keyless:
                         issuer: "https://token.actions.githubusercontent.com"
-                        subjectRegexp: "^https://github.com/eddie-northcutt/clearcutt-images/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$"
+                        subjectRegexp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
                         
           # Force registry digest resolution to prevent tag mutability/spoofing
           mutateDigest: true

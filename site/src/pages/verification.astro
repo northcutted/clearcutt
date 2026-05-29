@@ -19,11 +19,11 @@ const sampleRegistryBase = index?.registryBase ?? `ghcr.io/${ownerRepo.toLowerCa
 const sampleRefVersioned = `${sampleRegistryBase}/${sampleImageName}:${latestTag}-${sample?.tier ?? 'slim'}`;
 
 // The cert SAN baked in by GitHub Actions OIDC is the exact workflow file URL
-// at the ref that built the image. Pin the same regex for BOTH the signature
-// and the SBOM attestation so an attacker who somehow got a different workflow
-// signed in this repo can't satisfy the check.
+// at the ref that built the image. Releases are approved by creating a version
+// tag, but signing still happens in the main release workflow run, so pin the
+// workflow path and branch for BOTH signatures and attestations.
 const workflowIdentityRegex =
-  `^https://github\\.com/${ownerRepo}/\\.github/workflows/tag-release\\.yml@refs/tags/v.*$`;
+  `^https://github\\.com/${ownerRepo}/\\.github/workflows/release\\.yml@refs/heads/main$`;
 const oidcIssuer = 'https://token.actions.githubusercontent.com';
 ---
 <Base title="Verification guide">
@@ -31,13 +31,11 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
     <header class="space-y-3">
       <h1 class="heading text-3xl">Verifying ClearCutt images</h1>
       <p class="text-ink-200">
-        Every ClearCutt image carries independent attestations stored alongside the manifest in
-        GHCR: a Sigstore signature (keyless OIDC), an SPDX SBOM, and SLSA Level 3 provenance from
-        the official slsa-github-generator — plus a GitHub-native attestation of the same
-        provenance and SBOM. (GHCR doesn't expose the OCI 1.1 Referrers API, so cosign stores
-        these as tags against each image digest.) You verify with whichever standard upstream
-        tool you already trust; they validate the same signed material, so no single vendor is
-        load-bearing.
+        Every published ClearCutt image is expected to carry independent evidence stored with
+        the GHCR manifest: a Sigstore signature (keyless OIDC), an SPDX SBOM attestation, SLSA
+        provenance, and GitHub-native attestations. The catalog marks each evidence channel
+        separately so a missing signature, attestation, or scan is visible instead of being
+        inferred from another signal.
       </p>
       <p class="text-sm text-ink-300">
         The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>
@@ -61,7 +59,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
       <p class="text-sm text-ink-200">
         ClearCutt uses keyless OIDC — there's no static public key. Instead you assert which
         workflow file built the image (the cert SAN) and which OIDC issuer signed the cert.
-        The regex below pins both pieces literally; everything except the tag suffix is fixed.
+        The regex below pins both pieces literally.
       </p>
       <CopyBlock language="shell" code={`cosign verify ${sampleRefVersioned} \\\n  --certificate-identity-regexp '${workflowIdentityRegex}' \\\n  --certificate-oidc-issuer '${oidcIssuer}'`} />
     </section>
@@ -81,10 +79,10 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
       <h2 class="heading text-xl">4. Verify SLSA L3 provenance</h2>
       <p class="text-sm text-ink-200">
         Confirms the build was non-falsifiable — produced by the upstream
-        slsa-github-generator running on hosted GitHub runners, from the exact source tag.
-        The source-tag must match the image tag.
+        slsa-github-generator running on hosted GitHub runners, from the protected release
+        branch. The image tag and manifest digest still pin the released artifact.
       </p>
-      <CopyBlock language="shell" code={`# Resolve the multi-arch digest first\nDIGEST=$(crane digest ${sampleRefVersioned})\nslsa-verifier verify-image ${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --source-uri 'github.com/${ownerRepo}' \\\n  --source-tag '${latestTag}'`} />
+      <CopyBlock language="shell" code={`# Resolve the multi-arch digest first\nDIGEST=$(crane digest ${sampleRefVersioned})\nslsa-verifier verify-image ${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --source-uri 'github.com/${ownerRepo}' \\\n  --source-branch 'main'`} />
     </section>
 
     <section class="space-y-3">
@@ -93,10 +91,10 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         The same build provenance and SBOM are also published as GitHub-native attestations.
         If you'd rather not run cosign, <code class="font-mono text-ink-100">gh attestation
         verify</code> checks them against GitHub's attestation store and the Sigstore
-        public-good transparency log — pinning the owner so only attestations produced by this
-        org's workflows are trusted.
+        public-good transparency log — pinning the repository, workflow identity, and source
+        ref so only attestations produced by the release workflow are trusted.
       </p>
-      <CopyBlock language="shell" code={`# Resolve the digest, then verify the GitHub-native attestation\nDIGEST=$(crane digest ${sampleRefVersioned})\ngh attestation verify oci://${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --owner ${index?.owner ?? 'OWNER'}`} />
+      <CopyBlock language="shell" code={`# Resolve the digest, then verify the GitHub-native attestation\nDIGEST=$(crane digest ${sampleRefVersioned})\ngh attestation verify oci://${sampleRegistryBase}/${sampleImageName}@$DIGEST \\\n  --repo ${ownerRepo} \\\n  --cert-identity-regex '${workflowIdentityRegex}' \\\n  --source-ref refs/heads/main`} />
     </section>
 
     <section class="space-y-3">

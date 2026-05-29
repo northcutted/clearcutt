@@ -6,7 +6,7 @@ This blueprint demonstrates how to run **ClearCutt Hardened container images** i
 
 ## 1. Production Pod Hardening
 
-The [`deployment.yaml`](file:///Users/eddie/Development/clearcutt-images/examples/k8s-deployment/deployment.yaml) manifest implements strict Pod Security Standards (PSS) to enforce maximum runtime isolation:
+The [`deployment.yaml`](./deployment.yaml) manifest implements strict Pod Security Standards (PSS) to enforce maximum runtime isolation:
 
 *   **Rootless Context:** Runs the container strictly as unprivileged UID/GID `10001 (appuser)` via Pod-level `runAsUser` settings, blocking container escape vectors.
 *   **Immutable RootFS:** Employs `readOnlyRootFilesystem: true` to prevent any modifications to the image layer at runtime.
@@ -18,7 +18,7 @@ The [`deployment.yaml`](file:///Users/eddie/Development/clearcutt-images/example
 
 ## 2. Dynamic Admission Gating (Kyverno)
 
-The [`kyverno-policy.yaml`](file:///Users/eddie/Development/clearcutt-images/examples/k8s-deployment/kyverno-policy.yaml) is a declarative Kyverno `ClusterPolicy` that acts as the cluster's secure gatekeeper.
+The [`kyverno-policy.yaml`](./kyverno-policy.yaml) is a declarative Kyverno `ClusterPolicy` that acts as the cluster's secure gatekeeper.
 
 When a deployment is submitted, Kyverno intercepts the API request and performs the following dynamic cryptographic checks **before the pod is admitted to the cluster**:
 
@@ -49,7 +49,7 @@ When a deployment is submitted, Kyverno intercepts the API request and performs 
 ### Keyless OIDC Assertions:
 Instead of managing static public/private keys in Kyverno (which introduces key rotation overhead), the policy verifies our **GitHub Actions OIDC Identity**. 
 *   It checks that the certificate issuer was `https://token.actions.githubusercontent.com`.
-*   It asserts that the certificate subject was our non-falsifiable release workflow: `https://github.com/eddie-northcutt/clearcutt-images/.github/workflows/tag-release.yml@refs/tags/v.*`.
+*   It asserts that the certificate subject was our non-falsifiable release workflow: `https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main`.
 
 This guarantees that **only** images compiled, scanned, and signed inside your official, secure CI/CD release workflow can ever be deployed onto your production nodes!
 
@@ -73,6 +73,6 @@ This guarantees that **only** images compiled, scanned, and signed inside your o
     ```
 4.  Test policy gating. If you try to deploy an unsigned image or one without an SBOM from the clearcutt namespace, Kyverno will dynamically block admission:
     ```bash
-    kubectl run uncertified --image=ghcr.io/eddie-northcutt/clearcutt-python3.13:slim
+    kubectl run uncertified --image=ghcr.io/northcutted/clearcutt/clearcutt-python3.13:slim
     # Outputs: Error from server: policy clearcutt-verify-provenance error: image verification failed...
     ```

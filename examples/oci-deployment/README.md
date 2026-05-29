@@ -8,7 +8,7 @@ By combining the cryptographic immutability of Nix store paths with strict conta
 
 ## The Four Core Hardening Pillars
 
-The [`docker-compose.yml`](file:///Users/eddie/Development/clearcutt-images/examples/oci-deployment/docker-compose.yml) template implements the following defense-in-depth measures:
+The [`docker-compose.yml`](./docker-compose.yml) template implements the following defense-in-depth measures:
 
 ### 1. Rootless Boundaries (`user: "10001:10001"`)
 Ensures the container process starts natively in our pre-provisioned unprivileged user space. If an attacker manages to break out of the application process, they land on the host system as a completely unprivileged user (UID `10001`), preventing standard container escape vectors.

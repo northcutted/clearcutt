@@ -6,6 +6,40 @@ interface Props {
 }
 const { release, ownerRepo } = Astro.props;
 const prov = release.provenance;
+
+function friendlyPredicate(type: string): string {
+  if (!type || type === 'unknown') return 'unknown';
+  if (type.includes('provenance/v1')) return 'SLSA Provenance v1.0';
+  if (type.includes('provenance/v0.2')) return 'SLSA Provenance v0.2';
+  return type;
+}
+
+function friendlyBuildType(type: string | null): string {
+  if (!type || type === '—') return '—';
+  if (type.includes('actions.github.com/buildTypes/')) return 'GitHub Actions Workflow';
+  return type;
+}
+
+function friendlyBuilder(id: string): { label: string; url: string | null } {
+  if (!id || id === 'unknown') return { label: 'unknown', url: null };
+  if (id.includes('slsa-github-generator')) {
+    const tagMatch = id.match(/@refs\/tags\/(v[0-9.]+)/) || id.match(/@(v[0-9.]+)/);
+    const tag = tagMatch ? ` (${tagMatch[1]})` : '';
+    return { label: `SLSA GitHub Generator${tag}`, url: id };
+  }
+  if (id.includes('attest-build-provenance')) {
+    return { label: 'GitHub Provenance Attestor', url: id };
+  }
+  if (id.startsWith('https://')) {
+    try {
+      const url = new URL(id);
+      return { label: url.hostname + url.pathname, url: id };
+    } catch {
+      return { label: id, url: id };
+    }
+  }
+  return { label: id, url: id };
+}
 ---
 <section class="space-y-3">
   <header class="flex flex-wrap items-baseline justify-between gap-2">
@@ -44,16 +78,23 @@ const prov = release.provenance;
         <dd><span class="chip-accent">Level {prov.slsaLevel}</span></dd>
 
         <dt class="text-xs uppercase tracking-wider text-ink-300">Predicate</dt>
-        <dd class="font-mono text-xs break-all">{prov.predicateType}</dd>
+        <dd class="font-mono text-xs break-all">{friendlyPredicate(prov.predicateType)}</dd>
 
         <dt class="text-xs uppercase tracking-wider text-ink-300">Build type</dt>
-        <dd class="font-mono text-xs break-all">{prov.buildType ?? '—'}</dd>
+        <dd class="font-mono text-xs break-all">{friendlyBuildType(prov.buildType)}</dd>
 
         <dt class="text-xs uppercase tracking-wider text-ink-300">Builder</dt>
         <dd class="font-mono text-xs break-all">
-          <a href={prov.builder.id} class="text-ink-100 hover:text-accent-soft" target="_blank" rel="noreferrer">
-            {prov.builder.id}
-          </a>
+          {(() => {
+            const builder = friendlyBuilder(prov.builder.id);
+            return builder.url ? (
+              <a href={builder.url} class="text-ink-100 hover:text-accent-soft underline decoration-accent/40" target="_blank" rel="noreferrer">
+                {builder.label}
+              </a>
+            ) : (
+              <span class="text-ink-300">{builder.label}</span>
+            );
+          })()}
         </dd>
 
         <dt class="text-xs uppercase tracking-wider text-ink-300">Source</dt>

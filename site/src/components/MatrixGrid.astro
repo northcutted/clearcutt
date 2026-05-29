@@ -77,6 +77,12 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
     ? `Critical/high fix status: ${parts.join(', ')}.`
     : 'No critical/high findings in this catalog scan.';
 }
+function evidenceBadgeClass(ok: boolean | undefined): string {
+  return ok ? 'chip-accent' : 'chip-warn';
+}
+function evidenceTitle(label: string, ok: boolean | undefined): string {
+  return ok ? `${label} evidence is present for this release.` : `${label} evidence is missing or incomplete for this release.`;
+}
 ---
 <div class="surface overflow-hidden">
   <!-- Header row -->
@@ -164,6 +170,7 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
             const linkHref = `${base}images/${img!.id}`;
             const tagShown = img!.latestTag;
             const vs = img!.vulnSummary;
+            const evidence = img!.evidence;
             const vulnBucket =
               !vs ? 'none' : vs.critical > 0 ? 'critical' : vs.high > 0 ? 'high' : 'clean';
             return (
@@ -190,6 +197,15 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
                 </div>
                 <div class="mt-1.5 flex flex-wrap items-center gap-1">
                   {img!.architectures.map((a) => <span class="chip text-[9px] px-1.5 py-0">{a}</span>)}
+                  <span class={`${evidenceBadgeClass(evidence?.signature ?? img!.signed)} text-[9px] px-1.5 py-0`} title={evidenceTitle('Sigstore signature', evidence?.signature ?? img!.signed)}>
+                    sig
+                  </span>
+                  <span class={`${evidenceBadgeClass(evidence?.provenance ?? img!.provenance)} text-[9px] px-1.5 py-0`} title={evidenceTitle('SLSA provenance', evidence?.provenance ?? img!.provenance)}>
+                    slsa
+                  </span>
+                  <span class={`${evidenceBadgeClass(evidence?.sbom)} text-[9px] px-1.5 py-0`} title={evidenceTitle('SBOM', evidence?.sbom)}>
+                    sbom
+                  </span>
                   <span class={`${vulnBadgeClass(vs ?? null)} text-[9px] px-1.5 py-0`} title={vulnBadgeTitle(vs ?? null)}>
                     {vulnBadgeLabel(vs ?? null)}
                   </span>

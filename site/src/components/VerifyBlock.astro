@@ -1,16 +1,17 @@
 ---
+import Tabs from './Tabs.astro';
 import CopyBlock from './CopyBlock.astro';
 import type { ImageRecord, ReleaseEntry } from '../lib/catalog-schema';
+
 interface Props {
   image: ImageRecord;
   release: ReleaseEntry;
   ownerRepo: string;
 }
 const { image, release, ownerRepo } = Astro.props;
-const owner = ownerRepo.split('/')[0];
 const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
 const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifestDigest}` : versioned;
-const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/tag-release.yml@refs/tags/${release.tag}`;
+const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
 const issuer = release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com';
 
 const cosignVerify = `cosign verify ${versioned} \\
@@ -26,40 +27,112 @@ const cosignAttest = `cosign verify-attestation ${versioned} \\
 
 const slsa = `slsa-verifier verify-image ${digestRef} \\
   --source-uri 'github.com/${ownerRepo}' \\
-  --source-tag '${release.tag}'`;
+  --source-branch 'main'`;
 
-// GitHub-native attestation path: same signed provenance + SBOM, verified
-// against GitHub's attestation store with the gh CLI — no cosign required.
 const ghAttest = `gh attestation verify oci://${digestRef} \\
-  --owner ${owner}`;
+  --repo ${ownerRepo} \\
+  --cert-identity '${subject}' \\
+  --source-ref refs/heads/main`;
+
+const kyverno = `apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-${image.imageName}
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      verifyImages:
+        - imageReferences: ["${image.fullName}:*"]
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "${subject}"
+                    issuer: "${issuer}"
+          attestations:
+            - predicateType: "https://spdx.dev/Document"
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "${subject}"
+                        issuer: "${issuer}"
+          mutateDigest: true
+          verifyDigest: true
+          required: true`;
 ---
 <section class="space-y-4">
-  <header class="space-y-1">
-    <h2 class="heading text-lg">Verify before use</h2>
-    <p class="text-sm text-ink-200">
-      Independent checks across the tools you already trust — Sigstore cosign, the GitHub CLI, and the official slsa-verifier. Each one confirms who built this image, on which workflow, from which source revision. Pick whichever fits your toolchain; they validate the same signed material.
-    </p>
+  <header class="flex items-center gap-3">
+    <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
+      2
+    </span>
+    <div>
+      <h2 class="heading text-lg">Verify Cryptographic Identity</h2>
+      <p class="text-xs text-ink-300">Run runtime OIDC signature audits and SLSA Level 3 compliance verifications.</p>
+    </div>
   </header>
-  {/* grid auto-rows-fr makes every cell match the tallest one's height, and
-      each child is a flex column so the CopyBlock can flex-1 into all the
-      vertical space below the step label. Result: uniformly-sized code boxes
-      regardless of command length differences. */}
-  <div class="grid gap-4 auto-rows-fr md:grid-cols-2">
-    <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">Cosign · signature</div>
-      <CopyBlock language="shell" code={cosignVerify} class="flex-1" />
-    </div>
-    <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">Cosign · SBOM attestation</div>
-      <CopyBlock language="shell" code={cosignAttest} class="flex-1" />
-    </div>
-    <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">slsa-verifier · SLSA L3 provenance</div>
-      <CopyBlock language="shell" code={slsa} class="flex-1" />
-    </div>
-    <div class="flex flex-col gap-2">
-      <div class="text-xs uppercase tracking-wider text-ink-300">GitHub CLI · native attestation</div>
-      <CopyBlock language="shell" code={ghAttest} class="flex-1" />
-    </div>
+
+  <div class="surface px-6 py-5">
+    <Tabs name={`verify-${image.id}`} tabs={[
+      { id: 'cosign-sig', label: 'Cosign Signature' },
+      { id: 'cosign-sbom', label: 'Cosign SBOM' },
+      { id: 'slsa', label: 'SLSA Verifier' },
+      { id: 'gh-cli', label: 'GitHub CLI' },
+      { id: 'kyverno', label: 'Kyverno Policy' },
+    ]}>
+      <div data-panel-id="cosign-sig" data-panel-active="true" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Keyless OIDC Signature</h3>
+          <p class="mb-3 text-xs text-ink-200">
+            Confirm this OCI image was built in your official release workflow and signed via keyless OIDC certificates.
+          </p>
+          <CopyBlock language="shell" code={cosignVerify} />
+        </div>
+      </div>
+
+      <div data-panel-id="cosign-sbom" data-panel-active="false" style="display:none" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Cryptographic SBOM Attestation</h3>
+          <p class="mb-3 text-xs text-ink-200">
+            Extract and cryptographically verify the compiled package bill of materials statement.
+          </p>
+          <CopyBlock language="shell" code={cosignAttest} />
+        </div>
+      </div>
+
+      <div data-panel-id="slsa" data-panel-active="false" style="display:none" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">slsa-verifier (SLSA Level 3)</h3>
+          <p class="mb-3 text-xs text-ink-200">
+            Verify the non-falsifiable SLSA Level 3 build provenance. Assures build source is untouched.
+          </p>
+          <CopyBlock language="shell" code={slsa} />
+        </div>
+      </div>
+
+      <div data-panel-id="gh-cli" data-panel-active="false" style="display:none" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">GitHub Native Attestation</h3>
+          <p class="mb-3 text-xs text-ink-200">
+            Audit standard GitHub OCI attestations natively using the GitHub CLI client.
+          </p>
+          <CopyBlock language="shell" code={ghAttest} />
+        </div>
+      </div>
+
+      <div data-panel-id="kyverno" data-panel-active="false" style="display:none" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Admission Control (Kyverno Policy)</h3>
+          <p class="mb-3 text-xs text-ink-200">
+            Enforce keyless signature and cryptographic SBOM attestation checks in Kubernetes clusters dynamically.
+          </p>
+          <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
+        </div>
+      </div>
+    </Tabs>
   </div>
 </section>

@@ -137,6 +137,20 @@ export const ReleaseEntry = z.object({
     testResults: z.record(z.string()).default({}),
     digest: z.string().nullable(),
   }),
+  evidence: z
+    .object({
+      signature: z.boolean(),
+      provenance: z.boolean(),
+      sbom: z.boolean(),
+      tests: z.boolean(),
+      vulnerabilities: z.boolean(),
+      archCount: z.number(),
+      sbomArchCount: z.number(),
+      testArchCount: z.number(),
+      passedTestArchCount: z.number(),
+      vulnerabilityArchCount: z.number(),
+    })
+    .optional(),
 });
 export type ReleaseEntry = z.infer<typeof ReleaseEntry>;
 
@@ -201,6 +215,20 @@ export const CatalogIndex = z.object({
       architectures: z.array(z.string()),
       signed: z.boolean(),
       provenance: z.boolean(),
+      evidence: z
+        .object({
+          signature: z.boolean(),
+          provenance: z.boolean(),
+          sbom: z.boolean(),
+          tests: z.boolean(),
+          vulnerabilities: z.boolean(),
+          archCount: z.number(),
+          sbomArchCount: z.number(),
+          testArchCount: z.number(),
+          passedTestArchCount: z.number(),
+          vulnerabilityArchCount: z.number(),
+        })
+        .optional(),
       passed: z.boolean(),
       vulnSummary: z
         .object({

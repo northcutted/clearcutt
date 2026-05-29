@@ -40,7 +40,7 @@ spec:
       containers:
         - name: runtime-container
           # Targets our hardened distroless base layer
-          image: ghcr.io/eddie-northcutt/clearcutt-core:distroless
+          image: ghcr.io/northcutted/clearcutt/clearcutt-corelts:distroless
           imagePullPolicy: IfNotPresent
 
           # Enforce resource boundaries to prevent starvation vectors

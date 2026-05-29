@@ -6,7 +6,7 @@ version: '3.8'
 services:
   secure-app:
     # Point to your secure ClearCutt matrix target (e.g. Python 3.14 Distroless)
-    image: ghcr.io/eddie-northcutt/clearcutt-python3.14:distroless
+    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.14:distroless
     
     container_name: clearcutt-hardened-app
     

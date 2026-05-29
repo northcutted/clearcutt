@@ -13,6 +13,13 @@ const published = index ? index.images.filter((i) => i.latestTag === index.lates
 const lagging = index ? index.images.filter((i) => i.latestTag !== index.latestTag).length : 0;
 const totalSlots = 13 * 3; // 13 languages × 3 tiers; kept in sync with flake.nix matrix.
 const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
+const evidenceCoverage = index
+  ? {
+      signatures: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.signature ?? i.signed)).length,
+      provenance: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.provenance ?? i.provenance)).length,
+      scans: index.images.filter((i) => i.latestTag === index.latestTag && !!i.evidence?.vulnerabilities).length,
+    }
+  : null;
 ---
 <Base title="Catalog">
   <section class="space-y-8 pb-10">
@@ -22,9 +29,9 @@ const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
       <p class="text-base text-ink-200">
         A multi-arch base image fleet (Linux <code class="font-mono text-ink-100">amd64</code>
         and <code class="font-mono text-ink-100">arm64</code>) built declaratively from Nix
-        store layers on top of a mandated enterprise OS base. Every <em>published</em> image
-        carries an SPDX SBOM, SLSA Level 3 in-toto provenance, and a keyless Sigstore signature
-        — all attached to the GHCR manifest and re-verifiable with the standard upstream tools.
+        store layers on top of a mandated enterprise OS base. Published images are gated to
+        carry an SPDX SBOM, SLSA provenance, and a keyless Sigstore signature attached to the
+        GHCR manifest; the catalog shows each evidence channel separately so gaps stay visible.
       </p>
       <p class="text-sm text-ink-300">
         CVE counts on the catalog are refreshed nightly against current vulnerability
@@ -64,6 +71,11 @@ const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
               </span>
             )}
             <span class="text-ink-300">of {totalSlots} target slots</span>
+            {evidenceCoverage && (
+              <span class="text-ink-300">
+                evidence: {evidenceCoverage.signatures}/{published} sig · {evidenceCoverage.provenance}/{published} slsa · {evidenceCoverage.scans}/{published} scans
+              </span>
+            )}
           </div>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span class="text-ink-300">Releases:</span>

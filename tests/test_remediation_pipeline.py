@@ -242,6 +242,126 @@ JSON
         self.assertIn("no fixable Critical/High CVEs", release_workflow)
         self.assertIn("no fixable Critical/High CVEs", latest_notes)
 
+    def test_catalog_verifier_fails_when_signature_is_inferred_from_provenance(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+
+        catalog = self.tmp_path / "catalog"
+        images = catalog / "images"
+        images.mkdir(parents=True)
+        index = {
+            "latestTag": "v1.0.0",
+            "images": [
+                {
+                    "id": "coreLTS-slim",
+                    "latestTag": "v1.0.0",
+                    "signed": True,
+                    "provenance": True,
+                    "evidence": {
+                        "signature": False,
+                        "provenance": True,
+                        "sbom": True,
+                        "tests": True,
+                        "vulnerabilities": True,
+                    },
+                }
+            ],
+        }
+        release = {
+            "tag": "v1.0.0",
+            "signature": None,
+            "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+            "evidence": {
+                "signature": False,
+                "provenance": True,
+                "sbom": True,
+                "tests": True,
+                "vulnerabilities": True,
+                "archCount": 1,
+                "sbomArchCount": 1,
+                "testArchCount": 1,
+                "passedTestArchCount": 1,
+                "vulnerabilityArchCount": 1,
+            },
+            "architectures": [],
+        }
+        (catalog / "index.json").write_text(json.dumps(index), encoding="utf-8")
+        (images / "coreLTS-slim.json").write_text(
+            json.dumps({"releases": [release]}),
+            encoding="utf-8",
+        )
+
+        env = os.environ.copy()
+        env["CATALOG_DIR"] = str(catalog)
+        res = subprocess.run(
+            [node, str(ROOT / "scripts" / "verify-catalog-data.mjs")],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("index signed=true", res.stderr)
+
+    def test_catalog_verifier_accepts_complete_latest_evidence(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+
+        catalog = self.tmp_path / "catalog-ok"
+        images = catalog / "images"
+        images.mkdir(parents=True)
+        evidence = {
+            "signature": True,
+            "provenance": True,
+            "sbom": True,
+            "tests": True,
+            "vulnerabilities": True,
+            "archCount": 1,
+            "sbomArchCount": 1,
+            "testArchCount": 1,
+            "passedTestArchCount": 1,
+            "vulnerabilityArchCount": 1,
+        }
+        index = {
+            "latestTag": "v1.0.0",
+            "images": [
+                {
+                    "id": "coreLTS-slim",
+                    "latestTag": "v1.0.0",
+                    "signed": True,
+                    "provenance": True,
+                    "evidence": evidence,
+                }
+            ],
+        }
+        release = {
+            "tag": "v1.0.0",
+            "signature": {"cosignBundlePresent": True},
+            "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+            "evidence": evidence,
+            "architectures": [],
+        }
+        (catalog / "index.json").write_text(json.dumps(index), encoding="utf-8")
+        (images / "coreLTS-slim.json").write_text(
+            json.dumps({"releases": [release]}),
+            encoding="utf-8",
+        )
+
+        env = os.environ.copy()
+        env["CATALOG_DIR"] = str(catalog)
+        res = subprocess.run(
+            [node, str(ROOT / "scripts" / "verify-catalog-data.mjs")],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(res.returncode, 0, res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

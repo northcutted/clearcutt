@@ -6,12 +6,63 @@ import type { ArchPayload, PackageEntry } from '../lib/catalog-schema';
 type Props = {
   architectures: ArchPayload[];
   rawSbomUrls: Record<string, string>;
+  language?: string;
+  tier?: string;
 };
 
 type SortKey = 'name' | 'version' | 'license' | 'cpes';
 type SortDir = 'asc' | 'desc';
 
-export default function SbomTable({ architectures, rawSbomUrls }: Props) {
+function displayLanguage(language: string): string {
+  switch (language) {
+    case 'core': return 'Core';
+    case 'java': return 'Java';
+    case 'node': return 'Node.js';
+    case 'python': return 'Python';
+    case 'go': return 'Go';
+    case 'dotnet': return '.NET';
+    case 'rust': return 'Rust';
+    case 'cc': return 'C/C++';
+    default: return language;
+  }
+}
+
+function isPrimaryRuntimePackage(language: string, packageName: string): boolean {
+  const pkg = packageName.toLowerCase();
+  switch (language) {
+    case 'python': return pkg === 'python' || /^python[0-9.]*$/.test(pkg);
+    case 'java': return pkg.includes('jdk') || pkg.includes('jre') || pkg.includes('openjdk') || pkg.includes('zulu');
+    case 'node': return pkg === 'node' || pkg === 'nodejs' || pkg.startsWith('nodejs');
+    case 'go': return pkg === 'go' || pkg.startsWith('go-') || /^go_[0-9_]+$/.test(pkg);
+    case 'dotnet': return pkg.includes('dotnet') || pkg.includes('aspnetcore');
+    case 'rust': return pkg === 'rustc' || pkg === 'cargo';
+    case 'cc': return pkg === 'gcc' || pkg === 'clang';
+    default: return false;
+  }
+}
+
+function sbomInclusionSummary(packageName: string, language: string, tier: string): string {
+  const pkg = packageName.toLowerCase();
+  const lang = displayLanguage(language);
+  if (isPrimaryRuntimePackage(language, packageName)) {
+    return `Primary ${lang} runtime closure requirement.`;
+  }
+  if (pkg === 'cacert' || pkg === 'nss-cacert') {
+    return 'TLS Certificate authority trust store for secure networking.';
+  }
+  if (tier === 'slim' && (pkg === 'bash' || pkg === 'bash-interactive' || pkg === 'busybox')) {
+    return 'Slim-tier diagnostic shell / utility (removed in distroless).';
+  }
+  if (language === 'java' && pkg === 'cups') {
+    return 'Java runtime dependency for printing / AWT component compatibility.';
+  }
+  if (language === 'java' && pkg === 'libtiff') {
+    return 'Java runtime dependency for image stack / typography features.';
+  }
+  return `Transitive library closure of the ${lang} ${tier} Nix workspace.`;
+}
+
+export default function SbomTable({ architectures, rawSbomUrls, language, tier }: Props) {
   const [arch, setArch] = useState<string>(architectures[0]?.arch ?? 'amd64');
   const [filter, setFilter] = useState('');
   const [licenseFilter, setLicenseFilter] = useState<string>('all');
@@ -54,7 +105,7 @@ export default function SbomTable({ architectures, rawSbomUrls }: Props) {
   const virt = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
+    estimateSize: () => 76,
     overscan: 12,
   });
 
@@ -99,7 +150,7 @@ export default function SbomTable({ architectures, rawSbomUrls }: Props) {
             {licenses.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
         </div>
-        <label className="mt-5 inline-flex select-none items-center gap-2 text-sm text-ink-200">
+        <label className="mt-5 inline-flex select-none items-center gap-2 text-sm text-ink-200 cursor-pointer">
           <input
             type="checkbox"
             checked={onlyNix}
@@ -121,7 +172,7 @@ export default function SbomTable({ architectures, rawSbomUrls }: Props) {
       </div>
 
       <div className="surface-soft overflow-hidden">
-        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] border-b border-ink-700/60 bg-ink-900/80 text-xs uppercase tracking-wider text-ink-200">
+        <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] border-b border-ink-700/60 bg-ink-900/80 text-xs uppercase tracking-wider text-ink-200">
           {(['name','version','license','cpes'] as SortKey[]).map((k) => (
             <button
               key={k}
@@ -130,7 +181,7 @@ export default function SbomTable({ architectures, rawSbomUrls }: Props) {
                 if (sortKey === k) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
                 else { setSortKey(k); setSortDir('asc'); }
               }}
-              className="flex items-center gap-1.5 px-4 py-2.5 text-left hover:text-ink-50"
+              className="flex items-center gap-1.5 px-4 py-2.5 text-left hover:text-ink-50 font-semibold"
             >
               {labelFor(k)}
               {sortKey === k && <span aria-hidden>{sortDir === 'asc' ? '▲' : '▼'}</span>}
@@ -148,17 +199,20 @@ export default function SbomTable({ architectures, rawSbomUrls }: Props) {
                     position: 'absolute', top: 0, left: 0, right: 0,
                     transform: `translateY(${vi.start}px)`,
                   }}
-                  className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] border-b border-ink-800/70 text-sm hover:bg-ink-800/50"
+                  className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,0.8fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] border-b border-ink-800/70 text-sm hover:bg-ink-800/50"
                 >
-                  <div className="truncate px-4 py-3">
-                    <div className="font-mono text-ink-50">{p.name}</div>
+                  <div className="px-4 py-3 min-w-0 flex flex-col justify-center">
+                    <div className="font-mono text-ink-50 font-bold text-xs truncate">{p.name}</div>
                     {p.purl && (
-                      <div className="truncate text-[11px] text-ink-300" title={p.purl}>{p.purl}</div>
+                      <div className="truncate text-[10px] text-ink-300 mt-0.5 select-all" title={p.purl}>{p.purl}</div>
                     )}
+                    <div className="mt-1.5 text-[11px] leading-snug text-ink-400 font-sans">
+                      {sbomInclusionSummary(p.name, language || 'core', tier || 'slim')}
+                    </div>
                   </div>
-                  <div className="px-4 py-3 font-mono text-ink-100">{p.version}</div>
-                  <div className="truncate px-4 py-3 text-ink-100">{p.license}</div>
-                  <div className="px-4 py-3 text-ink-200">{p.cpes.length}</div>
+                  <div className="px-4 py-3 font-mono text-ink-100 flex items-center">{p.version}</div>
+                  <div className="truncate px-4 py-3 text-ink-100 flex items-center">{p.license}</div>
+                  <div className="px-4 py-3 text-ink-200 flex items-center font-mono text-xs">{p.cpes.length}</div>
                 </div>
               );
             })}
@@ -179,7 +233,7 @@ function pickSort(p: PackageEntry, k: SortKey): string {
 }
 function labelFor(k: SortKey): string {
   switch (k) {
-    case 'name': return 'Package';
+    case 'name': return 'Package · why included';
     case 'version': return 'Version';
     case 'license': return 'License';
     case 'cpes': return 'CPEs';

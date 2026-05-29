@@ -25,7 +25,7 @@ survive untouched.
 See [`Dockerfile`](./Dockerfile). The core of it is a single layer:
 
 ```dockerfile
-FROM ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless AS clearcutt
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless AS clearcutt
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 
 # Bring the hardened runtime closure onto the mandated base. No /lib, /usr,
@@ -42,7 +42,7 @@ Build it:
 ```bash
 docker build \
   --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4 \
-  --build-arg CLEARCUTT_RUNTIME=ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless \
+  --build-arg CLEARCUTT_RUNTIME=ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless \
   -t my-org/java21-on-ubi:latest \
   examples/base-image-overlay
 ```
@@ -70,12 +70,12 @@ attested provenance). This is the same pattern as
 [`examples/clearcutt-template-java`](../clearcutt-template-java):
 
 ```dockerfile
-FROM ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:dev AS builder
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:dev AS builder
 WORKDIR /workspace
 COPY . .
 RUN mvn clean package
 
-FROM ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless@sha256:<pin>
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless@sha256:<pin>
 COPY --from=builder /workspace/target/app.jar /app/app.jar
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 ```

@@ -3,6 +3,7 @@ import type { ArchPayload } from '../lib/catalog-schema';
 
 type Props = { 
   architectures: ArchPayload[];
+  fullName?: string;
   imageName?: string;
   tierId?: string;
   imageTag?: string;
@@ -29,7 +30,7 @@ function licenseBreakdownFor(pkgs: any[]): [string, number][] {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
-export default function LayerExplorer({ architectures, imageName, tierId }: Props) {
+export default function LayerExplorer({ architectures, fullName, imageName, tierId, imageTag }: Props) {
   const archs = architectures.filter((a) => a.layers && a.layers.length > 0);
   const [arch, setArch] = useState(archs[0]?.arch ?? architectures[0]?.arch ?? 'amd64');
   const current = architectures.find((a) => a.arch === arch) ?? architectures[0];
@@ -87,8 +88,9 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
   };
 
   const imageRepoName = imageName || 'clearcutt-corelts';
-  const tierSuffix = tierId ? `:${tierId}` : '';
-  const pullRef = sel ? `ghcr.io/northcutted/${imageRepoName}${tierSuffix}@${sel.digest}` : '';
+  const tagSuffix = imageTag && tierId ? `:${imageTag}-${tierId}` : tierId ? `:${tierId}` : '';
+  const imageRef = `${fullName || `ghcr.io/northcutted/clearcutt/${imageRepoName}`}${tagSuffix}`;
+  const layerRef = sel ? `${fullName || `ghcr.io/northcutted/clearcutt/${imageRepoName}`}@${sel.digest}` : '';
 
   return (
     <section className="space-y-3">
@@ -361,17 +363,17 @@ export default function LayerExplorer({ architectures, imageName, tierId }: Prop
                       </div>
                       <div className="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
                         <span className="break-all leading-normal">
-                          {pullTool === 'crane' && `crane blob ${pullRef}`}
-                          {pullTool === 'docker' && `docker pull ${pullRef}`}
+                          {pullTool === 'crane' && `crane blob ${layerRef}`}
+                          {pullTool === 'docker' && `docker pull ${imageRef}`}
                           {pullTool === 'nix' && `nix store cat-path ${sel.digest}`}
                         </span>
                         <button 
                           type="button" 
                           onClick={() => {
                             const cmd = pullTool === 'crane' 
-                              ? `crane blob ${pullRef}`
+                              ? `crane blob ${layerRef}`
                               : pullTool === 'docker'
-                                ? `docker pull ${pullRef}`
+                                ? `docker pull ${imageRef}`
                                 : `nix store cat-path ${sel.digest}`;
                             handleCopy(cmd);
                           }}

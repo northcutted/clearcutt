@@ -12,7 +12,7 @@
 //   site/src/data/catalog/images/<lang><ver>-<tier>.json
 
 import fs from 'node:fs/promises';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -112,6 +112,86 @@ function normalizeAssertions(assertions) {
     ...assertion,
     name: displayAssertionName(assertion.name || ''),
   }));
+}
+
+function releaseEvidence(entry) {
+  const architectures = entry.architectures || [];
+  const archCount = architectures.length;
+  const sbomArchCount = architectures.filter((a) => (a.sbom?.packageCount || 0) > 0).length;
+  const testArchCount = architectures.filter((a) => !!a.testResults).length;
+  const passedTestArchCount = architectures.filter(
+    (a) => a.testResults?.status === 'passed',
+  ).length;
+  const vulnerabilityArchCount = architectures.filter((a) => !!a.vulnerabilities).length;
+
+  return {
+    signature: !!entry.signature?.cosignBundlePresent,
+    provenance: !!entry.provenance,
+    sbom: archCount > 0 && sbomArchCount === archCount,
+    tests: archCount > 0 && testArchCount === archCount && passedTestArchCount === archCount,
+    vulnerabilities: archCount > 0 && vulnerabilityArchCount === archCount,
+    archCount,
+    sbomArchCount,
+    testArchCount,
+    passedTestArchCount,
+    vulnerabilityArchCount,
+  };
+}
+
+function summarizeImageForIndex(img) {
+  const latestRel = img.releases[0];
+  const arches = latestRel.architectures.map((a) => a.arch);
+  const totalPkgs =
+    latestRel.architectures.reduce((s, a) => s + a.sbom.packageCount, 0) /
+      Math.max(1, latestRel.architectures.length) || 0;
+  const passed =
+    latestRel.architectures.length > 0 &&
+    latestRel.architectures.every((a) => a.testResults?.status === 'passed');
+  let vulnSummary = null;
+  const archsWithVulns = latestRel.architectures.filter((a) => a.vulnerabilities);
+  if (archsWithVulns.length > 0) {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    const remediation = {
+      eligible: 0,
+      baseLayer: 0,
+      noFixedVersion: 0,
+      belowPriorityThreshold: 0,
+      otherDeferred: 0,
+    };
+    let scannedAt = null;
+    for (const a of archsWithVulns) {
+      const c = a.vulnerabilities.countsBySeverity;
+      counts.critical += c.critical || 0;
+      counts.high += c.high || 0;
+      counts.medium += c.medium || 0;
+      counts.low += c.low || 0;
+      for (const finding of a.vulnerabilities.findings || []) {
+        const sev = String(finding.severity || '').toLowerCase();
+        if (sev !== 'critical' && sev !== 'high') continue;
+        remediation[remediationBucket(remediationReason(finding))] += 1;
+      }
+      if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
+        scannedAt = a.vulnerabilities.scannedAt;
+      }
+    }
+    vulnSummary = { ...counts, scannedAt, remediation };
+  }
+
+  return {
+    id: img.id,
+    language: img.language.id,
+    languageDisplay: img.language.displayName,
+    languageVersion: img.language.version,
+    tier: img.tier.id,
+    latestTag: latestRel.tag,
+    latestPackageCount: Math.round(totalPkgs),
+    architectures: arches,
+    signed: !!latestRel.signature?.cosignBundlePresent,
+    provenance: !!latestRel.provenance,
+    evidence: latestRel.evidence ?? releaseEvidence(latestRel),
+    passed,
+    vulnSummary,
+  };
 }
 
 function detectRepo() {
@@ -272,7 +352,8 @@ function rootDigest(spdx) {
 }
 
 function summarizeProvenance(intotoJsonl) {
-  // jsonl: each line is a DSSE envelope { payload (base64), payloadType, signatures }
+  // jsonl: each line is either a DSSE envelope { payload (base64), payloadType, signatures }
+  // or a raw in-toto Statement JSON object.
   const out = {
     predicateType: 'unknown',
     builder: { id: 'unknown' },
@@ -286,23 +367,38 @@ function summarizeProvenance(intotoJsonl) {
   for (const line of lines) {
     let env;
     try { env = JSON.parse(line); } catch { continue; }
-    if (!env.payload) continue;
-    let payloadJson;
-    try {
-      const decoded = Buffer.from(env.payload, 'base64').toString('utf8');
-      payloadJson = JSON.parse(decoded);
-    } catch { continue; }
+    
+    let payloadJson = null;
+    if (env.payload) {
+      // It is a base64 DSSE envelope from Cosign
+      try {
+        const decoded = Buffer.from(env.payload, 'base64').toString('utf8');
+        payloadJson = JSON.parse(decoded);
+      } catch { continue; }
+    } else if (env.predicateType) {
+      // It is a raw in-toto Statement JSON object
+      payloadJson = env;
+    } else {
+      continue;
+    }
+
     out.predicateType = payloadJson.predicateType || out.predicateType;
     const pred = payloadJson.predicate || {};
-    if (pred.builder?.id) out.builder.id = pred.builder.id;
+    
+    // Support both standard SLSA v0.2 and v1.0 builder structure
+    const builderId = pred.builder?.id || pred.runDetails?.builder?.id || 'unknown';
+    out.builder.id = builderId;
+
     if (pred.buildType) out.buildType = pred.buildType;
     if (pred.buildDefinition?.buildType) out.buildType = pred.buildDefinition.buildType;
+    
     const cs = pred.invocation?.configSource || pred.buildDefinition?.externalParameters?.source;
     if (cs?.uri) out.sourceUri = cs.uri;
     if (cs?.digest?.sha1) out.sourceRevision = cs.digest.sha1;
     if (cs?.digest?.gitCommit) out.sourceRevision = cs.digest.gitCommit;
+    
     out.raw = payloadJson;
-    break; // first envelope is enough
+    break; // first envelope/statement is enough
   }
   return out;
 }
@@ -534,7 +630,7 @@ async function buildImageRecord(target, releases, refreshSet) {
     const isLatest = !isLatestSet && !rel.prerelease;
     if (isLatest) isLatestSet = true;
 
-    releaseEntries.push({
+    const releaseEntry = {
       tag: rel.tag,
       publishedAt: rel.publishedAt,
       lastRebuiltAt,
@@ -550,7 +646,9 @@ async function buildImageRecord(target, releases, refreshSet) {
         testResults: Object.fromEntries(testAssets.map((a) => [guessArchFromAsset(a.name), a.url])),
         digest: digestAsset?.url ?? null,
       },
-    });
+    };
+    releaseEntry.evidence = releaseEvidence(releaseEntry);
+    releaseEntries.push(releaseEntry);
   }
 
   if (releaseEntries.length === 0) return null;
@@ -614,7 +712,9 @@ async function main() {
 
   const releases = await listReleases();
   if (releases.length === 0) {
-    console.warn('[gather] No releases found; writing empty catalog.');
+    console.warn('[gather] No releases found; rebuilding from existing image records if available.');
+    if (await rebuildIndexFromExistingImages()) return;
+    console.warn('[gather] No existing image records found; writing empty catalog.');
   }
   const refreshSet = refreshTagSet(releases);
   console.log(`[gather] Found ${releases.length} releases. Refresh: ${[...refreshSet].join(', ') || '(none)'}`);
@@ -678,59 +778,7 @@ async function main() {
       (l) => `${l.id}-${l.version}`,
     ),
     tiers: Object.entries(TIERS).map(([id, t]) => ({ id, ...t })),
-    images: images.map((img) => {
-      const latestRel = img.releases[0];
-      const arches = latestRel.architectures.map((a) => a.arch);
-      const totalPkgs =
-        latestRel.architectures.reduce((s, a) => s + a.sbom.packageCount, 0) /
-          Math.max(1, latestRel.architectures.length) || 0;
-      const passed =
-        latestRel.architectures.every((a) => !a.testResults || a.testResults.status === 'passed');
-      // Roll up vulnerability counts across all architectures for the index pill.
-      let vulnSummary = null;
-      const archsWithVulns = latestRel.architectures.filter((a) => a.vulnerabilities);
-      if (archsWithVulns.length > 0) {
-        const counts = { critical: 0, high: 0, medium: 0, low: 0 };
-        const remediation = {
-          eligible: 0,
-          baseLayer: 0,
-          noFixedVersion: 0,
-          belowPriorityThreshold: 0,
-          otherDeferred: 0,
-        };
-        let scannedAt = null;
-        for (const a of archsWithVulns) {
-          const c = a.vulnerabilities.countsBySeverity;
-          counts.critical += c.critical || 0;
-          counts.high += c.high || 0;
-          counts.medium += c.medium || 0;
-          counts.low += c.low || 0;
-          for (const finding of a.vulnerabilities.findings || []) {
-            const sev = String(finding.severity || '').toLowerCase();
-            if (sev !== 'critical' && sev !== 'high') continue;
-            remediation[remediationBucket(remediationReason(finding))] += 1;
-          }
-          if (!scannedAt || a.vulnerabilities.scannedAt > scannedAt) {
-            scannedAt = a.vulnerabilities.scannedAt;
-          }
-        }
-        vulnSummary = { ...counts, scannedAt, remediation };
-      }
-      return {
-        id: img.id,
-        language: img.language.id,
-        languageDisplay: img.language.displayName,
-        languageVersion: img.language.version,
-        tier: img.tier.id,
-        latestTag: latestRel.tag,
-        latestPackageCount: Math.round(totalPkgs),
-        architectures: arches,
-        signed: latestRel.signature?.cosignBundlePresent ?? !!latestRel.provenance,
-        provenance: !!latestRel.provenance,
-        passed,
-        vulnSummary,
-      };
-    }),
+    images: images.map(summarizeImageForIndex),
   };
 
   await fs.writeFile(path.join(OUT_DIR, 'index.json'), JSON.stringify(index, null, 2));
@@ -741,6 +789,76 @@ function dedupeBy(arr, keyFn) {
   const seen = new Map();
   for (const item of arr) seen.set(keyFn(item), item);
   return Array.from(seen.values());
+}
+
+async function rebuildIndexFromExistingImages() {
+  if (!existsSync(IMG_DIR)) return false;
+  const files = readdirSync(IMG_DIR).filter((f) => f.endsWith('.json')).sort();
+  if (files.length === 0) return false;
+
+  const images = [];
+  for (const file of files) {
+    const imagePath = path.join(IMG_DIR, file);
+    const img = JSON.parse(readFileSync(imagePath, 'utf8'));
+    img.releases = (img.releases || []).map((release) => {
+      let lastRebuiltAt = release.lastRebuiltAt || release.publishedAt;
+      const architectures = (release.architectures || []).map((arch) => {
+        const vuln = loadVulnerabilities(release.tag, img.id, arch.arch);
+        if (!vuln) return arch;
+        if (vuln.scannedAt) lastRebuiltAt = vuln.scannedAt;
+        return { ...arch, vulnerabilities: vuln };
+      });
+      const updated = { ...release, lastRebuiltAt, architectures };
+      updated.evidence = releaseEvidence(updated);
+      return updated;
+    });
+    writeFileSync(imagePath, JSON.stringify(img, null, 2));
+    if (img.releases.length > 0) images.push(img);
+  }
+  if (images.length === 0) return false;
+
+  const releasesByTag = new Map();
+  for (const img of images) {
+    for (const rel of img.releases) {
+      if (!releasesByTag.has(rel.tag)) {
+        releasesByTag.set(rel.tag, {
+          tag: rel.tag,
+          publishedAt: rel.publishedAt,
+          isLatest: false,
+        });
+      }
+    }
+  }
+  const releases = Array.from(releasesByTag.values()).sort(
+    (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+  );
+  const latestTag = images[0].releases[0]?.tag ?? releases[0]?.tag ?? '';
+  for (const release of releases) release.isLatest = release.tag === latestTag;
+
+  const index = {
+    generatedAt: new Date().toISOString(),
+    owner,
+    repo,
+    repoUrl: `https://github.com/${owner}/${repo}`,
+    registryBase: REGISTRY_BASE,
+    latestTag,
+    releases,
+    languages: dedupeBy(
+      Object.values(LANGUAGES).map((l) => ({
+        id: l.id,
+        displayName: l.display,
+        version: l.version,
+        icon: null,
+      })),
+      (l) => `${l.id}-${l.version}`,
+    ),
+    tiers: Object.entries(TIERS).map(([id, t]) => ({ id, ...t })),
+    images: images.map(summarizeImageForIndex),
+  };
+
+  await fs.writeFile(path.join(OUT_DIR, 'index.json'), JSON.stringify(index, null, 2));
+  console.log(`[gather] rebuilt index.json from ${images.length} existing image records.`);
+  return true;
 }
 
 main().catch((err) => {

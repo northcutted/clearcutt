@@ -8,20 +8,19 @@ interface Props {
   release: ReleaseEntry;
   ownerRepo: string;
 }
-const { image, release, ownerRepo } = Astro.props;
+const { image, release } = Astro.props;
 const rolling = `${image.fullName}:${image.tier.id}`;
 const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
 
-// Nix overlay attribute names follow PascalCase + no-dot pattern (see
-// lib/nix-native.nix): clearcuttCore, clearcuttJava21, clearcuttPython313,
-// clearcuttGo125, clearcuttDotnet8, etc.
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const nixAttr =
-  image.language.id === 'core'
-    ? 'clearcuttCore'
-    : `clearcutt${cap(image.language.id)}${image.language.version.replace(/\./g, '')}`;
-
 const dockerRun = `docker run --rm \\
+  --read-only \\
+  --cap-drop=ALL \\
+  --security-opt no-new-privileges \\
+  --user 10001:10001 \\
+  --tmpfs /tmp:mode=1777 \\
+  ${versioned}`;
+
+const podmanRun = `podman run --rm \\
   --read-only \\
   --cap-drop=ALL \\
   --security-opt no-new-privileges \\
@@ -65,8 +64,15 @@ spec:
   volumes:
     - { name: tmp, emptyDir: { medium: Memory } }`;
 
+// Nix overlay attribute names follow PascalCase + no-dot pattern
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const nixAttr =
+  image.language.id === 'core'
+    ? 'clearcuttCore'
+    : `clearcutt${cap(image.language.id)}${image.language.version.replace(/\./g, '')}`;
+
 const nixFlake = `{
-  inputs.clearcutt.url = "github:${ownerRepo}/${release.tag}";
+  inputs.clearcutt.url = "github:${image.registry.replace('ghcr.io/', '')}/${release.tag}";
   outputs = { self, nixpkgs, clearcutt }: {
     devShells.x86_64-linux.default = let
       pkgs = import nixpkgs {
@@ -78,71 +84,85 @@ const nixFlake = `{
     };
   };
 }`;
-
-const kyverno = `apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: verify-${image.imageName}
-spec:
-  validationFailureAction: Enforce
-  webhookTimeoutSeconds: 30
-  rules:
-    - name: verify-cosign-signature
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-      verifyImages:
-        - imageReferences: ["${image.fullName}:*"]
-          attestors:
-            - entries:
-                - keyless:
-                    subject: "${release.signature?.certificate?.subject ?? 'https://github.com/' + ownerRepo + '/.github/workflows/tag-release.yml@refs/tags/' + release.tag}"
-                    issuer: "${release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com'}"`;
 ---
-<Tabs name={`usage-${image.id}`} tabs={[
-  { id: 'docker', label: 'Docker' },
-  { id: 'compose', label: 'Compose' },
-  { id: 'k8s', label: 'Kubernetes' },
-  { id: 'nix', label: 'Nix Flake' },
-  { id: 'kyverno', label: 'Kyverno' },
-]}>
-  <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
+<section class="space-y-4">
+  <header class="flex items-center gap-3">
+    <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
+      1
+    </span>
     <div>
-      <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
-      <CopyBlock language="shell" code={`docker pull ${rolling}`} />
+      <h2 class="heading text-lg">Pull the Image</h2>
+      <p class="text-xs text-ink-300">Select your preferred container runtime or package manager command closure.</p>
     </div>
-    <div>
-      <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
-      <CopyBlock language="shell" code={`docker pull ${versioned}`} />
-    </div>
-    {release.manifestDigest && (
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
-        <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+  </header>
+
+  <div class="surface px-6 py-5">
+    <Tabs name={`usage-${image.id}`} tabs={[
+      { id: 'docker', label: 'Docker' },
+      { id: 'podman', label: 'Podman' },
+      { id: 'compose', label: 'Docker Compose' },
+      { id: 'k8s', label: 'Kubernetes' },
+      { id: 'nix', label: 'Nix Flake' },
+    ]}>
+      <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
+          <CopyBlock language="shell" code={`docker pull ${rolling}`} />
+        </div>
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
+          <CopyBlock language="shell" code={`docker pull ${versioned}`} />
+        </div>
+        {release.manifestDigest && (
+          <div>
+            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
+            <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+          </div>
+        )}
+        {release.architectures.map((arch) => arch.imageDigest && (
+          <div>
+            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
+            <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
+          </div>
+        ))}
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
+          <CopyBlock language="shell" code={dockerRun} />
+        </div>
       </div>
-    )}
-    {release.architectures.map((arch) => arch.imageDigest && (
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
-        <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
+
+      <div data-panel-id="podman" data-panel-active="false" style="display:none" class="space-y-4">
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
+          <CopyBlock language="shell" code={`podman pull ${rolling}`} />
+        </div>
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
+          <CopyBlock language="shell" code={`podman pull ${versioned}`} />
+        </div>
+        {release.manifestDigest && (
+          <div>
+            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
+            <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
+          </div>
+        )}
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened podman run</h3>
+          <CopyBlock language="shell" code={podmanRun} />
+        </div>
       </div>
-    ))}
-    <div>
-      <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
-      <CopyBlock language="shell" code={dockerRun} />
-    </div>
+
+      <div data-panel-id="compose" data-panel-active="false" style="display:none">
+        <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
+      </div>
+
+      <div data-panel-id="k8s" data-panel-active="false" style="display:none">
+        <CopyBlock language="yaml" code={kube} label="pod.yaml" />
+      </div>
+
+      <div data-panel-id="nix" data-panel-active="false" style="display:none">
+        <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
+      </div>
+    </Tabs>
   </div>
-  <div data-panel-id="compose" data-panel-active="false" style="display:none">
-    <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
-  </div>
-  <div data-panel-id="k8s" data-panel-active="false" style="display:none">
-    <CopyBlock language="yaml" code={kube} label="pod.yaml" />
-  </div>
-  <div data-panel-id="nix" data-panel-active="false" style="display:none">
-    <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
-  </div>
-  <div data-panel-id="kyverno" data-panel-active="false" style="display:none">
-    <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
-  </div>
-</Tabs>
+</section>

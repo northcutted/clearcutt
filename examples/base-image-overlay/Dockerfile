@@ -17,7 +17,7 @@
 # Build:
 #   docker build \
 #     --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4 \
-#     --build-arg CLEARCUTT_RUNTIME=ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless \
+#     --build-arg CLEARCUTT_RUNTIME=ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless \
 #     -t my-org/java21-on-ubi:latest \
 #     examples/base-image-overlay
 #
@@ -29,7 +29,7 @@ ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4
 
 # The ClearCutt runtime whose /nix/store closure we want to graft on top.
 # Any tier works; distroless gives the smallest, most hardened closure.
-ARG CLEARCUTT_RUNTIME=ghcr.io/eddie-northcutt/clearcutt-images/clearcutt-java21:distroless
+ARG CLEARCUTT_RUNTIME=ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless
 
 # ---- Stage 1: pull the ClearCutt runtime image so we can copy its store -----
 FROM ${CLEARCUTT_RUNTIME} AS clearcutt

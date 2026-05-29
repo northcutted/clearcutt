@@ -74,7 +74,7 @@ main() {
 
   # 5. Build and Load local Java template image
   log_info "Compiling local Java template OCI target..."
-  local build_tag="ghcr.io/eddie-northcutt/clearcutt-template-java:latest"
+  local build_tag="ghcr.io/northcutted/clearcutt/clearcutt-template-java:latest"
   
   if [ -d "examples/clearcutt-template-java" ]; then
     docker build -t "$build_tag" examples/clearcutt-template-java

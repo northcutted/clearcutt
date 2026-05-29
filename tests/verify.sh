@@ -533,10 +533,31 @@ test_cve_remediation_gates() {
 
   # G4 Smoke Test Verification: Functional execution test
   log_info "Verifying G4: Language-specific Functional Smoke Testing..."
-  if ! ./scripts/run-smoke-tests.sh core LTS slim "$build_tar"; then
-    log_fail "G4 Gate Failed: Language runtime failed to execute functional checks."
-  fi
-  log_pass "G4 Gate: Functional smoke testing passed cleanly."
+  local smoke_targets=(
+    "core LTS slim coreLTS-slim"
+    "java 21 slim java21-slim"
+    "python 3.13 slim python3.13-slim"
+    "rust 1.95 slim rust1.95-slim"
+    "cc 15 distroless cc15-distroless"
+  )
+
+  for spec in "${smoke_targets[@]}"; do
+    local smoke_lang smoke_ver smoke_tier smoke_target smoke_tar smoke_link
+    IFS=' ' read -r smoke_lang smoke_ver smoke_tier smoke_target <<< "$spec"
+    smoke_tar="build-outputs/${smoke_target}.tar.gz"
+    if [ ! -f "$smoke_tar" ]; then
+      smoke_link="build-outputs/${smoke_target}-link"
+      if ! nix build ".#${smoke_target}" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
+        log_fail "G4 Gate Failed: unable to build ${smoke_target} for smoke testing."
+      fi
+      cp -L "$smoke_link" "$smoke_tar"
+      rm -f "$smoke_link"
+    fi
+    if ! ./scripts/run-smoke-tests.sh "$smoke_lang" "$smoke_ver" "$smoke_tier" "$smoke_tar"; then
+      log_fail "G4 Gate Failed: ${smoke_target} failed functional checks."
+    fi
+  done
+  log_pass "G4 Gate: Representative functional smoke testing passed cleanly."
 }
 
 # Run all verification tests

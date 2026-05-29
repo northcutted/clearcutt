@@ -21,7 +21,7 @@ spec:
       containers:
         - name: application-container
           # Point to your secure registry target image (e.g. Java 21 Distroless)
-          image: ghcr.io/eddie-northcutt/clearcutt-java21:distroless
+          image: ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless
           imagePullPolicy: IfNotPresent
           
           ports:

@@ -121,6 +121,39 @@ function downloadAttestations(ref) {
   return out;
 }
 
+function verifySignature(ref) {
+  if (!COSIGN_AVAILABLE) return null;
+  const identity = `^https://github\\.com/${owner}/${repo}/\\.github/workflows/release\\.yml@refs/heads/.+$`;
+  const res = spawnSync('cosign', [
+    'verify',
+    ref,
+    '--certificate-identity-regexp',
+    identity,
+    '--certificate-oidc-issuer',
+    'https://token.actions.githubusercontent.com',
+    '--output',
+    'json',
+  ], {
+    encoding: 'utf8',
+    maxBuffer: 128 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (res.status !== 0 || !res.stdout) return null;
+  let parsed;
+  try { parsed = JSON.parse(res.stdout); } catch { return null; }
+  const first = Array.isArray(parsed) ? parsed[0] : parsed;
+  const optional = first?.optional || {};
+  return {
+    cosignBundlePresent: true,
+    rekorLogIndex: optional.Bundle?.Payload?.logIndex ?? optional.Bundle?.payload?.logIndex ?? null,
+    certificate: {
+      subject: optional.Subject || null,
+      issuer: optional.Issuer || 'https://token.actions.githubusercontent.com',
+      runInvocation: null,
+    },
+  };
+}
+
 // Extract the workflow-identity SAN URI from a Sigstore cosign cert. The OIDC
 // SAN is encoded as `URI:https://github.com/<owner>/<repo>/.github/workflows/...@<ref>`
 // inside the cert's subjectAltName extension.
@@ -236,6 +269,9 @@ function enrichOne(tag, target) {
   const refsToProbe = [versionedRef, rollingRef];
   const allAttestations = [];
   for (const ref of refsToProbe) {
+    if (!result.signature) {
+      result.signature = verifySignature(ref);
+    }
     for (const a of downloadAttestations(ref)) {
       const key = `${a.predicateType}|${a.payload.subject?.[0]?.digest?.sha256 ?? ''}|${a.payload.predicate?.Timestamp ?? a.payload.predicate?.createdOn ?? ''}`;
       if (seen.has(key)) continue;
@@ -245,20 +281,6 @@ function enrichOne(tag, target) {
   }
 
   if (allAttestations.length > 0) {
-    // Pick the first cosign-sign attestation for the signature cert SAN.
-    const sigEnv = allAttestations.find((a) =>
-      a.predicateType?.includes('sigstore.dev/cosign/sign'),
-    ) ?? allAttestations[0];
-    result.signature = {
-      cosignBundlePresent: true,
-      rekorLogIndex: null,
-      certificate: {
-        subject: certSubjectUri(sigEnv.cert),
-        issuer: certIssuer(sigEnv.cert),
-        runInvocation: null,
-      },
-    };
-
     // Pick the first SLSA-provenance envelope if present.
     const provEnv = allAttestations.find((a) =>
       a.predicateType?.includes('slsa.dev/provenance'),
