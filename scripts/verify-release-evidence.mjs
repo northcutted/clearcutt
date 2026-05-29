@@ -10,9 +10,6 @@ const ref = required('ref');
 const expectedDigest = args.digest || null;
 const githubRepo = required('repo');
 const workflowIdentity = required('workflow-identity');
-const slsaGeneratorIdentityRegex =
-  args['slsa-generator-identity-regex'] ||
-  '^https://github\\.com/slsa-framework/slsa-github-generator/\\.github/workflows/generator_container_slsa3\\.yml@refs/tags/v.*$';
 const oidcIssuer = args['oidc-issuer'] || 'https://token.actions.githubusercontent.com';
 const sourceRef = args['source-ref'] || 'refs/heads/main';
 const sourceBranch = args['source-branch'] || sourceRef.replace(/^refs\/heads\//, '');
@@ -70,15 +67,6 @@ function cosignIdentityArgs() {
   ];
 }
 
-function cosignIdentityRegexArgs(regex) {
-  return [
-    '--certificate-identity-regexp',
-    regex,
-    '--certificate-oidc-issuer',
-    oidcIssuer,
-  ];
-}
-
 const resolvedDigest = run('resolve image digest', 'crane', ['digest', ref]).trim();
 if (expectedDigest && resolvedDigest !== expectedDigest) {
   console.error(`[evidence] digest mismatch for ${ref}: got ${resolvedDigest}, expected ${expectedDigest}`);
@@ -111,21 +99,9 @@ run('test-results attestation', 'cosign', [
   ...cosignIdentityArgs(),
 ]);
 
-const slsaArgsBase = [
-  'verify-attestation',
-  immutableRef,
-  ...cosignIdentityRegexArgs(slsaGeneratorIdentityRegex),
-];
-const slsaVerified =
-  run('SLSA provenance attestation v1', 'cosign', [...slsaArgsBase, '--type', 'slsaprovenance1'], { allowFailure: true }) ??
-  run('SLSA provenance attestation v0.2', 'cosign', [...slsaArgsBase, '--type', 'slsaprovenance02'], { allowFailure: true }) ??
-  run('SLSA provenance attestation', 'cosign', [...slsaArgsBase, '--type', 'slsaprovenance'], { allowFailure: true });
-
-if (!slsaVerified) {
-  console.error('[evidence] failed: SLSA provenance attestation');
-  process.exit(1);
-}
-
+// The SLSA generator publishes provenance that is validated end-to-end by
+// slsa-verifier. Keep cosign checks focused on ClearCutt's own release
+// signature, SBOM, and test-results attestations above.
 run('slsa-verifier provenance check', 'slsa-verifier', [
   'verify-image',
   immutableRef,
