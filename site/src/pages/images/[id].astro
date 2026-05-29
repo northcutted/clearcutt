@@ -5,11 +5,11 @@ import UsageTabs from '../../components/UsageTabs.astro';
 import VerifyBlock from '../../components/VerifyBlock.astro';
 import SbomSection from '../../components/SbomSection.astro';
 import VulnerabilityTable from '../../components/VulnerabilityTable.tsx';
-import TestResults from '../../components/TestResults.astro';
 import OciLabels from '../../components/OciLabels.astro';
 import LayerExplorer from '../../components/LayerExplorer.tsx';
 import ProvenanceBlock from '../../components/ProvenanceBlock.astro';
 import VersionHistory from '../../components/VersionHistory.astro';
+import Tabs from '../../components/Tabs.astro';
 import { listImageIds, loadImage, loadIndex } from '../../lib/catalog';
 
 export async function getStaticPaths() {
@@ -30,27 +30,29 @@ const sbomUrls = release.assetUrls.sbom || {};
     {/* Step 1: Pull */}
     <UsageTabs image={image} release={release} ownerRepo={ownerRepo} />
 
-    {/* Step 2: Verify */}
-    <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
-
-    {/* Step 3: Secure */}
+    {/* Step 2: Verify & Audit Compliance */}
     <section class="space-y-4">
-      <header class="flex items-center gap-3">
-        <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
-          3
+      <header class="flex items-center gap-4">
+        <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent-soft border border-accent/40 font-mono text-base font-bold shadow-sm shadow-accent/10 select-none">
+          2
         </span>
         <div>
-          <h2 class="heading text-lg">Secure &amp; Audit Compliance</h2>
-          <p class="text-xs text-ink-300">Inspect vulnerability reports, cryptographically signed metadata, and compilation gates.</p>
+          <h2 class="heading text-xl sm:text-2xl font-bold">Verify &amp; Audit Compliance</h2>
+          <p class="text-xs sm:text-sm text-ink-300">Inspect supply chain provenance, run local cryptographic OIDC audits, and review vulnerability gates.</p>
         </div>
       </header>
 
       <div class="space-y-10">
         <div>
-          <TestResults architectures={release.architectures} rawTestResultsUrls={release.assetUrls.testResults} />
+          <ProvenanceBlock
+            release={release}
+            ownerRepo={ownerRepo}
+            architectures={release.architectures}
+            rawTestResultsUrls={release.assetUrls.testResults}
+          />
         </div>
         <div class="border-t border-ink-800/60 pt-10">
-          <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
+          <VerifyBlock image={image} release={release} ownerRepo={ownerRepo} />
         </div>
         <div class="border-t border-ink-800/60 pt-10">
           <VulnerabilityTable
@@ -65,15 +67,15 @@ const sbomUrls = release.assetUrls.sbom || {};
       </div>
     </section>
 
-    {/* Step 4: Details */}
+    {/* Step 3: Deep-Dive & OCI Specifications */}
     <section class="space-y-4">
-      <header class="flex items-center gap-3">
-        <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
-          4
+      <header class="flex items-center gap-4">
+        <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent-soft border border-accent/40 font-mono text-base font-bold shadow-sm shadow-accent/10 select-none">
+          3
         </span>
         <div>
-          <h2 class="heading text-lg">Deep-Dive &amp; OCI Specifications</h2>
-          <p class="text-xs text-ink-300">Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.</p>
+          <h2 class="heading text-xl sm:text-2xl font-bold">Deep-Dive &amp; OCI Specifications</h2>
+          <p class="text-xs sm:text-sm text-ink-300">Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.</p>
         </div>
       </header>
 
@@ -95,10 +97,24 @@ const sbomUrls = release.assetUrls.sbom || {};
           />
         </div>
         <div class="border-t border-ink-800/60 pt-10">
-          <OciLabels architectures={release.architectures} />
-        </div>
-        <div class="border-t border-ink-800/60 pt-10">
-          <VersionHistory image={image} currentTag={release.tag} />
+          <div class="space-y-4">
+            <div>
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">Image Specifications &amp; Release Ledger</h3>
+              <p class="text-xs text-ink-400">Inspect the static OCI container metadata labels and browse the immutable published release history for this image.</p>
+            </div>
+            
+            <Tabs name={`metadata-${image.id}`} tabs={[
+              { id: 'labels', label: 'OCI Labels' },
+              { id: 'versions', label: 'Version History' }
+            ]}>
+              <div data-panel-id="labels" data-panel-active="true">
+                <OciLabels architectures={release.architectures} />
+              </div>
+              <div data-panel-id="versions" data-panel-active="false">
+                <VersionHistory image={image} currentTag={release.tag} />
+              </div>
+            </Tabs>
+          </div>
         </div>
       </div>
     </section>

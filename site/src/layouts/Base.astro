@@ -53,10 +53,9 @@ const url = base;
         <html> before paint when the user has an explicit preference. */}
     <meta name="theme-color" content="#eff1f5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1e1e2e" media="(prefers-color-scheme: dark)" />
-    <link rel="preconnect" href="https://rsms.me/" />
-    <link rel="preconnect" href="https://fonts.bunny.net" />
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
-    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=space-grotesk:500,600,700" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet" />
   </head>
   <body class="font-sans">
     <header class="sticky top-0 z-30 border-b border-ink-800/80 bg-ink-950/85 backdrop-blur">
@@ -74,10 +73,9 @@ const url = base;
             <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Hardened Fleet Catalog</div>
           </div>
         </a>
-        <nav class="flex items-center gap-6 text-sm">
-          <a href={url} class="text-ink-200 hover:text-ink-50">Catalog</a>
-          <a href={`${base}verification`} class="text-ink-200 hover:text-ink-50">Verify</a>
-          <a href={`${base}about`} class="text-ink-200 hover:text-ink-50">About</a>
+        <nav class="flex items-center gap-6 text-sm font-sans font-medium">
+          <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
+          <a href={`${base}about`} class="text-ink-200 hover:text-ink-50 transition">About &amp; Audit</a>
           {index && (
             <a
               href={index.repoUrl}

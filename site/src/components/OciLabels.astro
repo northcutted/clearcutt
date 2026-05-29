@@ -7,8 +7,7 @@ const primary = architectures.find((a) => a.arch === 'amd64') ?? architectures[0
 const labels = primary?.labels ?? {};
 const entries = Object.entries(labels);
 ---
-<section class="space-y-3">
-  <h2 class="heading text-lg">OCI labels</h2>
+<div class="space-y-3">
   {entries.length === 0 ? (
     <p class="text-sm text-ink-300">
       This image declares no <code class="font-mono text-ink-100">org.opencontainers.image.*</code>
@@ -31,4 +30,4 @@ const entries = Object.entries(labels);
       </table>
     </div>
   )}
-</section>
+</div>

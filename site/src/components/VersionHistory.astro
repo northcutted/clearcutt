@@ -8,8 +8,7 @@ const { image, currentTag } = Astro.props;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const latestTag = image.releases[0]?.tag;
 ---
-<section class="space-y-3">
-  <h2 class="heading text-lg">Version history</h2>
+<div class="space-y-3">
   <div class="surface-soft overflow-hidden">
     <table class="table-clean">
       <thead>
@@ -51,4 +50,4 @@ const latestTag = image.releases[0]?.tag;
       </tbody>
     </table>
   </div>
-</section>
+</div>

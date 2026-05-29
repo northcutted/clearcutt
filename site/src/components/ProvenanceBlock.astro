@@ -1,10 +1,12 @@
 ---
-import type { ReleaseEntry } from '../lib/catalog-schema';
+import type { ReleaseEntry, ArchPayload } from '../lib/catalog-schema';
 interface Props {
   release: ReleaseEntry;
   ownerRepo: string;
+  architectures?: ArchPayload[];
+  rawTestResultsUrls?: Record<string, string>;
 }
-const { release, ownerRepo } = Astro.props;
+const { release, ownerRepo, architectures = [], rawTestResultsUrls = {} } = Astro.props;
 const prov = release.provenance;
 const sig = release.signature;
 const attestations = release.attestations || [];
@@ -82,6 +84,13 @@ function parseOidcSubject(subject: string | null | undefined): ParsedSubject | n
     };
   }
   return null;
+}
+
+function attestationSourceFileUrl(subject: string | null | undefined): string | null {
+  const parsed = parseOidcSubject(subject);
+  if (!parsed) return null;
+  const ref = parsed.ref.replace(/^refs\/heads\//, '').replace(/^refs\/tags\//, '');
+  return `https://github.com/${parsed.owner}/${parsed.repo}/blob/${ref}/${parsed.workflow}`;
 }
 
 function shortSha(sha: string | null | undefined): string | null {
@@ -193,7 +202,8 @@ function groupAttestations(atts: typeof attestations): AttGroup[] {
     g.count += 1;
     for (const s of a.sources) if (!g.sources.includes(s)) g.sources.push(s);
     g.links.run ||= a.runUrl;
-    g.links.workflow ||= a.workflowUrl;
+    const fileUrl = attestationSourceFileUrl(a.signerIdentity);
+    g.links.workflow ||= fileUrl || a.workflowUrl;
     g.links.githubApi ||= a.githubApiUrl;
     g.links.asset ||= a.releaseAssetUrl ?? null;
     g.entries.push({ index: a.transparencyLogIndex, url: a.transparencyUrl });
@@ -258,6 +268,23 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
   'slsa-provenance': 'https://slsa.dev/provenance/v1',
   sbom: 'https://spdx.dev/Document/v2.3',
 };
+
+// Gating results mapping
+const merged = new Map<string, { name: string; statuses: Record<string, string> }>();
+function displayAssertionName(name: string): string {
+  if (name === 'Grype Vulnerability Gating') return 'Vulnerability gate';
+  if (name === 'Syft SBOM Generation') return 'SBOM generation';
+  return name;
+}
+for (const a of architectures) {
+  if (!a.testResults) continue;
+  for (const x of a.testResults.assertions) {
+    if (!merged.has(x.name)) merged.set(x.name, { name: displayAssertionName(x.name), statuses: {} });
+    merged.get(x.name)!.statuses[a.arch] = x.status;
+  }
+}
+const gatingRows = Array.from(merged.values());
+const gatingArchs = architectures.map((a) => a.arch);
 ---
 <section class="space-y-4">
   <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink-800/40 pb-2">
@@ -281,8 +308,8 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
     </div>
   ) : (
     <>
-      <div class="grid gap-5 md:grid-cols-2">
-        {/* CARD 1: Cryptographic Signatures (Cosign) */}
+      <div class="grid gap-5 lg:grid-cols-3">
+        {/* CARD 1: Cryptographic Proof (Cosign) */}
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
           <div class="space-y-3">
             <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
@@ -312,7 +339,7 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
                     </div>
                     <div class="flex items-baseline justify-between text-xs py-2">
                       <span class="text-ink-300 font-medium">Signing Workflow</span>
-                      <span class="text-ink-100 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[260px]" title={oidcDetails.workflow}>
+                      <span class="text-ink-100 font-mono text-[11px] truncate max-w-[150px] sm:max-w-[200px]" title={oidcDetails.workflow}>
                         {oidcDetails.workflow.split('/').pop()}
                       </span>
                     </div>
@@ -349,10 +376,17 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
           </div>
 
           {sig?.cosignBundlePresent && sig.certificate?.subject && (
-            <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 break-all leading-normal">
-              <div class="text-[9px] uppercase tracking-wider font-sans font-bold text-ink-400 mb-1 select-none">OIDC Certificate Subject</div>
-              {sig.certificate.subject}
-            </div>
+            <details class="group rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 transition-all duration-200">
+              <summary class="flex items-center justify-between text-[9px] uppercase tracking-wider font-sans font-bold text-ink-400 cursor-pointer list-none select-none hover:text-accent-soft transition-colors focus:outline-none">
+                <span>OIDC Certificate Subject</span>
+                <span class="text-ink-500 group-open:rotate-180 transition-transform duration-200 shrink-0">
+                  <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </summary>
+              <div class="mt-2 pt-2 border-t border-ink-800/40 break-all leading-normal text-ink-300 select-all">
+                {sig.certificate.subject}
+              </div>
+            </details>
           )}
         </div>
 
@@ -391,7 +425,7 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
 
                 <div class="flex items-baseline justify-between text-xs py-2">
                   <span class="text-ink-300 font-medium">Build Type</span>
-                  <span class="text-ink-200 font-mono text-[11px] truncate max-w-[200px] sm:max-w-[240px]">
+                  <span class="text-ink-200 font-mono text-[11px] truncate max-w-[150px] sm:max-w-[200px]">
                     {friendlyBuildType(prov.buildType)}
                   </span>
                 </div>
@@ -428,12 +462,84 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
 
           {prov && (
             <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 flex items-center justify-between select-none">
-              <span class="text-ink-400 font-sans font-semibold">Non-falsifiable attestation gate:</span>
+              <span class="text-ink-400 font-sans font-semibold">Non-falsifiable attestation:</span>
               <span class="text-emerald-400 font-semibold font-mono flex items-center gap-1.5">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]" /> Passed
               </span>
             </div>
           )}
+        </div>
+
+        {/* CARD 3: Supply Chain Gating & Assertions */}
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+          <div class="space-y-3">
+            <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Compilation &amp; Gates</h3>
+              {gatingRows.length > 0 && !gatingRows.some(r => gatingArchs.some(a => r.statuses[a] === 'failed')) ? (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  GATES PASSED
+                </span>
+              ) : (
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger/10 text-danger border border-danger/25">
+                  <span class="w-1.5 h-1.5 rounded-full bg-danger" />
+                  GATE FAILURE
+                </span>
+              )}
+            </header>
+
+            {gatingRows.length === 0 ? (
+              <p class="text-xs text-ink-300 leading-relaxed pt-2">
+                No policy predicates or compile verifications are attached. Gating compiles ensures binaries satisfy policy assertions prior to release.
+              </p>
+            ) : (
+              <div class="divide-y divide-ink-800/30">
+                {gatingRows.map((r) => (
+                  <div class="flex items-center justify-between text-xs py-2.5">
+                    <span class="text-ink-300 font-medium">{r.name}</span>
+                    <div class="flex gap-1.5">
+                      {gatingArchs.map((a) => {
+                        const s = r.statuses[a];
+                        const rawUrl = rawTestResultsUrls[a];
+                        if (!s) return <span class="text-ink-400 font-mono text-[10px]">—</span>;
+                        
+                        const badgeClass = s === 'passed' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20' 
+                          : s === 'failed' 
+                            ? 'bg-danger/10 text-danger border-danger/25 hover:bg-danger/20' 
+                            : 'bg-warn/10 text-warn border-warn/25 hover:bg-warn/20';
+                            
+                        return rawUrl ? (
+                          <a 
+                            href={rawUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            class={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold ${badgeClass} transition cursor-pointer`}
+                            title={`Verify raw ${a} ${r.name} outputs JSON`}
+                          >
+                            {a}:{s} ↗
+                          </a>
+                        ) : (
+                          <span class={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold ${badgeClass}`}>
+                            {a}:{s}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 flex items-center justify-between select-none">
+            <span class="text-ink-400 font-sans font-semibold">Gating timestamp:</span>
+            <span class="text-ink-200 font-mono">
+              {architectures.map((a) => a.testResults?.timestamp).filter(Boolean)[0]
+                ? String(architectures.find((a) => a.testResults?.timestamp)?.testResults?.timestamp).substring(0, 16)
+                : '—'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -453,28 +559,28 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
           </div>
 
           {/* Shared across every statement below — stated once instead of repeated per row. */}
-          <div class="border-b border-ink-800/40 bg-ink-950/30 px-4 py-2.5">
-            <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[10px]">
+          <div class="border-b border-ink-800/30 bg-ink-950/40 px-4 py-3">
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-2.5 text-[10.5px]">
               {attSubjectName && (
-                <span class="inline-flex min-w-0 items-center gap-1.5">
-                  <span class="uppercase tracking-wider text-ink-500">Subject</span>
-                  <span class="truncate font-mono text-ink-100" title={attSubjectName}>{attSubjectName}</span>
+                <span class="inline-flex min-w-0 items-center gap-2 rounded-md bg-ink-900/40 border border-ink-800/60 px-2 py-1">
+                  <span class="uppercase tracking-wider text-ink-400 text-[9px] font-bold font-sans">Subject</span>
+                  <span class="truncate font-mono text-ink-100 font-medium" title={attSubjectName}>{attSubjectName}</span>
                 </span>
               )}
               {attDigests.length === 1 && (
-                <span class="inline-flex items-center gap-1.5">
-                  <span class="uppercase tracking-wider text-ink-500">Digest</span>
-                  <span class="font-mono text-ink-200" title={attDigests[0]}>{shortDigest(attDigests[0])}</span>
-                  <span class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-sans text-[9px] text-ink-300" title="The signed subject is the multi-arch image index, not a single architecture.">
-                    multi-arch index{attArches.length ? ` · ${attArches.join(' + ')}` : ''}
+                <span class="inline-flex items-center gap-2 rounded-md bg-ink-900/40 border border-ink-800/60 px-2 py-1">
+                  <span class="uppercase tracking-wider text-ink-400 text-[9px] font-bold font-sans">Digest</span>
+                  <span class="font-mono text-accent-soft font-semibold" title={attDigests[0]}>{shortDigest(attDigests[0])}</span>
+                  <span class="rounded bg-ink-950/60 px-1.5 py-0.2 text-[8px] font-sans font-bold text-ink-300 uppercase tracking-wider border border-ink-800 leading-none" title="The signed subject is the multi-arch image index, not a single architecture.">
+                    index{attArches.length ? ` · ${attArches.join('+')}` : ''}
                   </span>
                 </span>
               )}
               {attSigners.length === 1 && (
-                <span class="inline-flex min-w-0 items-center gap-1.5">
-                  <span class="uppercase tracking-wider text-ink-500">Signed by</span>
-                  <span class="truncate font-mono text-ink-100" title={attSigners[0]}>{displaySigner(attSigners[0])}</span>
-                  <span class="font-mono text-emerald-400">keyless ✓</span>
+                <span class="inline-flex min-w-0 items-center gap-2 rounded-md bg-ink-900/40 border border-ink-800/60 px-2 py-1">
+                  <span class="uppercase tracking-wider text-ink-400 text-[9px] font-bold font-sans">Signed By</span>
+                  <span class="truncate font-mono text-ink-100 font-medium" title={attSigners[0]}>{displaySigner(attSigners[0])}</span>
+                  <span class="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 leading-none">keyless ✓</span>
                 </span>
               )}
             </div>
@@ -496,6 +602,7 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
             </div>
             <p class="mt-2 text-ink-400">
               The subject above is the <span class="text-ink-300">multi-arch index</span>{attArches.length > 1 ? <> ({attArches.join(' + ')})</> : null}. Each architecture's SBOM is attested separately, in <span class="text-ink-300">both</span> ecosystems — so one SBOM naturally appears as several signed records below.
+              Records also accumulate as the image is rebuilt, with each release re-signing into the transparency log afresh. Every entry is independent and publicly verifiable: click any <span class="font-mono text-accent-soft">#index</span> below to inspect it in <span class="text-ink-200">Sigstore Rekor</span>, or use the copy-paste commands below to verify them locally.
             </p>
           </div>
 
@@ -528,25 +635,25 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
                         data-verify-copy
                         data-cmd={e.cmd}
                         title={e.cmd ? `Click to copy:\n${e.cmd}` : `${e.tool} · ${e.source}`}
-                        class="group/vc inline-flex items-baseline gap-1 rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-ink-200 transition hover:border-accent/50 hover:text-accent-soft focus-visible:border-accent/50 focus:outline-none"
+                        class="group/vc inline-flex items-center gap-1.5 rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-ink-200 transition hover:border-accent/50 hover:text-accent-soft focus-visible:border-accent/50 focus:outline-none"
                       >
-                        {e.tool}<span class="text-ink-500">· {e.source}</span>
-                        <span data-vc-icon aria-hidden="true" class="text-ink-500 transition group-hover/vc:text-accent-soft">⧉</span>
+                        <span>{e.tool}<span class="text-ink-500"> · {e.source}</span></span>
+                        <span data-vc-icon aria-hidden="true" class="text-ink-500 transition group-hover/vc:text-accent-soft inline-flex items-center">
+                          <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                        </span>
                       </button>
                     ))}
                   </div>
 
-                  {(g.links.run || g.links.workflow || g.links.githubApi || g.links.asset) && (
+                  {(g.links.run || g.links.workflow || g.links.asset) && (
                     <>
                       <span class="text-[9px] uppercase tracking-wider text-ink-500" title="Open the source artifacts behind these records.">Inspect</span>
                       <div class="flex flex-wrap items-center gap-1.5">
-                        {g.links.run ? (
+                        {g.links.run && (
                           <a href={g.links.run} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">run ↗</a>
-                        ) : g.links.workflow ? (
-                          <a href={g.links.workflow} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">workflow ↗</a>
-                        ) : null}
-                        {g.links.githubApi && (
-                          <a href={g.links.githubApi} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">GitHub API ↗</a>
+                        )}
+                        {g.links.workflow && (
+                          <a href={g.links.workflow} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">workflow file ↗</a>
                         )}
                         {g.links.asset && (
                           <a href={g.links.asset} class="chip text-[10px] hover:border-accent/40" target="_blank" rel="noreferrer">asset ↗</a>
@@ -559,9 +666,25 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
                     <>
                       <span class="self-start pt-1 text-[9px] uppercase tracking-wider text-ink-500" title="Each record is an independent entry in the Sigstore Rekor public transparency log.">Rekor log</span>
                       <div class="flex flex-wrap items-center gap-1.5">
-                        {g.entries.map((e) => (e.url ? (
+                        {g.entries.slice(0, 3).map((e) => (e.url ? (
                           <a href={e.url} class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-accent-soft hover:border-accent/40 hover:text-accent" target="_blank" rel="noreferrer" title={`Inspect this statement in the public transparency log · index ${e.index}`}>#{e.index} ↗</a>
                         ) : null))}
+                        {g.entries.length > 3 && (
+                          <>
+                            <button
+                              type="button"
+                              data-rekor-expand-btn
+                              class="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 font-mono text-[9px] text-ink-300 hover:border-accent/40 hover:text-accent-soft transition font-semibold"
+                            >
+                              + {g.entries.length - 3} historical logs
+                            </button>
+                            <span data-rekor-expanded-list class="hidden items-center gap-1.5 flex-wrap">
+                              {g.entries.slice(3).map((e) => (e.url ? (
+                                <a href={e.url} class="rounded border border-ink-700 bg-ink-950/60 px-1.5 py-0.5 font-mono text-[9px] text-accent-soft hover:border-accent/40 hover:text-accent" target="_blank" rel="noreferrer" title={`Inspect this statement in the public transparency log · index ${e.index}`}>#{e.index} ↗</a>
+                              ) : null))}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </>
                   )}
@@ -570,13 +693,6 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
             ))}
           </div>
 
-          <div class="border-t border-ink-800/60 bg-ink-950/30 px-4 py-3 text-[11px] leading-relaxed text-ink-400">
-            Records also accumulate as the image is rebuilt — each release re-signs into the log afresh. Every entry is independent and publicly verifiable: click any
-            <span class="font-mono text-accent-soft">#index</span>
-            to inspect it in <span class="text-ink-200">Sigstore Rekor</span>, or see
-            <a href="#verify" class="font-medium text-accent-soft underline decoration-accent/40 hover:text-accent">Verify Cryptographic Identity ↑</a>
-            for copy-paste <span class="font-mono text-ink-300">cosign</span> and <span class="font-mono text-ink-300">gh</span> commands.
-          </div>
         </div>
       )}
     </>
@@ -594,15 +710,27 @@ const GH_PREDICATE_TYPE: Record<string, string> = {
         await navigator.clipboard.writeText(cmd);
         const icon = btn.querySelector<HTMLElement>('[data-vc-icon]');
         if (icon) {
-          const prev = icon.textContent;
-          icon.textContent = '✓';
-          icon.classList.add('text-emerald-400');
+          const prevSvg = icon.innerHTML;
+          icon.innerHTML = `<svg viewBox="0 0 24 24" class="h-3 w-3 text-emerald-400 animate-pulse" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
           window.setTimeout(() => {
-            icon.textContent = prev;
-            icon.classList.remove('text-emerald-400');
+            icon.innerHTML = prevSvg;
           }, 1200);
         }
       } catch { /* clipboard unavailable */ }
+    });
+  });
+
+  // Toggle historical Rekor entries
+  document.querySelectorAll<HTMLButtonElement>('[data-rekor-expand-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const parent = btn.parentElement;
+      if (!parent) return;
+      const list = parent.querySelector<HTMLElement>('[data-rekor-expanded-list]');
+      if (list) {
+        list.classList.remove('hidden');
+        list.classList.add('flex');
+        btn.classList.add('hidden');
+      }
     });
   });
 </script>

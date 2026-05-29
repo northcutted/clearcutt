@@ -1,6 +1,7 @@
 ---
 import Tabs from './Tabs.astro';
 import CopyBlock from './CopyBlock.astro';
+import { getImageMetadata } from '../lib/image-metadata';
 import type { ImageRecord, ReleaseEntry } from '../lib/catalog-schema';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 const { image, release } = Astro.props;
 const rolling = `${image.fullName}:${image.tier.id}`;
 const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
+const metadata = getImageMetadata(image.language.id, image.language.version, image.tier.id, image.fullName, release.tag);
 
 const dockerRun = `docker run --rm \\
   --read-only \\
@@ -86,81 +88,143 @@ const nixFlake = `{
 }`;
 ---
 <section class="space-y-4">
-  <header class="flex items-center gap-3">
-    <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
+  <header class="flex items-center gap-4">
+    <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent-soft border border-accent/40 font-mono text-base font-bold shadow-sm shadow-accent/10 select-none">
       1
     </span>
     <div>
-      <h2 class="heading text-lg">Pull the Image</h2>
-      <p class="text-xs text-ink-300">Select your preferred container runtime or package manager command closure.</p>
+      <h2 class="heading text-xl sm:text-2xl font-bold">About this Image &amp; Usage</h2>
+      <p class="text-xs sm:text-sm text-ink-300">Explore container capabilities, common use cases, and complete integration blueprints.</p>
     </div>
   </header>
 
-  <Tabs name={`usage-${image.id}`} tabs={[
-    { id: 'docker', label: 'Docker' },
-    { id: 'podman', label: 'Podman' },
-    { id: 'compose', label: 'Docker Compose' },
-    { id: 'k8s', label: 'Kubernetes' },
-    { id: 'nix', label: 'Nix Flake' },
-  ]}>
-    <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
-        <CopyBlock language="shell" code={`docker pull ${rolling}`} />
-      </div>
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
-        <CopyBlock language="shell" code={`docker pull ${versioned}`} />
-      </div>
-      {release.manifestDigest && (
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    {/* Left Column: About this Image & Integration Blueprints (Col 1-7) */}
+    <div class="lg:col-span-7 space-y-6 flex flex-col justify-between">
+      {/* Visual Description & Use Cases Card */}
+      <div class="surface border border-ink-800 bg-ink-950/20 backdrop-blur-md rounded-2xl shadow-xl shadow-ink-950/50 p-6 space-y-4 flex-1">
         <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
-          <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+          <h3 class="text-xs uppercase tracking-wider text-accent-soft font-bold mb-2">Capabilities &amp; Guarantees</h3>
+          <p class="text-sm text-ink-200 leading-relaxed">{metadata.description}</p>
         </div>
-      )}
-      {release.architectures.map((arch) => arch.imageDigest && (
+        
+        <div class="border-t border-ink-800/50 pt-4">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-2.5">Common Use Cases</h3>
+          <ul class="space-y-2">
+            {metadata.useCases.map((useCase) => (
+              <li class="flex items-start gap-2.5 text-xs text-ink-200">
+                <svg class="w-4 h-4 shrink-0 text-accent-soft mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.237-.1 2.45-.295 3.636M18.364 18.364A9 9 0 003.364 3.364m15 15A9 9 0 013.364 3.364m0 0a9 9 0 0115 0" />
+                </svg>
+                <span>{useCase}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* Code Blueprints Tabs */}
+      <div class="space-y-3 mt-4">
         <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
-          <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">Developer blueprints</h3>
+          <p class="text-xs text-ink-400">Copy pre-configured code structures to accelerate deployment pipelines.</p>
         </div>
-      ))}
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
-        <CopyBlock language="shell" code={dockerRun} />
+        
+        <Tabs name={`blueprints-${image.id}`} tabs={[
+          { id: 'dockerfile', label: 'Dockerfile' },
+          { id: 'base-overlay', label: 'Base Image Layering' },
+          { id: 'nix-shell', label: 'Nix Shell' },
+          { id: 'nix-layering', label: 'Nix Layering' }
+        ]}>
+          <div data-panel-id="dockerfile" data-panel-active="true">
+            <CopyBlock language="dockerfile" code={metadata.dockerfileExample} label="Dockerfile" />
+          </div>
+          <div data-panel-id="base-overlay" data-panel-active="false" class="space-y-3">
+            <p class="text-xs text-ink-300 leading-relaxed">
+              If your organization mandates a certified base OS (like Red Hat UBI, Amazon Linux, or Ubuntu Pro) for compliance, you can stack ClearCutt's RPATH-bound <code class="font-mono text-accent-soft">/nix/store</code> closure directly on top without modifying base layers or bundled agents.
+            </p>
+            <CopyBlock language="dockerfile" code={metadata.ubiExample} label="Dockerfile.overlay" />
+          </div>
+          <div data-panel-id="nix-shell" data-panel-active="false">
+            <CopyBlock language="nix" code={metadata.nixExample} label="flake.nix" />
+          </div>
+          <div data-panel-id="nix-layering" data-panel-active="false">
+            <CopyBlock language="nix" code={metadata.layeringExample} label="layer.nix" />
+          </div>
+        </Tabs>
       </div>
     </div>
 
-    <div data-panel-id="podman" data-panel-active="false" style="display:none" class="space-y-4">
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
-        <CopyBlock language="shell" code={`podman pull ${rolling}`} />
-      </div>
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
-        <CopyBlock language="shell" code={`podman pull ${versioned}`} />
-      </div>
-      {release.manifestDigest && (
+    {/* Right Column: Pull & Run Workspace (Col 8-12) */}
+    <div class="lg:col-span-5 flex flex-col justify-between">
+      <div class="space-y-3">
         <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
-          <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">Pull &amp; Run Workspace</h3>
+          <p class="text-xs text-ink-400">Select your preferred container engine or deployment platform target.</p>
         </div>
-      )}
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened podman run</h3>
-        <CopyBlock language="shell" code={podmanRun} />
+        
+        <Tabs name={`usage-${image.id}`} tabs={[
+          { id: 'docker', label: 'Docker' },
+          { id: 'podman', label: 'Podman' },
+          { id: 'compose', label: 'Compose' },
+          { id: 'k8s', label: 'Kubernetes' },
+          { id: 'nix', label: 'Nix Flake' },
+        ]}>
+          <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
+              <CopyBlock language="shell" code={`docker pull ${rolling}`} />
+            </div>
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pinned to release</h3>
+              <CopyBlock language="shell" code={`docker pull ${versioned}`} />
+            </div>
+            {release.manifestDigest && (
+              <div>
+                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pull multi-arch manifest by digest</h3>
+                <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+              </div>
+            )}
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Hardened docker run</h3>
+              <CopyBlock language="shell" code={dockerRun} />
+            </div>
+          </div>
+
+          <div data-panel-id="podman" data-panel-active="false" class="space-y-4">
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
+              <CopyBlock language="shell" code={`podman pull ${rolling}`} />
+            </div>
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pinned to release</h3>
+              <CopyBlock language="shell" code={`podman pull ${versioned}`} />
+            </div>
+            {release.manifestDigest && (
+              <div>
+                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pull multi-arch manifest by digest</h3>
+                <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
+              </div>
+            )}
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Hardened podman run</h3>
+              <CopyBlock language="shell" code={podmanRun} />
+            </div>
+          </div>
+
+          <div data-panel-id="compose" data-panel-active="false">
+            <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
+          </div>
+
+          <div data-panel-id="k8s" data-panel-active="false">
+            <CopyBlock language="yaml" code={kube} label="pod.yaml" />
+          </div>
+
+          <div data-panel-id="nix" data-panel-active="false">
+            <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
+          </div>
+        </Tabs>
       </div>
     </div>
-
-    <div data-panel-id="compose" data-panel-active="false" style="display:none">
-      <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
-    </div>
-
-    <div data-panel-id="k8s" data-panel-active="false" style="display:none">
-      <CopyBlock language="yaml" code={kube} label="pod.yaml" />
-    </div>
-
-    <div data-panel-id="nix" data-panel-active="false" style="display:none">
-      <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
-    </div>
-  </Tabs>
+  </div>
 </section>

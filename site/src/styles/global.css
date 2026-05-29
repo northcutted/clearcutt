@@ -142,7 +142,7 @@
     @apply chip border-danger/40 bg-danger/10 text-danger;
   }
   .heading {
-    @apply font-display font-medium tracking-tight text-ink-50;
+    @apply font-heading font-medium uppercase tracking-[0.14em] text-ink-50;
   }
   .copy-block {
     @apply relative overflow-hidden rounded-lg border border-ink-600/60 bg-ink-950/80;

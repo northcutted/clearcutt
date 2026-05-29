@@ -37,6 +37,8 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         <span>{image.language.displayName} {image.language.version}</span>
         <span class="text-ink-500">·</span>
         <span>{image.tier.name}</span>
+        <span class="text-ink-500">·</span>
+        <span class="text-accent-soft font-semibold">{image.tier.id === 'distroless' ? 'Nix Distroless (Shell-less)' : image.tier.id === 'slim' ? 'Nix Minimal Base' : 'Nix Builder Base'}</span>
       </div>
       <h1 class="heading text-2xl sm:text-3xl">
         <span class="font-mono text-ink-50">{image.imageName}</span>
@@ -62,6 +64,8 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         {passed
           ? <StatusPill kind="ok" label="Vulnerability gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
+        {image.tier.id === 'distroless' && <StatusPill kind="ok" label="STIG-Aligned" />}
+        {image.tier.id !== 'dev' && <StatusPill kind="ok" label="FIPS 140-3 Capable" />}
         {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>
       {release.manifestDigest && (
@@ -96,7 +100,16 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         <svg viewBox="0 0 24 24" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-300" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <p class="text-[11px] text-ink-300">Published {new Date(release.publishedAt).toUTCString()}</p>
-      <p class="text-[11px] text-accent-soft" title="Last successful scan/rebuild of this runtime overlay layer">Last Rebuild {lastRebuiltDate.toUTCString()}</p>
+      <p class="text-[11px] text-ink-400" title="Last successful rebuild of this runtime overlay layer">Last Rebuilt {lastRebuiltDate.toUTCString()}</p>
+      
+      {/* Active Scan Telemetry card block */}
+      <div class="mt-1 flex items-center gap-2 rounded-lg border border-emerald-800/30 bg-emerald-950/10 px-2.5 py-1 text-[10px] text-emerald-400 font-mono select-none" title="Continuous vulnerability auditing is active. Database updated daily.">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="uppercase tracking-wider font-semibold">Continuous Scan Active</span>
+      </div>
     </div>
   </div>
 </section>

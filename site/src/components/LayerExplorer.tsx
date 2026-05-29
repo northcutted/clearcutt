@@ -30,6 +30,97 @@ function licenseBreakdownFor(pkgs: any[]): [string, number][] {
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
+type LayerClassification = {
+  type: string;
+  label: string;
+  borderClass: string;
+  bgClass: string;
+  badgeClass: string;
+};
+
+function classifyLayer(layerPkgs: any[]): LayerClassification {
+  if (layerPkgs.length === 0) {
+    return {
+      type: 'metadata',
+      label: '📂 Metadata & Directories',
+      borderClass: 'border-ink-700/30 hover:border-ink-500/50 border-dashed',
+      bgClass: 'bg-ink-950/10 hover:bg-ink-900/20 opacity-70',
+      badgeClass: 'bg-ink-800/40 text-ink-300 border-ink-700/30',
+    };
+  }
+
+  const names = layerPkgs.map((p) => p.name.toLowerCase());
+  
+  // 1. Primary Language Runtimes & Compilers
+  const hasRuntime = names.some(n => 
+    n.includes('python') || n.includes('node') || n.includes('openjdk') || 
+    n.includes('zulu') || n.includes('dotnet') || n === 'go' || 
+    n === 'rustc' || n === 'gcc' || n === 'clang' || n.includes('aspnetcore')
+  );
+  if (hasRuntime) {
+    return {
+      type: 'runtime',
+      label: '⚡ Runtime Engine',
+      borderClass: 'border-accent/40 hover:border-accent/70',
+      bgClass: 'bg-accent/5 hover:bg-accent/8',
+      badgeClass: 'bg-accent/10 text-accent-soft border-accent/25',
+    };
+  }
+
+  // 2. System Diagnostic Utilities & Shells
+  const hasSysTool = names.some(n => 
+    n === 'bash' || n === 'busybox' || n === 'coreutils' || 
+    n === 'shadow' || n === 'tar' || n === 'curl' || n === 'git'
+  );
+  if (hasSysTool) {
+    return {
+      type: 'system_tool',
+      label: '🛠️ System Utils & Shell',
+      borderClass: 'border-warn/30 hover:border-warn/50',
+      bgClass: 'bg-warn/5 hover:bg-warn/8',
+      badgeClass: 'bg-warn/10 text-warn border-warn/25',
+    };
+  }
+
+  // 3. CA Trust Store / Security Certificates
+  const hasSecurity = names.some(n => 
+    n.includes('cacert') || n.includes('ca-certificates') || n.includes('nss')
+  );
+  if (hasSecurity) {
+    return {
+      type: 'security',
+      label: '🛡️ CA Trust Store',
+      borderClass: 'border-accent-glow/40 hover:border-accent-glow/60',
+      bgClass: 'bg-accent-glow/5 hover:bg-accent-glow/8',
+      badgeClass: 'bg-accent-glow/10 text-accent-glow border-accent-glow/25',
+    };
+  }
+
+  // 4. Core Dynamic Libraries
+  const hasLib = names.some(n => 
+    n.includes('glibc') || n.includes('zlib') || n.includes('ssl') || 
+    n.includes('crypto') || n.includes('ncurses') || n.includes('readline')
+  );
+  if (hasLib) {
+    return {
+      type: 'library',
+      label: '📦 Core Libraries',
+      borderClass: 'border-accent-soft/30 hover:border-accent-soft/50',
+      bgClass: 'bg-accent-soft/5 hover:bg-accent-soft/8',
+      badgeClass: 'bg-accent-soft/10 text-accent-soft border-accent-soft/25',
+    };
+  }
+
+  // Default: Closure Dependencies
+  return {
+    type: 'dependency',
+    label: '📦 Overlay Packages',
+    borderClass: 'border-ink-700/50 hover:border-ink-500/60',
+    bgClass: 'bg-ink-900/25 hover:bg-ink-800/40',
+    badgeClass: 'bg-ink-800/80 text-ink-200 border-ink-700/50',
+  };
+}
+
 export default function LayerExplorer({ architectures, fullName, imageName, tierId, imageTag }: Props) {
   const archs = architectures.filter((a) => a.layers && a.layers.length > 0);
   const [arch, setArch] = useState(archs[0]?.arch ?? architectures[0]?.arch ?? 'amd64');
@@ -152,19 +243,16 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                 pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
               );
 
-              // Plate design themes
-              let borderColor = 'border-ink-700/40 hover:border-ink-500/70';
-              let bgColor = 'bg-ink-900/30 hover:bg-ink-800/40';
+               // Plate design themes - color-coded by package classification
+              const cls = classifyLayer(layerPkgs);
+              let borderColor = cls.borderClass;
+              let bgColor = cls.bgClass;
               let glow = '';
 
               if (isSel) {
                 borderColor = 'border-accent';
                 bgColor = 'bg-accent/10';
-                glow = 'shadow-[0_0_12px_rgba(var(--accent),0.2)]';
-              } else if (layerVulns.length > 0) {
-                const hasCriticalOrHigh = layerVulns.some((f: any) => f.severity === 'critical' || f.severity === 'high');
-                borderColor = hasCriticalOrHigh ? 'border-danger/30 hover:border-danger/50' : 'border-warn/30 hover:border-warn/50';
-                bgColor = hasCriticalOrHigh ? 'bg-danger/5 hover:bg-danger/8' : 'bg-warn/5 hover:bg-warn/8';
+                glow = 'shadow-[0_0_12px_rgba(var(--accent),0.18)] shadow-glow';
               }
 
               return (
@@ -174,14 +262,17 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                   onClick={() => setSelected(i)}
                   className={`w-full rounded-xl border p-3.5 text-left transition-all duration-200 cursor-pointer flex flex-col gap-2.5 relative overflow-hidden ${bgColor} ${borderColor} ${glow}`}
                 >
-                  {/* Layer top bar: Index, Size, CVE status */}
+                  {/* Layer top bar: Index, Size, Classification Badge */}
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded bg-ink-950/80 border border-ink-800 ${isSel ? 'text-accent-soft border-accent/30' : 'text-ink-200'}`}>
                         L{i + 1}
                       </span>
                       <span className="text-xs font-semibold text-ink-100">
-                        {i === 0 ? 'Base Layer' : i === layers.length - 1 ? 'Top Application Layer' : `Middle Layer #${i + 1}`}
+                        {i === 0 ? 'Base Layer' : i === layers.length - 1 ? 'Top Layer' : `Layer #${i + 1}`}
+                      </span>
+                      <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${cls.badgeClass} font-semibold shrink-0`}>
+                        {cls.label}
                       </span>
                     </div>
 
@@ -341,10 +432,10 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                     </div>
 
                     {/* Pull layer tab selector & commands */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[11px] uppercase tracking-wider text-ink-300">Pull or Inspect Layer</div>
-                        <div className="flex gap-1.5 text-[9px] font-mono">
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between">
+                        <div class="text-[11px] uppercase tracking-wider text-ink-300">Pull or Inspect Layer</div>
+                        <div class="flex gap-1.5 text-[9px] font-mono">
                           {(['crane', 'docker', 'nix'] as const).map(t => (
                             <button
                               key={t}
@@ -361,8 +452,8 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                           ))}
                         </div>
                       </div>
-                      <div className="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
-                        <span className="break-all leading-normal">
+                      <div class="relative group rounded-md border border-ink-700/60 bg-ink-950/80 p-2.5 font-mono text-[10.5px] text-ink-100 select-all min-h-[48px] flex items-center pr-12">
+                        <span class="break-all leading-normal">
                           {pullTool === 'crane' && `crane blob ${layerRef}`}
                           {pullTool === 'docker' && `docker pull ${imageRef}`}
                           {pullTool === 'nix' && `nix store cat-path ${sel.digest}`}
@@ -502,6 +593,17 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                                   {p.nixStorePath}
                                 </div>
                               )}
+                              <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-ink-800/40">
+                                <span className="text-[10px] text-ink-400">Supplier: {p.supplier || 'Nixpkgs'}</span>
+                                <a
+                                  href={`https://search.nixos.org/packages?channel=unstable&query=${p.name}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[9.5px] text-accent-soft hover:text-accent font-semibold flex items-center gap-0.5"
+                                >
+                                  NixOS Search ↗
+                                </a>
+                              </div>
                             </div>
                           ))}
                       </div>

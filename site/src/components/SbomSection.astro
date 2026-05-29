@@ -11,8 +11,8 @@ interface Props {
 const { architectures, rawSbomUrls, language, tier } = Astro.props;
 const createdAt = architectures[0]?.sbom.createdAt;
 ---
-<section class="space-y-3">
-  <header class="space-y-1">
+<section class="space-y-5">
+  <header class="space-y-1 mb-5">
     <h2 class="heading text-lg">Software Bill of Materials</h2>
     <p class="text-sm text-ink-200">
       Every package included in the image's <code class="font-mono text-ink-100">/nix/store</code>

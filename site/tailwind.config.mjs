@@ -41,9 +41,9 @@ export default {
         danger: 'rgb(var(--danger) / <alpha-value>)',
       },
       fontFamily: {
-        display: ['"Space Grotesk"', 'Inter', 'system-ui', 'sans-serif'],
-        sans: ['"Inter Variable"', 'Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        heading: ['"Rubik"', 'system-ui', 'sans-serif'],
+        sans: ['"Assistant"', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       boxShadow: {
         glow: '0 0 0 1px rgb(var(--accent) / 0.18), 0 8px 36px -12px rgb(var(--accent) / 0.32)',

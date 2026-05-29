@@ -66,71 +66,177 @@ spec:
           required: true`;
 ---
 <section id="verify" class="space-y-4 scroll-mt-24">
-  <header class="flex items-center gap-3">
-    <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent-soft border border-accent/35 font-mono text-sm font-bold select-none">
-      2
-    </span>
-    <div>
-      <h2 class="heading text-lg">Verify Cryptographic Identity</h2>
-      <p class="text-xs text-ink-300">Run runtime OIDC signature audits and SLSA Level 3 compliance verifications.</p>
-    </div>
-  </header>
+  <div>
+    <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Active Verification Toolkit</h3>
+    <p class="mt-1 text-xs text-ink-400">Run local cryptographic OIDC audits and generate Kyverno cluster policies to enforce supply chain integrity.</p>
+  </div>
 
   <Tabs name={`verify-${image.id}`} tabs={[
-    { id: 'cosign-sig', label: 'Cosign Signature' },
-    { id: 'cosign-sbom', label: 'Cosign SBOM' },
+    { id: 'cosign', label: 'Cosign' },
     { id: 'slsa', label: 'SLSA Verifier' },
     { id: 'gh-cli', label: 'GitHub CLI' },
     { id: 'kyverno', label: 'Kyverno Policy' },
   ]}>
-    <div data-panel-id="cosign-sig" data-panel-active="true" class="space-y-4">
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Keyless OIDC Signature</h3>
-        <p class="mb-3 text-xs text-ink-200">
+    <div data-panel-id="cosign" data-panel-active="true" class="space-y-6">
+      <div class="space-y-2">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Verify Keyless OIDC Signature</h3>
+        <p class="text-xs text-ink-400">
           Confirm this OCI image was built in your official release workflow and signed via keyless OIDC certificates.
         </p>
         <CopyBlock language="shell" code={cosignVerify} />
       </div>
-    </div>
 
-    <div data-panel-id="cosign-sbom" data-panel-active="false" style="display:none" class="space-y-4">
-      <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Cryptographic SBOM Attestation</h3>
-        <p class="mb-3 text-xs text-ink-200">
-          Extract and cryptographically verify the compiled package bill of materials statement.
+      <div class="space-y-2 border-t border-ink-800/40 pt-5">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">2. Verify Cryptographic SBOM Attestation</h3>
+        <p class="text-xs text-ink-400">
+          Extract and cryptographically verify the compiled package software bill of materials statement.
         </p>
         <CopyBlock language="shell" code={cosignAttest} />
       </div>
     </div>
 
-    <div data-panel-id="slsa" data-panel-active="false" style="display:none" class="space-y-4">
+    <div data-panel-id="slsa" data-panel-active="false" class="space-y-4">
       <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">slsa-verifier (SLSA Level 3)</h3>
-        <p class="mb-3 text-xs text-ink-200">
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300 font-bold">slsa-verifier (SLSA Level 3)</h3>
+        <p class="mb-3 text-xs text-ink-400">
           Verify the non-falsifiable SLSA Level 3 build provenance. Assures build source is untouched.
         </p>
         <CopyBlock language="shell" code={slsa} />
       </div>
     </div>
 
-    <div data-panel-id="gh-cli" data-panel-active="false" style="display:none" class="space-y-4">
+    <div data-panel-id="gh-cli" data-panel-active="false" class="space-y-4">
       <div>
-        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">GitHub Native Attestation</h3>
-        <p class="mb-3 text-xs text-ink-200">
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300 font-bold">GitHub Native Attestation</h3>
+        <p class="mb-3 text-xs text-ink-400">
           Audit standard GitHub OCI attestations natively using the GitHub CLI client.
         </p>
         <CopyBlock language="shell" code={ghAttest} />
       </div>
     </div>
 
-    <div data-panel-id="kyverno" data-panel-active="false" style="display:none" class="space-y-4">
-      <div>
+    <div data-panel-id="kyverno" data-panel-active="false" class="space-y-4">
+      <div data-kyverno-panel-root data-subject={subject} data-issuer={issuer} data-image-name={image.imageName} data-image-fullname={image.fullName}>
         <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Admission Control (Kyverno Policy)</h3>
         <p class="mb-3 text-xs text-ink-200">
           Enforce keyless signature and cryptographic SBOM attestation checks in Kubernetes clusters dynamically.
         </p>
-        <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
+
+        <!-- Interactive Policy Settings Card -->
+        <div class="surface-soft p-4 border border-ink-700/40 rounded-xl space-y-4 mb-4">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Admission Action</label>
+              <span class="text-[11px] text-ink-300">Set cluster behavior on signature check failure</span>
+            </div>
+            <div class="flex items-center gap-1 bg-ink-950 rounded-lg p-0.5 border border-ink-700/40 text-xs shrink-0 select-none">
+              <button type="button" data-action-btn="Enforce" data-active="true" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
+                Enforce
+              </button>
+              <button type="button" data-action-btn="Audit" data-active="false" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
+                Audit
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-4 pt-3 border-t border-ink-800/40">
+            <div>
+              <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Require SBOM Verification</label>
+              <span class="text-[11px] text-ink-300">Block pods if they lack a cryptographically signed SPDX SBOM</span>
+            </div>
+            <button type="button" data-sbom-toggle data-active="true" class="w-10 h-6 rounded-full p-1 bg-ink-950 border border-ink-700/40 transition-colors duration-200 relative focus:outline-none data-[active=true]:bg-accent/20 data-[active=true]:border-accent/40 shrink-0">
+              <span class="w-3.5 h-3.5 rounded-full bg-ink-400 block transition-all duration-200 transform data-[active=true]:translate-x-4 data-[active=true]:bg-accent-soft" data-sbom-dot data-active="true" />
+            </button>
+          </div>
+        </div>
+
+        <div data-kyverno-code-block>
+          <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
+        </div>
       </div>
     </div>
   </Tabs>
 </section>
+
+<script is:inline>
+  (function () {
+    const root = document.querySelector('[data-kyverno-panel-root]');
+    if (!root) return;
+
+    const actionBtns = root.querySelectorAll('[data-action-btn]');
+    const sbomToggle = root.querySelector('[data-sbom-toggle]');
+    const sbomDot = root.querySelector('[data-sbom-dot]');
+    const codeContainer = root.querySelector('[data-kyverno-code-block]');
+
+    const subject = root.getAttribute('data-subject');
+    const issuer = root.getAttribute('data-issuer');
+    const imageName = root.getAttribute('data-image-name');
+    const imageFullName = root.getAttribute('data-image-fullname');
+
+    let currentAction = 'Enforce';
+    let requireSbom = true;
+
+    function renderYaml() {
+      const sbomSection = requireSbom 
+        ? `          attestations:
+            - predicateType: "https://spdx.dev/Document"
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "${subject}"
+                        issuer: "${issuer}"`
+        : '';
+
+      const lines = [
+        'apiVersion: kyverno.io/v1',
+        'kind: ClusterPolicy',
+        'metadata:',
+        `  name: verify-${imageName}`,
+        'spec:',
+        `  validationFailureAction: ${currentAction}`,
+        '  webhookTimeoutSeconds: 30',
+        '  rules:',
+        '    - name: verify-cosign-signature',
+        '      match:',
+        '        any:',
+        '          - resources:',
+        '              kinds: [Pod]',
+        '      verifyImages:',
+        `        - imageReferences: ["${imageFullName}:*"]`,
+        '          attestors:',
+        '            - entries:',
+        '                - keyless:',
+        `                    subject: "${subject}"`,
+        `                    issuer: "${issuer}"`,
+        sbomSection,
+        '          mutateDigest: true',
+        '          verifyDigest: true',
+        '          required: true'
+      ].filter(l => l !== '').join('\n');
+
+      // Update inner code element inside CopyBlock
+      const codeElement = codeContainer.querySelector('pre');
+      if (codeElement) {
+        codeElement.innerText = lines;
+      }
+    }
+
+    actionBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.getAttribute('data-action-btn');
+        currentAction = val;
+        actionBtns.forEach(b => {
+          b.setAttribute('data-active', b.getAttribute('data-action-btn') === val ? 'true' : 'false');
+        });
+        renderYaml();
+      });
+    });
+
+    sbomToggle.addEventListener('click', () => {
+      requireSbom = !requireSbom;
+      sbomToggle.setAttribute('data-active', requireSbom ? 'true' : 'false');
+      sbomDot.setAttribute('data-active', requireSbom ? 'true' : 'false');
+      renderYaml();
+    });
+  })();
+</script>
