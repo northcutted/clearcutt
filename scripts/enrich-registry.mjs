@@ -12,7 +12,7 @@
 //
 // Outputs: <ENRICHMENT_DIR>/<tag>/<target>.json (one per image per release).
 
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { X509Certificate } from 'node:crypto';
@@ -43,8 +43,53 @@ function targetAllowed(target) {
 function sh(cmd) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
 }
-function tryJson(cmd) {
-  try { return JSON.parse(sh(cmd)); } catch { return null; }
+
+// Async subprocess runner — never throws, returns { status, stdout, stderr }.
+// Output is collected as Buffers and concatenated to safely handle the large
+// (multi-MB) attestation streams cosign emits.
+function run(cmd, args = [], opts = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+    const out = [];
+    const err = [];
+    child.stdout.on('data', (d) => out.push(d));
+    child.stderr.on('data', (d) => err.push(d));
+    child.on('error', () => resolve({ status: -1, stdout: '', stderr: '' }));
+    child.on('close', (code) =>
+      resolve({
+        status: code ?? -1,
+        stdout: Buffer.concat(out).toString('utf8'),
+        stderr: Buffer.concat(err).toString('utf8'),
+      }),
+    );
+  });
+}
+
+// Async equivalents of sh()/tryJson() so independent targets can be enriched
+// concurrently (the work is network-bound, not CPU-bound). shA rejects on a
+// non-zero exit like execSync; tryJsonA swallows failures and returns null.
+async function shA(cmd) {
+  const r = await run('/bin/sh', ['-c', cmd]);
+  if (r.status !== 0) throw new Error(`command failed (${r.status}): ${cmd}`);
+  return r.stdout;
+}
+async function tryJsonA(cmd) {
+  try { return JSON.parse(await shA(cmd)); } catch { return null; }
+}
+
+// Concurrency-limited worker pool: runs `worker` over `items` with at most
+// `limit` in flight at once. Preserves index order in the returned array.
+async function runPool(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 function detectRepo() {
@@ -91,21 +136,17 @@ async function listReleaseTags() {
 }
 
 function manifestList(ref) {
-  return tryJson(`crane manifest ${ref} 2>/dev/null`);
+  return tryJsonA(`crane manifest ${ref} 2>/dev/null`);
 }
 function imageConfig(ref) {
-  return tryJson(`crane config ${ref} 2>/dev/null`);
+  return tryJsonA(`crane config ${ref} 2>/dev/null`);
 }
 
 // Pull attestations as a stream of sigstore bundles (cosign v2+ default).
 // Returns array of { predicateType, payload, cert } where cert is X509Certificate.
-function downloadAttestations(ref) {
+async function downloadAttestations(ref) {
   if (!COSIGN_AVAILABLE) return [];
-  const res = spawnSync('cosign', ['download', 'attestation', ref], {
-    encoding: 'utf8',
-    maxBuffer: 128 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const res = await run('cosign', ['download', 'attestation', ref]);
   if (res.status !== 0 || !res.stdout) return [];
   const out = [];
   for (const line of res.stdout.split('\n')) {
@@ -130,10 +171,10 @@ function downloadAttestations(ref) {
   return out;
 }
 
-function verifySignature(ref) {
+async function verifySignature(ref) {
   if (!COSIGN_AVAILABLE) return null;
   const identity = `^https://github\\.com/${owner}/${repo}/\\.github/workflows/release\\.yml@refs/heads/.+$`;
-  const res = spawnSync('cosign', [
+  const res = await run('cosign', [
     'verify',
     ref,
     '--certificate-identity-regexp',
@@ -142,11 +183,7 @@ function verifySignature(ref) {
     'https://token.actions.githubusercontent.com',
     '--output',
     'json',
-  ], {
-    encoding: 'utf8',
-    maxBuffer: 128 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  ]);
   if (res.status !== 0 || !res.stdout) return null;
   let parsed;
   try { parsed = JSON.parse(res.stdout); } catch { return null; }
@@ -251,14 +288,14 @@ function extractTestResults(payload) {
   return null;
 }
 
-function enrichOne(tag, target) {
+async function enrichOne(tag, target) {
   const langKey = target.slice(0, target.lastIndexOf('-'));
   const tier = target.slice(target.lastIndexOf('-') + 1);
   const baseImage = `${REGISTRY_BASE}/clearcutt-${langKey.toLowerCase()}`;
   const versionedRef = `${baseImage}:${tag}-${tier}`;
   const rollingRef = `${baseImage}:${tier}`;
 
-  const ml = manifestList(versionedRef) || manifestList(rollingRef);
+  const ml = (await manifestList(versionedRef)) || (await manifestList(rollingRef));
   if (!ml) return null;
 
   const result = {
@@ -270,17 +307,16 @@ function enrichOne(tag, target) {
   };
 
   try {
-    result.manifestDigest = sh(`crane digest ${versionedRef} 2>/dev/null`).trim();
+    result.manifestDigest = (await shA(`crane digest ${versionedRef} 2>/dev/null`)).trim();
   } catch {
-    try { result.manifestDigest = sh(`crane digest ${rollingRef} 2>/dev/null`).trim(); } catch {}
+    try { result.manifestDigest = (await shA(`crane digest ${rollingRef} 2>/dev/null`)).trim(); } catch {}
   }
 
   const manifests = Array.isArray(ml.manifests) ? ml.manifests : [];
   for (const m of manifests) {
     const arch = m.platform?.architecture === 'arm64' ? 'arm64' : 'amd64';
     const archRef = `${baseImage}@${m.digest}`;
-    const cfg = imageConfig(archRef);
-    const mf = manifestList(archRef);
+    const [cfg, mf] = await Promise.all([imageConfig(archRef), manifestList(archRef)]);
     const diffIds = cfg?.rootfs?.diff_ids || cfg?.config?.rootfs?.diff_ids || [];
     const layers = (mf?.layers || []).map((l, idx) => ({
       digest: l.digest,
@@ -310,15 +346,25 @@ function enrichOne(tag, target) {
   const refsToProbe = [versionedRef, rollingRef];
   const allAttestations = [];
   for (const ref of refsToProbe) {
-    if (!result.signature) {
-      result.signature = verifySignature(ref);
-    }
-    for (const a of downloadAttestations(ref)) {
+    // verify (Rekor lookup) + attestation download are the two slow network
+    // calls; run them concurrently for this ref.
+    const [sig, atts] = await Promise.all([
+      result.signature ? Promise.resolve(result.signature) : verifySignature(ref),
+      downloadAttestations(ref),
+    ]);
+    if (!result.signature) result.signature = sig;
+    for (const a of atts) {
       const key = `${a.predicateType}|${a.payload.subject?.[0]?.digest?.sha256 ?? ''}|${a.payload.predicate?.Timestamp ?? a.payload.predicate?.createdOn ?? ''}`;
       if (seen.has(key)) continue;
       seen.add(key);
       allAttestations.push(a);
     }
+    // For the latest release the versioned and rolling tags point to the same
+    // digest, so once the versioned ref yields both a signature and at least
+    // one attestation there's nothing new on the rolling tag — skip the
+    // redundant second cosign verify + download. Older releases that only
+    // resolve via the rolling tag still fall through.
+    if (result.signature && allAttestations.length > 0) break;
   }
 
   const signatureMeta = signatureCertMetadata(allAttestations);
@@ -386,6 +432,10 @@ async function main() {
   let cached = 0;
   let withProvenance = 0;
   let withSig = 0;
+
+  // First pass (synchronous, cheap): account for cached entries and build the
+  // list of (tag, target) pairs that actually need a network refresh.
+  const work = [];
   for (const tag of tags) {
     const dir = path.join(OUT, tag);
     mkdirSync(dir, { recursive: true });
@@ -405,21 +455,32 @@ async function main() {
           } catch { /* ignore */ }
           continue;
         }
-        const data = enrichOne(tag, target);
-        if (!data) continue;
-        writeFileSync(outFile, JSON.stringify(data, null, 2));
-        fetched += 1;
-        if (data.provenance) withProvenance += 1;
-        if (data.signature?.cosignBundlePresent) withSig += 1;
-        console.log(
-          `[enrich] ${tag} ${target}  ` +
-            `sig=${data.signature?.cosignBundlePresent ? 'yes' : 'no'}  ` +
-            `prov=${data.provenance ? 'yes' : 'no'}  ` +
-            `archs=${data.architectures.length}`,
-        );
+        work.push({ tag, target, outFile });
       }
     }
   }
+
+  // Second pass: enrich the refresh targets concurrently. Each target is an
+  // independent set of network round-trips (crane + cosign), so a bounded pool
+  // turns ~N×latency of serial work into ~ceil(N/limit) batches. Override with
+  // ENRICH_CONCURRENCY; 8 is a safe default against GHCR/Rekor rate limits.
+  const concurrency = Math.max(1, parseInt(process.env.ENRICH_CONCURRENCY || '8', 10));
+  console.log(`[enrich] enriching ${work.length} target(s) with concurrency ${concurrency}`);
+  await runPool(work, concurrency, async ({ tag, target, outFile }) => {
+    const data = await enrichOne(tag, target);
+    if (!data) return;
+    writeFileSync(outFile, JSON.stringify(data, null, 2));
+    fetched += 1;
+    if (data.provenance) withProvenance += 1;
+    if (data.signature?.cosignBundlePresent) withSig += 1;
+    console.log(
+      `[enrich] ${tag} ${target}  ` +
+        `sig=${data.signature?.cosignBundlePresent ? 'yes' : 'no'}  ` +
+        `prov=${data.provenance ? 'yes' : 'no'}  ` +
+        `archs=${data.architectures.length}`,
+    );
+  });
+
   console.log(
     `[enrich] done. fetched ${fetched}, reused ${cached} from cache ` +
       `(${withSig} with sig, ${withProvenance} with provenance total).`,
