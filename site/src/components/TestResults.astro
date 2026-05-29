@@ -1,7 +1,10 @@
 ---
 import type { ArchPayload } from '../lib/catalog-schema';
-interface Props { architectures: ArchPayload[] }
-const { architectures } = Astro.props;
+interface Props {
+  architectures: ArchPayload[];
+  rawTestResultsUrls?: Record<string, string>;
+}
+const { architectures, rawTestResultsUrls = {} } = Astro.props;
 const merged = new Map<string, { name: string; statuses: Record<string, string> }>();
 function displayAssertionName(name: string): string {
   if (name === 'Grype Vulnerability Gating') return 'Vulnerability gate';
@@ -44,10 +47,45 @@ const archs = architectures.map((a) => a.arch);
               <td class="font-medium">{r.name}</td>
               {archs.map((a) => {
                 const s = r.statuses[a];
+                const rawUrl = rawTestResultsUrls[a];
                 if (!s) return <td class="text-ink-300">—</td>;
-                if (s === 'passed') return <td><span class="chip-accent text-[11px]">passed</span></td>;
-                if (s === 'failed') return <td><span class="chip-danger text-[11px]">failed</span></td>;
-                return <td><span class="chip-warn text-[11px]">{s}</span></td>;
+                if (s === 'passed') {
+                  return (
+                    <td>
+                      {rawUrl ? (
+                        <a href={rawUrl} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20 transition cursor-pointer" title="Verify raw test outputs JSON">
+                          passed ↗
+                        </a>
+                      ) : (
+                        <span class="chip-accent text-[11px]">passed</span>
+                      )}
+                    </td>
+                  );
+                }
+                if (s === 'failed') {
+                  return (
+                    <td>
+                      {rawUrl ? (
+                        <a href={rawUrl} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger/10 text-danger border border-danger/25 hover:bg-danger/20 transition cursor-pointer" title="Verify raw test outputs JSON">
+                          failed ↗
+                        </a>
+                      ) : (
+                        <span class="chip-danger text-[11px]">failed</span>
+                      )}
+                    </td>
+                  );
+                }
+                return (
+                  <td>
+                    {rawUrl ? (
+                      <a href={rawUrl} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-warn/10 text-warn border border-warn/25 hover:bg-warn/20 transition cursor-pointer" title="Verify raw test outputs JSON">
+                        {s} ↗
+                      </a>
+                    ) : (
+                      <span class="chip-warn text-[11px]">{s}</span>
+                    )}
+                  </td>
+                );
               })}
             </tr>
           ))}

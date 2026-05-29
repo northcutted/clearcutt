@@ -76,63 +76,61 @@ spec:
     </div>
   </header>
 
-  <div class="surface px-6 py-5">
-    <Tabs name={`verify-${image.id}`} tabs={[
-      { id: 'cosign-sig', label: 'Cosign Signature' },
-      { id: 'cosign-sbom', label: 'Cosign SBOM' },
-      { id: 'slsa', label: 'SLSA Verifier' },
-      { id: 'gh-cli', label: 'GitHub CLI' },
-      { id: 'kyverno', label: 'Kyverno Policy' },
-    ]}>
-      <div data-panel-id="cosign-sig" data-panel-active="true" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Keyless OIDC Signature</h3>
-          <p class="mb-3 text-xs text-ink-200">
-            Confirm this OCI image was built in your official release workflow and signed via keyless OIDC certificates.
-          </p>
-          <CopyBlock language="shell" code={cosignVerify} />
-        </div>
+  <Tabs name={`verify-${image.id}`} tabs={[
+    { id: 'cosign-sig', label: 'Cosign Signature' },
+    { id: 'cosign-sbom', label: 'Cosign SBOM' },
+    { id: 'slsa', label: 'SLSA Verifier' },
+    { id: 'gh-cli', label: 'GitHub CLI' },
+    { id: 'kyverno', label: 'Kyverno Policy' },
+  ]}>
+    <div data-panel-id="cosign-sig" data-panel-active="true" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Keyless OIDC Signature</h3>
+        <p class="mb-3 text-xs text-ink-200">
+          Confirm this OCI image was built in your official release workflow and signed via keyless OIDC certificates.
+        </p>
+        <CopyBlock language="shell" code={cosignVerify} />
       </div>
+    </div>
 
-      <div data-panel-id="cosign-sbom" data-panel-active="false" style="display:none" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Cryptographic SBOM Attestation</h3>
-          <p class="mb-3 text-xs text-ink-200">
-            Extract and cryptographically verify the compiled package bill of materials statement.
-          </p>
-          <CopyBlock language="shell" code={cosignAttest} />
-        </div>
+    <div data-panel-id="cosign-sbom" data-panel-active="false" style="display:none" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Verify Cryptographic SBOM Attestation</h3>
+        <p class="mb-3 text-xs text-ink-200">
+          Extract and cryptographically verify the compiled package bill of materials statement.
+        </p>
+        <CopyBlock language="shell" code={cosignAttest} />
       </div>
+    </div>
 
-      <div data-panel-id="slsa" data-panel-active="false" style="display:none" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">slsa-verifier (SLSA Level 3)</h3>
-          <p class="mb-3 text-xs text-ink-200">
-            Verify the non-falsifiable SLSA Level 3 build provenance. Assures build source is untouched.
-          </p>
-          <CopyBlock language="shell" code={slsa} />
-        </div>
+    <div data-panel-id="slsa" data-panel-active="false" style="display:none" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">slsa-verifier (SLSA Level 3)</h3>
+        <p class="mb-3 text-xs text-ink-200">
+          Verify the non-falsifiable SLSA Level 3 build provenance. Assures build source is untouched.
+        </p>
+        <CopyBlock language="shell" code={slsa} />
       </div>
+    </div>
 
-      <div data-panel-id="gh-cli" data-panel-active="false" style="display:none" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">GitHub Native Attestation</h3>
-          <p class="mb-3 text-xs text-ink-200">
-            Audit standard GitHub OCI attestations natively using the GitHub CLI client.
-          </p>
-          <CopyBlock language="shell" code={ghAttest} />
-        </div>
+    <div data-panel-id="gh-cli" data-panel-active="false" style="display:none" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">GitHub Native Attestation</h3>
+        <p class="mb-3 text-xs text-ink-200">
+          Audit standard GitHub OCI attestations natively using the GitHub CLI client.
+        </p>
+        <CopyBlock language="shell" code={ghAttest} />
       </div>
+    </div>
 
-      <div data-panel-id="kyverno" data-panel-active="false" style="display:none" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Admission Control (Kyverno Policy)</h3>
-          <p class="mb-3 text-xs text-ink-200">
-            Enforce keyless signature and cryptographic SBOM attestation checks in Kubernetes clusters dynamically.
-          </p>
-          <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
-        </div>
+    <div data-panel-id="kyverno" data-panel-active="false" style="display:none" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Admission Control (Kyverno Policy)</h3>
+        <p class="mb-3 text-xs text-ink-200">
+          Enforce keyless signature and cryptographic SBOM attestation checks in Kubernetes clusters dynamically.
+        </p>
+        <CopyBlock language="yaml" code={kyverno} label="policy.yaml" />
       </div>
-    </Tabs>
-  </div>
+    </div>
+  </Tabs>
 </section>

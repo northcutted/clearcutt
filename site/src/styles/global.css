@@ -159,10 +159,10 @@
     @apply w-full border-separate border-spacing-0 text-sm;
   }
   .table-clean th {
-    @apply sticky top-0 z-10 border-b border-ink-600 bg-ink-900/95 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-ink-200 backdrop-blur;
+    @apply sticky top-0 z-10 border-b border-ink-600 bg-ink-900/95 px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-ink-200 backdrop-blur;
   }
   .table-clean td {
-    @apply border-b border-ink-700/50 px-3 py-2 align-top text-ink-100;
+    @apply border-b border-ink-700/50 px-5 py-3.5 align-middle text-ink-100;
   }
   .table-clean tr:hover td {
     @apply bg-ink-700/30;

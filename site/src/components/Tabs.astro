@@ -22,9 +22,9 @@ const active = defaultTab ?? tabs[0]?.id;
       </button>
     ))}
   </div>
-  {/* min-h-[28rem] keeps the panel area roughly the height of the largest
-      tab (Kubernetes Pod YAML) so switching tabs doesn't reflow the page. */}
-  <div class="p-4 min-h-[28rem]" data-tabs-panels>
+  {/* min-h-[18rem] keeps the panel area a comfortable height for standard
+      commands and code blocks, without leaving massive empty space. */}
+  <div class="px-6 py-5 min-h-[18rem]" data-tabs-panels>
     <slot />
   </div>
 </div>

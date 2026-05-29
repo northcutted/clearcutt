@@ -46,7 +46,7 @@ const sbomUrls = release.assetUrls.sbom || {};
       </header>
 
       <div class="space-y-8">
-        <TestResults architectures={release.architectures} />
+        <TestResults architectures={release.architectures} rawTestResultsUrls={release.assetUrls.testResults} />
         <ProvenanceBlock release={release} ownerRepo={ownerRepo} />
         <VulnerabilityTable
           architectures={release.architectures}

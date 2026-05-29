@@ -96,73 +96,71 @@ const nixFlake = `{
     </div>
   </header>
 
-  <div class="surface px-6 py-5">
-    <Tabs name={`usage-${image.id}`} tabs={[
-      { id: 'docker', label: 'Docker' },
-      { id: 'podman', label: 'Podman' },
-      { id: 'compose', label: 'Docker Compose' },
-      { id: 'k8s', label: 'Kubernetes' },
-      { id: 'nix', label: 'Nix Flake' },
-    ]}>
-      <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
-          <CopyBlock language="shell" code={`docker pull ${rolling}`} />
-        </div>
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
-          <CopyBlock language="shell" code={`docker pull ${versioned}`} />
-        </div>
-        {release.manifestDigest && (
-          <div>
-            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
-            <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
-          </div>
-        )}
-        {release.architectures.map((arch) => arch.imageDigest && (
-          <div>
-            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
-            <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
-          </div>
-        ))}
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
-          <CopyBlock language="shell" code={dockerRun} />
-        </div>
+  <Tabs name={`usage-${image.id}`} tabs={[
+    { id: 'docker', label: 'Docker' },
+    { id: 'podman', label: 'Podman' },
+    { id: 'compose', label: 'Docker Compose' },
+    { id: 'k8s', label: 'Kubernetes' },
+    { id: 'nix', label: 'Nix Flake' },
+  ]}>
+    <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
+        <CopyBlock language="shell" code={`docker pull ${rolling}`} />
       </div>
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
+        <CopyBlock language="shell" code={`docker pull ${versioned}`} />
+      </div>
+      {release.manifestDigest && (
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
+          <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+        </div>
+      )}
+      {release.architectures.map((arch) => arch.imageDigest && (
+        <div>
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull specific arch ({arch.arch}) by digest</h3>
+          <CopyBlock language="shell" code={`docker pull ${image.fullName}@${arch.imageDigest}`} />
+        </div>
+      ))}
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened docker run</h3>
+        <CopyBlock language="shell" code={dockerRun} />
+      </div>
+    </div>
 
-      <div data-panel-id="podman" data-panel-active="false" style="display:none" class="space-y-4">
+    <div data-panel-id="podman" data-panel-active="false" style="display:none" class="space-y-4">
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
+        <CopyBlock language="shell" code={`podman pull ${rolling}`} />
+      </div>
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
+        <CopyBlock language="shell" code={`podman pull ${versioned}`} />
+      </div>
+      {release.manifestDigest && (
         <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Quick pull (rolling)</h3>
-          <CopyBlock language="shell" code={`podman pull ${rolling}`} />
+          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
+          <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
         </div>
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pinned to release</h3>
-          <CopyBlock language="shell" code={`podman pull ${versioned}`} />
-        </div>
-        {release.manifestDigest && (
-          <div>
-            <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Pull multi-arch manifest by digest</h3>
-            <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
-          </div>
-        )}
-        <div>
-          <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened podman run</h3>
-          <CopyBlock language="shell" code={podmanRun} />
-        </div>
+      )}
+      <div>
+        <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Hardened podman run</h3>
+        <CopyBlock language="shell" code={podmanRun} />
       </div>
+    </div>
 
-      <div data-panel-id="compose" data-panel-active="false" style="display:none">
-        <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
-      </div>
+    <div data-panel-id="compose" data-panel-active="false" style="display:none">
+      <CopyBlock language="yaml" code={compose} label="docker-compose.yml" />
+    </div>
 
-      <div data-panel-id="k8s" data-panel-active="false" style="display:none">
-        <CopyBlock language="yaml" code={kube} label="pod.yaml" />
-      </div>
+    <div data-panel-id="k8s" data-panel-active="false" style="display:none">
+      <CopyBlock language="yaml" code={kube} label="pod.yaml" />
+    </div>
 
-      <div data-panel-id="nix" data-panel-active="false" style="display:none">
-        <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
-      </div>
-    </Tabs>
-  </div>
+    <div data-panel-id="nix" data-panel-active="false" style="display:none">
+      <CopyBlock language="nix" code={nixFlake} label="flake.nix" />
+    </div>
+  </Tabs>
 </section>
