@@ -27,9 +27,18 @@ const LANG_KEYS = [
   'rust1.95', 'cc15',
 ];
 const TIERS = ['dev', 'slim', 'distroless'];
+const TARGET_FILTER = new Set(
+  (process.env.CATALOG_TARGETS || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean),
+);
 
 function have(cmd) {
   try { execSync(`command -v ${cmd}`, { stdio: 'ignore' }); return true; } catch { return false; }
+}
+function targetAllowed(target) {
+  return TARGET_FILTER.size === 0 || TARGET_FILTER.has(target);
 }
 function sh(cmd) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
@@ -175,21 +184,53 @@ function certIssuer(cert) {
   return null;
 }
 
+function releaseWorkflowIdentity(subject) {
+  if (!subject) return false;
+  return subject.includes(`github.com/${owner}/${repo}/.github/workflows/release.yml@`);
+}
+
+function signatureCertMetadata(attestations) {
+  for (const attestation of attestations) {
+    const subject = certSubjectUri(attestation.cert);
+    if (!releaseWorkflowIdentity(subject)) continue;
+    return {
+      subject,
+      issuer: certIssuer(attestation.cert) || 'https://token.actions.githubusercontent.com',
+      runInvocation: attestation.payload?.predicate?.runDetails?.metadata?.invocationId || null,
+    };
+  }
+  return null;
+}
+
+function firstGitDependency(pred) {
+  return (
+    pred.buildDefinition?.resolvedDependencies || pred.materials || []
+  ).find((dep) => typeof dep?.uri === 'string' && dep.uri.includes('github.com'));
+}
+
 function summarizeProvenance(payload) {
   const pred = payload.predicate || {};
+  const buildDefinition = pred.buildDefinition || {};
+  const workflow = buildDefinition.externalParameters?.workflow || {};
+  const configSource = pred.invocation?.configSource || buildDefinition.externalParameters?.source;
+  const gitDependency = firstGitDependency(pred);
   return {
     predicateType: payload.predicateType,
     builder: { id: pred.builder?.id || pred.runDetails?.builder?.id || 'unknown' },
-    buildType: pred.buildType || pred.buildDefinition?.buildType || null,
+    buildType: pred.buildType || buildDefinition.buildType || null,
     sourceUri:
-      pred.invocation?.configSource?.uri ||
-      pred.buildDefinition?.externalParameters?.source?.uri ||
-      pred.buildDefinition?.externalParameters?.sourceUri ||
+      configSource?.uri ||
+      workflow.repository ||
+      buildDefinition.externalParameters?.sourceUri ||
+      gitDependency?.uri ||
       null,
     sourceRevision:
-      pred.invocation?.configSource?.digest?.sha1 ||
-      pred.buildDefinition?.externalParameters?.source?.digest?.sha1 ||
-      pred.materials?.[0]?.digest?.sha1 ||
+      configSource?.digest?.sha1 ||
+      configSource?.digest?.gitCommit ||
+      buildDefinition.externalParameters?.source?.digest?.sha1 ||
+      buildDefinition.externalParameters?.source?.digest?.gitCommit ||
+      gitDependency?.digest?.gitCommit ||
+      gitDependency?.digest?.sha1 ||
       null,
     slsaLevel: payload.predicateType?.includes('slsa.dev/provenance/v1')
       ? 3
@@ -280,6 +321,15 @@ function enrichOne(tag, target) {
     }
   }
 
+  const signatureMeta = signatureCertMetadata(allAttestations);
+  if (result.signature?.cosignBundlePresent && signatureMeta) {
+    result.signature.certificate = {
+      subject: result.signature.certificate?.subject || signatureMeta.subject,
+      issuer: result.signature.certificate?.issuer || signatureMeta.issuer,
+      runInvocation: result.signature.certificate?.runInvocation || signatureMeta.runInvocation,
+    };
+  }
+
   if (allAttestations.length > 0) {
     // Pick the first SLSA-provenance envelope if present.
     const provEnv = allAttestations.find((a) =>
@@ -343,6 +393,7 @@ async function main() {
     for (const langKey of LANG_KEYS) {
       for (const tier of TIERS) {
         const target = `${langKey}-${tier}`;
+        if (!targetAllowed(target)) continue;
         const outFile = path.join(dir, `${target}.json`);
         if (!mustRefresh && existsSync(outFile)) {
           cached += 1;

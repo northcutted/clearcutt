@@ -18,6 +18,7 @@ function friendlyPredicate(type: string): string {
 function friendlyBuildType(type: string | null): string {
   if (!type || type === '—') return '—';
   if (type.includes('actions.github.com/buildTypes/')) return 'GitHub Actions Workflow';
+  if (type.includes('actions.github.io/buildtypes/workflow')) return 'GitHub Actions Workflow';
   return type;
 }
 
@@ -30,6 +31,15 @@ function friendlyBuilder(id: string): { label: string; url: string | null } {
   }
   if (id.includes('attest-build-provenance')) {
     return { label: 'GitHub Provenance Attestor', url: id };
+  }
+  const workflow = parseOidcSubject(id);
+  if (workflow) {
+    const workflowFile = workflow.workflow.split('/').pop() || workflow.workflow;
+    const ref = workflow.ref.replace(/^refs\/heads\//, '').replace(/^refs\/tags\//, '');
+    return {
+      label: `GitHub Actions (${workflowFile}${ref ? ` @ ${ref}` : ''})`,
+      url: `https://github.com/${workflow.owner}/${workflow.repo}/actions/workflows/${workflowFile}`,
+    };
   }
   if (id.startsWith('https://')) {
     try {
@@ -76,6 +86,14 @@ function parseOidcSubject(subject: string | null | undefined): ParsedSubject | n
 function shortSha(sha: string | null | undefined): string | null {
   if (!sha) return null;
   return sha.length > 7 ? sha.substring(0, 7) : sha;
+}
+
+function displaySourceUri(uri: string | null | undefined, fallback: string): string {
+  if (!uri) return fallback;
+  return uri
+    .replace(/^git\+https:\/\//, '')
+    .replace(/^https:\/\//, '')
+    .replace(/@refs\/.*$/, '');
 }
 
 const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject) : null;
@@ -226,7 +244,7 @@ const oidcDetails = sig?.certificate ? parseOidcSubject(sig.certificate.subject)
               <div class="flex items-baseline justify-between text-xs py-2">
                 <span class="text-ink-300 font-medium">Source Material</span>
                 <span class="text-ink-100 font-mono text-[11px]" title={prov.sourceUri || `github.com/${ownerRepo}`}>
-                  {prov.sourceUri ? prov.sourceUri.replace('git+https://', '') : `github.com/${ownerRepo}`}
+                  {displaySourceUri(prov.sourceUri, `github.com/${ownerRepo}`)}
                 </span>
               </div>
 

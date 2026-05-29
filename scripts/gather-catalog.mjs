@@ -54,6 +54,12 @@ const TIERS = {
 
 const args = parseArgs(process.argv.slice(2));
 const LIMIT = Number(args.limit ?? process.env.RELEASE_LIMIT ?? 10);
+const TARGET_FILTER = new Set(
+  (process.env.CATALOG_TARGETS || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean),
+);
 
 function parseArgs(argv) {
   const out = {};
@@ -66,6 +72,10 @@ function parseArgs(argv) {
     }
   }
   return out;
+}
+
+function targetAllowed(target) {
+  return TARGET_FILTER.size === 0 || TARGET_FILTER.has(target);
 }
 
 function sh(cmd) {
@@ -351,10 +361,79 @@ function rootDigest(spdx) {
   return null;
 }
 
+function isUsefulProvenanceSummary(provenance) {
+  if (!provenance) return false;
+  return (
+    provenance.predicateType !== 'unknown' ||
+    provenance.builder?.id !== 'unknown' ||
+    !!provenance.buildType ||
+    !!provenance.sourceUri ||
+    !!provenance.sourceRevision
+  );
+}
+
+function decodeIntotoPayload(env) {
+  const dsse = env.dsseEnvelope || env;
+  if (dsse.payload) {
+    try {
+      const decoded = Buffer.from(dsse.payload, 'base64').toString('utf8');
+      return JSON.parse(decoded);
+    } catch {
+      return null;
+    }
+  }
+  if (env.predicateType) {
+    return env;
+  }
+  return null;
+}
+
+function firstGitDependency(pred) {
+  return (
+    pred.buildDefinition?.resolvedDependencies || pred.materials || []
+  ).find((dep) => typeof dep?.uri === 'string' && dep.uri.includes('github.com'));
+}
+
+function summarizeIntotoStatement(payloadJson) {
+  const out = {
+    predicateType: payloadJson.predicateType || 'unknown',
+    builder: { id: 'unknown' },
+    buildType: null,
+    sourceUri: null,
+    sourceRevision: null,
+    slsaLevel: 3,
+    raw: payloadJson,
+  };
+  const pred = payloadJson.predicate || {};
+  const buildDefinition = pred.buildDefinition || {};
+  const workflow = buildDefinition.externalParameters?.workflow || {};
+  const configSource = pred.invocation?.configSource || buildDefinition.externalParameters?.source;
+  const gitDependency = firstGitDependency(pred);
+
+  out.builder.id = pred.builder?.id || pred.runDetails?.builder?.id || 'unknown';
+  out.buildType = pred.buildType || buildDefinition.buildType || null;
+  out.sourceUri =
+    configSource?.uri ||
+    workflow.repository ||
+    buildDefinition.externalParameters?.sourceUri ||
+    gitDependency?.uri ||
+    null;
+  out.sourceRevision =
+    configSource?.digest?.sha1 ||
+    configSource?.digest?.gitCommit ||
+    buildDefinition.externalParameters?.source?.digest?.sha1 ||
+    buildDefinition.externalParameters?.source?.digest?.gitCommit ||
+    gitDependency?.digest?.gitCommit ||
+    gitDependency?.digest?.sha1 ||
+    null;
+
+  return out;
+}
+
 function summarizeProvenance(intotoJsonl) {
   // jsonl: each line is either a DSSE envelope { payload (base64), payloadType, signatures }
   // or a raw in-toto Statement JSON object.
-  const out = {
+  const fallback = {
     predicateType: 'unknown',
     builder: { id: 'unknown' },
     buildType: null,
@@ -363,44 +442,19 @@ function summarizeProvenance(intotoJsonl) {
     slsaLevel: 3,
     raw: null,
   };
+  let best = null;
   const lines = intotoJsonl.split('\n').filter(Boolean);
   for (const line of lines) {
     let env;
     try { env = JSON.parse(line); } catch { continue; }
-    
-    let payloadJson = null;
-    if (env.payload) {
-      // It is a base64 DSSE envelope from Cosign
-      try {
-        const decoded = Buffer.from(env.payload, 'base64').toString('utf8');
-        payloadJson = JSON.parse(decoded);
-      } catch { continue; }
-    } else if (env.predicateType) {
-      // It is a raw in-toto Statement JSON object
-      payloadJson = env;
-    } else {
-      continue;
-    }
+    const payloadJson = decodeIntotoPayload(env);
+    if (!payloadJson) continue;
 
-    out.predicateType = payloadJson.predicateType || out.predicateType;
-    const pred = payloadJson.predicate || {};
-    
-    // Support both standard SLSA v0.2 and v1.0 builder structure
-    const builderId = pred.builder?.id || pred.runDetails?.builder?.id || 'unknown';
-    out.builder.id = builderId;
-
-    if (pred.buildType) out.buildType = pred.buildType;
-    if (pred.buildDefinition?.buildType) out.buildType = pred.buildDefinition.buildType;
-    
-    const cs = pred.invocation?.configSource || pred.buildDefinition?.externalParameters?.source;
-    if (cs?.uri) out.sourceUri = cs.uri;
-    if (cs?.digest?.sha1) out.sourceRevision = cs.digest.sha1;
-    if (cs?.digest?.gitCommit) out.sourceRevision = cs.digest.gitCommit;
-    
-    out.raw = payloadJson;
-    break; // first envelope/statement is enough
+    const summary = summarizeIntotoStatement(payloadJson);
+    if (summary.predicateType?.includes('slsa.dev/provenance')) return summary;
+    if (!best && isUsefulProvenanceSummary(summary)) best = summary;
   }
-  return out;
+  return best || fallback;
 }
 
 function loadEnrichment(tag, target) {
@@ -581,10 +635,11 @@ async function buildImageRecord(target, releases, refreshSet) {
         v.layers = archEnr.layers ?? v.layers;
         v.labels = archEnr.labels ?? v.labels;
       }
-      // Fall back to enrichment provenance if no release-asset intoto.jsonl
-      // was found. Attestations on the GHCR manifest are the authoritative
-      // source — release assets are a duplicate copy that can fail to upload.
-      if (!provenance && enrich.provenance) {
+      // Fall back to enrichment provenance if the release-asset intoto copy is
+      // absent or too old to parse. Attestations on the GHCR manifest are the
+      // authoritative source — release assets are a duplicate copy that can
+      // fail to upload or change envelope shape across tooling versions.
+      if ((!provenance || !isUsefulProvenanceSummary(provenance)) && enrich.provenance) {
         provenance = {
           predicateType: enrich.provenance.predicateType,
           builder: enrich.provenance.builder,
@@ -724,7 +779,8 @@ async function main() {
   const targets = [];
   for (const langKey of Object.keys(LANGUAGES)) {
     for (const tier of Object.keys(TIERS)) {
-      targets.push(`${langKey}-${tier}`);
+      const target = `${langKey}-${tier}`;
+      if (targetAllowed(target)) targets.push(target);
     }
   }
 
