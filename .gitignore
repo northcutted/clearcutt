@@ -15,4 +15,4 @@ result
 *.tar.gz
 build-outputs/*
 .claude/launch.json
-clearcutt
+/clearcutt
