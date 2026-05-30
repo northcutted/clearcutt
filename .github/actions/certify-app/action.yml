@@ -1,5 +1,5 @@
 name: 'ClearCutt App Certification'
-description: 'Certify a downstream application container image offline against platform security contracts'
+description: 'Certify a downstream application container image against platform security contracts'
 inputs:
   image:
     description: 'The target OCI image reference to certify (e.g. ghcr.io/acme/my-app:latest)'
@@ -14,6 +14,9 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Install Sigstore Cosign
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
     - name: Pull Target Application Image
       shell: bash
       run: |
@@ -35,6 +38,62 @@ runs:
           --base ${{ inputs.base }} \
           --format json > /tmp/certification-report.json
         cat /tmp/certification-report.json
+
+    - name: Registry-Side Attestation & Trust Verification
+      shell: bash
+      run: |
+        # Parse policy requirements cleanly using grep and awk
+        POLICY_FILE="${{ inputs.policy }}"
+        if [ ! -f "$POLICY_FILE" ]; then
+          echo "[clearcutt] Policy file not found at $POLICY_FILE!"
+          exit 1
+        fi
+
+        REQ_SIG=$(grep -E 'requireSignature:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
+        REQ_PROV=$(grep -E 'requireProvenance:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
+        REQ_SBOM=$(grep -E 'requireSbom:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
+
+        echo "[clearcutt] Supply chain policy requirements loaded: requireSignature=$REQ_SIG, requireProvenance=$REQ_PROV, requireSbom=$REQ_SBOM"
+
+        # Run registry-side signature verification if requested by policy
+        if [ "$REQ_SIG" = "true" ]; then
+          echo "[clearcutt] Policy requires cryptographic signature. Verifying registry signatures via cosign..."
+          cosign verify "${{ inputs.image }}" \
+            --certificate-identity-regexp '.*' \
+            --certificate-oidc-issuer-regexp '.*' >/dev/null || {
+              echo "[clearcutt] ✘ FAIL: Registry signature verification failed!"
+              exit 1
+            }
+          echo "[clearcutt] ✔ PASS: Cryptographic signature VERIFIED successfully."
+        fi
+
+        # Run registry-side provenance verification if requested by policy
+        if [ "$REQ_PROV" = "true" ]; then
+          echo "[clearcutt] Policy requires SLSA build provenance. Verifying registry attestations via cosign..."
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-identity-regexp '.*' \
+            --certificate-oidc-issuer-regexp '.*' \
+            "${{ inputs.image }}" >/dev/null || {
+              echo "[clearcutt] ✘ FAIL: SLSA build provenance attestation verification failed!"
+              exit 1
+            }
+          echo "[clearcutt] ✔ PASS: SLSA Build Provenance attestation VERIFIED successfully."
+        fi
+
+        # Run registry-side SBOM verification if requested by policy
+        if [ "$REQ_SBOM" = "true" ]; then
+          echo "[clearcutt] Policy requires SPDX SBOM. Verifying registry attestations via cosign..."
+          cosign verify-attestation \
+            --type spdx \
+            --certificate-identity-regexp '.*' \
+            --certificate-oidc-issuer-regexp '.*' \
+            "${{ inputs.image }}" >/dev/null || {
+              echo "[clearcutt] ✘ FAIL: SPDX SBOM attestation verification failed!"
+              exit 1
+            }
+          echo "[clearcutt] ✔ PASS: SPDX SBOM attestation VERIFIED successfully."
+        fi
 
     - name: Upload Compliance Certification Evidence
       uses: actions/upload-artifact@v4

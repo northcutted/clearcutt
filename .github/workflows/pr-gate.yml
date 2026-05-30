@@ -116,3 +116,37 @@ jobs:
       - name: Execute Gating Suite
         run: |
           nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
+
+  go-ci:
+    name: Go Lint, Build, Test & Drift Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@3041de560034e26024f057b75441119b78b83c82 # v5.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Go Build
+        run: go build -o clearcutt ./cmd/clearcutt
+
+      - name: Go Test
+        run: go test -v ./...
+
+      - name: Run Schema Drift Guard
+        run: |
+          # Verify every catalog JSON compiles strictly against the Go data models
+          # with zero unmapped/unknown fields.
+          for img in java21-distroless java25-distroless python3.13-distroless python3.14-distroless node22-distroless node24-distroless go1.25-distroless go1.26-distroless dotnet8-distroless dotnet10-distroless rust1.95-distroless cc15-distroless coreLTS-distroless; do
+            echo "Checking strict catalog drift for $img..."
+            ./clearcutt inspect "$img" --strict >/dev/null
+          done
+          echo "Drift guard check PASSED!"
+
