@@ -1,0 +1,130 @@
+---
+import Base from '../layouts/Base.astro';
+import CopyBlock from '../components/CopyBlock.astro';
+import Tabs from '../components/Tabs.astro';
+import { loadIndex } from '../lib/catalog';
+
+let index;
+try { index = loadIndex(); } catch { index = null; }
+const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
+const latestTag = index?.latestTag ?? 'v0.6.2';
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
+---
+<Base title="Getting Started Onboarding Guide">
+  <div class="space-y-10">
+    <header class="space-y-2 border-b border-ink-800/40 pb-4">
+      <h1 class="heading text-3xl font-bold">Developer Onboarding Guide</h1>
+      <p class="text-xs sm:text-sm text-ink-300">
+        Start building hardened, supply-chain certified container images using the ClearCutt ecosystem in under 5 minutes.
+      </p>
+    </header>
+
+    <!-- Do I Need Nix Box (Glassmorphic) -->
+    <div class="relative rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/5 to-accent-soft/10 p-6 shadow-xl overflow-hidden">
+      <div class="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent/5 blur-[40px] pointer-events-none" />
+      <div class="relative z-10 space-y-3">
+        <h2 class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">ONBOARDING CLARITY CARD</h2>
+        <div class="heading text-xl sm:text-2xl font-black uppercase text-ink-50 tracking-wide">
+          Do I Need Nix?<br />
+          <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">No Nix Required.</span>
+        </div>
+        <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
+          Application developers do <strong>not</strong> need Nix installed. Pull, run, and verify our pre-built matrices natively using standard OCI container runtimes (<code class="font-mono text-ink-100">docker</code>, <code class="font-mono text-ink-100">podman</code>, or Kubernetes). Nix is strictly optional, reserved only for platform engineers customizing the compiler blueprints.
+        </p>
+      </div>
+    </div>
+
+    <!-- Step 1: Writing Multi-stage OCI configurations -->
+    <section class="space-y-4 max-w-3xl">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 border border-accent/30 text-xs font-bold text-accent-soft font-mono">1</span>
+        <h2 class="heading text-xl text-ink-50">Create a Hardened Multi-Stage Containerfile</h2>
+      </div>
+      <p class="text-sm text-ink-200">
+        ClearCutt images are divided into functional matrix tiers. Developers use the <code>dev</code> tier as their secure compiler environment, then copy dynamic binary objects into the shell-free <code>distroless</code> tier for secure execution:
+      </p>
+
+      <Tabs name="matrix-templates" tabs={[
+        { id: 'java', label: 'Java 25 (Gradle/Maven)' },
+        { id: 'python', label: 'Python 3.14 (Venv)' },
+      ]}>
+        <div data-panel-id="java" data-panel-active="true" class="space-y-3">
+          <p class="text-xs text-ink-300">
+            Hardens JRE execution by removing JShell, package managers, and executing purely within the rootless unprivileged boundary:
+          </p>
+          <CopyBlock language="dockerfile" code={`# 1. Compiler Stage\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java25:dev-latest AS builder\nWORKDIR /app\nCOPY . .\nRUN ./gradlew bootJar --no-daemon\n\n# 2. Execution Stage (hardened distroless runtime)\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java25:distroless-latest\nWORKDIR /app\nCOPY --from=builder /app/build/libs/app.jar app.jar\n\n# Enforces unprivileged execution natively. Execute JRE directly.\nENTRYPOINT ["java", "-jar", "app.jar"]`} />
+        </div>
+        <div data-panel-id="python" data-panel-active="false" class="space-y-3">
+          <p class="text-xs text-ink-300">
+            Uses virtual environment isolation inside the runtime container, discarding developer compilers and header files:
+          </p>
+          <CopyBlock language="dockerfile" code={`# 1. Builder Stage\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-python3.14:dev-latest AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN python -m venv /opt/venv && \\\n    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt\n\n# 2. Runtime Stage (lean diagnostic slim runtime)\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-python3.14:slim-latest\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY . .\nENV PATH="/opt/venv/bin:$PATH"\n\nENTRYPOINT ["python", "main.py"]`} />
+        </div>
+      </Tabs>
+    </section>
+
+    <!-- Step 2: Set Up Local Governance CLI -->
+    <section class="space-y-4 max-w-3xl">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 border border-accent/30 text-xs font-bold text-accent-soft font-mono">2</span>
+        <h2 class="heading text-xl text-ink-50">Set Up the Local Governance CLI</h2>
+      </div>
+      <p class="text-sm text-ink-200">
+        Automate image validation, conformance audits, and supply chain policy checks locally inside your shell.
+      </p>
+
+      <div class="space-y-6">
+        <!-- Install block -->
+        <div class="space-y-2">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Compile and link to PATH</h3>
+          <CopyBlock language="shell" code={`# Clone and build the binary\ngit clone https://github.com/${ownerRepo}.git\ncd clearcutt\ngo build -o clearcutt ./cmd/clearcutt\n\n# Move to PATH for global access\nchmod +x clearcutt\nsudo mv clearcutt /usr/local/bin/clearcutt`} />
+        </div>
+
+        <!-- Verify block -->
+        <div class="space-y-2 border-t border-ink-800/40 pt-5">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">2. Enforce local policies</h3>
+          <p class="text-xs text-ink-400">Validate OIDC signatures and verify that active image vulnerability risks fall below your custom SLA limits:</p>
+          <CopyBlock language="shell" code={`clearcutt verify java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3`} />
+        </div>
+
+        <!-- Certify block -->
+        <div class="space-y-2 border-t border-ink-800/40 pt-5">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">3. Declarative down-stream OCI certification</h3>
+          <p class="text-xs text-ink-400">Before uploading downstream applications, audit them offline to ensure compliance bounds (e.g. no dynamic package managers, no interactive shells):</p>
+          <CopyBlock language="shell" code={`# Save OCI image to archive\ndocker save my-app:latest -o my-app.tar\n\n# Certify completely offline\nclearcutt certify my-app.tar \\\n  --base java25-distroless \\\n  --policy certification-policy.yaml`} />
+        </div>
+      </div>
+    </section>
+
+    <!-- Top 3 Developer Tips -->
+    <section class="space-y-4 max-w-3xl">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 border border-accent/30 text-xs font-bold text-accent-soft font-mono">3</span>
+        <h2 class="heading text-xl text-ink-50">Top 3 Developer Hardening Tips</h2>
+      </div>
+      
+      <div class="grid gap-4 md:grid-cols-3">
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+          <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">1. Direct JSON syntax</h3>
+          <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
+            Because <code>distroless</code> contains no shell, using a standard string execution like <code class="font-mono text-ink-100">CMD "python main.py"</code> will crash instantly. <strong>Always declare arguments as a JSON list</strong>: <code class="font-mono text-ink-100">ENTRYPOINT ["python", "main.py"]</code>.
+          </p>
+        </div>
+
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+          <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">2. Pre-declare libraries</h3>
+          <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
+            You cannot execute runtime commands like <code class="font-mono text-ink-100">apt-get install</code> or <code class="font-mono text-ink-100">pip install</code> inside production environments. Copy all compiled dynamic dependencies out of the <code>dev</code> compilation stage instead.
+          </p>
+        </div>
+
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+          <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">3. Local Audits</h3>
+          <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
+            Run conformance audits offline with <code class="font-mono text-ink-100">clearcutt conformance run --image java25-distroless</code> to verify DNS, CA certificate chains, timezone mappings, and rootless sandboxes before deployment.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+</Base>
