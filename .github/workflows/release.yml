@@ -326,7 +326,7 @@ jobs:
       - name: Compile CLI Matrix
         shell: bash
         run: |
-          mkdir -p build-outputs/cli
+          mkdir -p build-outputs
           VERSION="v${{ needs.check-version.outputs.version }}"
           
           platforms=(
@@ -345,7 +345,7 @@ jobs:
             echo "Compiling $name ($goos/$goarch)..."
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
               -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION" \
-              -o "build-outputs/cli/$name" \
+              -o "build-outputs/$name" \
               ./cmd/clearcutt
           done
 
@@ -357,7 +357,7 @@ jobs:
 
       - name: Keylessly Sign CLI Binaries
         run: |
-          cd build-outputs/cli
+          cd build-outputs
           for file in clearcutt-*; do
             echo "Keylessly signing $file..."
             cosign sign-blob --yes "$file" \
@@ -366,14 +366,16 @@ jobs:
 
       - name: Generate Checksums
         run: |
-          cd build-outputs/cli
+          cd build-outputs
           sha256sum clearcutt-* > SHA256SUMS.txt
 
       - name: Upload CLI Artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-cli-binaries
-          path: build-outputs/cli/*
+          path: |
+            build-outputs/clearcutt-*
+            build-outputs/SHA256SUMS.txt
           retention-days: 7
 
   assemble-multiarch:
