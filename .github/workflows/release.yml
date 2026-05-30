@@ -304,6 +304,74 @@ jobs:
           path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
           retention-days: 7
 
+  build-cli:
+    name: Build & Sign Go CLI Binaries
+    needs: [check-version, release-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@3041de560034e26024f057b75441119b78b83c82 # v5.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Compile CLI Matrix
+        run: |
+          mkdir -p build-outputs/cli
+          VERSION="v${{ needs.check-version.outputs.version }}"
+          
+          platforms=(
+            "darwin/amd64/clearcutt-darwin-amd64"
+            "darwin/arm64/clearcutt-darwin-arm64"
+            "linux/amd64/clearcutt-linux-amd64"
+            "linux/arm64/clearcutt-linux-arm64"
+            "windows/amd64/clearcutt-windows-amd64.exe"
+            "windows/arm64/clearcutt-windows-arm64.exe"
+          )
+          
+          for p in "${platforms[@]}"; do
+            IFS='/' read -r goos goarch name <<< "$p"
+            echo "Compiling $name ($goos/$goarch)..."
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
+              -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION" \
+              -o "build-outputs/cli/$name" \
+              ./cmd/clearcutt
+          done
+
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: 'v3.0.6'
+
+      - name: Keylessly Sign CLI Binaries
+        run: |
+          cd build-outputs/cli
+          for file in clearcutt-*; do
+            echo "Keylessly signing $file..."
+            cosign sign-blob --yes "$file" \
+              --bundle "$file.sig"
+          done
+
+      - name: Generate Checksums
+        run: |
+          cd build-outputs/cli
+          sha256sum clearcutt-* > SHA256SUMS.txt
+
+      - name: Upload CLI Artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-cli-binaries
+          path: build-outputs/cli/*
+          retention-days: 7
+
   assemble-multiarch:
     name: Assemble Multi-Arch Manifest (${{ matrix.language }} - ${{ matrix.tier }})
     needs: [check-version, publish-matrix, release-gate]
@@ -692,7 +760,7 @@ jobs:
 
   finalize-release:
     name: Finalize GitHub Release Assets
-    needs: [check-version, publish-matrix, provenance, verify-release-evidence, export-provenance, release-gate]
+    needs: [check-version, publish-matrix, provenance, verify-release-evidence, export-provenance, release-gate, build-cli]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -726,11 +794,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Gathering SBOMs, test-results, and SLSA Provenance assets for upload..."
+          echo "Gathering SBOMs, test-results, SLSA Provenance, and CLI assets for upload..."
           files=()
           while IFS= read -r -d '' file; do
             files+=("$file")
-          done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" \) -size +0 -print0)
+          done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" -o -name "clearcutt-*" -o -name "*.sig" -o -name "SHA256SUMS.txt" \) -size +0 -print0)
           
           if [ ${#files[@]} -gt 0 ]; then
             echo "Uploading ${#files[@]} certified assets to release: v${{ needs.check-version.outputs.version }}..."
