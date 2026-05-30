@@ -93,35 +93,160 @@ Compile the binary from the root of the repository:
 go build -o clearcutt ./cmd/clearcutt
 ```
 
-### Basic Commands
+### CLI Command Reference
 
-#### 1. List Catalog Images
-List all base images available in the local catalog index, with support for filtering by runtime, matrix tier, production allowed, and lifecycle support:
+The `clearcutt` CLI is divided into zero-daemon, purpose-built subcommands. Below is the complete reference of core commands and their real-world usage patterns:
+
+#### 1. `list` (Catalog Image Discovery)
+List all base images available in the local catalog index, with rich support for filtering by runtime language, matrix tier, and production readiness:
 ```bash
-# List all images in tabular format
+# List all images in clean, tabular format
 ./clearcutt list
 
-# Filter images to those allowed in production running Java
+# Filter images to only those allowed in production running Java
 ./clearcutt list --runtime java --production-only
 
-# Filter images by tier
+# Filter images specifically by tier
 ./clearcutt list --tier distroless
 
-# Output images in standard JSON format
+# Output full images metadata in standard JSON format for pipeline parsing
 ./clearcutt list --format json
 ```
 
-#### 2. Inspect Security Metadata
-Query deep, high-fidelity security metadata, dynamic entrypoints, non-root user settings, architectures, vulnerability counts, exception details, and release asset URLs:
+#### 2. `inspect` (Image Metadata Auditer)
+Query high-fidelity security metadata, dynamic entrypoints, non-root user settings, compiled architectures, vulnerability counts, exception details, and release asset URLs:
 ```bash
-# Inspect the latest release of Java 21 Distroless
-./clearcutt inspect java21-distroless
+# Inspect the latest release of Java 25 Distroless
+./clearcutt inspect java25-distroless
 
-# Inspect a specific version tag
-./clearcutt inspect java21-distroless --tag v0.2.1
+# Inspect a specific release version tag
+./clearcutt inspect java25-distroless --tag v0.6.2
 
 # Inspect and output as structured YAML
-./clearcutt inspect java21-distroless --format yaml
+./clearcutt inspect java25-distroless --format yaml
+```
+
+#### 3. `verify` (Policy Gate Enforcement)
+Enforce software supply chain compliance checks locally or inside CI/CD gates. Validate OIDC signatures, SBOM attestations, SLSA levels, smoke test status, active support lifecycles, and maximum vulnerability counts:
+```bash
+# Enforce strict supply chain gates locally
+./clearcutt verify java25-distroless \
+  --require-signature \
+  --require-sbom \
+  --max-critical 0 \
+  --max-high 3 \
+  --exceptions exceptions.yaml
+```
+
+#### 4. `certify` (Downstream Container Auditor)
+Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absolute absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
+```bash
+# Export the target OCI container archive
+docker save ghcr.io/acme/my-app:latest -o my-app.tar
+
+# Run offline certification compliance audits
+./clearcutt certify my-app.tar \
+  --base java25-distroless \
+  --policy certification-policy.yaml
+```
+
+#### 5. `conformance run` (Offline Spec Verification)
+Runs local assertions against OCI base images or active containers completely offline. Validates timezone configurations, CA certificate link pathways, unprivileged execution permissions, and executes dynamic interpreter assertions:
+```bash
+# Execute standard conformance suite against Java 25 Distroless
+./clearcutt conformance run --image java25-distroless
+```
+
+#### 6. `overlay generate` (Nix Overlay Scaffolder)
+Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCutt secure runtimes directly on top of corporate base OS layers (e.g., Red Hat UBI, Ubuntu Pro, Amazon Linux). Includes Makefile, smoke tests, Containerfile, and GHA workflows:
+```bash
+# Scaffold workspace to graft Java 25 JRE onto RHEL UBI9
+./clearcutt overlay generate \
+  --runtime java25 \
+  --tier distroless \
+  --base registry.access.redhat.com/ubi9/ubi-minimal \
+  --output my-java25-overlay/
+```
+
+#### 7. `exceptions validate` (Exceptions Schema Auditor)
+Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
+```bash
+# Audit exceptions configurations for syntax and expiration
+./clearcutt exceptions validate exceptions.yaml --fail-on-expired
+```
+
+#### 8. `mirror` / `mirror verify` (Secure OCI Layer Replication)
+Generates high-fidelity `skopeo` and `cosign` shell script templates to securely replicate multi-arch base layers into internal registries while preserving Sigstore OIDC signatures, attestations, and OCI referrers. Supports verification of replicated artifacts:
+```bash
+# Generate replication script
+./clearcutt mirror --source ghcr.io/acme/java25 --target my-registry.internal/java25
+
+# Verify referrers and signatures of mirrored OCI elements
+./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
+```
+
+---
+
+### Declarative Governance Schemas
+
+ClearCutt standardizes compliance policies and vulnerability triages using declarative YAML configurations that the CLI validates and parses.
+
+#### 1. Exceptions Schema (`exceptions.yaml`)
+Documents accepted CVE risks, owner mappings, and active expiration dates:
+```yaml
+apiVersion: clearcutt.dev/v1
+kind: Exceptions
+metadata:
+  name: app-triage-exceptions
+spec:
+  exceptions:
+    - id: "CVE-2026-9999"
+      package: "openssl"
+      image: "*"
+      release: "*"
+      status: "accepted_risk"
+      reason: "inherited_from_base"
+      owner: "eddie-northcutt"
+      createdAt: "2026-05-30"
+      expiresAt: "2026-08-30"
+      references:
+        - "https://nvd.nist.gov/vuln/detail/CVE-2026-9999"
+      notes: "Vulnerable functions are completely sealed and unreachable in our distroless runtime closures."
+```
+
+#### 2. Certification Policy Schema (`certification-policy.yaml`)
+Configures downstream OCI compliance gates dynamically:
+```yaml
+apiVersion: clearcutt.dev/v1
+kind: CertificationPolicy
+metadata:
+  name: production-hardening-contract
+spec:
+  base:
+    allowedImages:
+      - "java25-distroless"
+      - "python3.14-slim"
+    requireDigestPinned: true
+    requireKnownBase: true
+  supplyChain:
+    requireSignature: true
+    requireProvenance: true
+    requireSbom: true
+    minimumSlsaLevel: 3
+  runtime:
+    requireNonRoot: true
+    forbidShell: true
+    forbidPackageManagers: true
+    forbidDevTier: true
+  lifecycle:
+    allowPreview: false
+    allowDeprecated: false
+    allowExperimental: false
+  vulnerabilities:
+    maxCritical: 0
+    maxHigh: 3
+    allowExceptions: true
+    exceptionFile: "exceptions.yaml"
 ```
 
 ---

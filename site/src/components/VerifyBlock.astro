@@ -14,6 +14,8 @@ const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifest
 const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
 const issuer = release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com';
 
+const runtimeId = image.language.id === 'c' ? 'cc15' : `${image.language.id}${image.language.version}`;
+
 const clearcuttInspect = `clearcutt inspect ${image.id} --tag ${release.tag}`;
 
 const clearcuttVerify = `clearcutt verify ${image.id} \\
@@ -24,6 +26,16 @@ const clearcuttVerify = `clearcutt verify ${image.id} \\
   --require-provenance \\
   --max-critical 0 \\
   --max-high 5`;
+
+const clearcuttConformance = `clearcutt conformance run \\
+  --image ${image.id} \\
+  --tag ${release.tag}`;
+
+const clearcuttOverlay = `clearcutt overlay generate \\
+  --runtime ${runtimeId} \\
+  --tier ${image.tier.id} \\
+  --base registry.access.redhat.com/ubi9/ubi-minimal \\
+  --output my-${runtimeId}-overlay/`;
 
 const cosignVerify = `cosign verify ${digestRef} \\
   --certificate-identity '${subject}' \\
@@ -63,8 +75,8 @@ spec:
           attestors:
             - entries:
                 - keyless:
-                    subject: "${subject}"
-                    issuer: "${issuer}"
+                     subject: "${subject}"
+                     issuer: "${issuer}"
           attestations:
             - predicateType: "https://spdx.dev/Document"
               attestors:
@@ -104,6 +116,22 @@ spec:
           Enforce signatures, SBOMs, SLSA provenance, smoke tests, vulnerability limits, and lifecycle constraints locally or in CI pipelines.
         </p>
         <CopyBlock language="shell" code={clearcuttVerify} />
+      </div>
+
+      <div class="space-y-2 border-t border-ink-800/40 pt-5">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">3. Runtime Conformance Audit</h3>
+        <p class="text-xs text-ink-400">
+          Verify runtime specifications offline, asserting timezone configurations, dynamic links, CA certificate paths, and rootless isolation boundaries.
+        </p>
+        <CopyBlock language="shell" code={clearcuttConformance} />
+      </div>
+
+      <div class="space-y-2 border-t border-ink-800/40 pt-5">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">4. Scaffold Nix Overlay Graft</h3>
+        <p class="text-xs text-ink-400">
+          Under strict corporate base OS mandates, generate a workspace scaffolding to graft this runtime overlay onto existing host layers.
+        </p>
+        <CopyBlock language="shell" code={clearcuttOverlay} />
       </div>
     </div>
 
