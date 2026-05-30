@@ -318,7 +318,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@3041de560034e26024f057b75441119b78b83c82 # v5.0.0
+        uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
