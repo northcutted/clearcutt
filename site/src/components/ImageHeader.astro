@@ -49,6 +49,9 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
       <div class="flex flex-wrap items-center gap-2">
         <span class="chip">{release.tag}</span>
         {arches.map((a) => <span class="chip">{a}</span>)}
+        <StatusPill kind={release.lifecycle.status === 'active' ? 'ok' : 'warn'} label={`Status: ${release.lifecycle.status}`} />
+        <StatusPill kind="ok" label={`Support: ${release.lifecycle.support.toUpperCase()}`} />
+        <StatusPill kind={release.lifecycle.productionAllowed ? 'ok' : 'warn'} label={release.lifecycle.productionAllowed ? 'Prod Allowed' : 'Non-Prod Only'} />
         {evidence.signature
           ? <StatusPill kind="ok" label="Cosign signed" />
           : <StatusPill kind="warn" label="Signature missing" />}
@@ -82,6 +85,24 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
               <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
             </button>
           </div>
+        </div>
+      )}
+      
+      {/* Visual Warning Banner for non-production/preview/deprecated images */}
+      {['preview', 'deprecated', 'experimental', 'blocked'].includes(release.lifecycle.status) && (
+        <div class="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs space-y-1">
+          <div class="flex items-center gap-2 font-bold uppercase tracking-wider text-[10px] text-amber-400">
+            <svg class="h-4 w-4 shrink-0 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>Lifecycle Advisory: {release.lifecycle.status.toUpperCase()} IMAGE</span>
+          </div>
+          <p class="leading-relaxed">
+            {release.lifecycle.status === 'preview' && 'This image is currently in Preview status. It is fully certified but not recommended for production environments until general availability.'}
+            {release.lifecycle.status === 'deprecated' && 'Warning: This image version has been Deprecated. Security patches are no longer active; please plan downstream migration immediately.'}
+            {release.lifecycle.status === 'experimental' && 'Advisory: This image is designated as experimental/development only and is strictly not allowed in production workloads.'}
+            {release.lifecycle.status === 'blocked' && 'CRITICAL: This image is blocked due to standard non-compliance or critical gating failures.'}
+          </p>
         </div>
       )}
       </div>

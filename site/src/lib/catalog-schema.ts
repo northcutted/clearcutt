@@ -115,6 +115,39 @@ export const AttestationEntry = z.object({
 });
 export type AttestationEntry = z.infer<typeof AttestationEntry>;
 
+export const Lifecycle = z.object({
+  status: z.enum(['active', 'preview', 'deprecated', 'eol', 'experimental', 'blocked']),
+  support: z.enum(['lts', 'current', 'preview', 'legacy', 'unsupported']),
+  productionAllowed: z.boolean(),
+  deprecatedAt: z.string().nullable(),
+  eolAt: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type Lifecycle = z.infer<typeof Lifecycle>;
+
+export const RuntimeContract = z.object({
+  user: z.string().nullable(),
+  workingDir: z.string().nullable(),
+  shellPresent: z.boolean().nullable(),
+  packageManagerPresent: z.boolean().nullable(),
+  caCertificatesPresent: z.boolean().nullable(),
+  timezoneDataPresent: z.boolean().nullable(),
+  defaultEntrypoint: z.string().nullable(),
+  productionTier: z.boolean(),
+});
+export type RuntimeContract = z.infer<typeof RuntimeContract>;
+
+export const ExceptionSummary = z.object({
+  total: z.number(),
+  expired: z.number(),
+  active: z.number(),
+  acceptedRisk: z.number(),
+  noFixAvailable: z.number(),
+  falsePositive: z.number(),
+  inheritedFromBase: z.number(),
+});
+export type ExceptionSummary = z.infer<typeof ExceptionSummary>;
+
 export const ReleaseEntry = z.object({
   tag: z.string(),
   publishedAt: z.string(),
@@ -169,6 +202,9 @@ export const ReleaseEntry = z.object({
       vulnerabilityArchCount: z.number(),
     })
     .optional(),
+  lifecycle: Lifecycle,
+  runtimeContract: RuntimeContract,
+  exceptions: ExceptionSummary,
 });
 export type ReleaseEntry = z.infer<typeof ReleaseEntry>;
 
@@ -189,6 +225,8 @@ export const ImageRecord = z.object({
   imageName: z.string(),
   fullName: z.string(),
   releases: z.array(ReleaseEntry),
+  lifecycle: Lifecycle,
+  runtimeContract: RuntimeContract,
 });
 export type ImageRecord = z.infer<typeof ImageRecord>;
 
@@ -267,6 +305,8 @@ export const CatalogIndex = z.object({
         })
         .nullable()
         .optional(),
+      lifecycle: Lifecycle,
+      runtimeContract: RuntimeContract,
     }),
   ),
 });

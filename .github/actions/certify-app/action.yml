@@ -1,0 +1,43 @@
+name: 'ClearCutt App Certification'
+description: 'Certify a downstream application container image offline against platform security contracts'
+inputs:
+  image:
+    description: 'The target OCI image reference to certify (e.g. ghcr.io/acme/my-app:latest)'
+    required: true
+  policy:
+    description: 'Path to declarative certification-policy.yaml governance file'
+    required: true
+  base:
+    description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.14-slim)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Pull Target Application Image
+      shell: bash
+      run: |
+        echo "[clearcutt] Pulling downstream image reference: ${{ inputs.image }}..."
+        docker pull ${{ inputs.image }}
+
+    - name: Unpack Image Tarball Workspace
+      shell: bash
+      run: |
+        echo "[clearcutt] Saving image to offline tarball representation..."
+        docker save ${{ inputs.image }} -o /tmp/clearcutt-app-image.tar
+
+    - name: Execute Security Compliance Certification Audits
+      shell: bash
+      run: |
+        echo "[clearcutt] Running offline certification checks..."
+        ./clearcutt certify /tmp/clearcutt-app-image.tar \
+          --policy ${{ inputs.policy }} \
+          --base ${{ inputs.base }} \
+          --format json > /tmp/certification-report.json
+        cat /tmp/certification-report.json
+
+    - name: Upload Compliance Certification Evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: clearcutt-certification-report
+        path: /tmp/certification-report.json

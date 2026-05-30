@@ -121,6 +121,48 @@ const nixFlake = `{
             ))}
           </ul>
         </div>
+
+        <div class="border-t border-ink-800/50 pt-4 space-y-3">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-2.5">Runtime Security &amp; Execution Contract</h3>
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">Shell Presence</span>
+              <span class={release.runtimeContract.shellPresent ? "text-amber-400 font-semibold" : "text-emerald-400 font-semibold"}>
+                {release.runtimeContract.shellPresent ? "Yes (BusyBox/Bash)" : "No (Shell-Free)"}
+              </span>
+            </div>
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">Package Manager</span>
+              <span class={release.runtimeContract.packageManagerPresent ? "text-amber-400 font-semibold" : "text-emerald-400 font-semibold"}>
+                {release.runtimeContract.packageManagerPresent ? "Yes (Active)" : "No (Absent)"}
+              </span>
+            </div>
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">Secure UID Operator</span>
+              <span class="text-emerald-400 font-semibold">
+                {release.runtimeContract.user ? `UID ${release.runtimeContract.user}` : "Rootless"}
+              </span>
+            </div>
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">Production Tier</span>
+              <span class={release.runtimeContract.productionTier ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
+                {release.runtimeContract.productionTier ? "Yes (Allowed)" : "No (Dev Builder)"}
+              </span>
+            </div>
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">CA Certificates</span>
+              <span class={release.runtimeContract.caCertificatesPresent ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
+                {release.runtimeContract.caCertificatesPresent ? "Present / Active" : "Absent"}
+              </span>
+            </div>
+            <div class="rounded-xl border border-ink-800/60 bg-ink-950/40 p-3 space-y-1">
+              <span class="text-ink-400 block text-[9px] uppercase font-bold font-mono tracking-wider">Timezone Data</span>
+              <span class={release.runtimeContract.timezoneDataPresent ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
+                {release.runtimeContract.timezoneDataPresent ? "Present / Active" : "Absent"}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Code Blueprints Tabs */}
@@ -171,20 +213,30 @@ const nixFlake = `{
           { id: 'nix', label: 'Nix Flake' },
         ]}>
           <div data-panel-id="docker" data-panel-active="true" class="space-y-4">
-            <div>
-              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
-              <CopyBlock language="shell" code={`docker pull ${rolling}`} />
-            </div>
+            {release.manifestDigest ? (
+              <div>
+                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-accent-soft font-bold font-mono">Pull by multi-arch digest (Recommended, Secure)</h3>
+                <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
+              </div>
+            ) : (
+              <div class="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs space-y-1">
+                <div class="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] text-amber-400">
+                  <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span>Security Advisory: Missing Cryptographic Digest</span>
+                </div>
+                <p class="leading-relaxed">This release is missing a canonical multi-architecture manifest digest. Falling back to tag-pinned reference; please note tags are mutable and do not guarantee build immutability.</p>
+              </div>
+            )}
             <div>
               <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pinned to release</h3>
               <CopyBlock language="shell" code={`docker pull ${versioned}`} />
             </div>
-            {release.manifestDigest && (
-              <div>
-                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pull multi-arch manifest by digest</h3>
-                <CopyBlock language="shell" code={`docker pull ${image.fullName}@${release.manifestDigest}`} />
-              </div>
-            )}
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
+              <CopyBlock language="shell" code={`docker pull ${rolling}`} />
+            </div>
             <div>
               <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Hardened docker run</h3>
               <CopyBlock language="shell" code={dockerRun} />
@@ -192,20 +244,30 @@ const nixFlake = `{
           </div>
 
           <div data-panel-id="podman" data-panel-active="false" class="space-y-4">
-            <div>
-              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
-              <CopyBlock language="shell" code={`podman pull ${rolling}`} />
-            </div>
+            {release.manifestDigest ? (
+              <div>
+                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-accent-soft font-bold font-mono">Pull by multi-arch digest (Recommended, Secure)</h3>
+                <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
+              </div>
+            ) : (
+              <div class="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs space-y-1">
+                <div class="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] text-amber-400">
+                  <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span>Security Advisory: Missing Cryptographic Digest</span>
+                </div>
+                <p class="leading-relaxed">This release is missing a canonical multi-architecture manifest digest. Falling back to tag-pinned reference; please note tags are mutable and do not guarantee build immutability.</p>
+              </div>
+            )}
             <div>
               <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pinned to release</h3>
               <CopyBlock language="shell" code={`podman pull ${versioned}`} />
             </div>
-            {release.manifestDigest && (
-              <div>
-                <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Pull multi-arch manifest by digest</h3>
-                <CopyBlock language="shell" code={`podman pull ${image.fullName}@${release.manifestDigest}`} />
-              </div>
-            )}
+            <div>
+              <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Quick pull (rolling)</h3>
+              <CopyBlock language="shell" code={`podman pull ${rolling}`} />
+            </div>
             <div>
               <h3 class="mb-1 text-[10px] uppercase tracking-wider text-ink-400 font-bold font-mono">Hardened podman run</h3>
               <CopyBlock language="shell" code={podmanRun} />

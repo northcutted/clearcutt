@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VulnerabilityExceptions",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["clearcutt.dev/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["VulnerabilityExceptions"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["exceptions"],
+      "properties": {
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "package", "image", "release", "status", "reason", "owner", "createdAt", "expiresAt"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^CVE-\\d{4}-\\d{4,}$"
+              },
+              "package": {
+                "type": "string"
+              },
+              "image": {
+                "type": "string"
+              },
+              "release": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["affected", "not_affected", "fixed", "under_investigation", "false_positive", "accepted_risk"]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "inherited_from_base",
+                  "no_fix_available",
+                  "vulnerable_code_not_present",
+                  "vulnerable_code_not_executed",
+                  "scanner_false_positive",
+                  "temporary_business_exception",
+                  "requires_upstream_fix"
+                ]
+              },
+              "owner": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date"
+              },
+              "references": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

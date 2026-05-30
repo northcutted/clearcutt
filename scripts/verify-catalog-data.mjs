@@ -66,6 +66,66 @@ for (const summary of index.images || []) {
     continue;
   }
 
+  // Validate lifecycle on index summary
+  if (!summary.lifecycle) {
+    failures.push(failFor(summary.id, 'index summary is missing lifecycle'));
+  } else {
+    const lf = summary.lifecycle;
+    if (!['active', 'preview', 'deprecated', 'eol', 'experimental', 'blocked'].includes(lf.status)) {
+      failures.push(failFor(summary.id, `invalid lifecycle status: ${lf.status}`));
+    }
+    if (!['lts', 'current', 'preview', 'legacy', 'unsupported'].includes(lf.support)) {
+      failures.push(failFor(summary.id, `invalid lifecycle support: ${lf.support}`));
+    }
+    if (typeof lf.productionAllowed !== 'boolean') {
+      failures.push(failFor(summary.id, 'lifecycle productionAllowed must be a boolean'));
+    }
+  }
+
+  // Validate runtimeContract on index summary
+  if (!summary.runtimeContract) {
+    failures.push(failFor(summary.id, 'index summary is missing runtimeContract'));
+  } else {
+    const rc = summary.runtimeContract;
+    if (typeof rc.shellPresent !== 'boolean' && rc.shellPresent !== null) {
+      failures.push(failFor(summary.id, 'runtimeContract shellPresent must be a boolean or null'));
+    }
+    if (typeof rc.packageManagerPresent !== 'boolean' && rc.packageManagerPresent !== null) {
+      failures.push(failFor(summary.id, 'runtimeContract packageManagerPresent must be a boolean or null'));
+    }
+    if (typeof rc.productionTier !== 'boolean') {
+      failures.push(failFor(summary.id, 'runtimeContract productionTier must be a boolean'));
+    }
+  }
+
+  // Validate image record levels
+  if (!image.lifecycle) {
+    failures.push(failFor(image.id, 'image record is missing lifecycle'));
+  }
+  if (!image.runtimeContract) {
+    failures.push(failFor(image.id, 'image record is missing runtimeContract'));
+  }
+
+  // Validate release levels
+  for (const rel of image.releases || []) {
+    if (!rel.lifecycle) {
+      failures.push(failFor(image.id, `release ${rel.tag} is missing lifecycle`));
+    }
+    if (!rel.runtimeContract) {
+      failures.push(failFor(image.id, `release ${rel.tag} is missing runtimeContract`));
+    }
+    if (!rel.exceptions) {
+      failures.push(failFor(image.id, `release ${rel.tag} is missing exceptions`));
+    } else {
+      const exc = rel.exceptions;
+      for (const field of ['total', 'expired', 'active', 'acceptedRisk', 'noFixAvailable', 'falsePositive', 'inheritedFromBase']) {
+        if (typeof exc[field] !== 'number') {
+          failures.push(failFor(image.id, `release ${rel.tag} exceptions.${field} must be a number`));
+        }
+      }
+    }
+  }
+
   const evidence = release.evidence || releaseEvidence(release);
   const summaryEvidence = summary.evidence || {};
 

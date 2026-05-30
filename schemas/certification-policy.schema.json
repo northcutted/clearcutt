@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CertificationPolicy",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["clearcutt.dev/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["CertificationPolicy"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["base", "supplyChain", "runtime", "lifecycle", "vulnerabilities"],
+      "properties": {
+        "base": {
+          "type": "object",
+          "required": ["allowedImages", "requireDigestPinned", "requireKnownBase"],
+          "properties": {
+            "allowedImages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "requireDigestPinned": {
+              "type": "boolean"
+            },
+            "requireKnownBase": {
+              "type": "boolean"
+            }
+          }
+        },
+        "supplyChain": {
+          "type": "object",
+          "required": ["requireSignature", "requireProvenance", "requireSbom", "minimumSlsaLevel"],
+          "properties": {
+            "requireSignature": {
+              "type": "boolean"
+            },
+            "requireProvenance": {
+              "type": "boolean"
+            },
+            "requireSbom": {
+              "type": "boolean"
+            },
+            "minimumSlsaLevel": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["requireNonRoot", "forbidShell", "forbidPackageManagers", "forbidDevTier"],
+          "properties": {
+            "requireNonRoot": {
+              "type": "boolean"
+            },
+            "forbidShell": {
+              "type": "boolean"
+            },
+            "forbidPackageManagers": {
+              "type": "boolean"
+            },
+            "forbidDevTier": {
+              "type": "boolean"
+            }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "required": ["allowPreview", "allowDeprecated", "allowExperimental"],
+          "properties": {
+            "allowPreview": {
+              "type": "boolean"
+            },
+            "allowDeprecated": {
+              "type": "boolean"
+            },
+            "allowExperimental": {
+              "type": "boolean"
+            }
+          }
+        },
+        "vulnerabilities": {
+          "type": "object",
+          "required": ["maxCritical", "maxHigh", "allowExceptions", "exceptionFile"],
+          "properties": {
+            "maxCritical": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxHigh": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "allowExceptions": {
+              "type": "boolean"
+            },
+            "exceptionFile": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

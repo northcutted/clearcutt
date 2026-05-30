@@ -52,6 +52,131 @@ const TIERS = {
   distroless: { name: 'Distroless', blurb: 'Hardened tier — no shells, no coreutils, runtime only.' },
 };
 
+function determineLifecycle(target, tier) {
+  const idx = target.lastIndexOf('-');
+  const langKey = idx !== -1 ? target.slice(0, idx) : target;
+
+  let status = 'preview';
+  let support = 'preview';
+  let productionAllowed = false;
+
+  if (tier === 'dev') {
+    productionAllowed = false;
+  }
+
+  if (langKey === 'coreLTS') {
+    status = 'active';
+    support = 'lts';
+    if (tier !== 'dev') productionAllowed = true;
+  } else if (langKey === 'java21') {
+    status = 'active';
+    support = 'lts';
+    if (tier !== 'dev') productionAllowed = true;
+  } else if (langKey === 'java25') {
+    status = 'preview';
+    support = 'preview';
+    productionAllowed = false;
+  } else if (langKey === 'node22') {
+    status = 'active';
+    support = 'lts';
+    if (tier !== 'dev') productionAllowed = true;
+  } else if (langKey === 'node24') {
+    status = 'preview';
+    support = 'preview';
+    productionAllowed = false;
+  } else if (langKey === 'python3.13') {
+    status = 'active';
+    support = 'current';
+    if (tier !== 'dev') productionAllowed = true;
+  } else if (langKey === 'python3.14') {
+    status = 'preview';
+    support = 'preview';
+    productionAllowed = false;
+  } else if (langKey === 'dotnet8') {
+    status = 'active';
+    support = 'lts';
+    if (tier !== 'dev') productionAllowed = true;
+  } else if (langKey === 'dotnet10') {
+    status = 'preview';
+    support = 'preview';
+    productionAllowed = false;
+  } else if (['go1.25', 'go1.26', 'rust1.95', 'cc15'].includes(langKey)) {
+    status = 'experimental';
+    support = 'unsupported';
+    productionAllowed = false;
+  }
+
+  return {
+    status,
+    support,
+    productionAllowed,
+    deprecatedAt: null,
+    eolAt: null,
+    reason: null,
+  };
+}
+
+function determineRuntimeContract(target, tier) {
+  const idx = target.lastIndexOf('-');
+  const langKey = idx !== -1 ? target.slice(0, idx) : target;
+
+  let defaultEntrypoint = null;
+  if (langKey.startsWith('java')) {
+    defaultEntrypoint = '/usr/local/bin/java';
+  } else if (langKey.startsWith('node')) {
+    defaultEntrypoint = '/usr/bin/node';
+  } else if (langKey.startsWith('python')) {
+    defaultEntrypoint = '/usr/bin/python';
+  } else if (langKey.startsWith('go')) {
+    defaultEntrypoint = '/usr/bin/go';
+  } else if (langKey.startsWith('dotnet')) {
+    defaultEntrypoint = '/usr/bin/dotnet';
+  } else if (langKey === 'coreLTS') {
+    defaultEntrypoint = '/bin/sh';
+  }
+
+  let shellPresent = true;
+  let packageManagerPresent = true;
+  let productionTier = false;
+
+  if (tier === 'slim') {
+    shellPresent = true;
+    packageManagerPresent = false;
+    productionTier = true;
+  } else if (tier === 'distroless') {
+    shellPresent = false;
+    packageManagerPresent = false;
+    productionTier = true;
+  } else {
+    shellPresent = true;
+    packageManagerPresent = true;
+    productionTier = false;
+  }
+
+  return {
+    user: '10001',
+    workingDir: '/app',
+    shellPresent,
+    packageManagerPresent,
+    caCertificatesPresent: true,
+    timezoneDataPresent: true,
+    defaultEntrypoint,
+    productionTier,
+  };
+}
+
+function defaultExceptions() {
+  return {
+    total: 0,
+    expired: 0,
+    active: 0,
+    acceptedRisk: 0,
+    noFixAvailable: 0,
+    falsePositive: 0,
+    inheritedFromBase: 0,
+  };
+}
+
 const args = parseArgs(process.argv.slice(2));
 const LIMIT = Number(args.limit ?? process.env.RELEASE_LIMIT ?? 10);
 const TARGET_FILTER = new Set(
@@ -209,6 +334,8 @@ function summarizeImageForIndex(img) {
     evidence: latestRel.evidence ?? releaseEvidence(latestRel),
     passed,
     vulnSummary,
+    lifecycle: img.lifecycle,
+    runtimeContract: img.runtimeContract,
   };
 }
 
@@ -723,6 +850,9 @@ async function buildImageRecord(target, releases, refreshSet) {
         testResults: Object.fromEntries(testAssets.map((a) => [guessArchFromAsset(a.name), a.url])),
         digest: digestAsset?.url ?? null,
       },
+      lifecycle: determineLifecycle(target, tier),
+      runtimeContract: determineRuntimeContract(target, tier),
+      exceptions: defaultExceptions(),
     };
     releaseEntry.evidence = releaseEvidence(releaseEntry);
     releaseEntries.push(releaseEntry);
@@ -743,6 +873,8 @@ async function buildImageRecord(target, releases, refreshSet) {
     imageName,
     fullName,
     releases: releaseEntries,
+    lifecycle: determineLifecycle(target, tier),
+    runtimeContract: determineRuntimeContract(target, tier),
   };
 }
 

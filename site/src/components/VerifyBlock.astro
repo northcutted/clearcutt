@@ -14,12 +14,23 @@ const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifest
 const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
 const issuer = release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com';
 
-const cosignVerify = `cosign verify ${versioned} \\
+const clearcuttInspect = `clearcutt inspect ${image.id} --tag ${release.tag}`;
+
+const clearcuttVerify = `clearcutt verify ${image.id} \\
+  --tag ${release.tag} \\
+  --require-production \\
+  --require-signature \\
+  --require-sbom \\
+  --require-provenance \\
+  --max-critical 0 \\
+  --max-high 5`;
+
+const cosignVerify = `cosign verify ${digestRef} \\
   --certificate-identity '${subject}' \\
   --certificate-oidc-issuer '${issuer}' \\
   --output json`;
 
-const cosignAttest = `cosign verify-attestation ${versioned} \\
+const cosignAttest = `cosign verify-attestation ${digestRef} \\
   --type spdxjson \\
   --certificate-identity '${subject}' \\
   --certificate-oidc-issuer '${issuer}' \\
@@ -72,12 +83,31 @@ spec:
   </div>
 
   <Tabs name={`verify-${image.id}`} tabs={[
+    { id: 'clearcutt', label: 'ClearCutt CLI' },
     { id: 'cosign', label: 'Cosign' },
     { id: 'slsa', label: 'SLSA Verifier' },
     { id: 'gh-cli', label: 'GitHub CLI' },
     { id: 'kyverno', label: 'Kyverno Policy' },
   ]}>
-    <div data-panel-id="cosign" data-panel-active="true" class="space-y-6">
+    <div data-panel-id="clearcutt" data-panel-active="true" class="space-y-6">
+      <div class="space-y-2">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Inspect Security Metadata</h3>
+        <p class="text-xs text-ink-400">
+          Query deep, high-fidelity security metadata, dynamic entrypoints, non-root user settings, architectures, and release asset URLs.
+        </p>
+        <CopyBlock language="shell" code={clearcuttInspect} />
+      </div>
+
+      <div class="space-y-2 border-t border-ink-800/40 pt-5">
+        <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">2. Local Policy Gate Verification</h3>
+        <p class="text-xs text-ink-400">
+          Enforce signatures, SBOMs, SLSA provenance, smoke tests, vulnerability limits, and lifecycle constraints locally or in CI pipelines.
+        </p>
+        <CopyBlock language="shell" code={clearcuttVerify} />
+      </div>
+    </div>
+
+    <div data-panel-id="cosign" data-panel-active="false" class="space-y-6">
       <div class="space-y-2">
         <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Verify Keyless OIDC Signature</h3>
         <p class="text-xs text-ink-400">

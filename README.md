@@ -82,6 +82,50 @@ ClearCutt implements a comprehensive gating test suite to verify dynamic dynamic
 
 ---
 
+## Go Governance CLI (`clearcutt`)
+
+To simplify local image discovery, platform inspection, and supply-chain policy verification, ClearCutt includes a statically compiled, operationally boring Go CLI named `clearcutt`.
+
+### Build the CLI
+
+Compile the binary from the root of the repository:
+```bash
+go build -o clearcutt ./cmd/clearcutt
+```
+
+### Basic Commands
+
+#### 1. List Catalog Images
+List all base images available in the local catalog index, with support for filtering by runtime, matrix tier, production allowed, and lifecycle support:
+```bash
+# List all images in tabular format
+./clearcutt list
+
+# Filter images to those allowed in production running Java
+./clearcutt list --runtime java --production-only
+
+# Filter images by tier
+./clearcutt list --tier distroless
+
+# Output images in standard JSON format
+./clearcutt list --format json
+```
+
+#### 2. Inspect Security Metadata
+Query deep, high-fidelity security metadata, dynamic entrypoints, non-root user settings, architectures, vulnerability counts, exception details, and release asset URLs:
+```bash
+# Inspect the latest release of Java 21 Distroless
+./clearcutt inspect java21-distroless
+
+# Inspect a specific version tag
+./clearcutt inspect java21-distroless --tag v0.2.1
+
+# Inspect and output as structured YAML
+./clearcutt inspect java21-distroless --format yaml
+```
+
+---
+
 ## Consumption & Integration Patterns
 
 ### 1. CI/CD: Reusable GitHub Action Composite Block

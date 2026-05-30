@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-05-29T20:00:00Z",
+  "owner": "test-owner",
+  "repo": "test-repo",
+  "repoUrl": "https://github.com/test-owner/test-repo",
+  "registryBase": "ghcr.io/test-owner/test-repo",
+  "latestTag": "v1.0.0",
+  "releases": [
+    { "tag": "v1.0.0", "publishedAt": "2026-05-29T20:00:00Z", "isLatest": true }
+  ],
+  "languages": [
+    { "id": "java", "displayName": "Java", "version": "21", "icon": null }
+  ],
+  "tiers": [
+    { "id": "distroless", "name": "Distroless", "blurb": "Hardened tier" }
+  ],
+  "images": [
+    {
+      "id": "java21-distroless",
+      "language": "java",
+      "languageDisplay": "Java",
+      "languageVersion": "21",
+      "tier": "distroless",
+      "latestTag": "v1.0.0",
+      "latestPackageCount": 42,
+      "architectures": ["amd64", "arm64"],
+      "signed": true,
+      "provenance": true,
+      "passed": true,
+      "evidence": {
+        "signature": true,
+        "provenance": true,
+        "sbom": true,
+        "tests": true,
+        "vulnerabilities": true,
+        "archCount": 2,
+        "sbomArchCount": 2,
+        "testArchCount": 2,
+        "passedTestArchCount": 2,
+        "vulnerabilityArchCount": 2
+      },
+      "lifecycle": {
+        "status": "active",
+        "support": "lts",
+        "productionAllowed": true,
+        "deprecatedAt": null,
+        "eolAt": null,
+        "reason": null
+      },
+      "runtimeContract": {
+        "user": "10001",
+        "workingDir": "/app",
+        "shellPresent": false,
+        "packageManagerPresent": false,
+        "caCertificatesPresent": true,
+        "timezoneDataPresent": true,
+        "defaultEntrypoint": "/usr/local/bin/java",
+        "productionTier": true
+      }
+    }
+  ]
+}
