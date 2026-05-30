@@ -243,15 +243,15 @@ func runConformanceSuite() error {
 			return fmt.Errorf("failed to write conformance report file: %w", err)
 		}
 		if !GlobalOpts.Quiet {
-			fmt.Printf("Successfully generated runtime conformance report file: %s\n", conformanceOpts.output)
+			fmt.Fprintf(out, "Successfully generated runtime conformance report file: %s\n", conformanceOpts.output)
 		}
 	} else {
-		os.Stdout.Write(reportData)
-		fmt.Println()
+		out.Write(reportData)
+		fmt.Fprintln(out)
 	}
 
 	if hasFailures {
-		osExit(1)
+		return ErrCheckFailed
 	}
 
 	return nil

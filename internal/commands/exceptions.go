@@ -44,6 +44,38 @@ type ExceptionEntry struct {
 
 var cveRegex = regexp.MustCompile(`^CVE-\d{4}-\d{4,}$`)
 
+// Match finds the exception governing a given finding, if any. It returns the
+// matched entry along with whether that entry has expired as of now. Callers
+// decide policy: an expired exception should never exempt a finding, but whether
+// expiry is a hard failure is the caller's concern. A nil receiver matches
+// nothing. Entries with an unparseable expiresAt are treated as expired.
+func (d *ExceptionsDoc) Match(cveID, pkg, image, release string, now time.Time) (entry *ExceptionEntry, expired bool) {
+	if d == nil {
+		return nil, false
+	}
+	for i := range d.Spec.Exceptions {
+		exc := &d.Spec.Exceptions[i]
+		if exc.ID != cveID {
+			continue
+		}
+		if exc.Package != "*" && exc.Package != pkg {
+			continue
+		}
+		if exc.Image != "*" && exc.Image != image {
+			continue
+		}
+		if exc.Release != "*" && exc.Release != release {
+			continue
+		}
+		expiry, err := time.Parse("2006-01-02", exc.ExpiresAt)
+		if err != nil {
+			return exc, true
+		}
+		return exc, !expiry.After(now)
+	}
+	return nil, false
+}
+
 func NewExceptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "exceptions",
@@ -143,16 +175,15 @@ func runExceptionsValidate(yamlPath string) error {
 	}
 
 	if len(errors) > 0 {
-		fmt.Fprintf(os.Stderr, "Exception validation failed with %d errors:\n", len(errors))
+		fmt.Fprintf(errOut, "Exception validation failed with %d errors:\n", len(errors))
 		for _, err := range errors {
-			fmt.Fprintf(os.Stderr, "  - %s\n", err)
+			fmt.Fprintf(errOut, "  - %s\n", err)
 		}
-		osExit(1)
-		return fmt.Errorf("exceptions validation failed")
+		return ErrCheckFailed
 	}
 
 	if !GlobalOpts.Quiet {
-		fmt.Printf("Vulnerability exceptions document %q is fully valid and active!\n", doc.Metadata.Name)
+		fmt.Fprintf(out, "Vulnerability exceptions document %q is fully valid and active!\n", doc.Metadata.Name)
 	}
 
 	return nil

@@ -2,12 +2,11 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
 
 type inspectFlags struct {
@@ -75,7 +74,7 @@ func runInspect(imageID string) error {
 	// Format output
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
-		return output.PrintJSON(os.Stdout, struct {
+		return output.PrintJSON(out, struct {
 			ImageRecord   *catalog.ImageRecord  `json:"imageRecord"`
 			ActiveRelease *catalog.ReleaseEntry `json:"activeRelease"`
 		}{
@@ -83,7 +82,7 @@ func runInspect(imageID string) error {
 			ActiveRelease: targetRelease,
 		})
 	case "yaml", "yml":
-		return output.PrintYAML(os.Stdout, struct {
+		return output.PrintYAML(out, struct {
 			ImageRecord   *catalog.ImageRecord  `json:"imageRecord"`
 			ActiveRelease *catalog.ReleaseEntry `json:"activeRelease"`
 		}{
@@ -92,41 +91,41 @@ func runInspect(imageID string) error {
 		})
 	default:
 		// Human readable formatted terminal output
-		fmt.Printf("Image ID:           %s\n", record.ID)
-		fmt.Printf("Language/Runtime:   %s (%s)\n", record.Language.DisplayName, record.Language.Version)
-		fmt.Printf("Tier:               %s\n", record.Tier.Name)
-		fmt.Printf("Full Image Name:    %s\n", record.FullName)
-		fmt.Printf("Tag Reference:      %s:%s\n", record.FullName, targetRelease.Tag)
+		fmt.Fprintf(out, "Image ID:           %s\n", record.ID)
+		fmt.Fprintf(out, "Language/Runtime:   %s (%s)\n", record.Language.DisplayName, record.Language.Version)
+		fmt.Fprintf(out, "Tier:               %s\n", record.Tier.Name)
+		fmt.Fprintf(out, "Full Image Name:    %s\n", record.FullName)
+		fmt.Fprintf(out, "Tag Reference:      %s:%s\n", record.FullName, targetRelease.Tag)
 
 		// Digest-pinned reference
 		if targetRelease.ManifestDigest != nil && *targetRelease.ManifestDigest != "" {
-			fmt.Printf("Digest Reference:   %s@%s\n", record.FullName, *targetRelease.ManifestDigest)
+			fmt.Fprintf(out, "Digest Reference:   %s@%s\n", record.FullName, *targetRelease.ManifestDigest)
 		} else {
-			fmt.Println("Digest Reference:   [Evidence Incomplete - Manifest Digest Missing]")
+			fmt.Fprintln(out, "Digest Reference:   [Evidence Incomplete - Manifest Digest Missing]")
 		}
 
-		fmt.Println("\n--- Lifecycle Policy ---")
-		fmt.Printf("Status:             %s\n", targetRelease.Lifecycle.Status)
-		fmt.Printf("Support Tier:       %s\n", targetRelease.Lifecycle.Support)
+		fmt.Fprintln(out, "\n--- Lifecycle Policy ---")
+		fmt.Fprintf(out, "Status:             %s\n", targetRelease.Lifecycle.Status)
+		fmt.Fprintf(out, "Support Tier:       %s\n", targetRelease.Lifecycle.Support)
 		prodAllowed := "no"
 		if targetRelease.Lifecycle.ProductionAllowed {
 			prodAllowed = "yes"
 		}
-		fmt.Printf("Prod Allowed:       %s\n", prodAllowed)
+		fmt.Fprintf(out, "Prod Allowed:       %s\n", prodAllowed)
 		if targetRelease.Lifecycle.Reason != nil && *targetRelease.Lifecycle.Reason != "" {
-			fmt.Printf("Reason:             %s\n", *targetRelease.Lifecycle.Reason)
+			fmt.Fprintf(out, "Reason:             %s\n", *targetRelease.Lifecycle.Reason)
 		}
 
-		fmt.Println("\n--- Runtime Contract ---")
+		fmt.Fprintln(out, "\n--- Runtime Contract ---")
 		if targetRelease.RuntimeContract.User != nil {
-			fmt.Printf("User:               %s\n", *targetRelease.RuntimeContract.User)
+			fmt.Fprintf(out, "User:               %s\n", *targetRelease.RuntimeContract.User)
 		} else {
-			fmt.Println("User:               unknown")
+			fmt.Fprintln(out, "User:               unknown")
 		}
 		if targetRelease.RuntimeContract.WorkingDir != nil {
-			fmt.Printf("Working Dir:        %s\n", *targetRelease.RuntimeContract.WorkingDir)
+			fmt.Fprintf(out, "Working Dir:        %s\n", *targetRelease.RuntimeContract.WorkingDir)
 		} else {
-			fmt.Println("Working Dir:        unknown")
+			fmt.Fprintln(out, "Working Dir:        unknown")
 		}
 
 		shellVal := "unknown"
@@ -137,7 +136,7 @@ func runInspect(imageID string) error {
 				shellVal = "absent"
 			}
 		}
-		fmt.Printf("Shell:              %s\n", shellVal)
+		fmt.Fprintf(out, "Shell:              %s\n", shellVal)
 
 		pkgManagerVal := "unknown"
 		if targetRelease.RuntimeContract.PackageManagerPresent != nil {
@@ -147,7 +146,7 @@ func runInspect(imageID string) error {
 				pkgManagerVal = "absent"
 			}
 		}
-		fmt.Printf("Package Manager:    %s\n", pkgManagerVal)
+		fmt.Fprintf(out, "Package Manager:    %s\n", pkgManagerVal)
 
 		caCertVal := "unknown"
 		if targetRelease.RuntimeContract.CACertificatesPresent != nil {
@@ -157,7 +156,7 @@ func runInspect(imageID string) error {
 				caCertVal = "absent"
 			}
 		}
-		fmt.Printf("CA Certificates:    %s\n", caCertVal)
+		fmt.Fprintf(out, "CA Certificates:    %s\n", caCertVal)
 
 		timezoneVal := "unknown"
 		if targetRelease.RuntimeContract.TimezoneDataPresent != nil {
@@ -167,52 +166,52 @@ func runInspect(imageID string) error {
 				timezoneVal = "absent"
 			}
 		}
-		fmt.Printf("Timezone Data:      %s\n", timezoneVal)
+		fmt.Fprintf(out, "Timezone Data:      %s\n", timezoneVal)
 
 		if targetRelease.RuntimeContract.DefaultEntrypoint != nil {
-			fmt.Printf("Default Entrypoint:  %s\n", *targetRelease.RuntimeContract.DefaultEntrypoint)
+			fmt.Fprintf(out, "Default Entrypoint:  %s\n", *targetRelease.RuntimeContract.DefaultEntrypoint)
 		} else {
-			fmt.Println("Default Entrypoint:  none")
+			fmt.Fprintln(out, "Default Entrypoint:  none")
 		}
 
-		fmt.Println("\n--- Architectures & Payloads ---")
+		fmt.Fprintln(out, "\n--- Architectures & Payloads ---")
 		for _, arch := range targetRelease.Architectures {
-			fmt.Printf("Platform:           linux/%s\n", arch.Arch)
+			fmt.Fprintf(out, "Platform:           linux/%s\n", arch.Arch)
 			if arch.ImageDigest != nil {
-				fmt.Printf("  Digest:           %s\n", *arch.ImageDigest)
+				fmt.Fprintf(out, "  Digest:           %s\n", *arch.ImageDigest)
 			}
 			if arch.ImageSize != nil {
-				fmt.Printf("  Size:             %.2f MB\n", float64(*arch.ImageSize)/(1024*1024))
+				fmt.Fprintf(out, "  Size:             %.2f MB\n", float64(*arch.ImageSize)/(1024*1024))
 			}
 			if arch.LayerCount != nil {
-				fmt.Printf("  Layers:           %d\n", *arch.LayerCount)
+				fmt.Fprintf(out, "  Layers:           %d\n", *arch.LayerCount)
 			}
-			fmt.Printf("  SBOM Packages:    %d\n", arch.SBOM.PackageCount)
+			fmt.Fprintf(out, "  SBOM Packages:    %d\n", arch.SBOM.PackageCount)
 
 			// Test status
 			testStatus := "missing"
 			if arch.TestResults != nil {
 				testStatus = strings.ToLower(arch.TestResults.Status)
 			}
-			fmt.Printf("  Smoke Tests:      %s\n", testStatus)
+			fmt.Fprintf(out, "  Smoke Tests:      %s\n", testStatus)
 
 			// Vulnerability counts
 			if arch.Vulnerabilities != nil {
 				counts := arch.Vulnerabilities.CountsBySeverity
-				fmt.Printf("  Vulnerabilities:  critical=%d, high=%d, medium=%d, low=%d (Scanned At: %s)\n",
+				fmt.Fprintf(out, "  Vulnerabilities:  critical=%d, high=%d, medium=%d, low=%d (Scanned At: %s)\n",
 					counts.Critical, counts.High, counts.Medium, counts.Low, arch.Vulnerabilities.ScannedAt)
 			} else {
-				fmt.Println("  Vulnerabilities:  no scan results on record")
+				fmt.Fprintln(out, "  Vulnerabilities:  no scan results on record")
 			}
 		}
 
 		// Supply chain evidence flags
-		fmt.Println("\n--- Supply Chain Evidence ---")
+		fmt.Fprintln(out, "\n--- Supply Chain Evidence ---")
 		sigVal := "absent"
 		if targetRelease.Evidence != nil && targetRelease.Evidence.Signature {
 			sigVal = "present"
 		}
-		fmt.Printf("Cosign Signature:   %s\n", sigVal)
+		fmt.Fprintf(out, "Cosign Signature:   %s\n", sigVal)
 
 		sbomVal := "absent"
 		if targetRelease.Evidence != nil && targetRelease.Evidence.SBOM {
@@ -220,13 +219,13 @@ func runInspect(imageID string) error {
 		} else if targetRelease.Evidence != nil && targetRelease.Evidence.SBOMArchCount > 0 {
 			sbomVal = fmt.Sprintf("incomplete (%d/%d architectures)", targetRelease.Evidence.SBOMArchCount, targetRelease.Evidence.ArchCount)
 		}
-		fmt.Printf("SPDX SBOMs:         %s\n", sbomVal)
+		fmt.Fprintf(out, "SPDX SBOMs:         %s\n", sbomVal)
 
 		provVal := "absent"
 		if targetRelease.Evidence != nil && targetRelease.Evidence.Provenance {
 			provVal = "present"
 		}
-		fmt.Printf("SLSA Provenance:    %s\n", provVal)
+		fmt.Fprintf(out, "SLSA Provenance:    %s\n", provVal)
 
 		testEvVal := "absent"
 		if targetRelease.Evidence != nil && targetRelease.Evidence.Tests {
@@ -234,35 +233,35 @@ func runInspect(imageID string) error {
 		} else if targetRelease.Evidence != nil && targetRelease.Evidence.TestArchCount > 0 {
 			testEvVal = fmt.Sprintf("failed or incomplete (%d/%d architectures passed)", targetRelease.Evidence.PassedTestArchCount, targetRelease.Evidence.ArchCount)
 		}
-		fmt.Printf("Conformance Tests:  %s\n", testEvVal)
+		fmt.Fprintf(out, "Conformance Tests:  %s\n", testEvVal)
 
 		// Exceptions Summary
-		fmt.Println("\n--- Vulnerability Governance ---")
-		fmt.Printf("Total Exceptions:   %d (active=%d, expired=%d)\n",
+		fmt.Fprintln(out, "\n--- Vulnerability Governance ---")
+		fmt.Fprintf(out, "Total Exceptions:   %d (active=%d, expired=%d)\n",
 			targetRelease.Exceptions.Total, targetRelease.Exceptions.Active, targetRelease.Exceptions.Expired)
-		fmt.Printf("Remediation State:  acceptedRisk=%d, noFixAvailable=%d, falsePositive=%d, inheritedFromBase=%d\n",
+		fmt.Fprintf(out, "Remediation State:  acceptedRisk=%d, noFixAvailable=%d, falsePositive=%d, inheritedFromBase=%d\n",
 			targetRelease.Exceptions.AcceptedRisk, targetRelease.Exceptions.NoFixAvailable,
 			targetRelease.Exceptions.FalsePositive, targetRelease.Exceptions.InheritedFromBase)
 
 		// Release Assets
-		fmt.Println("\n--- Release Assets ---")
+		fmt.Fprintln(out, "\n--- Release Assets ---")
 		if targetRelease.AssetURLs.Provenance != nil && *targetRelease.AssetURLs.Provenance != "" {
-			fmt.Printf("SLSA Provenance:    %s\n", *targetRelease.AssetURLs.Provenance)
+			fmt.Fprintf(out, "SLSA Provenance:    %s\n", *targetRelease.AssetURLs.Provenance)
 		}
 		if len(targetRelease.AssetURLs.SBOM) > 0 {
-			fmt.Println("SBOM Archives:")
+			fmt.Fprintln(out, "SBOM Archives:")
 			for arch, url := range targetRelease.AssetURLs.SBOM {
-				fmt.Printf("  %-6s            %s\n", arch, url)
+				fmt.Fprintf(out, "  %-6s            %s\n", arch, url)
 			}
 		}
 		if len(targetRelease.AssetURLs.TestResults) > 0 {
-			fmt.Println("Test Results:")
+			fmt.Fprintln(out, "Test Results:")
 			for arch, url := range targetRelease.AssetURLs.TestResults {
-				fmt.Printf("  %-6s            %s\n", arch, url)
+				fmt.Fprintf(out, "  %-6s            %s\n", arch, url)
 			}
 		}
 		if targetRelease.AssetURLs.Digest != nil && *targetRelease.AssetURLs.Digest != "" {
-			fmt.Printf("Manifest Digest:    %s\n", *targetRelease.AssetURLs.Digest)
+			fmt.Fprintf(out, "Manifest Digest:    %s\n", *targetRelease.AssetURLs.Digest)
 		}
 	}
 	return nil

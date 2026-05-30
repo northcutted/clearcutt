@@ -1,5 +1,10 @@
 package catalog
 
+import (
+	"encoding/json"
+)
+
+
 // CatalogIndex represents the top-level index.json structure.
 type CatalogIndex struct {
 	GeneratedAt  string                `json:"generatedAt"`
@@ -26,7 +31,7 @@ type LanguageInfo struct {
 	ID          string  `json:"id"`
 	DisplayName string  `json:"displayName"`
 	Version     string  `json:"version"`
-	Icon        *string `json:"icon"`
+	Icon        *string `json:"icon,omitempty"`
 }
 
 // TierInfo represents tier details.
@@ -71,11 +76,11 @@ type EvidenceSummary struct {
 
 // VulnSummary aggregates vulnerability counts and scanning timestamps.
 type VulnSummary struct {
-	Critical    int               `json:"critical"`
-	High        int               `json:"high"`
-	Medium      int               `json:"medium"`
-	Low         int               `json:"low"`
-	ScannedAt   *string           `json:"scannedAt"`
+	Critical    int                `json:"critical"`
+	High        int                `json:"high"`
+	Medium      int                `json:"medium"`
+	Low         int                `json:"low"`
+	ScannedAt   *string            `json:"scannedAt,omitempty"`
 	Remediation *RemediationCounts `json:"remediation,omitempty"`
 }
 
@@ -93,20 +98,20 @@ type Lifecycle struct {
 	Status            string  `json:"status"`
 	Support           string  `json:"support"`
 	ProductionAllowed bool    `json:"productionAllowed"`
-	DeprecatedAt      *string `json:"deprecatedAt"`
-	EOLAt             *string `json:"eolAt"`
-	Reason            *string `json:"reason"`
+	DeprecatedAt      *string `json:"deprecatedAt,omitempty"`
+	EOLAt             *string `json:"eolAt,omitempty"`
+	Reason            *string `json:"reason,omitempty"`
 }
 
 // RuntimeContract represents expectations and runtime platform guarantees.
 type RuntimeContract struct {
-	User                  *string `json:"user"`
-	WorkingDir            *string `json:"workingDir"`
-	ShellPresent          *bool   `json:"shellPresent"`
-	PackageManagerPresent *bool   `json:"packageManagerPresent"`
-	CACertificatesPresent *bool   `json:"caCertificatesPresent"`
-	TimezoneDataPresent   *bool   `json:"timezoneDataPresent"`
-	DefaultEntrypoint     *string `json:"defaultEntrypoint"`
+	User                  *string `json:"user,omitempty"`
+	WorkingDir            *string `json:"workingDir,omitempty"`
+	ShellPresent          *bool   `json:"shellPresent,omitempty"`
+	PackageManagerPresent *bool   `json:"packageManagerPresent,omitempty"`
+	CACertificatesPresent *bool   `json:"caCertificatesPresent,omitempty"`
+	TimezoneDataPresent   *bool   `json:"timezoneDataPresent,omitempty"`
+	DefaultEntrypoint     *string `json:"defaultEntrypoint,omitempty"`
 	ProductionTier        bool    `json:"productionTier"`
 }
 
@@ -125,41 +130,41 @@ type ImageRecord struct {
 
 // ReleaseEntry represents a detailed release record inside ImageRecord.
 type ReleaseEntry struct {
-	Tag            string             `json:"tag"`
-	PublishedAt    string             `json:"publishedAt"`
-	LastRebuiltAt  *string            `json:"lastRebuiltAt,omitempty"`
-	IsLatest       bool               `json:"isLatest"`
-	ManifestDigest *string            `json:"manifestDigest"`
-	TotalSize      *int64             `json:"totalSize"`
-	Architectures  []ArchPayload      `json:"architectures"`
-	Signature      *SignatureInfo     `json:"signature"`
-	Provenance     *ProvenanceInfo    `json:"provenance"`
-	Attestations   []AttestationEntry `json:"attestations"`
-	AssetURLs      AssetURLs          `json:"assetUrls"`
-	Evidence       *EvidenceSummary   `json:"evidence,omitempty"`
-	Lifecycle      Lifecycle          `json:"lifecycle"`
+	Tag             string             `json:"tag"`
+	PublishedAt     string             `json:"publishedAt"`
+	LastRebuiltAt   *string            `json:"lastRebuiltAt,omitempty"`
+	IsLatest        bool               `json:"isLatest"`
+	ManifestDigest  *string            `json:"manifestDigest,omitempty"`
+	TotalSize       *int64             `json:"totalSize,omitempty"`
+	Architectures   []ArchPayload      `json:"architectures"`
+	Signature       *SignatureInfo     `json:"signature,omitempty"`
+	Provenance      *ProvenanceInfo    `json:"provenance,omitempty"`
+	Attestations    []AttestationEntry `json:"attestations"`
+	AssetURLs       AssetURLs          `json:"assetUrls"`
+	Evidence        *EvidenceSummary   `json:"evidence,omitempty"`
+	Lifecycle       Lifecycle          `json:"lifecycle"`
 	RuntimeContract RuntimeContract    `json:"runtimeContract"`
-	Exceptions     ExceptionSummary   `json:"exceptions"`
+	Exceptions      ExceptionSummary   `json:"exceptions"`
 }
 
 // ArchPayload represents detailed architecture metadata.
 type ArchPayload struct {
 	Arch            string               `json:"arch"`
 	OS              string               `json:"os"`
-	ImageDigest     *string              `json:"imageDigest"`
-	ImageSize       *int64               `json:"imageSize"`
-	LayerCount      *int                 `json:"layerCount"`
+	ImageDigest     *string              `json:"imageDigest,omitempty"`
+	ImageSize       *int64               `json:"imageSize,omitempty"`
+	LayerCount      *int                 `json:"layerCount,omitempty"`
 	Layers          []LayerInfo          `json:"layers"`
 	Labels          map[string]string    `json:"labels"`
 	SBOM            SBOMInfo             `json:"sbom"`
-	TestResults     *TestResultsInfo     `json:"testResults"`
-	Vulnerabilities *VulnerabilitiesInfo `json:"vulnerabilities"`
+	TestResults     *TestResultsInfo     `json:"testResults,omitempty"`
+	Vulnerabilities *VulnerabilitiesInfo `json:"vulnerabilities,omitempty"`
 }
 
 // LayerInfo tracks layer digests and size.
 type LayerInfo struct {
-	Digest string `json:"digest"`
-	Size   int64  `json:"size"`
+	Digest string  `json:"digest"`
+	Size   int64   `json:"size"`
 	DiffID *string `json:"diffID,omitempty"`
 }
 
@@ -167,7 +172,7 @@ type LayerInfo struct {
 type SBOMInfo struct {
 	Tool         string         `json:"tool"`
 	CreatedAt    string         `json:"createdAt"`
-	RootDigest   *string        `json:"rootDigest"`
+	RootDigest   *string        `json:"rootDigest,omitempty"`
 	PackageCount int            `json:"packageCount"`
 	Packages     []PackageEntry `json:"packages"`
 }
@@ -176,19 +181,19 @@ type SBOMInfo struct {
 type PackageEntry struct {
 	Name         string   `json:"name"`
 	Version      string   `json:"version"`
-	Purl         *string  `json:"purl"`
+	Purl         *string  `json:"purl,omitempty"`
 	Cpes         []string `json:"cpes"`
 	License      string   `json:"license"`
 	Supplier     string   `json:"supplier"`
-	NixStorePath *string  `json:"nixStorePath"`
+	NixStorePath *string  `json:"nixStorePath,omitempty"`
 	SpdxID       string   `json:"spdxId"`
-	LayerDigest  *string  `json:"layerDigest"`
+	LayerDigest  *string  `json:"layerDigest,omitempty"`
 }
 
 // TestResultsInfo tracks structured smoke/conformance tests.
 type TestResultsInfo struct {
 	Status     string          `json:"status"`
-	Timestamp  *string         `json:"timestamp"`
+	Timestamp  *string         `json:"timestamp,omitempty"`
 	Assertions []AssertionInfo `json:"assertions"`
 }
 
@@ -202,7 +207,7 @@ type AssertionInfo struct {
 type VulnerabilitiesInfo struct {
 	ScannedAt        string         `json:"scannedAt"`
 	Scanner          string         `json:"scanner"`
-	DBBuiltAt        *string        `json:"dbBuiltAt"`
+	DBBuiltAt        *string        `json:"dbBuiltAt,omitempty"`
 	CountsBySeverity SeverityCounts `json:"countsBySeverity"`
 	Findings         []FindingInfo  `json:"findings"`
 }
@@ -223,15 +228,15 @@ type FindingInfo struct {
 	Severity       string           `json:"severity"`
 	PackageName    string           `json:"packageName"`
 	PackageVersion string           `json:"packageVersion"`
-	Purl           *string          `json:"purl"`
+	Purl           *string          `json:"purl,omitempty"`
 	Layer          string           `json:"layer"`
-	FixedIn        *string          `json:"fixedIn"`
+	FixedIn        *string          `json:"fixedIn,omitempty"`
 	FixState       string           `json:"fixState"`
 	Remediation    *RemediationInfo `json:"remediation,omitempty"`
 	Inclusion      *InclusionInfo   `json:"inclusion,omitempty"`
-	DataSource     *string          `json:"dataSource"`
-	Namespace      *string          `json:"namespace"`
-	Description    *string          `json:"description"`
+	DataSource     *string          `json:"dataSource,omitempty"`
+	Namespace      *string          `json:"namespace,omitempty"`
+	Description    *string          `json:"description,omitempty"`
 	CvssScore      *float64         `json:"cvssScore,omitempty"`
 	CvssVersion    *string          `json:"cvssVersion,omitempty"`
 	CvssVector     *string          `json:"cvssVector,omitempty"`
@@ -269,12 +274,13 @@ type CertificateInfo struct {
 
 // ProvenanceInfo maps SLSA provenance.
 type ProvenanceInfo struct {
-	PredicateType  string      `json:"predicateType"`
-	Builder        BuilderInfo `json:"builder"`
-	BuildType      *string     `json:"buildType"`
-	SourceURI      *string     `json:"sourceUri"`
-	SourceRevision *string     `json:"sourceRevision"`
-	SlsaLevel      int         `json:"slsaLevel"`
+	PredicateType  string           `json:"predicateType"`
+	Builder        BuilderInfo      `json:"builder"`
+	BuildType      *string          `json:"buildType,omitempty"`
+	SourceURI      *string          `json:"sourceUri,omitempty"`
+	SourceRevision *string          `json:"sourceRevision,omitempty"`
+	SlsaLevel      int              `json:"slsaLevel"`
+	Raw            *json.RawMessage `json:"raw,omitempty"`
 }
 
 // BuilderInfo represents builder ID.
@@ -286,25 +292,25 @@ type BuilderInfo struct {
 type AttestationEntry struct {
 	Kind                 string   `json:"kind"`
 	PredicateType        string   `json:"predicateType"`
-	SubjectName          *string  `json:"subjectName"`
-	SubjectDigest        *string  `json:"subjectDigest"`
-	SignerIdentity       *string  `json:"signerIdentity"`
-	Issuer               *string  `json:"issuer"`
-	RunURL               *string  `json:"runUrl"`
-	WorkflowURL          *string  `json:"workflowUrl"`
-	GithubAPIURL         *string  `json:"githubApiUrl"`
+	SubjectName          *string  `json:"subjectName,omitempty"`
+	SubjectDigest        *string  `json:"subjectDigest,omitempty"`
+	SignerIdentity       *string  `json:"signerIdentity,omitempty"`
+	Issuer               *string  `json:"issuer,omitempty"`
+	RunURL               *string  `json:"runUrl,omitempty"`
+	WorkflowURL          *string  `json:"workflowUrl,omitempty"`
+	GithubAPIURL         *string  `json:"githubApiUrl,omitempty"`
 	ReleaseAssetURL      *string  `json:"releaseAssetUrl,omitempty"`
-	TransparencyLogIndex *int64   `json:"transparencyLogIndex"`
-	TransparencyURL      *string  `json:"transparencyUrl"`
+	TransparencyLogIndex *int64   `json:"transparencyLogIndex,omitempty"`
+	TransparencyURL      *string  `json:"transparencyUrl,omitempty"`
 	Sources              []string `json:"sources"`
 }
 
 // AssetURLs contains release download locations.
 type AssetURLs struct {
 	SBOM        map[string]string `json:"sbom"`
-	Provenance  *string           `json:"provenance"`
+	Provenance  *string           `json:"provenance,omitempty"`
 	TestResults map[string]string `json:"testResults"`
-	Digest      *string           `json:"digest"`
+	Digest      *string           `json:"digest,omitempty"`
 }
 
 // ExceptionSummary tracks Phase 3 vulnerability exception statistics.

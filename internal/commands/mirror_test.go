@@ -1,53 +1,43 @@
 package commands
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestRunMirror_Success(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "clearcutt-mirror-*.sh")
+func TestMirror_GeneratesCopyScript(t *testing.T) {
+	stdout, err := runCLI(t, "mirror", "java21-distroless",
+		"--target", "enterprise-registry.internal/hardened", "--catalog", fixtureCatalog())
 	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
+		t.Fatalf("mirror failed: %v", err)
 	}
-	tempFilePath := tempFile.Name()
-	tempFile.Close()
-	defer os.Remove(tempFilePath)
-
-	// Reset mirror flags
-	mirrorOpts = mirrorFlags{
-		target: "enterprise-registry.internal/hardened",
-		output: tempFilePath,
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"skopeo copy",
+		"cosign copy",
+		"enterprise-registry.internal/hardened/clearcutt-java:v1.0.0-distroless",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("mirror script missing %q\n%s", want, stdout)
+		}
 	}
-	GlobalOpts.CatalogPath = filepath.Join("..", "testdata", "catalog")
+}
 
-	err = runMirror("java21-distroless")
+// mirror verify must emit an honest verification *script*, not fabricated PASS lines.
+func TestMirrorVerify_GeneratesVerificationScript(t *testing.T) {
+	src := "ghcr.io/northcutted/clearcutt/clearcutt-java:v1.0.0-distroless"
+	tgt := "enterprise-registry.internal/hardened/clearcutt-java:v1.0.0-distroless"
+
+	stdout, err := runCLI(t, "mirror", "verify", "--source", src, "--target", tgt)
 	if err != nil {
-		t.Fatalf("runMirror failed: %v", err)
+		t.Fatalf("mirror verify failed: %v", err)
 	}
-
-	// Verify that the generated file contains valid skopeo and cosign copy statements
-	data, err := os.ReadFile(tempFilePath)
-	if err != nil {
-		t.Fatalf("failed to read generated mirroring script: %v", err)
+	if strings.Contains(stdout, "[✔ PASS]") {
+		t.Errorf("mirror verify must not fabricate PASS result lines offline:\n%s", stdout)
 	}
-
-	content := string(data)
-	if !strings.Contains(content, "#!/usr/bin/env bash") {
-		t.Errorf("Expected bash shebang, got: %s", content)
-	}
-
-	if !strings.Contains(content, "skopeo copy") {
-		t.Errorf("Expected skopeo copy command in script")
-	}
-
-	if !strings.Contains(content, "cosign copy") {
-		t.Errorf("Expected cosign copy command in script")
-	}
-
-	if !strings.Contains(content, "enterprise-registry.internal/hardened/clearcutt-java:v1.0.0-distroless") {
-		t.Errorf("Expected target registry and image tag reference to be correctly rendered")
+	for _, want := range []string{"cosign verify", "oras discover", "crane digest", src, tgt} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("verification script missing %q\n%s", want, stdout)
+		}
 	}
 }

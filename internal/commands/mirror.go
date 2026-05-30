@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/spf13/cobra"
 )
 
 type mirrorFlags struct {
@@ -42,8 +42,11 @@ func NewMirrorCmd() *cobra.Command {
 
 	verifyCmd := &cobra.Command{
 		Use:   "verify",
-		Short: "Verify mirrored OCI artifacts and referrers",
-		Long:  `Queries registry mirrors completely offline to verify OCI signature and attestation referrer presence.`,
+		Short: "Generate a script to verify a mirror preserved signatures and referrers",
+		Long: `Generates a cosign/oras verification script that checks the target mirror
+preserved the source image's digest, Sigstore signature, and attestation
+referrers (SBOM, SLSA provenance). The script requires network access to both
+registries; this command itself performs no network calls.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMirrorVerify()
 		},
@@ -51,6 +54,7 @@ func NewMirrorCmd() *cobra.Command {
 
 	verifyCmd.Flags().StringVar(&mirrorOpts.verifySource, "source", "", "Source OCI image reference tag")
 	verifyCmd.Flags().StringVar(&mirrorOpts.verifyTarget, "target", "", "Target mirrored OCI image reference tag")
+	verifyCmd.Flags().StringVar(&mirrorOpts.output, "output", "", "Output shell script file path destination")
 	verifyCmd.MarkFlagRequired("source")
 	verifyCmd.MarkFlagRequired("target")
 
@@ -60,17 +64,61 @@ func NewMirrorCmd() *cobra.Command {
 }
 
 func runMirrorVerify() error {
-	if !GlobalOpts.Quiet {
-		fmt.Printf("Performing Trust-Preserving Mirror Integrity Audit...\n")
-		fmt.Printf("Source Ref: %s\n", mirrorOpts.verifySource)
-		fmt.Printf("Target Ref: %s\n", mirrorOpts.verifyTarget)
-		fmt.Println("-----------------------------------------------------------------")
-		fmt.Println("[✔ PASS] referrer.signatures.present     : Verified OCI Sigstore keyless signatures presence in target mirror")
-		fmt.Println("[✔ PASS] referrer.sbom.present           : Verified SPDX SBOM attestation referrer presence in target mirror")
-		fmt.Println("[✔ PASS] referrer.provenance.present     : Verified SLSA build provenance attestation presence in target mirror")
-		fmt.Println("-----------------------------------------------------------------")
-		fmt.Println("Mirrored Trust Assets Verification: PASS")
+	src := strings.TrimSpace(mirrorOpts.verifySource)
+	tgt := strings.TrimSpace(mirrorOpts.verifyTarget)
+
+	script := fmt.Sprintf(`#!/usr/bin/env bash
+# ClearCutt Mirror Trust Verification
+# Confirms the target mirror preserved the digest, signature, and attestation
+# referrers of the source image. Requires: cosign, oras, crane, jq, and network
+# access to both registries.
+#
+# Source: %s
+# Target: %s
+
+set -euo pipefail
+
+SRC="%s"
+TGT="%s"
+
+log()  { echo "[clearcutt mirror verify] $1"; }
+fail() { echo "[clearcutt mirror verify] FAIL: $1" >&2; exit 1; }
+
+# 1. Both references must resolve to the same image digest.
+log "Resolving manifest digests..."
+src_digest="$(crane digest "$SRC")"
+tgt_digest="$(crane digest "$TGT")"
+[ "$src_digest" = "$tgt_digest" ] || fail "digest mismatch: source=$src_digest target=$tgt_digest"
+log "Digest match: $tgt_digest"
+
+# 2. Referrer counts (signatures, SBOMs, provenance) must be preserved.
+log "Comparing OCI referrers..."
+src_refs="$(oras discover --format json "$SRC" | jq '.manifests | length')"
+tgt_refs="$(oras discover --format json "$TGT" | jq '.manifests | length')"
+[ "$tgt_refs" -ge "$src_refs" ] || fail "target is missing referrers: source=$src_refs target=$tgt_refs"
+log "Referrers preserved: target=$tgt_refs source=$src_refs"
+
+# 3. The mirrored signature must still verify. Pin identity/issuer to your build
+#    workflow before running this in CI rather than the permissive defaults below.
+log "Verifying target signature..."
+cosign verify "$TGT" \
+  --certificate-identity-regexp '.*' \
+  --certificate-oidc-issuer-regexp '.*' >/dev/null || fail "target signature did not verify"
+
+log "Mirror trust verification PASSED for $TGT"
+`, src, tgt, src, tgt)
+
+	if mirrorOpts.output != "" {
+		if err := os.WriteFile(mirrorOpts.output, []byte(script), 0755); err != nil {
+			return fmt.Errorf("failed to write verification script: %w", err)
+		}
+		if !GlobalOpts.Quiet {
+			fmt.Fprintf(out, "Successfully generated mirror verification script: %s\n", mirrorOpts.output)
+		}
+		return nil
 	}
+
+	out.Write([]byte(script))
 	return nil
 }
 
@@ -85,33 +133,9 @@ func runMirror(imageID string) error {
 	}
 
 	// Resolve the target release
-	var release *catalog.ReleaseEntry
-	if mirrorOpts.tag != "" {
-		for i := range record.Releases {
-			if record.Releases[i].Tag == record.Releases[i].Tag { // standard loop
-				if record.Releases[i].Tag == mirrorOpts.tag {
-					release = &record.Releases[i]
-					break
-				}
-			}
-		}
-		if release == nil {
-			return fmt.Errorf("release tag %q not found for image %q", mirrorOpts.tag, imageID)
-		}
-	} else {
-		for i := range record.Releases {
-			if record.Releases[i].IsLatest {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil && len(record.Releases) > 0 {
-			release = &record.Releases[0]
-		}
-	}
-
-	if release == nil {
-		return fmt.Errorf("no releases found for image %q", imageID)
+	release, err := latestOrTaggedRelease(record.Releases, mirrorOpts.tag)
+	if err != nil {
+		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
 	sourceRegistry := strings.TrimRight(mirrorOpts.source, "/")
@@ -152,10 +176,10 @@ log_info "Mirror completed successfully for %s -> %s!"
 			return fmt.Errorf("failed to write mirroring script: %w", err)
 		}
 		if !GlobalOpts.Quiet {
-			fmt.Printf("Successfully generated mirroring execution script: %s\n", mirrorOpts.output)
+			fmt.Fprintf(out, "Successfully generated mirroring execution script: %s\n", mirrorOpts.output)
 		}
 	} else {
-		os.Stdout.Write([]byte(scriptTemplate))
+		out.Write([]byte(scriptTemplate))
 	}
 
 	return nil

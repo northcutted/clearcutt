@@ -1,11 +1,25 @@
 package catalog
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+// Strict, when true, causes catalog JSON to be rejected if it contains fields
+// not present in the Go data model. It is wired to the global --strict flag and
+// helps catch drift between the generator and the CLI's schema.
+var Strict bool
+
+func decodeJSON(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if Strict {
+		dec.DisallowUnknownFields()
+	}
+	return dec.Decode(v)
+}
 
 // LoadCatalogIndex reads index.json from the specified catalog directory.
 func LoadCatalogIndex(catalogPath string) (*CatalogIndex, error) {
@@ -16,7 +30,7 @@ func LoadCatalogIndex(catalogPath string) (*CatalogIndex, error) {
 	}
 
 	var index CatalogIndex
-	if err := json.Unmarshal(data, &index); err != nil {
+	if err := decodeJSON(data, &index); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal catalog index: %w", err)
 	}
 
@@ -32,7 +46,7 @@ func LoadImageRecord(catalogPath, imageID string) (*ImageRecord, error) {
 	}
 
 	var record ImageRecord
-	if err := json.Unmarshal(data, &record); err != nil {
+	if err := decodeJSON(data, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal image record: %w", err)
 	}
 

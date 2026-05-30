@@ -1,44 +1,57 @@
-package commands_test
+package commands
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/northcutted/clearcutt/internal/catalog"
 )
 
-func TestPolicyGatingGeneration(t *testing.T) {
-	catalogPath := filepath.Join("..", "testdata", "catalog")
-
-	// Load image record
-	rec, err := catalog.LoadImageRecord(catalogPath, "java21-distroless")
+func TestPolicy_KyvernoGeneration(t *testing.T) {
+	stdout, err := runCLI(t, "policy", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--engine", "kyverno", "--namespace", "apps")
 	if err != nil {
-		t.Fatalf("Failed to load image record: %v", err)
+		t.Fatalf("policy kyverno failed: %v", err)
+	}
+	for _, want := range []string{"kind: ClusterPolicy", "verify-cosign-signature", "namespaces: [\"apps\"]"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("kyverno output missing %q\n%s", want, stdout)
+		}
+	}
+	// The fixture's OIDC subject should be threaded into the keyless attestor block.
+	if !strings.Contains(stdout, "release.yml") {
+		t.Errorf("expected OIDC subject from the catalog signature certificate in output")
+	}
+}
+
+func TestPolicy_GatekeeperGeneration(t *testing.T) {
+	stdout, err := runCLI(t, "policy", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--engine", "gatekeeper")
+	if err != nil {
+		t.Fatalf("policy gatekeeper failed: %v", err)
+	}
+	for _, want := range []string{"kind: ConstraintTemplate", "K8sCosignSignatureVerify", "requireNonRoot:"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("gatekeeper output missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+// strict must add a real, non-root workload guarantee that production does not.
+func TestPolicy_StrictAddsNonRoot(t *testing.T) {
+	strict, err := runCLI(t, "policy", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--engine", "kyverno", "--environment", "strict")
+	if err != nil {
+		t.Fatalf("policy strict failed: %v", err)
+	}
+	if !strings.Contains(strict, "require-run-as-non-root") || !strings.Contains(strict, "runAsNonRoot: true") {
+		t.Errorf("strict profile must enforce runAsNonRoot, output:\n%s", strict)
 	}
 
-	if len(rec.Releases) == 0 {
-		t.Fatalf("No releases in test record")
+	prod, err := runCLI(t, "policy", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--engine", "kyverno", "--environment", "production")
+	if err != nil {
+		t.Fatalf("policy production failed: %v", err)
 	}
-
-	rel := rec.Releases[0]
-
-	// Assert signature certificate metadata exists
-	if rel.Signature == nil || rel.Signature.Certificate == nil {
-		t.Fatalf("OIDC Certificate metadata is missing from signature bundle")
-	}
-
-	cert := rel.Signature.Certificate
-	if cert.Subject == nil || *cert.Subject == "" {
-		t.Errorf("Expected non-empty OIDC Certificate subject")
-	}
-
-	if cert.Issuer == nil || *cert.Issuer == "" {
-		t.Errorf("Expected non-empty OIDC Certificate issuer")
-	}
-
-	// Verify that the policy subject details map to OIDC expectations
-	if !strings.Contains(*cert.Subject, "release.yml") {
-		t.Errorf("Expected OIDC subject to contain GitHub release workflow identifier")
+	if strings.Contains(prod, "require-run-as-non-root") {
+		t.Errorf("production profile should not include the strict-only non-root rule")
 	}
 }

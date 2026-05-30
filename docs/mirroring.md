@@ -29,10 +29,17 @@ clearcutt mirror java25-distroless \
 ```
 
 ### Verification in Private Registries
-After mirroring, run our verify subcommand to query the target mirror:
+After mirroring, generate a verification script that compares the source and the
+mirrored target. `mirror verify` performs no network calls itself — it emits a
+script you run where you have registry access:
 ```bash
 clearcutt mirror verify \
   --source ghcr.io/northcutted/clearcutt/clearcutt-java25@sha256:... \
-  --target artifactory.acme.internal/docker-mirror/clearcutt-java25@sha256:...
+  --target artifactory.acme.internal/docker-mirror/clearcutt-java25@sha256:... \
+  --output verify-mirror.sh
+bash verify-mirror.sh   # requires cosign, oras, crane, jq
 ```
-This confirms signatures, SBOMs, and SLSA provenance transferred cleanly.
+The generated script checks that the digests match, that referrer counts
+(signatures, SBOMs, provenance) were preserved, and that the target signature
+still verifies. Pin the `--certificate-identity`/`--certificate-oidc-issuer`
+values in the script to your build workflow before using it as a gate.

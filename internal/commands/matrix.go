@@ -3,19 +3,12 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
-
-type matrixFlags struct {
-	format string
-}
-
-var matrixOpts matrixFlags
 
 type MatrixExport struct {
 	GeneratedAt  string               `json:"generatedAt"`
@@ -40,13 +33,12 @@ func NewMatrixCmd() *cobra.Command {
 	exportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export the runtime matrix as JSON or YAML",
-		Long:  `Gathers and outputs all published language runtimes, tiers, and multi-architecture metadata into a single machine-readable contract.`,
+		Long:  `Gathers and outputs all published language runtimes, tiers, and multi-architecture metadata into a single machine-readable contract. Honors the global --format flag (json or yaml); json is the default.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMatrixExport()
 		},
 	}
 
-	exportCmd.Flags().StringVar(&matrixOpts.format, "format", "json", "Output format: json or yaml")
 	cmd.AddCommand(exportCmd)
 
 	return cmd
@@ -76,24 +68,16 @@ func runMatrixExport() error {
 		Images:       images,
 	}
 
-	format := strings.ToLower(matrixOpts.format)
-	if format == "" {
-		format = strings.ToLower(GlobalOpts.Format)
-	}
-
-	switch format {
+	switch strings.ToLower(GlobalOpts.Format) {
 	case "yaml", "yml":
-		if err := output.PrintYAML(os.Stdout, export); err != nil {
-			return err
-		}
+		return output.PrintYAML(out, export)
 	default:
-		// Default to JSON
-		enc := json.NewEncoder(os.Stdout)
+		// matrix has no tabular form; "table" (the global default) falls through to JSON.
+		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(export); err != nil {
 			return fmt.Errorf("failed to output JSON: %w", err)
 		}
+		return nil
 	}
-
-	return nil
 }

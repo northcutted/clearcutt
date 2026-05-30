@@ -19,10 +19,10 @@ ClearCutt implements an explicit, schema-validated exception model:
 
 ## 2. Dynamic OpenVEX Generation
 The `clearcutt vex` command queries exceptions and dynamically outputs OpenVEX (`https://openvex.dev/ns/v0.2.0`) documents:
-- Bypasses expired exceptions.
-- Maps exceptions to standard OpenVEX statements:
-  - `status`: `not_affected`, `under_investigation`, `affected`, or `fixed`.
-  - `justification`: maps `vulnerable_code_not_present` to `component_not_present`, `vulnerable_code_not_executed` to `vulnerable_code_not_in_execute_path`, and `accepted_risk` to `vulnerable_code_cannot_be_controlled_by_adversary`.
+- Only **active** exceptions are honored; expired ones are ignored so the document never carries a stale `not_affected` claim.
+- Maps exceptions onto **valid** OpenVEX statements:
+  - `status` is always one of the four spec values: `not_affected`, `affected`, `fixed`, `under_investigation`. Exception statuses without a direct equivalent (`accepted_risk`, `false_positive`) collapse to `not_affected`.
+  - `justification` is emitted **only** when `status` is `not_affected` (as the spec requires). Reasons map as: `vulnerable_code_not_present`/`scanner_false_positive` → `vulnerable_code_not_present`; `vulnerable_code_not_executed`/`inherited_from_base` → `vulnerable_code_not_in_execute_path`; everything else → `vulnerable_code_cannot_be_controlled_by_adversary`.
 
 ---
 
@@ -34,4 +34,6 @@ clearcutt verify java25-distroless \
   --allow-exceptions \
   --fail-on-expired-exceptions
 ```
-This deducts all valid, non-expired exempted CVEs from active severity thresholds. Bypassing expired exceptions ensures teams actively review and remediate technical debt.
+This deducts all active (non-expired) exempted CVEs from the severity thresholds. An expired exception is **never** applied; with `--fail-on-expired-exceptions` (the default) a matched-but-expired exception additionally raises a dedicated `exceptions.expired` failure, so stale waivers actively break the build rather than silently lapsing. Pass `--fail-on-expired-exceptions=false` to downgrade that to a silent skip.
+
+> Note: exceptions are only evaluated when a threshold is set (`--max-critical` / `--max-high`).

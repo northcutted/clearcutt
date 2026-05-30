@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/spf13/cobra"
 )
 
 type releaseFlags struct {
@@ -262,7 +262,7 @@ func runReleaseReport() error {
 	}
 
 	if !GlobalOpts.Quiet {
-		fmt.Printf("Successfully generated release diff reports under: %s\n", outDir)
+		fmt.Fprintf(out, "Successfully generated release diff reports under: %s\n", outDir)
 	}
 
 	return nil

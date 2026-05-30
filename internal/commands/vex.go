@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
 
 type vexFlags struct {
@@ -46,6 +46,46 @@ type OpenVEXProduct struct {
 	ID string `json:"@id"`
 }
 
+// The four statuses permitted by the OpenVEX spec.
+const (
+	vexNotAffected        = "not_affected"
+	vexAffected           = "affected"
+	vexFixed              = "fixed"
+	vexUnderInvestigation = "under_investigation"
+)
+
+// vexStatusFromException maps the richer exception status vocabulary
+// (which includes accepted_risk / false_positive) onto a valid OpenVEX status.
+// Anything without a direct equivalent collapses to not_affected, where a
+// justification can carry the rationale.
+func vexStatusFromException(status string) string {
+	switch strings.ToLower(status) {
+	case "affected":
+		return vexAffected
+	case "fixed":
+		return vexFixed
+	case "under_investigation":
+		return vexUnderInvestigation
+	case "not_affected", "false_positive", "accepted_risk":
+		return vexNotAffected
+	default:
+		return vexUnderInvestigation
+	}
+}
+
+// vexJustificationFromReason maps an exception reason onto an OpenVEX
+// justification enum. Only meaningful when the resulting status is not_affected.
+func vexJustificationFromReason(reason string) string {
+	switch strings.ToLower(reason) {
+	case "vulnerable_code_not_present", "scanner_false_positive":
+		return "vulnerable_code_not_present"
+	case "vulnerable_code_not_executed", "inherited_from_base":
+		return "vulnerable_code_not_in_execute_path"
+	default:
+		return "vulnerable_code_cannot_be_controlled_by_adversary"
+	}
+}
+
 func NewVexCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vex <image-id>",
@@ -75,31 +115,9 @@ func runVex(imageID string) error {
 	}
 
 	// Resolve the target release
-	var release *catalog.ReleaseEntry
-	if vexOpts.tag != "" {
-		for i := range record.Releases {
-			if record.Releases[i].Tag == vexOpts.tag {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil {
-			return fmt.Errorf("release tag %q not found for image %q", vexOpts.tag, imageID)
-		}
-	} else {
-		for i := range record.Releases {
-			if record.Releases[i].IsLatest {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil && len(record.Releases) > 0 {
-			release = &record.Releases[0]
-		}
-	}
-
-	if release == nil {
-		return fmt.Errorf("no releases found for image %q", imageID)
+	release, err := latestOrTaggedRelease(record.Releases, vexOpts.tag)
+	if err != nil {
+		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
 	// Load exceptions if provided
@@ -114,12 +132,12 @@ func runVex(imageID string) error {
 
 	// Create OpenVEX Document
 	doc := OpenVEXDocument{
-		Context:   "https://openvex.dev/ns/v0.2.0",
-		ID:        fmt.Sprintf("https://clearcutt.internal/vex/%s/%s", imageID, release.Tag),
-		Author:    "ClearCutt Security Platform Gating Engine",
-		Role:      "Document Creator",
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Version:   1,
+		Context:    "https://openvex.dev/ns/v0.2.0",
+		ID:         fmt.Sprintf("https://clearcutt.internal/vex/%s/%s", imageID, release.Tag),
+		Author:     "ClearCutt Security Platform Gating Engine",
+		Role:       "Document Creator",
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Version:    1,
 		Statements: []OpenVEXStatement{},
 	}
 
@@ -148,71 +166,43 @@ func runVex(imageID string) error {
 				Products:      []OpenVEXProduct{product},
 			}
 
-			// Check if we have an active exception for this finding
-			var matchedException *ExceptionEntry
-			if exceptionsDoc != nil {
-				for i := range exceptionsDoc.Spec.Exceptions {
-					exc := &exceptionsDoc.Spec.Exceptions[i]
-					if exc.ID == finding.ID &&
-						(exc.Package == "*" || exc.Package == finding.PackageName) &&
-						(exc.Image == "*" || exc.Image == imageID) &&
-						(exc.Release == "*" || exc.Release == release.Tag) {
+			// An active (non-expired) exception governs the statement; expired
+			// exceptions are ignored so they don't emit a stale not_affected claim.
+			entry, expired := exceptionsDoc.Match(finding.ID, finding.PackageName, imageID, release.Tag, now)
 
-						expiry, err := time.Parse("2006-01-02", exc.ExpiresAt)
-						if err == nil && expiry.After(now) {
-							matchedException = exc
-							break
-						}
-					}
+			// Map onto OpenVEX. Per spec, a justification is only valid when the
+			// status is not_affected, so we attach one there and nowhere else.
+			switch {
+			case entry != nil && !expired:
+				stmt.Status = vexStatusFromException(entry.Status)
+				stmt.ImpactStatement = entry.Notes
+				if stmt.Status == vexNotAffected {
+					stmt.Justification = vexJustificationFromReason(entry.Reason)
 				}
-			}
-
-			// Map remediation/justification dynamically
-			if matchedException != nil {
-				stmt.Status = strings.ToLower(matchedException.Status)
-				stmt.ImpactStatement = matchedException.Notes
-				reason := strings.ToLower(matchedException.Reason)
-				switch reason {
-				case "vulnerable_code_not_present":
-					stmt.Justification = "component_not_present"
-				case "vulnerable_code_not_executed":
-					stmt.Justification = "vulnerable_code_not_in_execute_path"
-				case "inherited_from_base":
-					stmt.Justification = "vulnerable_code_not_in_execute_path"
-				default:
-					stmt.Justification = "vulnerable_code_cannot_be_controlled_by_adversary"
-				}
-			} else if finding.Remediation != nil {
+			case finding.Remediation != nil:
 				reason := strings.ToLower(finding.Remediation.Reason)
 				status := strings.ToLower(finding.Remediation.Status)
-
 				stmt.ImpactStatement = finding.Remediation.Summary
 
-				if status == "deferred" {
-					if reason == "base_layer" {
-						stmt.Status = "not_affected"
-						stmt.Justification = "vulnerable_code_not_in_execute_path"
-					} else if reason == "below_priority_threshold" {
-						stmt.Status = "not_affected"
-						stmt.Justification = "vulnerable_code_not_in_execute_path"
-					} else if reason == "no_fixed_version" {
-						stmt.Status = "under_investigation"
-					} else if reason == "accepted_risk" {
-						stmt.Status = "not_affected"
-						stmt.Justification = "vulnerable_code_cannot_be_controlled_by_adversary"
-					} else {
-						stmt.Status = "under_investigation"
-					}
-				} else if status == "eligible" {
-					stmt.Status = "affected"
-					stmt.ImpactStatement = "Image layer is affected; update is eligible for compilation."
-				} else {
-					stmt.Status = "not_affected"
+				switch {
+				case status == "deferred" && (reason == "base_layer" || reason == "below_priority_threshold"):
+					stmt.Status = vexNotAffected
+					stmt.Justification = "vulnerable_code_not_in_execute_path"
+				case status == "deferred" && reason == "accepted_risk":
+					stmt.Status = vexNotAffected
+					stmt.Justification = "vulnerable_code_cannot_be_controlled_by_adversary"
+				case status == "deferred":
+					// no_fixed_version and any other deferral remain open.
+					stmt.Status = vexUnderInvestigation
+				case status == "eligible":
+					stmt.Status = vexAffected
+					stmt.ImpactStatement = "Image layer is affected; a fixed version is eligible for rebuild."
+				default:
+					stmt.Status = vexNotAffected
 					stmt.Justification = "vulnerable_code_not_present"
 				}
-			} else {
-				// Defaults if no explicit remediation exists
-				stmt.Status = "under_investigation"
+			default:
+				stmt.Status = vexUnderInvestigation
 				stmt.ImpactStatement = "Finding is active and under platform triage."
 			}
 
@@ -231,18 +221,18 @@ func runVex(imageID string) error {
 			return fmt.Errorf("failed to write OpenVEX file: %w", err)
 		}
 		if !GlobalOpts.Quiet {
-			fmt.Printf("Successfully generated OpenVEX compliance document: %s\n", vexOpts.output)
+			fmt.Fprintf(out, "Successfully generated OpenVEX compliance document: %s\n", vexOpts.output)
 		}
 	} else {
 		// Output format checks
 		switch strings.ToLower(GlobalOpts.Format) {
 		case "yaml", "yml":
-			if err := output.PrintYAML(os.Stdout, doc); err != nil {
+			if err := output.PrintYAML(out, doc); err != nil {
 				return err
 			}
 		default:
-			os.Stdout.Write(outputData)
-			fmt.Println()
+			out.Write(outputData)
+			fmt.Fprintln(out)
 		}
 	}
 

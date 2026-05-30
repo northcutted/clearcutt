@@ -2,12 +2,11 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
 
 type diffFlags struct {
@@ -19,15 +18,15 @@ var diffOpts diffFlags
 
 // DiffReport holds comparative data of two versioned releases.
 type DiffReport struct {
-	ImageID      string               `json:"imageId"`
-	FromTag      string               `json:"fromTag"`
-	ToTag        string               `json:"toTag"`
-	DigestChange string               `json:"digestChange"`
-	SizeChange   int64                `json:"sizeChange"`
-	ArchChanges  []ArchDiffReport     `json:"architectureChanges"`
-	Lifecycle    LifecycleDiffReport  `json:"lifecycleChanges"`
-	Exceptions   ExceptionDiffReport  `json:"exceptionChanges"`
-	Evidence     EvidenceDiffReport   `json:"evidenceChanges"`
+	ImageID      string              `json:"imageId"`
+	FromTag      string              `json:"fromTag"`
+	ToTag        string              `json:"toTag"`
+	DigestChange string              `json:"digestChange"`
+	SizeChange   int64               `json:"sizeChange"`
+	ArchChanges  []ArchDiffReport    `json:"architectureChanges"`
+	Lifecycle    LifecycleDiffReport `json:"lifecycleChanges"`
+	Exceptions   ExceptionDiffReport `json:"exceptionChanges"`
+	Evidence     EvidenceDiffReport  `json:"evidenceChanges"`
 }
 
 // ArchDiffReport tracks changes per target execution platform.
@@ -211,63 +210,63 @@ func runDiff(imageID string) error {
 	// Format output
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
-		return output.PrintJSON(os.Stdout, report)
+		return output.PrintJSON(out, report)
 	case "yaml", "yml":
-		return output.PrintYAML(os.Stdout, report)
+		return output.PrintYAML(out, report)
 	default:
 		// Human readable tabular report
-		fmt.Printf("ClearCutt Release Diff Report for %s\n", imageID)
-		fmt.Printf("Comparing: %s -> %s\n", report.FromTag, report.ToTag)
-		fmt.Println("-----------------------------------------------------------------")
-		fmt.Printf("Manifest Digest Change: %s\n", report.DigestChange)
-		fmt.Printf("Total Size Delta:       %+.2f MB\n", float64(report.SizeChange)/(1024*1024))
+		fmt.Fprintf(out, "ClearCutt Release Diff Report for %s\n", imageID)
+		fmt.Fprintf(out, "Comparing: %s -> %s\n", report.FromTag, report.ToTag)
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
+		fmt.Fprintf(out, "Manifest Digest Change: %s\n", report.DigestChange)
+		fmt.Fprintf(out, "Total Size Delta:       %+.2f MB\n", float64(report.SizeChange)/(1024*1024))
 
 		if report.Lifecycle.StatusChanged {
-			fmt.Printf("Lifecycle Status:       %s -> %s\n", report.Lifecycle.FromStatus, report.Lifecycle.ToStatus)
+			fmt.Fprintf(out, "Lifecycle Status:       %s -> %s\n", report.Lifecycle.FromStatus, report.Lifecycle.ToStatus)
 		}
 		if report.Lifecycle.ProductionAllowedChanged {
-			fmt.Printf("Production Gating:      %t -> %t\n", report.Lifecycle.FromProd, report.Lifecycle.ToProd)
+			fmt.Fprintf(out, "Production Gating:      %t -> %t\n", report.Lifecycle.FromProd, report.Lifecycle.ToProd)
 		}
 		if report.Exceptions.TotalChange != 0 {
-			fmt.Printf("Governance Exceptions:  %+d total\n", report.Exceptions.TotalChange)
+			fmt.Fprintf(out, "Governance Exceptions:  %+d total\n", report.Exceptions.TotalChange)
 		}
 
 		for _, arch := range report.ArchChanges {
-			fmt.Printf("\nPlatform: linux/%s\n", arch.Arch)
-			fmt.Printf("  Image Digest:         %s\n", arch.DigestChange)
-			fmt.Printf("  Size Delta:           %+.2f MB\n", float64(arch.SizeChange)/(1024*1024))
-			fmt.Printf("  Layer Delta:          %+d layers\n", arch.LayerCountChange)
-			fmt.Printf("  Packages:             +%d added, -%d removed, *%d upgraded/changed\n",
+			fmt.Fprintf(out, "\nPlatform: linux/%s\n", arch.Arch)
+			fmt.Fprintf(out, "  Image Digest:         %s\n", arch.DigestChange)
+			fmt.Fprintf(out, "  Size Delta:           %+.2f MB\n", float64(arch.SizeChange)/(1024*1024))
+			fmt.Fprintf(out, "  Layer Delta:          %+d layers\n", arch.LayerCountChange)
+			fmt.Fprintf(out, "  Packages:             +%d added, -%d removed, *%d upgraded/changed\n",
 				len(arch.PackagesAdded), len(arch.PackagesRemoved), len(arch.PackagesChanged))
-			fmt.Printf("  Vulnerabilities:      +%d new CVEs, -%d resolved CVEs\n",
+			fmt.Fprintf(out, "  Vulnerabilities:      +%d new CVEs, -%d resolved CVEs\n",
 				len(arch.CVEsAdded), len(arch.CVEsResolved))
 
 			if len(arch.PackagesAdded) > 0 && GlobalOpts.Verbose {
-				fmt.Println("    Added Packages:")
+				fmt.Fprintln(out, "    Added Packages:")
 				for _, p := range arch.PackagesAdded {
-					fmt.Printf("      + %s\n", p)
+					fmt.Fprintf(out, "      + %s\n", p)
 				}
 			}
 			if len(arch.PackagesRemoved) > 0 && GlobalOpts.Verbose {
-				fmt.Println("    Removed Packages:")
+				fmt.Fprintln(out, "    Removed Packages:")
 				for _, p := range arch.PackagesRemoved {
-					fmt.Printf("      - %s\n", p)
+					fmt.Fprintf(out, "      - %s\n", p)
 				}
 			}
 			if len(arch.CVEsAdded) > 0 {
-				fmt.Println("    Newly Introduced CVEs:")
+				fmt.Fprintln(out, "    Newly Introduced CVEs:")
 				for _, c := range arch.CVEsAdded {
-					fmt.Printf("      + %s\n", c)
+					fmt.Fprintf(out, "      + %s\n", c)
 				}
 			}
 			if len(arch.CVEsResolved) > 0 {
-				fmt.Println("    Resolved CVEs:")
+				fmt.Fprintln(out, "    Resolved CVEs:")
 				for _, c := range arch.CVEsResolved {
-					fmt.Printf("      - %s\n", c)
+					fmt.Fprintf(out, "      - %s\n", c)
 				}
 			}
 		}
-		fmt.Println("-----------------------------------------------------------------")
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
 	}
 
 	return nil

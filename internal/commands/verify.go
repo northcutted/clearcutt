@@ -2,13 +2,13 @@ package commands
 
 import (
 	"fmt"
-	"os"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
 
 type verifyFlags struct {
@@ -86,31 +86,9 @@ func runVerify(imageID string) error {
 	}
 
 	// Resolve the target release
-	var release *catalog.ReleaseEntry
-	if verifyOpts.tag != "" {
-		for i := range record.Releases {
-			if record.Releases[i].Tag == verifyOpts.tag {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil {
-			return fmt.Errorf("release tag %q not found for image %q", verifyOpts.tag, imageID)
-		}
-	} else {
-		for i := range record.Releases {
-			if record.Releases[i].IsLatest {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil && len(record.Releases) > 0 {
-			release = &record.Releases[0]
-		}
-	}
-
-	if release == nil {
-		return fmt.Errorf("no releases found for image %q", imageID)
+	release, err := latestOrTaggedRelease(record.Releases, verifyOpts.tag)
+	if err != nil {
+		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
 	// Parse exceptions if allowed
@@ -261,69 +239,64 @@ func runVerify(imageID string) error {
 		highExceeded := false
 		maxCritFound := 0
 		maxHighFound := 0
+		expiredExceptions := map[string]bool{}
 
 		now := time.Now().UTC()
 
 		for _, arch := range release.Architectures {
-			if arch.Vulnerabilities != nil {
-				criticalCount := 0
-				highCount := 0
+			if arch.Vulnerabilities == nil {
+				continue
+			}
+			criticalCount := 0
+			highCount := 0
 
-				for _, finding := range arch.Vulnerabilities.Findings {
-					isExempted := false
-					if exceptionsDoc != nil {
-						for _, exc := range exceptionsDoc.Spec.Exceptions {
-							if exc.ID == finding.ID &&
-								(exc.Package == "*" || exc.Package == finding.PackageName) &&
-								(exc.Image == "*" || exc.Image == imageID) &&
-								(exc.Release == "*" || exc.Release == release.Tag) {
-
-								expiry, err := time.Parse("2006-01-02", exc.ExpiresAt)
-								if err == nil {
-									if expiry.Before(now) {
-										if verifyOpts.failOnExpiredExceptions {
-											continue
-										}
-									}
-									isExempted = true
-									break
-								}
-							}
-						}
-					}
-
-					if isExempted {
+			for _, finding := range arch.Vulnerabilities.Findings {
+				// An active exception exempts a finding; an expired one never does,
+				// but is recorded so --fail-on-expired-exceptions can surface it.
+				if entry, expired := exceptionsDoc.Match(finding.ID, finding.PackageName, imageID, release.Tag, now); entry != nil {
+					if expired {
+						expiredExceptions[entry.ID] = true
+					} else {
 						continue
 					}
-
-					sev := strings.ToLower(finding.Severity)
-					if sev == "critical" {
-						criticalCount++
-					} else if sev == "high" {
-						highCount++
-					}
 				}
 
-				// If we don't have findings but have pre-aggregated counts, use them as fallback
-				if len(arch.Vulnerabilities.Findings) == 0 {
-					criticalCount = arch.Vulnerabilities.CountsBySeverity.Critical
-					highCount = arch.Vulnerabilities.CountsBySeverity.High
-				}
-
-				if criticalCount > maxCritFound {
-					maxCritFound = criticalCount
-				}
-				if highCount > maxHighFound {
-					maxHighFound = highCount
-				}
-
-				if verifyOpts.maxCritical >= 0 && criticalCount > verifyOpts.maxCritical {
-					critExceeded = true
-				}
-				if verifyOpts.maxHigh >= 0 && highCount > verifyOpts.maxHigh {
-					highExceeded = true
+				sev := strings.ToLower(finding.Severity)
+				if sev == "critical" {
+					criticalCount++
+				} else if sev == "high" {
+					highCount++
 				}
 			}
+
+			// If we don't have findings but have pre-aggregated counts, use them as fallback
+			if len(arch.Vulnerabilities.Findings) == 0 {
+				criticalCount = arch.Vulnerabilities.CountsBySeverity.Critical
+				highCount = arch.Vulnerabilities.CountsBySeverity.High
+			}
+
+			if criticalCount > maxCritFound {
+				maxCritFound = criticalCount
+			}
+			if highCount > maxHighFound {
+				maxHighFound = highCount
+			}
+
+			if verifyOpts.maxCritical >= 0 && criticalCount > verifyOpts.maxCritical {
+				critExceeded = true
+			}
+			if verifyOpts.maxHigh >= 0 && highCount > verifyOpts.maxHigh {
+				highExceeded = true
+			}
+		}
+
+		if verifyOpts.failOnExpiredExceptions && len(expiredExceptions) > 0 {
+			ids := make([]string, 0, len(expiredExceptions))
+			for id := range expiredExceptions {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			addCheck("exceptions.expired", "fail", fmt.Sprintf("matched exception(s) expired and were not honored: %s", strings.Join(ids, ", ")))
 		}
 
 		if verifyOpts.maxCritical >= 0 {
@@ -358,35 +331,34 @@ func runVerify(imageID string) error {
 	// Format output
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
-		if err := output.PrintJSON(os.Stdout, response); err != nil {
+		if err := output.PrintJSON(out, response); err != nil {
 			return err
 		}
 	case "yaml", "yml":
-		if err := output.PrintYAML(os.Stdout, response); err != nil {
+		if err := output.PrintYAML(out, response); err != nil {
 			return err
 		}
 	default:
 		// Print human readable
-		fmt.Printf("Policy Gating Report for %s:%s\n", imageID, release.Tag)
-		fmt.Println("-----------------------------------------------------------------")
+		fmt.Fprintf(out, "Policy Gating Report for %s:%s\n", imageID, release.Tag)
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
 		for _, check := range checks {
 			statusSymbol := "✔ PASS"
 			if check.Status == "fail" {
 				statusSymbol = "✘ FAIL"
 			}
-			fmt.Printf("[%-6s] %-32s : %s\n", statusSymbol, check.ID, check.Message)
+			fmt.Fprintf(out, "[%-6s] %-32s : %s\n", statusSymbol, check.ID, check.Message)
 		}
-		fmt.Println("-----------------------------------------------------------------")
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
 		if hasFailures {
-			fmt.Println("Verification Result: FAIL")
+			fmt.Fprintln(out, "Verification Result: FAIL")
 		} else {
-			fmt.Println("Verification Result: PASS")
+			fmt.Fprintln(out, "Verification Result: PASS")
 		}
 	}
 
 	if hasFailures {
-		// Exit process with non-zero failure code
-		osExit(1)
+		return ErrCheckFailed
 	}
 
 	return nil

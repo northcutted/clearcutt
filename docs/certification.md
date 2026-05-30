@@ -34,6 +34,35 @@ spec:
 
 ---
 
+## 1.5 What `certify` checks offline
+
+`clearcutt certify` operates on a local image tarball with no network access. It
+accepts both legacy `docker save` archives and OCI-layout archives (`index.json` +
+`blobs/`), and transparently reads gzip-compressed layers.
+
+It **verifies offline**:
+- non-root `Config.User`,
+- required `org.opencontainers.image.*` / `org.clearcutt.*` labels,
+- absence of shells and package managers in distroless tiers,
+- declared-base allow-listing, digest pinning, and base-image CVE thresholds (against the catalog).
+
+It **cannot verify offline** — and reports these as `↷ SKIP`, never `PASS`:
+- Cosign signatures, SBOM attestations, and SLSA provenance. These live as OCI
+  *referrers* in the registry, not inside the tarball, and `minimumSlsaLevel`
+  likewise cannot be confirmed offline.
+
+To enforce those, verify against the registry in the same pipeline step, e.g.:
+```bash
+cosign verify "$IMAGE" --certificate-identity-regexp '<your-workflow>' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify-attestation --type slsaprovenance "$IMAGE" ...
+```
+
+A certification result of `PASS (N skipped)` means the offline contract held but
+N attestation checks were deferred to registry-side verification.
+
+---
+
 ## 2. CI/CD Pipeline Enforcement
 
 ### 2.1 GitHub Actions Integration

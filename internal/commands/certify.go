@@ -2,19 +2,21 @@ package commands
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-	"sigs.k8s.io/yaml"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
+	"sigs.k8s.io/yaml"
 )
 
 type certifyFlags struct {
@@ -42,7 +44,7 @@ type CertificationPolicyDoc struct {
 		SupplyChain struct {
 			RequireSignature  bool `json:"requireSignature"`
 			RequireProvenance bool `json:"requireProvenance"`
-			RequireSbom      bool `json:"requireSbom"`
+			RequireSbom       bool `json:"requireSbom"`
 			MinimumSlsaLevel  int  `json:"minimumSlsaLevel"`
 		} `json:"supplyChain"`
 		Runtime struct {
@@ -67,7 +69,7 @@ type CertificationPolicyDoc struct {
 
 type CertifyCheckResult struct {
 	ID      string `json:"id"`
-	Status  string `json:"status"` // pass or fail
+	Status  string `json:"status"` // pass, fail, or skip
 	Message string `json:"message"`
 }
 
@@ -77,31 +79,62 @@ type CertifyResponse struct {
 	Checks []CertifyCheckResult `json:"checks"`
 }
 
-// DockerManifest represents the Docker save image manifest structure
+// DockerManifest represents the legacy `docker save` manifest.json structure.
 type DockerManifest struct {
 	Config   string   `json:"Config"`
 	RepoTags []string `json:"RepoTags"`
 	Layers   []string `json:"Layers"`
 }
 
-// OCIImageConfig represents standard OCI runtime configuration metadata
+// ociDescriptor is the subset of an OCI content descriptor we need to walk an
+// OCI-layout image archive (index.json -> manifest -> config/layers).
+type ociDescriptor struct {
+	MediaType   string            `json:"mediaType"`
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type ociIndex struct {
+	Manifests []ociDescriptor `json:"manifests"`
+}
+
+type ociManifest struct {
+	Config ociDescriptor   `json:"config"`
+	Layers []ociDescriptor `json:"layers"`
+}
+
+// OCIImageConfig represents standard OCI runtime configuration metadata.
 type OCIImageConfig struct {
 	Config struct {
-		User       string   `json:"User"`
-		WorkingDir string   `json:"WorkingDir"`
-		Env        []string `json:"Env"`
-		Entrypoint []string `json:"Entrypoint"`
-		Cmd        []string `json:"Cmd"`
+		User       string            `json:"User"`
+		WorkingDir string            `json:"WorkingDir"`
+		Env        []string          `json:"Env"`
+		Entrypoint []string          `json:"Entrypoint"`
+		Cmd        []string          `json:"Cmd"`
 		Labels     map[string]string `json:"Labels"`
 	} `json:"config"`
+}
+
+// tarImage holds the resolved pieces of an image tarball, abstracting over the
+// legacy docker-save and OCI-layout on-disk formats.
+type tarImage struct {
+	format     string   // "docker", "oci", or "" when unrecognized
+	configRaw  []byte   // OCI image config JSON
+	repoTags   []string // best-effort image references
+	layerPaths []string // temp-file paths of layer blobs (may be gzip-compressed)
 }
 
 func NewCertifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "certify <tarball-path>",
 		Short: "Certify a downstream application image against platform security contracts",
-		Long:  `Unpacks and parses local OCI/Docker image tarballs completely offline to verify non-root users, shell-free tiers, and hermetic RPATH linkages.`,
-		Args:  cobra.ExactArgs(1),
+		Long: `Unpacks and parses local OCI/Docker image tarballs completely offline to verify
+non-root users, shell-free distroless tiers, and required OCI labels. Supports both
+legacy 'docker save' archives and OCI-layout archives. Supply-chain attestations
+(signature, SBOM, provenance) live as registry referrers and cannot be verified
+from an offline tarball; those checks are reported as skipped with guidance.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCertify(args[0])
 		},
@@ -119,15 +152,15 @@ func NewCertifyCmd() *cobra.Command {
 func runCertify(tarPath string) error {
 	checks := []CertifyCheckResult{}
 	hasFailures := false
+	skipped := 0
 
 	addCheck := func(id, status, message string) {
-		checks = append(checks, CertifyCheckResult{
-			ID:      id,
-			Status:  status,
-			Message: message,
-		})
-		if status == "fail" {
+		checks = append(checks, CertifyCheckResult{ID: id, Status: status, Message: message})
+		switch status {
+		case "fail":
 			hasFailures = true
+		case "skip":
+			skipped++
 		}
 	}
 
@@ -147,126 +180,52 @@ func runCertify(tarPath string) error {
 			return fmt.Errorf("failed to parse policy YAML: %w", err)
 		}
 		policy = &p
-
-		// Override simple flags
 		reqSig = policy.Spec.SupplyChain.RequireSignature
 		reqSbom = policy.Spec.SupplyChain.RequireSbom
 		reqProv = policy.Spec.SupplyChain.RequireProvenance
 	}
 
-	// Open the outer tar file (support gzip if .tar.gz)
-	file, err := os.Open(tarPath)
-	if err != nil {
-		return fmt.Errorf("unable to open image file: %w", err)
-	}
-	defer file.Close()
-
-	var reader io.Reader = file
-	if strings.HasSuffix(tarPath, ".gz") || strings.HasSuffix(tarPath, ".tgz") {
-		gz, err := gzip.NewReader(file)
-		if err != nil {
-			return fmt.Errorf("unable to initialize gzip reader: %w", err)
-		}
-		defer gz.Close()
-		reader = gz
-	}
-
-	tarReader := tar.NewReader(reader)
-
-	var manifests []DockerManifest
-	var configData []byte
-	configName := ""
-
-	// We hold outer tar entries in memory/files as needed
-	// For OCI config and manifests, they are usually small and at the root level of the tarball
 	tempDir, err := os.MkdirTemp("", "clearcutt-certify-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp workspace: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	layerPaths := []string{}
-
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error reading tar archives: %w", err)
-		}
-
-		name := filepath.Clean(header.Name)
-		if name == "manifest.json" {
-			data, err := io.ReadAll(tarReader)
-			if err != nil {
-				return fmt.Errorf("failed to read manifest.json: %w", err)
-			}
-			if err := json.Unmarshal(data, &manifests); err != nil {
-				return fmt.Errorf("failed to parse manifest.json: %w", err)
-			}
-		} else if strings.HasSuffix(name, ".json") && !strings.Contains(name, "/") {
-			// Save config candidates
-			data, err := io.ReadAll(tarReader)
-			if err != nil {
-				return fmt.Errorf("failed to read config candidate %s: %w", name, err)
-			}
-			// We store candidate JSONs by name
-			err = os.WriteFile(filepath.Join(tempDir, name), data, 0600)
-			if err != nil {
-				return fmt.Errorf("failed to write config candidate to temp: %w", err)
-			}
-		} else if strings.HasSuffix(name, "layer.tar") || strings.HasSuffix(name, "/layer.tar") {
-			// Extract layer.tar for deep audits
-			destPath := filepath.Join(tempDir, strings.ReplaceAll(name, "/", "_"))
-			destFile, err := os.Create(destPath)
-			if err != nil {
-				return fmt.Errorf("failed to create layer temp file: %w", err)
-			}
-			if _, err := io.Copy(destFile, tarReader); err != nil {
-				destFile.Close()
-				return fmt.Errorf("failed to extract layer layer: %w", err)
-			}
-			destFile.Close()
-			layerPaths = append(layerPaths, destPath)
-		}
+	img, err := loadImageTarball(tarPath, tempDir)
+	if err != nil {
+		return err
 	}
 
-	if len(manifests) == 0 {
-		addCheck("manifest.parsed", "fail", "No manifest.json found at root of the image tar archive")
-	} else {
-		addCheck("manifest.parsed", "pass", "Successfully parsed outer OCI manifest structure")
-		configName = manifests[0].Config
-		candidatePath := filepath.Join(tempDir, configName)
-		if data, err := os.ReadFile(candidatePath); err == nil {
-			configData = data
-		}
+	switch img.format {
+	case "docker":
+		addCheck("manifest.parsed", "pass", "Parsed legacy docker-save image manifest")
+	case "oci":
+		addCheck("manifest.parsed", "pass", "Parsed OCI-layout image index and manifest")
+	default:
+		addCheck("manifest.parsed", "fail", "Unrecognized image archive: expected a docker-save manifest.json or an OCI-layout index.json")
 	}
 
-	var config OCIImageConfig
-	if len(configData) > 0 {
-		if err := json.Unmarshal(configData, &config); err != nil {
+	if len(img.configRaw) > 0 {
+		var config OCIImageConfig
+		if err := json.Unmarshal(img.configRaw, &config); err != nil {
 			addCheck("config.parsed", "fail", fmt.Sprintf("Failed to parse OCI config JSON structure: %v", err))
 		} else {
 			addCheck("config.parsed", "pass", "Successfully parsed OCI image configuration specs")
 
-			// Check 1: Rootless Execution (Config.User)
+			// Check 1: Rootless execution (Config.User)
 			user := strings.TrimSpace(config.Config.User)
-			if user == "" {
+			switch {
+			case user == "":
 				addCheck("config.user.nonroot", "fail", "Security Violation: Config.User is not specified (defaults to root/UID 0)")
-			} else if user == "0" || user == "root" || strings.HasPrefix(user, "0:") || strings.HasPrefix(user, "root:") {
+			case user == "0" || user == "root" || strings.HasPrefix(user, "0:") || strings.HasPrefix(user, "root:"):
 				addCheck("config.user.nonroot", "fail", fmt.Sprintf("Security Violation: Config.User executes under root privilege -> %s", user))
-			} else {
+			default:
 				addCheck("config.user.nonroot", "pass", fmt.Sprintf("Unprivileged non-root operator boundaries verified: User %s", user))
 			}
 
 			// Check 2: OCI standard labels
-			labels := config.Config.Labels
-			if labels == nil {
-				labels = make(map[string]string)
-			}
 			hasCompliantLabel := false
-			for k := range labels {
+			for k := range config.Config.Labels {
 				if strings.HasPrefix(k, "org.opencontainers.image.") || strings.HasPrefix(k, "org.clearcutt.") {
 					hasCompliantLabel = true
 					break
@@ -278,96 +237,77 @@ func runCertify(tarPath string) error {
 				addCheck("config.labels.compliance", "fail", "Compliance Notice: Image lacks required org.opencontainers.image compliance labels")
 			}
 		}
-	} else if len(manifests) > 0 {
-		addCheck("config.parsed", "fail", fmt.Sprintf("OCI configuration file %q not found in tarball archive", configName))
+	} else if img.format != "" {
+		addCheck("config.parsed", "fail", "OCI image configuration blob was not found in the tarball archive")
 	}
 
-	// Check 3: Shell & Utility Audits (if base is specified and represents a distroless tier)
+	// Check 3: Shell & package-manager audits, only when the claimed base is distroless.
 	isDistroless := false
-	baseImageId := certifyOpts.base
-	if baseImageId != "" {
-		if strings.Contains(baseImageId, "distroless") {
+	if baseID != "" {
+		if strings.Contains(baseID, "distroless") {
 			isDistroless = true
-		} else {
-			// Resolve base image from catalog
-			record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, baseImageId)
-			if err == nil && record.Tier.ID == "distroless" {
-				isDistroless = true
-			}
+		} else if record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, baseID); err == nil && record.Tier.ID == "distroless" {
+			isDistroless = true
 		}
 	}
 
 	if isDistroless {
 		shellsFound := []string{}
 		packageManagersFound := []string{}
+		scanErrors := 0
 
-		for _, layerPath := range layerPaths {
-			lf, err := os.Open(layerPath)
+		for _, layerPath := range img.layerPaths {
+			shells, pkgs, err := scanLayerForRuntimeTools(layerPath)
 			if err != nil {
+				scanErrors++
 				continue
 			}
-			layerReader := tar.NewReader(lf)
-			for {
-				hdr, err := layerReader.Next()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					break
-				}
-				name := strings.TrimPrefix(filepath.Clean(hdr.Name), "/")
-				baseName := filepath.Base(name)
+			shellsFound = append(shellsFound, shells...)
+			packageManagersFound = append(packageManagersFound, pkgs...)
+		}
 
-				// Check shells
-				if name == "bin/sh" || name == "bin/bash" || name == "bin/ash" || name == "bin/zsh" ||
-					name == "usr/bin/sh" || name == "usr/bin/bash" || name == "usr/bin/ash" || name == "usr/bin/zsh" {
-					shellsFound = append(shellsFound, name)
-				}
-
-				// Check package managers
-				if baseName == "apk" || baseName == "apt" || baseName == "dpkg" || baseName == "dnf" || baseName == "yum" {
-					if name == "sbin/apk" || name == "usr/bin/apk" || name == "usr/bin/apt" || name == "usr/bin/dpkg" || name == "usr/bin/dnf" || name == "usr/bin/yum" {
-						packageManagersFound = append(packageManagersFound, name)
-					}
-				}
+		// If we couldn't read any layer, don't claim a clean result we didn't verify.
+		if scanErrors > 0 && scanErrors == len(img.layerPaths) {
+			addCheck("contract.shell.absence", "skip", "Could not read any image layers (unsupported layer encoding); shell audit not performed")
+			addCheck("contract.package_manager.absence", "skip", "Could not read any image layers (unsupported layer encoding); package-manager audit not performed")
+		} else {
+			if len(shellsFound) > 0 {
+				addCheck("contract.shell.absence", "fail", fmt.Sprintf("Security Violation: Distroless contract broken. Shell binaries found: %s", strings.Join(shellsFound, ", ")))
+			} else {
+				addCheck("contract.shell.absence", "pass", "Verified absence of interactive shell tools inside distroless closure")
 			}
-			lf.Close()
+			if len(packageManagersFound) > 0 {
+				addCheck("contract.package_manager.absence", "fail", fmt.Sprintf("Security Violation: Package manager tools found: %s", strings.Join(packageManagersFound, ", ")))
+			} else {
+				addCheck("contract.package_manager.absence", "pass", "Verified absence of package manager tools inside runtime boundary")
+			}
 		}
-
-		if len(shellsFound) > 0 {
-			addCheck("contract.shell.absence", "fail", fmt.Sprintf("Security Violation: Distroless contract broken. Shell binaries found: %s", strings.Join(shellsFound, ", ")))
-		} else {
-			addCheck("contract.shell.absence", "pass", "Verified absolute absence of interactive shell tools inside distroless closure")
-		}
-
-		if len(packageManagersFound) > 0 {
-			addCheck("contract.package_manager.absence", "fail", fmt.Sprintf("Security Violation: Package manager tools found: %s", strings.Join(packageManagersFound, ", ")))
-		} else {
-			addCheck("contract.package_manager.absence", "pass", "Verified absolute absence of package manager tools inside runtime boundary")
-		}
-	} else if baseImageId != "" {
-		addCheck("contract.shell.absence", "pass", "Shell check skipped (base image tier is not distroless)")
-		addCheck("contract.package_manager.absence", "pass", "Package manager check skipped (base image tier is not distroless)")
+	} else if baseID != "" {
+		addCheck("contract.shell.absence", "skip", "Base image tier is not distroless; shell audit not applicable")
+		addCheck("contract.package_manager.absence", "skip", "Base image tier is not distroless; package-manager audit not applicable")
 	}
 
-	// Downstream trust verification mock states (for GHA policy compliance)
+	// Supply-chain attestations are OCI referrers in a registry, not contents of an
+	// offline tarball. We cannot verify them here, so when required we mark them
+	// skipped with guidance rather than asserting a result we did not check.
+	const attestationGuidance = "verify against the registry with `cosign verify` / `cosign verify-attestation`"
 	if reqSig {
-		addCheck("evidence.signature.verified", "pass", "Verified presence of cryptographic OCI keyless signature")
+		addCheck("evidence.signature.verified", "skip", "Signature is a registry referrer and cannot be verified from an offline tarball; "+attestationGuidance)
 	}
 	if reqSbom {
-		addCheck("evidence.sbom.present", "pass", "Verified presence of cryptographically signed SPDX SBOM attestation")
+		addCheck("evidence.sbom.present", "skip", "SBOM attestation is a registry referrer and cannot be verified from an offline tarball; "+attestationGuidance)
 	}
 	if reqProv {
-		addCheck("evidence.provenance.present", "pass", "Verified presence of non-falsifiable SLSA level-3 build provenance")
+		addCheck("evidence.provenance.present", "skip", "SLSA provenance is a registry referrer and cannot be verified from an offline tarball; "+attestationGuidance)
 	}
 
-	// Declarative Certification Policy Enforcements
+	// Declarative certification policy enforcement.
 	if policy != nil {
-		// 1. Allowed base images check
+		// 1. Allowed base images.
 		if len(policy.Spec.Base.AllowedImages) > 0 {
 			allowed := false
-			for _, img := range policy.Spec.Base.AllowedImages {
-				if img == baseID {
+			for _, candidate := range policy.Spec.Base.AllowedImages {
+				if candidate == baseID {
 					allowed = true
 					break
 				}
@@ -379,117 +319,30 @@ func runCertify(tarPath string) error {
 			}
 		}
 
-		// 2. Digest pinned check
+		// 2. Digest pinning, evaluated against the image's own references.
 		if policy.Spec.Base.RequireDigestPinned {
-			isDigestPinned := strings.Contains(baseID, "@sha256:") || (len(manifests) > 0 && len(manifests[0].RepoTags) > 0 && strings.Contains(manifests[0].RepoTags[0], "@sha256:"))
+			isDigestPinned := strings.Contains(baseID, "@sha256:")
+			for _, ref := range img.repoTags {
+				if strings.Contains(ref, "@sha256:") {
+					isDigestPinned = true
+					break
+				}
+			}
 			if isDigestPinned {
-				addCheck("policy.base.digestPinned", "pass", "Verified that container image references are digest-pinned")
+				addCheck("policy.base.digestPinned", "pass", "Container image reference is digest-pinned")
 			} else {
 				addCheck("policy.base.digestPinned", "fail", "Security Violation: Image reference must be digest-pinned for production deployment")
 			}
 		}
 
-		// 3. Minimum SLSA level check
+		// 3. Minimum SLSA level cannot be determined from an offline tarball.
 		if policy.Spec.SupplyChain.MinimumSlsaLevel > 0 {
-			slsaLevel := 3 // mock downstream level
-			if slsaLevel >= policy.Spec.SupplyChain.MinimumSlsaLevel {
-				addCheck("policy.supplychain.slsaLevel", "pass", fmt.Sprintf("SLSA build provenance level %d meets policy requirement %d", slsaLevel, policy.Spec.SupplyChain.MinimumSlsaLevel))
-			} else {
-				addCheck("policy.supplychain.slsaLevel", "fail", fmt.Sprintf("Security Violation: SLSA level %d is below required %d", slsaLevel, policy.Spec.SupplyChain.MinimumSlsaLevel))
-			}
+			addCheck("policy.supplychain.slsaLevel", "skip", fmt.Sprintf("SLSA level requires the provenance attestation from the registry; cannot confirm >= %d offline", policy.Spec.SupplyChain.MinimumSlsaLevel))
 		}
 
-		// 4. Vulnerabilities Gating & Exceptions check
+		// 4. Vulnerability gating against the declared base image's catalog record.
 		if policy.Spec.Vulnerabilities.MaxCritical >= 0 || policy.Spec.Vulnerabilities.MaxHigh >= 0 {
-			record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, baseID)
-			if err == nil && len(record.Releases) > 0 {
-				release := &record.Releases[0]
-				critExceeded := false
-				highExceeded := false
-				maxCritFound := 0
-				maxHighFound := 0
-
-				var exceptionsDoc *ExceptionsDoc
-				if policy.Spec.Vulnerabilities.AllowExceptions && policy.Spec.Vulnerabilities.ExceptionFile != "" {
-					if doc, err := LoadExceptionsFile(policy.Spec.Vulnerabilities.ExceptionFile); err == nil {
-						exceptionsDoc = doc
-					}
-				}
-
-				now := time.Now().UTC()
-
-				for _, arch := range release.Architectures {
-					if arch.Vulnerabilities != nil {
-						criticalCount := 0
-						highCount := 0
-
-						for _, finding := range arch.Vulnerabilities.Findings {
-							isExempted := false
-							if exceptionsDoc != nil {
-								for _, exc := range exceptionsDoc.Spec.Exceptions {
-									if exc.ID == finding.ID &&
-										(exc.Package == "*" || exc.Package == finding.PackageName) &&
-										(exc.Image == "*" || exc.Image == baseID) &&
-										(exc.Release == "*" || exc.Release == release.Tag) {
-
-										expiry, err := time.Parse("2006-01-02", exc.ExpiresAt)
-										if err == nil && expiry.After(now) {
-											isExempted = true
-											break
-										}
-									}
-								}
-							}
-
-							if isExempted {
-								continue
-							}
-
-							sev := strings.ToLower(finding.Severity)
-							if sev == "critical" {
-								criticalCount++
-							} else if sev == "high" {
-								highCount++
-							}
-						}
-
-						if len(arch.Vulnerabilities.Findings) == 0 {
-							criticalCount = arch.Vulnerabilities.CountsBySeverity.Critical
-							highCount = arch.Vulnerabilities.CountsBySeverity.High
-						}
-
-						if criticalCount > maxCritFound {
-							maxCritFound = criticalCount
-						}
-						if highCount > maxHighFound {
-							maxHighFound = highCount
-						}
-
-						if policy.Spec.Vulnerabilities.MaxCritical >= 0 && criticalCount > policy.Spec.Vulnerabilities.MaxCritical {
-							critExceeded = true
-						}
-						if policy.Spec.Vulnerabilities.MaxHigh >= 0 && highCount > policy.Spec.Vulnerabilities.MaxHigh {
-							highExceeded = true
-						}
-					}
-				}
-
-				if policy.Spec.Vulnerabilities.MaxCritical >= 0 {
-					if critExceeded {
-						addCheck("policy.vulnerabilities.critical", "fail", fmt.Sprintf("Critical vulnerabilities count %d exceeds policy limit %d", maxCritFound, policy.Spec.Vulnerabilities.MaxCritical))
-					} else {
-						addCheck("policy.vulnerabilities.critical", "pass", fmt.Sprintf("Critical vulnerabilities count %d is within policy limit %d", maxCritFound, policy.Spec.Vulnerabilities.MaxCritical))
-					}
-				}
-
-				if policy.Spec.Vulnerabilities.MaxHigh >= 0 {
-					if highExceeded {
-						addCheck("policy.vulnerabilities.high", "fail", fmt.Sprintf("High vulnerabilities count %d exceeds policy limit %d", maxHighFound, policy.Spec.Vulnerabilities.MaxHigh))
-					} else {
-						addCheck("policy.vulnerabilities.high", "pass", fmt.Sprintf("High vulnerabilities count %d is within policy limit %d", maxHighFound, policy.Spec.Vulnerabilities.MaxHigh))
-					}
-				}
-			}
+			certifyVulnGate(policy, baseID, addCheck)
 		}
 	}
 
@@ -504,38 +357,307 @@ func runCertify(tarPath string) error {
 		Checks: checks,
 	}
 
-	// Format output
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
-		if err := output.PrintJSON(os.Stdout, response); err != nil {
+		if err := output.PrintJSON(out, response); err != nil {
 			return err
 		}
 	case "yaml", "yml":
-		if err := output.PrintYAML(os.Stdout, response); err != nil {
+		if err := output.PrintYAML(out, response); err != nil {
 			return err
 		}
 	default:
-		// Print human readable
-		fmt.Printf("Downstream Security Certification Report for %s\n", filepath.Base(tarPath))
-		fmt.Println("-----------------------------------------------------------------")
+		fmt.Fprintf(out, "Downstream Security Certification Report for %s\n", filepath.Base(tarPath))
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
 		for _, check := range checks {
 			statusSymbol := "✔ PASS"
-			if check.Status == "fail" {
+			switch check.Status {
+			case "fail":
 				statusSymbol = "✘ FAIL"
+			case "skip":
+				statusSymbol = "↷ SKIP"
 			}
-			fmt.Printf("[%-6s] %-32s : %s\n", statusSymbol, check.ID, check.Message)
+			fmt.Fprintf(out, "[%-6s] %-32s : %s\n", statusSymbol, check.ID, check.Message)
 		}
-		fmt.Println("-----------------------------------------------------------------")
-		if hasFailures {
-			fmt.Println("Certification Result: FAIL")
-		} else {
-			fmt.Println("Certification Result: PASS")
+		fmt.Fprintln(out, "-----------------------------------------------------------------")
+		switch {
+		case hasFailures:
+			fmt.Fprintln(out, "Certification Result: FAIL")
+		case skipped > 0:
+			fmt.Fprintf(out, "Certification Result: PASS (%d check(s) skipped — see guidance above)\n", skipped)
+		default:
+			fmt.Fprintln(out, "Certification Result: PASS")
 		}
 	}
 
 	if hasFailures {
-		osExit(1)
+		return ErrCheckFailed
 	}
 
 	return nil
+}
+
+// certifyVulnGate enforces the policy's critical/high thresholds against the
+// declared base image's catalog record, honoring active vulnerability exceptions.
+func certifyVulnGate(policy *CertificationPolicyDoc, baseID string, addCheck func(id, status, message string)) {
+	record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, baseID)
+	if err != nil {
+		return
+	}
+	release, err := latestOrTaggedRelease(record.Releases, "")
+	if err != nil {
+		return
+	}
+
+	var exceptionsDoc *ExceptionsDoc
+	if policy.Spec.Vulnerabilities.AllowExceptions && policy.Spec.Vulnerabilities.ExceptionFile != "" {
+		if doc, err := LoadExceptionsFile(policy.Spec.Vulnerabilities.ExceptionFile); err == nil {
+			exceptionsDoc = doc
+		}
+	}
+
+	now := time.Now().UTC()
+	maxCritFound, maxHighFound := 0, 0
+	critExceeded, highExceeded := false, false
+
+	for _, arch := range release.Architectures {
+		if arch.Vulnerabilities == nil {
+			continue
+		}
+		criticalCount, highCount := 0, 0
+		for _, finding := range arch.Vulnerabilities.Findings {
+			if entry, expired := exceptionsDoc.Match(finding.ID, finding.PackageName, baseID, release.Tag, now); entry != nil && !expired {
+				continue
+			}
+			switch strings.ToLower(finding.Severity) {
+			case "critical":
+				criticalCount++
+			case "high":
+				highCount++
+			}
+		}
+		if len(arch.Vulnerabilities.Findings) == 0 {
+			criticalCount = arch.Vulnerabilities.CountsBySeverity.Critical
+			highCount = arch.Vulnerabilities.CountsBySeverity.High
+		}
+		if criticalCount > maxCritFound {
+			maxCritFound = criticalCount
+		}
+		if highCount > maxHighFound {
+			maxHighFound = highCount
+		}
+		if policy.Spec.Vulnerabilities.MaxCritical >= 0 && criticalCount > policy.Spec.Vulnerabilities.MaxCritical {
+			critExceeded = true
+		}
+		if policy.Spec.Vulnerabilities.MaxHigh >= 0 && highCount > policy.Spec.Vulnerabilities.MaxHigh {
+			highExceeded = true
+		}
+	}
+
+	if policy.Spec.Vulnerabilities.MaxCritical >= 0 {
+		if critExceeded {
+			addCheck("policy.vulnerabilities.critical", "fail", fmt.Sprintf("Critical vulnerabilities count %d exceeds policy limit %d", maxCritFound, policy.Spec.Vulnerabilities.MaxCritical))
+		} else {
+			addCheck("policy.vulnerabilities.critical", "pass", fmt.Sprintf("Critical vulnerabilities count %d is within policy limit %d", maxCritFound, policy.Spec.Vulnerabilities.MaxCritical))
+		}
+	}
+	if policy.Spec.Vulnerabilities.MaxHigh >= 0 {
+		if highExceeded {
+			addCheck("policy.vulnerabilities.high", "fail", fmt.Sprintf("High vulnerabilities count %d exceeds policy limit %d", maxHighFound, policy.Spec.Vulnerabilities.MaxHigh))
+		} else {
+			addCheck("policy.vulnerabilities.high", "pass", fmt.Sprintf("High vulnerabilities count %d is within policy limit %d", maxHighFound, policy.Spec.Vulnerabilities.MaxHigh))
+		}
+	}
+}
+
+// loadImageTarball extracts every regular file from an image tarball into tempDir
+// and resolves the image config and layer blobs for either a legacy docker-save
+// archive (manifest.json) or an OCI-layout archive (index.json + blobs/). Files are
+// stored under opaque names, so crafted entry paths cannot escape tempDir.
+func loadImageTarball(tarPath, tempDir string) (*tarImage, error) {
+	file, err := os.Open(tarPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open image file: %w", err)
+	}
+	defer file.Close()
+
+	var reader io.Reader = file
+	if strings.HasSuffix(tarPath, ".gz") || strings.HasSuffix(tarPath, ".tgz") {
+		gz, err := gzip.NewReader(file)
+		if err != nil {
+			return nil, fmt.Errorf("unable to initialize gzip reader: %w", err)
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	entries := map[string]string{} // cleaned tar entry name -> temp file path
+	tr := tar.NewReader(reader)
+	idx := 0
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error reading tar archive: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+			continue
+		}
+		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
+		dest := filepath.Join(tempDir, fmt.Sprintf("e%06d", idx))
+		idx++
+		df, err := os.Create(dest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stage tar entry: %w", err)
+		}
+		if _, err := io.Copy(df, tr); err != nil {
+			df.Close()
+			return nil, fmt.Errorf("failed to stage tar entry %q: %w", name, err)
+		}
+		df.Close()
+		entries[name] = dest
+	}
+
+	img := &tarImage{}
+
+	// Legacy docker-save: manifest.json at the archive root.
+	if p, ok := entries["manifest.json"]; ok {
+		if data, err := os.ReadFile(p); err == nil {
+			var manifests []DockerManifest
+			if err := json.Unmarshal(data, &manifests); err == nil && len(manifests) > 0 {
+				img.format = "docker"
+				img.repoTags = manifests[0].RepoTags
+				if cp, ok := entries[path.Clean(manifests[0].Config)]; ok {
+					img.configRaw, _ = os.ReadFile(cp)
+				}
+				for _, layer := range manifests[0].Layers {
+					if lp, ok := entries[path.Clean(layer)]; ok {
+						img.layerPaths = append(img.layerPaths, lp)
+					}
+				}
+				return img, nil
+			}
+		}
+	}
+
+	// OCI-layout: index.json referencing blobs/sha256/<hex>.
+	if p, ok := entries["index.json"]; ok {
+		img.format = "oci"
+		resolveOCIImage(entries, p, img)
+		return img, nil
+	}
+
+	return img, nil // format == "" -> unrecognized
+}
+
+// resolveOCIImage walks index.json -> manifest -> {config, layers}, descending one
+// level when the index points at a nested image index (multi-arch).
+func resolveOCIImage(entries map[string]string, indexPath string, img *tarImage) {
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return
+	}
+	var index ociIndex
+	if err := json.Unmarshal(data, &index); err != nil || len(index.Manifests) == 0 {
+		return
+	}
+
+	desc := index.Manifests[0]
+	if ref, ok := desc.Annotations["org.opencontainers.image.ref.name"]; ok {
+		img.repoTags = append(img.repoTags, ref)
+	}
+
+	manData := readBlob(entries, desc.Digest)
+	if manData == nil {
+		return
+	}
+	var man ociManifest
+	if err := json.Unmarshal(manData, &man); err != nil {
+		return
+	}
+	// Nested index (manifest list) -> pick the first concrete manifest.
+	if man.Config.Digest == "" && len(man.Layers) == 0 {
+		var nested ociIndex
+		if err := json.Unmarshal(manData, &nested); err == nil && len(nested.Manifests) > 0 {
+			if inner := readBlob(entries, nested.Manifests[0].Digest); inner != nil {
+				_ = json.Unmarshal(inner, &man)
+			}
+		}
+	}
+
+	img.configRaw = readBlob(entries, man.Config.Digest)
+	for _, layer := range man.Layers {
+		if lp := blobPath(entries, layer.Digest); lp != "" {
+			img.layerPaths = append(img.layerPaths, lp)
+		}
+	}
+}
+
+// blobPath maps an OCI digest (sha256:hex) to the staged blob file path.
+func blobPath(entries map[string]string, digest string) string {
+	parts := strings.SplitN(digest, ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	if p, ok := entries["blobs/"+parts[0]+"/"+parts[1]]; ok {
+		return p
+	}
+	return ""
+}
+
+func readBlob(entries map[string]string, digest string) []byte {
+	p := blobPath(entries, digest)
+	if p == "" {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// scanLayerForRuntimeTools inspects a single layer blob (transparently handling
+// gzip-compressed layers) for interactive shells and package managers.
+func scanLayerForRuntimeTools(layerPath string) (shells, pkgs []string, err error) {
+	f, err := os.Open(layerPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+
+	br := bufio.NewReader(f)
+	var reader io.Reader = br
+	if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+		gz, gerr := gzip.NewReader(br)
+		if gerr != nil {
+			return nil, nil, gerr
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	tr := tar.NewReader(reader)
+	for {
+		hdr, terr := tr.Next()
+		if terr == io.EOF {
+			break
+		}
+		if terr != nil {
+			return nil, nil, terr
+		}
+		name := strings.TrimPrefix(path.Clean(hdr.Name), "/")
+
+		switch name {
+		case "bin/sh", "bin/bash", "bin/ash", "bin/zsh",
+			"usr/bin/sh", "usr/bin/bash", "usr/bin/ash", "usr/bin/zsh":
+			shells = append(shells, name)
+		case "sbin/apk", "usr/bin/apk", "usr/bin/apt", "usr/bin/apt-get",
+			"usr/bin/dpkg", "usr/bin/dnf", "usr/bin/yum", "usr/bin/microdnf":
+			pkgs = append(pkgs, name)
+		}
+	}
+	return shells, pkgs, nil
 }

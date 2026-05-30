@@ -5,13 +5,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/spf13/cobra"
 )
 
 type policyFlags struct {
 	tag               string
-	format            string
+	engine            string
 	output            string
 	environment       string
 	requireDigest     bool
@@ -36,7 +36,7 @@ func NewPolicyCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&policyOpts.tag, "tag", "", "Target release tag version (defaults to latest)")
-	cmd.Flags().StringVar(&policyOpts.format, "format", "kyverno", "Policy type: kyverno or gatekeeper")
+	cmd.Flags().StringVar(&policyOpts.engine, "engine", "kyverno", "Admission engine: kyverno or gatekeeper")
 	cmd.Flags().StringVar(&policyOpts.output, "output", "", "Output manifest file path destination")
 	cmd.Flags().StringVar(&policyOpts.environment, "environment", "production", "Policy environment profile: development, production, or strict")
 	cmd.Flags().BoolVar(&policyOpts.requireDigest, "require-digest", false, "Require digest pinning on container images")
@@ -60,31 +60,9 @@ func runPolicy(imageID string) error {
 	}
 
 	// Resolve the target release
-	var release *catalog.ReleaseEntry
-	if policyOpts.tag != "" {
-		for i := range record.Releases {
-			if record.Releases[i].Tag == policyOpts.tag {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil {
-			return fmt.Errorf("release tag %q not found for image %q", policyOpts.tag, imageID)
-		}
-	} else {
-		for i := range record.Releases {
-			if record.Releases[i].IsLatest {
-				release = &record.Releases[i]
-				break
-			}
-		}
-		if release == nil && len(record.Releases) > 0 {
-			release = &record.Releases[0]
-		}
-	}
-
-	if release == nil {
-		return fmt.Errorf("no releases found for image %q", imageID)
+	release, err := latestOrTaggedRelease(record.Releases, policyOpts.tag)
+	if err != nil {
+		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
 	// Resolve OIDC subject and issuer
@@ -107,26 +85,22 @@ func runPolicy(imageID string) error {
 	reqProv := policyOpts.requireProvenance
 	denyDev := policyOpts.denyDevTier
 	denyPrev := policyOpts.denyPreview
+	requireNonRoot := false
 
-	if env == "production" {
-		reqDigest = true
+	switch env {
+	case "development":
 		reqSig = true
-		reqProv = true
-		denyDev = true
-		denyPrev = true
-	} else if env == "strict" {
-		reqDigest = true
-		reqSig = true
-		reqProv = true
-		denyDev = true
-		denyPrev = true
-	} else if env == "development" {
-		reqSig = true
+	case "production":
+		reqDigest, reqSig, reqProv, denyDev, denyPrev = true, true, true, true, true
+	case "strict":
+		// Everything production enforces, plus a hard non-root workload guarantee.
+		reqDigest, reqSig, reqProv, denyDev, denyPrev = true, true, true, true, true
+		requireNonRoot = true
 	}
 
 	var outputPolicy string
 
-	switch strings.ToLower(policyOpts.format) {
+	switch strings.ToLower(policyOpts.engine) {
 	case "gatekeeper", "opa":
 		outputPolicy = fmt.Sprintf(`apiVersion: templates.gatekeeper.sh/v1
 kind: ConstraintTemplate
@@ -166,9 +140,10 @@ spec:
     requireProvenance: %t
     denyDevTier: %t
     denyPreview: %t
+    requireNonRoot: %t
     subject: "%s"
     issuer: "%s"
-`, record.FullName, record.ID, policyOpts.namespace, record.FullName, reqDigest, reqSig, reqProv, denyDev, denyPrev, subject, issuer)
+`, record.FullName, record.ID, policyOpts.namespace, record.FullName, reqDigest, reqSig, reqProv, denyDev, denyPrev, requireNonRoot, subject, issuer)
 
 	default: // Kyverno
 		var rulesBlock strings.Builder
@@ -223,6 +198,22 @@ spec:
 `, policyOpts.namespace))
 		}
 
+		if requireNonRoot {
+			rulesBlock.WriteString(fmt.Sprintf(`    - name: require-run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["%s"]
+      validate:
+        message: "Security Violation: strict profile requires spec.securityContext.runAsNonRoot=true"
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+`, policyOpts.namespace))
+		}
+
 		outputPolicy = fmt.Sprintf(`apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -240,10 +231,10 @@ spec:
 			return fmt.Errorf("failed to write policy manifest file: %w", err)
 		}
 		if !GlobalOpts.Quiet {
-			fmt.Printf("Successfully generated policy manifest file: %s\n", policyOpts.output)
+			fmt.Fprintf(out, "Successfully generated policy manifest file: %s\n", policyOpts.output)
 		}
 	} else {
-		os.Stdout.Write([]byte(outputPolicy))
+		out.Write([]byte(outputPolicy))
 	}
 
 	return nil

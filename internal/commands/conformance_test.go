@@ -1,52 +1,58 @@
 package commands
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestRunConformanceSuite(t *testing.T) {
-	osExit = func(code int) {}
-	defer func() { osExit = os.Exit }()
+// Conformance probes the live host, so the overall result is environment
+// dependent (a missing interpreter is a legitimate fail). We assert the report is
+// well-formed and that the error, if any, is the gate sentinel rather than a crash.
+func TestConformanceRun_ReportIsWellFormed(t *testing.T) {
+	reportPath := filepath.Join(t.TempDir(), "report.json")
 
-	testImages := []string{
-		"java25-distroless",
-		"node22-slim",
-		"go1.26-dev",
-		"dotnet8-distroless",
-		"rust1.95-slim",
-		"cc15-distroless",
-		"coreLTS-distroless",
+	_, err := runCLI(t, "conformance", "run", "--image", "host", "--output", reportPath)
+	if err != nil && !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("unexpected error type: %v", err)
 	}
 
-	for _, img := range testImages {
-		t.Run(img, func(t *testing.T) {
-			tmpFile, err := os.CreateTemp("", "clearcutt-conformance-*.json")
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-			defer os.Remove(tmpFile.Name())
-			tmpFile.Close()
+	data, rerr := os.ReadFile(reportPath)
+	if rerr != nil {
+		t.Fatalf("failed to read conformance report: %v", rerr)
+	}
 
-			conformanceOpts = conformanceFlags{
-				image:  img,
-				output: tmpFile.Name(),
-			}
+	var report ConformanceReport
+	if uerr := json.Unmarshal(data, &report); uerr != nil {
+		t.Fatalf("report is not valid JSON: %v", uerr)
+	}
+	if report.Status != "passed" && report.Status != "failed" {
+		t.Errorf("unexpected status %q", report.Status)
+	}
+	if len(report.Assertions) == 0 {
+		t.Fatal("expected at least the baseline host assertions")
+	}
 
-			err = runConformanceSuite()
-			if err != nil {
-				t.Fatalf("runConformanceSuite failed for image %s: %v", img, err)
-			}
+	// The baseline (host-independent) checks must always be present.
+	want := map[string]bool{"runtime.user.nonroot": false, "runtime.paths.tmp_writable": false}
+	for _, a := range report.Assertions {
+		if _, ok := want[a.Name]; ok {
+			want[a.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("expected assertion %q in report", name)
+		}
+	}
 
-			// Verify report is written
-			data, err := os.ReadFile(tmpFile.Name())
-			if err != nil {
-				t.Fatalf("failed to read conformance report: %v", err)
-			}
-
-			if len(data) == 0 {
-				t.Errorf("conformance report is empty for image %s", img)
-			}
-		})
+	// A failed report must correspond to the gate sentinel, and vice versa.
+	if report.Status == "failed" && !errors.Is(err, ErrCheckFailed) {
+		t.Errorf("failed report should return ErrCheckFailed")
+	}
+	if report.Status == "passed" && err != nil {
+		t.Errorf("passed report should return nil error, got %v", err)
 	}
 }

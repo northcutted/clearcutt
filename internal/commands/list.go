@@ -2,12 +2,11 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
 )
 
 type listFlags struct {
@@ -69,9 +68,9 @@ func runList() error {
 	// Format output
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
-		return output.PrintJSON(os.Stdout, filtered)
+		return output.PrintJSON(out, filtered)
 	case "yaml", "yml":
-		return output.PrintYAML(os.Stdout, filtered)
+		return output.PrintYAML(out, filtered)
 	default:
 		// Render beautiful aligned table
 		tp := output.NewTablePrinter(
@@ -168,6 +167,6 @@ func runList() error {
 			)
 		}
 
-		return tp.Print(os.Stdout)
+		return tp.Print(out)
 	}
 }

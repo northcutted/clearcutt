@@ -153,7 +153,7 @@ ENTRYPOINT ["/usr/local/bin/%s"]
 This project lays a self-contained ClearCutt **%s** runtime closure on top of a sanctioned enterprise base image.
 
 ## Mandated Architecture Details
-*   **ClearCutt Runtime**: %s (` + "`" + `%s` + "`" + `)
+*   **ClearCutt Runtime**: %s (`+"`"+`%s`+"`"+`)
 *   **Mandated Base OS**: %s
 *   **Destination Target**: %s
 
@@ -161,17 +161,17 @@ This project lays a self-contained ClearCutt **%s** runtime closure on top of a 
 
 ## ⚠️ CRITICAL SAFETY RULES (Trade-Offs)
 1.  **Not Distroless**: This overlay image is **NOT** distroless unless the mandated base is also distroless. It inherits the base image's shell utilities, coreutils, package managers, and security agents.
-2.  **Base CVE Footprint**: This image inherits all vulnerabilities and library defects from the base OS layer. The ClearCutt runtime is RPATH-isolated under ` + "`" + `/nix` + "`" + `, but the base operating system still requires patch governance.
+2.  **Base CVE Footprint**: This image inherits all vulnerabilities and library defects from the base OS layer. The ClearCutt runtime is RPATH-isolated under `+"`"+`/nix`+"`"+`, but the base operating system still requires patch governance.
 3.  **Signatures & Provenance**: The signatures, SBOMs, and SLSA provenance of this final grafted image are completely separate from the original ClearCutt base evidence. You must sign and attest this image during your build pipeline.
 
 ---
 
 ## How to Build & Run Smoke Tests
 Compile locally using the provided Makefile:
-` + "```" + `bash
+`+"```"+`bash
 make build
 make test
-` + "```" + `
+`+"```"+`
 `, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.tier, overlayOpts.base, overlayOpts.image)
 
 	if err := os.WriteFile(filepath.Join(outDir, "README.md"), []byte(readme), 0644); err != nil {
@@ -349,7 +349,7 @@ jobs:
 	}
 
 	if !GlobalOpts.Quiet {
-		fmt.Printf("Successfully generated hardened BYO Base Image Overlay project at: %s\n", outDir)
+		fmt.Fprintf(out, "Successfully generated hardened BYO Base Image Overlay project at: %s\n", outDir)
 	}
 
 	return nil

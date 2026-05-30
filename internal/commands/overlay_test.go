@@ -24,32 +24,29 @@ func TestRunOverlayGenerate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.runtime, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp("", "clearcutt-overlay-test-*")
-			if err != nil {
-				t.Fatalf("failed to create temp dir: %v", err)
-			}
-			defer os.RemoveAll(tmpDir)
+			tmpDir := t.TempDir()
 
-			overlayOpts = overlayFlags{
-				runtime:    tc.runtime,
-				tier:       "distroless",
-				base:       "registry.access.redhat.com/ubi9/ubi-minimal@sha256:123456",
-				runtimeRef: "ghcr.io/northcutted/clearcutt/clearcutt-" + tc.runtime + "@sha256:654321",
-				binary:     tc.explicitBinary,
-				image:      "ghcr.io/acme/" + tc.runtime + "-ubi",
-				output:     tmpDir,
+			args := []string{
+				"overlay", "generate",
+				"--runtime", tc.runtime,
+				"--tier", "distroless",
+				"--base", "registry.access.redhat.com/ubi9/ubi-minimal@sha256:123456",
+				"--runtime-ref", "ghcr.io/northcutted/clearcutt/clearcutt-" + tc.runtime + "@sha256:654321",
+				"--image", "ghcr.io/acme/" + tc.runtime + "-ubi",
+				"--output", tmpDir,
+			}
+			if tc.explicitBinary != "" {
+				args = append(args, "--binary", tc.explicitBinary)
 			}
 
-			err = runOverlayGenerate()
-			if err != nil {
-				t.Fatalf("runOverlayGenerate failed for %s: %v", tc.runtime, err)
+			if _, err := runCLI(t, args...); err != nil {
+				t.Fatalf("overlay generate failed for %s: %v", tc.runtime, err)
 			}
 
 			if overlayOpts.binary != tc.expectedBinary {
-				t.Errorf("expected resolved binary to be %q, got %q", tc.expectedBinary, overlayOpts.binary)
+				t.Errorf("expected resolved binary %q, got %q", tc.expectedBinary, overlayOpts.binary)
 			}
 
-			// Verify files exist
 			files := []string{
 				"clearcutt.overlay.yaml",
 				"Containerfile",
@@ -60,10 +57,8 @@ func TestRunOverlayGenerate(t *testing.T) {
 				".github/workflows/build.yaml",
 				".github/workflows/verify.yaml",
 			}
-
 			for _, file := range files {
-				path := filepath.Join(tmpDir, file)
-				if _, err := os.Stat(path); err != nil {
+				if _, err := os.Stat(filepath.Join(tmpDir, file)); err != nil {
 					t.Errorf("expected file %q was not generated for %s: %v", file, tc.runtime, err)
 				}
 			}
