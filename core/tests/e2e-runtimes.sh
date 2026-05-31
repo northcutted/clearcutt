@@ -681,7 +681,9 @@ CATALOG_DIR="${WORK_DIR}/catalog"
 cp -r "cli/internal/testdata/catalog" "$CATALOG_DIR"
 
 IMAGE_JSON="${CATALOG_DIR}/images/${BASE_ID_V2}.json"
-cp "${CATALOG_DIR}/images/java21-distroless.json" "$IMAGE_JSON"
+if [ "$BASE_ID_V2" != "java21-distroless" ]; then
+  cp "${CATALOG_DIR}/images/java21-distroless.json" "$IMAGE_JSON"
+fi
 
 # Patch the JSON record to register our stack's base ID V2 dynamically
 sed -i.bak -e "s/java21-distroless/${BASE_ID_V2}/g" \
