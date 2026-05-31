@@ -50,6 +50,13 @@ let
     if [ -f ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
       ln -s ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
     fi
+    ln -s ${pkgs.glibc}/lib/libc.so.6 $out/lib/libc.so.6
+    ln -s ${pkgs.glibc}/lib/libm.so.6 $out/lib/libm.so.6
+    ln -s ${pkgs.glibc}/lib/libdl.so.2 $out/lib/libdl.so.2
+    ln -s ${pkgs.glibc}/lib/libpthread.so.0 $out/lib/libpthread.so.0
+    ln -s ${pkgs.glibc}/lib/librt.so.1 $out/lib/librt.so.1
+    ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/lib/libstdc++.so.6
+    ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/lib/libgcc_s.so.1
   '';
 
   # Resolve tier-specific base tools
