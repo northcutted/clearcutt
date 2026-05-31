@@ -137,7 +137,7 @@ build_nix_base() {
   mkdir -p core/build-outputs
   
   # Evaluate using Nix with the warm binary cache substituter config
-  if nix build ".#packages.${SYSTEM}.\"${target_id}\"" --out-link "core/build-outputs/${target_id}-link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
+  if nix build "core/#packages.${SYSTEM}.\"${target_id}\"" --out-link "core/build-outputs/${target_id}-link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
     cp -L "core/build-outputs/${target_id}-link" "$out_tar"
     rm -f "core/build-outputs/${target_id}-link"
     log_success "Nix base image ${target_id} successfully compiled -> $out_tar"
