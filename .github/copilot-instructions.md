@@ -4,7 +4,7 @@
 #
 # Target: .github/copilot-instructions.md
 # Source: .agent/onboard.md, .agent/instructions.md, .agent/architecture.md, .agent/lessons_learned.md
-# Compiled At: 2026-05-30 21:03:24
+# Compiled At: 2026-05-30 21:11:21
 #
 # To modify these instructions, edit the source files under '.agent/' and run:
 #   make agent-sync

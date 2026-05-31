@@ -39,7 +39,7 @@ rec {
   languages = {
     core = {
       versions = {
-        LTS = {
+        "1" = {
           overlayName = "clearcuttCore";
           raw = [ (pkgs.coreutils-full or pkgs.coreutils) (pkgs.bashInteractive or pkgs.bash) ];
         };
@@ -50,12 +50,12 @@ rec {
       versions = {
         "21" = {
           overlayName = "clearcuttJava21";
-          raw = [ (getPkg [ [ "jdk21" ] [ "openjdk21" ] ] "Java 21 is not available in this nixpkgs version") ];
+          raw = [ (getPkg [ [ "zulu21" ] [ "temurin-bin-21" ] [ "jdk21" ] [ "openjdk21" ] ] "Java 21 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
         };
         "25" = {
           overlayName = "clearcuttJava25";
-          raw = [ (getPkg [ [ "jdk25" ] [ "openjdk25" ] ] "Java 25 is not available in this nixpkgs version") ];
+          raw = [ (getPkg [ [ "zulu25" ] [ "temurin-bin-25" ] [ "jdk25" ] [ "openjdk25" ] ] "Java 25 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
         };
       };

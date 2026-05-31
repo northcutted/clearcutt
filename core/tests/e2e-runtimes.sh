@@ -116,8 +116,8 @@ case "$STACK" in
     BASE_ID_V2="cc15-distroless"
     ;;
   core)
-    BASE_ID_V1="coreLTS-slim"
-    BASE_ID_V2="coreLTS-distroless"
+    BASE_ID_V1="core1-slim"
+    BASE_ID_V2="core1-distroless"
     ;;
   *)
     log_error "Unsupported language stack: $STACK"
@@ -234,7 +234,7 @@ EOF
     # Publish standard portable framework-dependent DLL (no native loader) to avoid glibc incompatibilities
     dotnet publish DotnetApp/DotnetApp.csproj -c Release -o out
     ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp.dll"
-    ENTRYPOINT_JSON='["dotnet","/workspace/DotnetApp.dll"]'
+    ENTRYPOINT_JSON='["dotnet","exec","--fx-version","8.0.0","/workspace/DotnetApp.dll"]'
     EXECUTABLE_FLAG=""
     ;;
     
