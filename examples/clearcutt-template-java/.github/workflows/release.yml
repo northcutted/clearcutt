@@ -17,11 +17,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # In downstream projects, this would reference the canonical repository:
-      # uses: eddie-northcutt/clearcutt-images/.github/actions/build-certify@v1
-      - name: Run ClearCutt Build & Certify Reusable Action
-        uses: ./.github/actions/build-certify
+      # Build and push your application image first (omitted in this template),
+      # then certify it against ClearCutt's contracts using the published action:
+      - name: Certify Application Against ClearCutt Contracts
+        uses: northcutted/clearcutt/.github/actions/certify-app@v0.11.1
         with:
-          language: 'java21'
-          tier: 'distroless'
-          image-name: 'ghcr.io/${{ github.repository }}/clearcutt-template-java:latest'
+          image: 'ghcr.io/${{ github.repository }}/clearcutt-template-java:latest'
+          base: 'java21-distroless'
+          policy: 'certification-policy.yaml'
+          # Pin the signer identity that built/signed the image — never a wildcard:
+          certificate-identity-regexp: 'https://github.com/${{ github.repository }}/.github/workflows/.*'

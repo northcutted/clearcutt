@@ -82,6 +82,9 @@ The `clearcutt` CLI is a single, zero-daemon Go governance engine designed to en
   sudo mv clearcutt /usr/local/bin/
   ```
 
+> [!IMPORTANT]
+> **Catalog data is required (and not committed).** `verify`, `inspect`, `list`, and the other discovery commands read a generated catalog of image records. Generate it from a clone with `node scripts/gather-catalog.mjs` (writes to `site/src/data/catalog`, the default `--catalog` path), or pass `--catalog internal/testdata/catalog` to try the commands against the bundled fixture image.
+
 ### 2. Verify Your Security Gates
 
 Run policy checks on target base images before integrating them in your builds:
@@ -96,7 +99,8 @@ clearcutt verify java25-distroless \
 
 ### 3. Declarative Compliance Audit (Local/CI)
 
-Before deploying downstream container images, audit them completely offline to mathematically prove the absence of shells, dynamic package managers, and root access:
+Before deploying downstream container images, audit them completely offline to
+verify the absence of shells, dynamic package managers, and root access:
 ```bash
 # Save your application OCI image as an offline tarball
 docker save my-app:latest -o my-app.tar
@@ -107,10 +111,31 @@ clearcutt certify my-app.tar \
   --policy certification-policy.yaml
 ```
 
+### 4. Build a Rebasable App Image
+
+For downstream services that publish a single prebuilt artifact, `clearcutt app
+build` can assemble the application layer directly on top of a ClearCutt base:
+```bash
+clearcutt app build \
+  --base java21-distroless \
+  --artifact target/app.jar \
+  --dest /workspace/app.jar \
+  --entrypoint '["java","-jar","/workspace/app.jar"]' \
+  --image ghcr.io/acme/payments-api:1.0.0
+```
+
+When the base is patched later, use `clearcutt app diff-base` to check runtime
+compatibility and `clearcutt app rebase --sign --attest` from a CI workflow with
+OIDC enabled.
+
+The full stack guide has end-to-end examples for Core/static, Java, Node.js,
+Python, Go, .NET, Rust, and C/C++:
+[`docs/app-lifecycle.md`](app-lifecycle.md).
+
 ---
 
 ## 💡 Top 3 Tips for a Smooth Onboarding
 
 1.  **Direct Execution only:** The `distroless` tier has no shell, meaning Docker/OCI entries like `CMD "java -jar app.jar"` will fail because they attempt to evaluate via shell execution. **Always use JSON syntax** `ENTRYPOINT ["java", "-jar", "app.jar"]`.
 2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. Instead, declare it inside your customized `flake.nix` package list or build it in the `dev` stage.
-3.  **Local Conformance Auditing:** Use `clearcutt conformance run --image <image-id>` to instantly prove dynamic linker, CA trust, and zoneinfo safety offline.
+3.  **Local Conformance Auditing:** Run `clearcutt conformance run` *inside* a container (e.g. as its ENTRYPOINT, or `docker run --entrypoint clearcutt <image> conformance run`) to prove CA trust, zoneinfo, unprivileged execution, and `/tmp` writability offline. It audits the current environment, not a remote image; add `--expect-runtime java` (or `python`, `node`, …) to also assert the language interpreter is present.

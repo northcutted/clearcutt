@@ -1,60 +1,113 @@
 # ClearCutt Secure K8s Admission Control Policy (Kyverno)
-# Paradigm: Image Verification & SPDX SBOM Attestation Gating (Keyboard to Cloud)
+# Paradigm: base-image provenance plus optional downstream rebase attestation gates.
 
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: clearcutt-verify-provenance
   annotations:
-    policies.kyverno.io/title: "Verify ClearCutt Image Signatures and SBOMs"
+    policies.kyverno.io/title: "Verify ClearCutt Signatures, SBOMs, and Rebase Attestations"
     policies.kyverno.io/subject: "Pod"
     policies.kyverno.io/description: >
-      Validates that container images matching the ClearCutt registry namespace
-      have a verified Sigstore Cosign signature and a valid cryptographically signed
-      SPDX SBOM attestation before permitting deployment to the cluster.
+      Validates ClearCutt base-image signatures/SBOMs and verifies securely
+      rebased downstream application images before permitting deployment.
 spec:
-  validationFailureAction: Enforce # Block non-compliant containers dynamically
+  validationFailureAction: Enforce
   background: false
   rules:
-    - name: verify-sigstore-provenance
+    - name: verify-clearcutt-base-signature
       match:
         any:
           - resources:
               kinds:
                 - Pod
       verifyImages:
-        # Match our image namespace
         - imageReferences:
             - "ghcr.io/northcutted/clearcutt/clearcutt-*"
-            
-          # 1. Cosign Signature Verification
-          # Ensures the image manifest was signed by a trusted identity
+          failureAction: Enforce
           attestors:
             - entries:
                 - keyless:
-                    # Keyless OIDC: Asserts that the image was signed strictly inside our
-                    # official GitHub Actions release workflow.
                     issuer: "https://token.actions.githubusercontent.com"
-                    subjectRegexp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
-                    
-                # OR fallback to a trusted static public key if signing locally:
-                # - keys:
-                #     publicKeys: |
-                #       -----BEGIN PUBLIC KEY-----
-                #       MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
-                #       -----END PUBLIC KEY-----
-                
-          # 2. SPDX SBOM Attestation Verification
-          # Asserts that a cryptographically signed SPDX SBOM is attached to the OCI metadata
+                    subjectRegExp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+    - name: verify-clearcutt-base-sbom
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/northcutted/clearcutt/clearcutt-*"
+          failureAction: Enforce
           attestations:
-            - predicateType: "https://spdx.dev/Document" # SPDX Standard Predicate Type
+            - predicateType: "https://spdx.dev/Document"
               attestors:
                 - entries:
                     - keyless:
                         issuer: "https://token.actions.githubusercontent.com"
-                        subjectRegexp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
-                        
-          # Force registry digest resolution to prevent tag mutability/spoofing
+                        subjectRegExp: "^https://github.com/northcutted/clearcutt/\\.github/workflows/release\\.yml@refs/heads/main$"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+    # Template rule for downstream application images rebased by an enterprise
+    # ClearCutt rebase-engine workflow. Replace ghcr.io/acme/* and both workflow
+    # identities with your registry path and pinned CI subjects.
+    - name: verify-rebased-app-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/acme/*"
+          failureAction: Enforce
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subjectRegExp: "^https://github.com/acme/platform/\\.github/workflows/rebase\\.yml@refs/heads/main$"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+    - name: verify-rebased-app-attestation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/acme/*"
+          failureAction: Enforce
+          attestations:
+            - predicateType: "https://clearcutt.dev/attestations/rebase/v1"
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: "https://token.actions.githubusercontent.com"
+                        subjectRegExp: "^https://github.com/acme/platform/\\.github/workflows/rebase\\.yml@refs/heads/main$"
+              conditions:
+                - all:
+                    - key: "{{ rebaseDecision }}"
+                      operator: Equals
+                      value: "allowed"
+                    - key: "{{ developerSignatureVerified }}"
+                      operator: Equals
+                      value: true
+                    - key: "{{ developerIssuer }}"
+                      operator: Equals
+                      value: "https://token.actions.githubusercontent.com"
+                    - key: "{{ developerIdentity }}"
+                      operator: Equals
+                      value: "https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main"
           mutateDigest: true
           verifyDigest: true
           required: true

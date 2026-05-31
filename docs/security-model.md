@@ -31,6 +31,27 @@ graph TD
 - Cryptographic signatures and SPDX SBOMs are stored alongside container images as OCI referrers.
 - Admission controllers must query and verify signature certs (`subject` and `issuer`) before scheduling pods.
 
+### 2.3 Downstream Rebase Boundaries
+The downstream application lifecycle commands add a separate, explicit trust
+boundary around application payloads:
+- `clearcutt app build` records the digest-pinned base reference and the
+  compressed digest of the final base layer in OCI config labels.
+- `clearcutt app rebase` refuses images that are not marked rebasable, refuses a
+  base-boundary mismatch, and preserves every application layer descriptor after
+  that boundary.
+- The compatibility gate allows only the same runtime family and major/minor
+  line, so patch-level base upgrades are allowed while runtime ABI jumps are
+  blocked.
+- Before an `allowed` rebase attestation is emitted, the rebase workflow verifies
+  the original developer signature over the digest-pinned source image.
+- The rebased image is signed by the rebase-engine workflow, and the rebase
+  predicate is attached as a signed in-toto/cosign attestation.
+
+This does not make the rebase engine magically outside the trusted computing
+base. The engine is still trusted to perform the developer-signature verification
+and to sign the resulting predicate honestly, so production admission policy
+must pin the rebase-engine identity tightly and inspect the predicate fields.
+
 ---
 
 ## 3. Security Model Limitations & Non-Claims

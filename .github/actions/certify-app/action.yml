@@ -10,12 +10,43 @@ inputs:
   base:
     description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.14-slim)'
     required: true
+  clearcutt-version:
+    description: 'ClearCutt CLI release tag to download (e.g. v0.11.1). Pin this for reproducible builds.'
+    required: false
+    default: 'v0.11.1'
+  certificate-identity-regexp:
+    description: >-
+      Regexp for the Sigstore signing identity the app image must be signed by (the
+      workflow that built and signed it). Required when the policy requires signature,
+      provenance, or SBOM verification. A wildcard ('.*') or empty value is refused,
+      because it would accept any valid Sigstore certificate from anyone.
+    required: false
+    default: ''
+  certificate-oidc-issuer:
+    description: 'Expected OIDC issuer for keyless verification.'
+    required: false
+    default: 'https://token.actions.githubusercontent.com'
 
 runs:
   using: "composite"
   steps:
     - name: Install Sigstore Cosign
       uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    - name: Install ClearCutt CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.clearcutt-version }}"
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+        ASSET="clearcutt-${OS}-${ARCH}"
+        echo "[clearcutt] Downloading ${ASSET} (${VERSION})..."
+        curl -fsSL -o "${RUNNER_TEMP}/clearcutt" \
+          "https://github.com/northcutted/clearcutt/releases/download/${VERSION}/${ASSET}"
+        chmod +x "${RUNNER_TEMP}/clearcutt"
+        echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+        "${RUNNER_TEMP}/clearcutt" --version
 
     - name: Pull Target Application Image
       shell: bash
@@ -33,7 +64,7 @@ runs:
       shell: bash
       run: |
         echo "[clearcutt] Running offline certification checks..."
-        ./clearcutt certify /tmp/clearcutt-app-image.tar \
+        clearcutt certify /tmp/clearcutt-app-image.tar \
           --policy ${{ inputs.policy }} \
           --base ${{ inputs.base }} \
           --format json > /tmp/certification-report.json
@@ -42,7 +73,9 @@ runs:
     - name: Registry-Side Attestation & Trust Verification
       shell: bash
       run: |
-        # Parse policy requirements cleanly using grep and awk
+        set -euo pipefail
+        # Parse the (flat) policy requirements. These are registry-side referrers,
+        # so they are verified here against the live registry rather than offline.
         POLICY_FILE="${{ inputs.policy }}"
         if [ ! -f "$POLICY_FILE" ]; then
           echo "[clearcutt] Policy file not found at $POLICY_FILE!"
@@ -52,47 +85,59 @@ runs:
         REQ_SIG=$(grep -E 'requireSignature:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
         REQ_PROV=$(grep -E 'requireProvenance:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
         REQ_SBOM=$(grep -E 'requireSbom:' "$POLICY_FILE" | awk '{print $2}' | tr -d ' "' || echo "false")
+        echo "[clearcutt] Supply chain policy requirements: requireSignature=$REQ_SIG, requireProvenance=$REQ_PROV, requireSbom=$REQ_SBOM"
 
-        echo "[clearcutt] Supply chain policy requirements loaded: requireSignature=$REQ_SIG, requireProvenance=$REQ_PROV, requireSbom=$REQ_SBOM"
+        IDENTITY="${{ inputs.certificate-identity-regexp }}"
+        ISSUER="${{ inputs.certificate-oidc-issuer }}"
+
+        # Refuse to "verify" against a wildcard/empty signer identity — doing so
+        # accepts any valid Sigstore certificate and gives a false sense of trust.
+        if [ "$REQ_SIG" = "true" ] || [ "$REQ_PROV" = "true" ] || [ "$REQ_SBOM" = "true" ]; then
+          if [ -z "$IDENTITY" ] || [ "$IDENTITY" = ".*" ]; then
+            echo "[clearcutt] ✘ FAIL: policy requires attestation verification but no trusted signer identity was provided."
+            echo "            Set the 'certificate-identity-regexp' input to the workflow identity that signed the image (wildcards are refused)."
+            exit 1
+          fi
+        fi
 
         # Run registry-side signature verification if requested by policy
         if [ "$REQ_SIG" = "true" ]; then
-          echo "[clearcutt] Policy requires cryptographic signature. Verifying registry signatures via cosign..."
+          echo "[clearcutt] Policy requires a cryptographic signature. Verifying against $IDENTITY..."
           cosign verify "${{ inputs.image }}" \
-            --certificate-identity-regexp '.*' \
-            --certificate-oidc-issuer-regexp '.*' >/dev/null || {
+            --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer "$ISSUER" >/dev/null || {
               echo "[clearcutt] ✘ FAIL: Registry signature verification failed!"
               exit 1
             }
-          echo "[clearcutt] ✔ PASS: Cryptographic signature VERIFIED successfully."
+          echo "[clearcutt] ✔ PASS: Cryptographic signature VERIFIED for $IDENTITY."
         fi
 
         # Run registry-side provenance verification if requested by policy
         if [ "$REQ_PROV" = "true" ]; then
-          echo "[clearcutt] Policy requires SLSA build provenance. Verifying registry attestations via cosign..."
+          echo "[clearcutt] Policy requires SLSA build provenance. Verifying against $IDENTITY..."
           cosign verify-attestation \
             --type slsaprovenance \
-            --certificate-identity-regexp '.*' \
-            --certificate-oidc-issuer-regexp '.*' \
+            --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer "$ISSUER" \
             "${{ inputs.image }}" >/dev/null || {
               echo "[clearcutt] ✘ FAIL: SLSA build provenance attestation verification failed!"
               exit 1
             }
-          echo "[clearcutt] ✔ PASS: SLSA Build Provenance attestation VERIFIED successfully."
+          echo "[clearcutt] ✔ PASS: SLSA Build Provenance attestation VERIFIED."
         fi
 
         # Run registry-side SBOM verification if requested by policy
         if [ "$REQ_SBOM" = "true" ]; then
-          echo "[clearcutt] Policy requires SPDX SBOM. Verifying registry attestations via cosign..."
+          echo "[clearcutt] Policy requires an SPDX SBOM. Verifying against $IDENTITY..."
           cosign verify-attestation \
-            --type spdx \
-            --certificate-identity-regexp '.*' \
-            --certificate-oidc-issuer-regexp '.*' \
+            --type spdxjson \
+            --certificate-identity-regexp "$IDENTITY" \
+            --certificate-oidc-issuer "$ISSUER" \
             "${{ inputs.image }}" >/dev/null || {
               echo "[clearcutt] ✘ FAIL: SPDX SBOM attestation verification failed!"
               exit 1
             }
-          echo "[clearcutt] ✔ PASS: SPDX SBOM attestation VERIFIED successfully."
+          echo "[clearcutt] ✔ PASS: SPDX SBOM attestation VERIFIED."
         fi
 
     - name: Upload Compliance Certification Evidence

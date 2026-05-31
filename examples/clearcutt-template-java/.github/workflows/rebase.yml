@@ -1,0 +1,52 @@
+name: Secure ClearCutt Rebase
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Source app image to rebase"
+        required: true
+        default: "ghcr.io/acme/payments-api:1.0.0"
+      candidate-base:
+        description: "Patched ClearCutt base reference"
+        required: true
+        default: "ghcr.io/acme/clearcutt-java:distroless-v1.0.1"
+      tag:
+        description: "Target rebased image reference"
+        required: true
+        default: "ghcr.io/acme/payments-api:1.0.0-rebased"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Install ClearCutt CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="v0.11.1"
+          curl -fsSL -o "${RUNNER_TEMP}/clearcutt" \
+            "https://github.com/northcutted/clearcutt/releases/download/${VERSION}/clearcutt-linux-amd64"
+          chmod +x "${RUNNER_TEMP}/clearcutt"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+
+      - name: Rebase without rebuilding the app layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          clearcutt app rebase \
+            --image "${{ inputs.image }}" \
+            --candidate-base "${{ inputs.candidate-base }}" \
+            --candidate-base-id java21-distroless \
+            --tag "${{ inputs.tag }}" \
+            --dev-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main" \
+            --sign \
+            --attest

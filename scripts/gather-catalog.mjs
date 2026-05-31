@@ -327,6 +327,7 @@ function summarizeImageForIndex(img) {
     languageVersion: img.language.version,
     tier: img.tier.id,
     latestTag: latestRel.tag,
+    latestManifestDigest: latestRel.manifestDigest ?? null,
     latestPackageCount: Math.round(totalPkgs),
     architectures: arches,
     signed: !!latestRel.signature?.cosignBundlePresent,

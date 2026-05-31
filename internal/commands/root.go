@@ -53,6 +53,7 @@ and manage hardened multi-architecture enterprise base images.`,
 	rootCmd.AddCommand(NewOverlayCmd())
 	rootCmd.AddCommand(NewReleaseCmd())
 	rootCmd.AddCommand(NewConformanceCmd())
+	rootCmd.AddCommand(NewAppCmd())
 
 	return rootCmd
 }

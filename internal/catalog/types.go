@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 )
 
-
 // CatalogIndex represents the top-level index.json structure.
 type CatalogIndex struct {
 	GeneratedAt  string                `json:"generatedAt"`
@@ -43,21 +42,25 @@ type TierInfo struct {
 
 // CatalogImageSummary represents a summary image record inside index.json.
 type CatalogImageSummary struct {
-	ID                 string           `json:"id"`
-	Language           string           `json:"language"`
-	LanguageDisplay    string           `json:"languageDisplay"`
-	LanguageVersion    string           `json:"languageVersion"`
-	Tier               string           `json:"tier"`
-	LatestTag          string           `json:"latestTag"`
-	LatestPackageCount int              `json:"latestPackageCount"`
-	Architectures      []string         `json:"architectures"`
-	Signed             bool             `json:"signed"`
-	Provenance         bool             `json:"provenance"`
-	Evidence           *EvidenceSummary `json:"evidence,omitempty"`
-	Passed             bool             `json:"passed"`
-	VulnSummary        *VulnSummary     `json:"vulnSummary,omitempty"`
-	Lifecycle          Lifecycle        `json:"lifecycle"`
-	RuntimeContract    RuntimeContract  `json:"runtimeContract"`
+	ID              string `json:"id"`
+	Language        string `json:"language"`
+	LanguageDisplay string `json:"languageDisplay"`
+	LanguageVersion string `json:"languageVersion"`
+	Tier            string `json:"tier"`
+	LatestTag       string `json:"latestTag"`
+	// LatestManifestDigest denormalizes the latest release's manifest digest into
+	// the index summary so commands like `list` can render it without reading
+	// every individual image record.
+	LatestManifestDigest *string          `json:"latestManifestDigest,omitempty"`
+	LatestPackageCount   int              `json:"latestPackageCount"`
+	Architectures        []string         `json:"architectures"`
+	Signed               bool             `json:"signed"`
+	Provenance           bool             `json:"provenance"`
+	Evidence             *EvidenceSummary `json:"evidence,omitempty"`
+	Passed               bool             `json:"passed"`
+	VulnSummary          *VulnSummary     `json:"vulnSummary,omitempty"`
+	Lifecycle            Lifecycle        `json:"lifecycle"`
+	RuntimeContract      RuntimeContract  `json:"runtimeContract"`
 }
 
 // EvidenceSummary tracks the presence of various supply-chain evidence pieces.

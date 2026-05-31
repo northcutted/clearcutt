@@ -77,6 +77,23 @@ func TestVerify_ActiveExceptionExemptsFinding(t *testing.T) {
 	}
 }
 
+// Providing --exceptions is sufficient to honour active exceptions; the legacy
+// --allow-exceptions toggle is no longer required (it used to make the file a
+// silent no-op when omitted).
+func TestVerify_ExceptionsFileAloneHonorsExceptions(t *testing.T) {
+	excPath := writeExceptions(t, "2999-01-01") // far-future expiry => active
+	stdout, err := runCLI(t, "verify", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0",
+		"--exceptions", excPath)
+	if err != nil {
+		t.Fatalf("expected --exceptions alone to honour the active exception and pass, got: %v\n%s", err, stdout)
+	}
+	resp := decodeVerify(t, stdout)
+	if resp.Status != "pass" {
+		t.Fatalf("expected pass with active exception and no --allow-exceptions, got %q", resp.Status)
+	}
+}
+
 func TestVerify_ExpiredExceptionIsNotHonored(t *testing.T) {
 	excPath := writeExceptions(t, "2000-01-01") // past expiry => expired
 	stdout, err := runCLI(t, "verify", "java21-distroless",

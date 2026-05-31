@@ -3,6 +3,7 @@ package catalog
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,11 +22,30 @@ func decodeJSON(data []byte, v interface{}) error {
 	return dec.Decode(v)
 }
 
+// catalogNotFoundError returns an actionable error when the catalog directory or
+// its index.json is missing, pointing the user at how to obtain a catalog rather
+// than surfacing a bare "no such file" from the OS. The catalog is a generated
+// artifact (see scripts/gather-catalog.mjs) and is not committed to the repo.
+func catalogNotFoundError(catalogPath, missingPath string, cause error) error {
+	return fmt.Errorf(`no ClearCutt catalog found at %q (looked for %s).
+
+The CLI reads a generated catalog of image records. To obtain one:
+  - generate it from a clone of this repo:
+        node scripts/gather-catalog.mjs        (writes to site/src/data/catalog)
+  - or point --catalog at an existing catalog directory, e.g. the bundled fixture:
+        clearcutt list --catalog internal/testdata/catalog
+
+underlying error: %w`, catalogPath, missingPath, cause)
+}
+
 // LoadCatalogIndex reads index.json from the specified catalog directory.
 func LoadCatalogIndex(catalogPath string) (*CatalogIndex, error) {
 	indexPath := filepath.Join(catalogPath, "index.json")
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, catalogNotFoundError(catalogPath, indexPath, err)
+		}
 		return nil, fmt.Errorf("failed to read catalog index at %s: %w", indexPath, err)
 	}
 
@@ -42,6 +62,14 @@ func LoadImageRecord(catalogPath, imageID string) (*ImageRecord, error) {
 	recordPath := filepath.Join(catalogPath, "images", fmt.Sprintf("%s.json", imageID))
 	data, err := os.ReadFile(recordPath)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Distinguish "the whole catalog is missing" (actionable acquisition
+			// hint) from "the catalog exists but this image id is unknown".
+			if _, statErr := os.Stat(filepath.Join(catalogPath, "index.json")); errors.Is(statErr, os.ErrNotExist) {
+				return nil, catalogNotFoundError(catalogPath, recordPath, err)
+			}
+			return nil, fmt.Errorf("image %q not found in catalog %q (run `clearcutt list` to see available image ids)", imageID, catalogPath)
+		}
 		return nil, fmt.Errorf("failed to read image record for %q at %s: %w", imageID, recordPath, err)
 	}
 

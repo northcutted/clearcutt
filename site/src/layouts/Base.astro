@@ -59,7 +59,7 @@ const url = base;
   </head>
   <body class="font-sans">
     <header class="sticky top-0 z-30 border-b border-ink-800/80 bg-ink-950/85 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
         <a href={url} class="group flex items-center gap-3 no-underline">
           <span class="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-accent/30 bg-gradient-to-br from-accent/15 via-ink-800 to-ink-900 text-accent-soft">
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -73,9 +73,10 @@ const url = base;
             <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Hardened Fleet Catalog</div>
           </div>
         </a>
-        <nav class="flex items-center gap-6 text-sm font-sans font-medium">
+        <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
           <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Getting Started</a>
           <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
+          <a href={`${base}app-lifecycle`} class="text-ink-200 hover:text-ink-50 transition">App Lifecycle</a>
           <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI Tools</a>
           <a href={`${base}about`} class="text-ink-200 hover:text-ink-50 transition">About &amp; Audit</a>
           {index && (

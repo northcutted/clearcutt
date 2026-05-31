@@ -15,7 +15,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
     <header class="space-y-2 border-b border-ink-800/40 pb-4">
       <h1 class="heading text-3xl font-bold">ClearCutt CLI &amp; Governance Engine</h1>
       <p class="text-xs sm:text-sm text-ink-300">
-        The core command-line companion and compliance engine. Audit image tarballs, enforce exceptions, verify OIDC signatures, generate policies, and spin up Nix runtime overlays.
+        The core command-line companion and compliance engine. Audit image tarballs, rebase downstream app images, enforce exceptions, verify OIDC signatures, generate policies, and spin up Nix runtime overlays.
       </p>
     </header>
 
@@ -30,7 +30,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
             <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Anywhere in CI/CD.</span>
           </div>
           <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
-            The <code>clearcutt</code> CLI runs hermetically without daemon requirements. Run signature gates in admission controllers, inspect multi-arch manifest structures, parse OpenVEX triages, and audit offline application archives for dynamic rootless privilege violations.
+            The <code>clearcutt</code> CLI keeps governance checks offline and runs app lifecycle operations registry-direct without Docker. Build precompiled artifacts onto ClearCutt bases, inspect multi-arch manifests, parse OpenVEX triages, and rebase patched bases under untouched application layers.
           </p>
         </div>
         <div class="shrink-0 flex flex-col gap-2">
@@ -110,6 +110,21 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <CopyBlock language="shell" code={`# Export docker/podman OCI tarball\ndocker save ghcr.io/acme/my-app:latest -o my-app.tar\n\n# Run declarative offline certification checks\nclearcutt certify my-app.tar \\\n  --base java25-distroless \\\n  --policy certification-policy.yaml`} />
         </div>
 
+        <!-- app -->
+        <div class="surface-soft border border-ink-800/40 rounded-2xl p-6 space-y-4">
+          <div class="space-y-1">
+            <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">app build / rebase</span>
+            <h3 class="font-bold text-base text-ink-50">Rebasable App Lifecycle</h3>
+          </div>
+          <p class="text-xs text-ink-300 leading-relaxed font-sans">
+            Builds precompiled artifacts directly into OCI images, compares candidate bases, and rebases patched base layers under byte-preserved application layers with cosign signature and attestation gates.
+          </p>
+          <CopyBlock language="shell" code={`# Build a rebasable app image\nclearcutt app build \\\n  --base java21-distroless \\\n  --artifact target/app.jar \\\n  --dest /workspace/app.jar \\\n  --entrypoint '["java","-jar","/workspace/app.jar"]' \\\n  --image ghcr.io/acme/payments-api:1.0.0\n\n# Rebase after the base is patched\nclearcutt app rebase \\\n  --image ghcr.io/acme/payments-api:1.0.0 \\\n  --candidate-base ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java21:distroless-v0.2.2 \\\n  --candidate-base-id java21-distroless \\\n  --tag ghcr.io/acme/payments-api:1.0.0-rebased \\\n  --dev-identity "$DEV_SIGNER" \\\n  --sign \\\n  --attest`} />
+          <a href={`${base}app-lifecycle`} class="inline-flex text-xs font-semibold uppercase tracking-wider text-accent-soft hover:text-accent transition">
+            All stack examples
+          </a>
+        </div>
+
         <!-- diff -->
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-6 space-y-4">
           <div class="space-y-1">
@@ -141,9 +156,9 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
             <h3 class="font-bold text-base text-ink-50">Offline Conformance Auditor</h3>
           </div>
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
-            Runs local runtime assertions offline. Validates timezone configurations, CA certificate link pathways, unprivileged execution permissions, and executes dynamic interpreter assertions.
+            Audits the current host/container environment offline — run it inside the image under test. Validates timezone configuration, CA certificate pathways, unprivileged execution, a writable <code>/tmp</code>, and any language interpreters on PATH.
           </p>
-          <CopyBlock language="shell" code={`# Run conformance tests against base image\nclearcutt conformance run --image java25-distroless`} />
+          <CopyBlock language="shell" code={`# Audit the current environment (run inside the container under test)\nclearcutt conformance run --expect-runtime java`} />
         </div>
 
         <!-- exceptions -->
@@ -155,7 +170,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
             Audits declarative <code>exceptions.yaml</code> governance files against standard schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings.
           </p>
-          <CopyBlock language="shell" code={`# Validate exceptions catalog file\nclearcutt exceptions validate exceptions.yaml --fail-on-expired`} />
+          <CopyBlock language="shell" code={`# Validate exceptions catalog file\nclearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions`} />
         </div>
 
         <!-- mirror -->
@@ -183,13 +198,19 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <div>
           <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">1. Exceptions YAML (`exceptions.yaml`)</h3>
           <p class="text-xs text-ink-400 mb-2">Used in <code>verify</code>, <code>vex</code>, and <code>exceptions validate</code> to document accepted CVEs, temporary business exemptions, and active owners:</p>
-          <CopyBlock language="yaml" code={`apiVersion: clearcutt.dev/v1\nkind: Exceptions\nmetadata:\n  name: app-triage-exceptions\nspec:\n  exceptions:\n    - id: "CVE-2026-9999"\n      package: "openssl"\n      image: "*"\n      release: "*"\n      status: "accepted_risk"\n      reason: "inherited_from_base"\n      owner: "eddie-northcutt"\n      createdAt: "2026-05-30"\n      expiresAt: "2026-08-30"\n      references:\n        - "https://nvd.nist.gov/vuln/detail/CVE-2026-9999"\n      notes: "Vulnerable functions are completely sealed and unreachable in our distroless runtime closures."`} />
+          <CopyBlock language="yaml" code={`apiVersion: clearcutt.dev/v1\nkind: VulnerabilityExceptions\nmetadata:\n  name: app-triage-exceptions\nspec:\n  exceptions:\n    - id: "CVE-2026-9999"\n      package: "openssl"\n      image: "*"\n      release: "*"\n      status: "accepted_risk"\n      reason: "inherited_from_base"\n      owner: "eddie-northcutt"\n      createdAt: "2026-05-30"\n      expiresAt: "2026-08-30"\n      references:\n        - "https://nvd.nist.gov/vuln/detail/CVE-2026-9999"\n      notes: "Vulnerable functions are completely sealed and unreachable in our distroless runtime closures."`} />
         </div>
 
         <div class="pt-4 border-t border-ink-800/40">
           <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">2. Certification Policy YAML (`certification-policy.yaml`)</h3>
           <p class="text-xs text-ink-400 mb-2">Enforces downstream OCI compliance gates dynamically inside GHA workflows or local audits using <code>certify</code>:</p>
           <CopyBlock language="yaml" code={`apiVersion: clearcutt.dev/v1\nkind: CertificationPolicy\nmetadata:\n  name: production-hardening-contract\nspec:\n  base:\n    allowedImages:\n      - "java25-distroless"\n      - "python3.14-slim"\n    requireDigestPinned: true\n    requireKnownBase: true\n  supplyChain:\n    requireSignature: true\n    requireProvenance: true\n    requireSbom: true\n    minimumSlsaLevel: 3\n  runtime:\n    requireNonRoot: true\n    forbidShell: true\n    forbidPackageManagers: true\n    forbidDevTier: true\n  lifecycle:\n    allowPreview: false\n    allowDeprecated: false\n    allowExperimental: false\n  vulnerabilities:\n    maxCritical: 0\n    maxHigh: 3\n    allowExceptions: true\n    exceptionFile: "exceptions.yaml"`} />
+        </div>
+
+        <div class="pt-4 border-t border-ink-800/40">
+          <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">3. Rebase Attestation JSON (`rebase-attestation.schema.json`)</h3>
+          <p class="text-xs text-ink-400 mb-2">Records the source digest, base-layer swap, preserved compressed app-layer digests, compatibility policy, and verified developer signature evidence for <code>app rebase --attest</code>.</p>
+          <CopyBlock language="json" code={`{\n  "predicateType": "https://clearcutt.dev/attestations/rebase/v1",\n  "predicate": {\n    "sourceImage": "ghcr.io/acme/payments-api:1.0.0",\n    "sourceDigest": "sha256:...",\n    "preservedAppLayers": ["sha256:..."],\n    "developerSignatureVerified": true,\n    "developerIdentity": "$DEV_SIGNER",\n    "rebaseDecision": "allowed"\n  }\n}`} />
         </div>
       </div>
     </section>

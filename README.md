@@ -93,9 +93,15 @@ Compile the binary from the root of the repository:
 go build -o clearcutt ./cmd/clearcutt
 ```
 
+> [!NOTE]
+> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate it with `node scripts/gather-catalog.mjs` (writes to `site/src/data/catalog`, the default `--catalog` path), or point `--catalog` at any catalog directory — e.g. the bundled fixture `internal/testdata/catalog` for a quick offline demo:
+> ```bash
+> ./clearcutt list --catalog internal/testdata/catalog
+> ```
+
 ### CLI Command Reference
 
-The `clearcutt` CLI is divided into zero-daemon, purpose-built subcommands. Below is the complete reference of core commands and their real-world usage patterns:
+The `clearcutt` CLI is divided into purpose-built subcommands. Catalog and governance commands are offline; `app` commands are registry-direct and network-touching, but still require no Docker daemon or Nix installation.
 
 #### 1. `list` (Catalog Image Discovery)
 List all base images available in the local catalog index, with rich support for filtering by runtime language, matrix tier, and production readiness:
@@ -172,7 +178,7 @@ Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCu
 Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
 ```bash
 # Audit exceptions configurations for syntax and expiration
-./clearcutt exceptions validate exceptions.yaml --fail-on-expired
+./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
 ```
 
 #### 8. `mirror` / `mirror verify` (Secure OCI Layer Replication)
@@ -185,6 +191,38 @@ Generates high-fidelity `skopeo` and `cosign` shell script templates to securely
 ./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
 ```
 
+#### 9. `app build` / `app diff-base` / `app rebase` (Downstream Application Lifecycle)
+Build and update downstream application images on ClearCutt bases without a Docker daemon. The rebase path swaps only base layers and preserves application layers byte-for-byte; it refuses runtime major/minor changes and requires a verified developer signature before emitting a signed "allowed" rebase attestation.
+
+For language-specific examples across Core/static, Java, Node.js, Python, Go,
+.NET, Rust, and C/C++, see the aligned end-to-end guide in
+[`docs/app-lifecycle.md`](docs/app-lifecycle.md).
+
+```bash
+# Assemble a prebuilt artifact onto a ClearCutt base and push it
+./clearcutt app build \
+  --base java21-distroless \
+  --artifact target/app.jar \
+  --dest /workspace/app.jar \
+  --entrypoint '["java","-jar","/workspace/app.jar"]' \
+  --image ghcr.io/acme/payments-api:1.0.0
+
+# Compare a candidate base before rebasing
+./clearcutt app diff-base \
+  --image ghcr.io/acme/payments-api:1.0.0 \
+  --candidate-base java21-distroless
+
+# Rebase, sign with the rebase-engine identity, and attach a rebase attestation
+./clearcutt app rebase \
+  --image ghcr.io/acme/payments-api:1.0.0 \
+  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2 \
+  --candidate-base-id java21-distroless \
+  --tag ghcr.io/acme/payments-api:1.0.0-rebased \
+  --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
+  --sign \
+  --attest
+```
+
 ---
 
 ### Declarative Governance Schemas
@@ -195,7 +233,7 @@ ClearCutt standardizes compliance policies and vulnerability triages using decla
 Documents accepted CVE risks, owner mappings, and active expiration dates:
 ```yaml
 apiVersion: clearcutt.dev/v1
-kind: Exceptions
+kind: VulnerabilityExceptions
 metadata:
   name: app-triage-exceptions
 spec:
@@ -249,6 +287,9 @@ spec:
     exceptionFile: "exceptions.yaml"
 ```
 
+#### 3. Rebase Attestation Schema
+`schemas/rebase-attestation.schema.json` defines the full in-toto statement shape for `clearcutt app rebase --attest`. The CLI gives cosign the predicate body and cosign wraps it with the subject digest; an `allowed` predicate requires `developerSignatureVerified: true`, a pinned developer identity, the source image digest, compressed preserved app-layer digests, and the base-layer add/remove accounting.
+
 ---
 
 ## Consumption & Integration Patterns
@@ -271,13 +312,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build and Certify Application
-        uses: ./.github/actions/build-certify
+      # ... your own build + push steps that produce the image referenced below ...
+      - name: Certify Application Against ClearCutt Contracts
+        uses: northcutted/clearcutt/.github/actions/certify-app@v0.11.1
         with:
-          language: 'java25'
-          tier: 'distroless'
-          image-name: 'ghcr.io/${{ github.repository }}/my-app:latest'
+          image: 'ghcr.io/${{ github.repository }}/my-app:latest'
+          base: 'java25-distroless'
+          policy: 'certification-policy.yaml'
+          # Pin the signer identity that built/signed the app image — never a wildcard:
+          certificate-identity-regexp: 'https://github.com/${{ github.repository }}/.github/workflows/.*'
 ```
+
+### 1.5 CI/CD: Zero-Rebuild Base Rebasing
+After a developer workflow signs the original application image, a separate rebase workflow can move the image onto a patched ClearCutt base without recompiling the app layer:
+```yaml
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+steps:
+  - uses: sigstore/cosign-installer@v4
+  - run: |
+      clearcutt app rebase \
+        --image ghcr.io/acme/payments-api:1.0.0 \
+        --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2 \
+        --candidate-base-id java21-distroless \
+        --tag ghcr.io/acme/payments-api:1.0.0-rebased \
+        --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
+        --sign \
+        --attest
+```
+Run this from CI with GitHub Actions OIDC (`id-token: write`) so cosign can sign keylessly as the rebase-engine workflow.
+For the full app-build, developer-sign, diff, rebase, verify, and admission
+pattern for every supported stack, see
+[`docs/app-lifecycle.md`](docs/app-lifecycle.md).
 
 ### 2. Adopting ClearCutt Under a Base-Image Mandate
 ClearCutt images are built **from scratch** for maximum hardening, but if your organization mandates a sanctioned base OS (Amazon Linux, UBI, Ubuntu Pro), you don't have to migrate to start benefiting. Because each runtime is a self-contained, `RPATH`-bound `/nix/store` closure, you can graft it directly onto the mandated base without modifying any OS layer or its bundled monitoring/security agents:
@@ -337,7 +406,7 @@ For Nix native developers and downstream clusters, ClearCutt publishes packages 
 ClearCutt provides complete deployment and policy manifests under `examples/k8s-deployment/` to enforce signature and SBOM verification.
 
 * **Hardened Deployment (`deployment.yaml`):** Uses the secure unprivileged context (`runAsUser: 10001`), drops kernel capabilities, disables privilege escalation, and locks the root layer.
-* **Admission Verification (`kyverno-policy.yaml`):** Enforces a Kyverno `ClusterPolicy` that intercepts Pod creation requests and traceably verifies image signatures and signed SPDX SBOMs.
+* **Admission Verification (`kyverno-policy.yaml`):** Enforces Kyverno `ClusterPolicy` rules that intercept Pod creation requests and traceably verify image signatures, signed SPDX SBOMs, and optional ClearCutt rebase attestations.
 * > [!CAUTION]
   > **Webhook Availability Trade-off:** The provided Kyverno policy defaults to a fail-closed configuration (enforced via `validationFailureAction: Enforce`). If the Kyverno admission controller webhook becomes unavailable or crashes, all pod deployment operations matching this policy will be blocked on the cluster. Organizations must evaluate whether to fall back to auditing mode (`validationFailureAction: Audit`) depending on their high-availability and business continuity requirements.
 

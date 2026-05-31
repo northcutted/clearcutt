@@ -30,10 +30,9 @@ The `clearcutt vex` command queries exceptions and dynamically outputs OpenVEX (
 When executing policy gating:
 ```bash
 clearcutt verify java25-distroless \
-  --exceptions exceptions.yaml \
-  --allow-exceptions \
-  --fail-on-expired-exceptions
+  --max-critical 0 --max-high 3 \
+  --exceptions exceptions.yaml
 ```
-This deducts all active (non-expired) exempted CVEs from the severity thresholds. An expired exception is **never** applied; with `--fail-on-expired-exceptions` (the default) a matched-but-expired exception additionally raises a dedicated `exceptions.expired` failure, so stale waivers actively break the build rather than silently lapsing. Pass `--fail-on-expired-exceptions=false` to downgrade that to a silent skip.
+Supplying `--exceptions` is enough to honour active exceptions — the older `--allow-exceptions` flag is now implied and optional. This deducts all active (non-expired) exempted CVEs from the severity thresholds. An expired exception is **never** applied; with `--fail-on-expired-exceptions` (the default) a matched-but-expired exception additionally raises a dedicated `exceptions.expired` failure, so stale waivers actively break the build rather than silently lapsing. Pass `--fail-on-expired-exceptions=false` to downgrade that to a silent skip.
 
 > Note: exceptions are only evaluated when a threshold is set (`--max-critical` / `--max-high`).

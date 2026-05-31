@@ -68,8 +68,8 @@ func NewVerifyCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&verifyOpts.requireVulnScan, "require-vuln-scan", false, "Enforce presence of complete vulnerability scan results")
 	cmd.Flags().IntVar(&verifyOpts.maxCritical, "max-critical", -1, "Maximum tolerated critical severity vulnerabilities (-1 to disable threshold)")
 	cmd.Flags().IntVar(&verifyOpts.maxHigh, "max-high", -1, "Maximum tolerated high severity vulnerabilities (-1 to disable threshold)")
-	cmd.Flags().StringVar(&verifyOpts.exceptionsFile, "exceptions", "", "Path to local exceptions YAML triage governance file")
-	cmd.Flags().BoolVar(&verifyOpts.allowExceptions, "allow-exceptions", false, "Honour active vulnerability exceptions during gating")
+	cmd.Flags().StringVar(&verifyOpts.exceptionsFile, "exceptions", "", "Path to local exceptions YAML triage governance file (active exceptions are honoured automatically when set)")
+	cmd.Flags().BoolVar(&verifyOpts.allowExceptions, "allow-exceptions", false, "Deprecated/no-op: exceptions are honoured automatically whenever --exceptions is provided")
 	cmd.Flags().BoolVar(&verifyOpts.failOnExpiredExceptions, "fail-on-expired-exceptions", true, "Fail verification if any matched exception is expired")
 
 	return cmd
@@ -91,9 +91,11 @@ func runVerify(imageID string) error {
 		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
-	// Parse exceptions if allowed
+	// Parse exceptions whenever a file is provided. Supplying --exceptions is the
+	// intent to honour them; we don't require a separate --allow-exceptions toggle,
+	// which previously made the file a silent no-op when omitted.
 	var exceptionsDoc *ExceptionsDoc
-	if verifyOpts.allowExceptions && verifyOpts.exceptionsFile != "" {
+	if verifyOpts.exceptionsFile != "" {
 		doc, err := LoadExceptionsFile(verifyOpts.exceptionsFile)
 		if err != nil {
 			return fmt.Errorf("failed to load exceptions file: %w", err)

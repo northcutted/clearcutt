@@ -16,10 +16,22 @@ type mirrorFlags struct {
 	output               string
 	verifySource         string
 	verifyTarget         string
+	verifyIdentity       string
+	verifyIssuer         string
 	preserveAttestations bool
 }
 
 var mirrorOpts mirrorFlags
+
+const (
+	// defaultReleaseIdentityRegex is the Sigstore signing identity of ClearCutt's
+	// own release workflow. mirror verify pins to it by default so a mirrored
+	// signature must trace back to a genuine ClearCutt release, not just any valid
+	// Sigstore certificate. Override with --identity when mirroring a fork.
+	defaultReleaseIdentityRegex = "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@.*"
+	// defaultOIDCIssuer is the GitHub Actions OIDC issuer used for keyless signing.
+	defaultOIDCIssuer = "https://token.actions.githubusercontent.com"
+)
 
 func NewMirrorCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -54,6 +66,8 @@ registries; this command itself performs no network calls.`,
 
 	verifyCmd.Flags().StringVar(&mirrorOpts.verifySource, "source", "", "Source OCI image reference tag")
 	verifyCmd.Flags().StringVar(&mirrorOpts.verifyTarget, "target", "", "Target mirrored OCI image reference tag")
+	verifyCmd.Flags().StringVar(&mirrorOpts.verifyIdentity, "identity", defaultReleaseIdentityRegex, "Cosign certificate-identity regexp the mirrored signature must match")
+	verifyCmd.Flags().StringVar(&mirrorOpts.verifyIssuer, "issuer", defaultOIDCIssuer, "Cosign OIDC issuer the mirrored signature must match")
 	verifyCmd.Flags().StringVar(&mirrorOpts.output, "output", "", "Output shell script file path destination")
 	verifyCmd.MarkFlagRequired("source")
 	verifyCmd.MarkFlagRequired("target")
@@ -66,6 +80,8 @@ registries; this command itself performs no network calls.`,
 func runMirrorVerify() error {
 	src := strings.TrimSpace(mirrorOpts.verifySource)
 	tgt := strings.TrimSpace(mirrorOpts.verifyTarget)
+	identity := strings.TrimSpace(mirrorOpts.verifyIdentity)
+	issuer := strings.TrimSpace(mirrorOpts.verifyIssuer)
 
 	script := fmt.Sprintf(`#!/usr/bin/env bash
 # ClearCutt Mirror Trust Verification
@@ -80,6 +96,10 @@ set -euo pipefail
 
 SRC="%s"
 TGT="%s"
+# Signer the mirrored signature must trace back to. Defaults to ClearCutt's
+# release workflow; override with --identity / --issuer when mirroring a fork.
+IDENTITY="%s"
+ISSUER="%s"
 
 log()  { echo "[clearcutt mirror verify] $1"; }
 fail() { echo "[clearcutt mirror verify] FAIL: $1" >&2; exit 1; }
@@ -98,15 +118,15 @@ tgt_refs="$(oras discover --format json "$TGT" | jq '.manifests | length')"
 [ "$tgt_refs" -ge "$src_refs" ] || fail "target is missing referrers: source=$src_refs target=$tgt_refs"
 log "Referrers preserved: target=$tgt_refs source=$src_refs"
 
-# 3. The mirrored signature must still verify. Pin identity/issuer to your build
-#    workflow before running this in CI rather than the permissive defaults below.
-log "Verifying target signature..."
+# 3. The mirrored signature must still verify against the expected signer
+#    identity and issuer (a wildcard would accept any Sigstore certificate).
+log "Verifying target signature against $IDENTITY..."
 cosign verify "$TGT" \
-  --certificate-identity-regexp '.*' \
-  --certificate-oidc-issuer-regexp '.*' >/dev/null || fail "target signature did not verify"
+  --certificate-identity-regexp "$IDENTITY" \
+  --certificate-oidc-issuer "$ISSUER" >/dev/null || fail "target signature did not verify"
 
 log "Mirror trust verification PASSED for $TGT"
-`, src, tgt, src, tgt)
+`, src, tgt, src, tgt, identity, issuer)
 
 	if mirrorOpts.output != "" {
 		if err := os.WriteFile(mirrorOpts.output, []byte(script), 0755); err != nil {

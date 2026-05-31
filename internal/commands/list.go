@@ -89,25 +89,11 @@ func runList() error {
 		)
 
 		for _, img := range filtered {
+			// The latest manifest digest is denormalized into the index summary, so
+			// rendering the table no longer requires reading every image record.
 			digestStr := "N/A"
-			// Load individual record to fetch the latest manifest digest
-			if record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, img.ID); err == nil {
-				// Find the release matching img.LatestTag
-				for _, r := range record.Releases {
-					if r.Tag == img.LatestTag {
-						if r.ManifestDigest != nil && *r.ManifestDigest != "" {
-							digest := *r.ManifestDigest
-							if strings.HasPrefix(digest, "sha256:") && len(digest) >= 19 {
-								digestStr = digest[:19] + "..."
-							} else if len(digest) > 12 {
-								digestStr = digest[:12] + "..."
-							} else {
-								digestStr = digest
-							}
-						}
-						break
-					}
-				}
+			if img.LatestManifestDigest != nil && *img.LatestManifestDigest != "" {
+				digestStr = truncateDigest(*img.LatestManifestDigest)
 			}
 
 			// Format production allowed
@@ -169,4 +155,16 @@ func runList() error {
 
 		return tp.Print(out)
 	}
+}
+
+// truncateDigest shortens a manifest digest for table display while keeping the
+// algorithm prefix readable (e.g. "sha256:1234567890ab...").
+func truncateDigest(digest string) string {
+	if strings.HasPrefix(digest, "sha256:") && len(digest) >= 19 {
+		return digest[:19] + "..."
+	}
+	if len(digest) > 12 {
+		return digest[:12] + "..."
+	}
+	return digest
 }

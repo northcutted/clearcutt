@@ -179,6 +179,12 @@ func runCertify(tarPath string) error {
 		if err := yaml.Unmarshal(data, &p); err != nil {
 			return fmt.Errorf("failed to parse policy YAML: %w", err)
 		}
+		if p.APIVersion != "clearcutt.dev/v1" {
+			return fmt.Errorf("invalid certification policy apiVersion: %q (expected clearcutt.dev/v1)", p.APIVersion)
+		}
+		if p.Kind != "CertificationPolicy" {
+			return fmt.Errorf("invalid certification policy kind: %q (expected CertificationPolicy)", p.Kind)
+		}
 		policy = &p
 		reqSig = policy.Spec.SupplyChain.RequireSignature
 		reqSbom = policy.Spec.SupplyChain.RequireSbom

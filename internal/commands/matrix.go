@@ -33,7 +33,7 @@ func NewMatrixCmd() *cobra.Command {
 	exportCmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export the runtime matrix as JSON or YAML",
-		Long:  `Gathers and outputs all published language runtimes, tiers, and multi-architecture metadata into a single machine-readable contract. Honors the global --format flag (json or yaml); json is the default.`,
+		Long:  `Gathers and outputs all published language runtimes, tiers, and multi-architecture metadata. Honors the global --format flag: table (default), json, or yaml.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMatrixExport()
 		},
@@ -71,13 +71,19 @@ func runMatrixExport() error {
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "yaml", "yml":
 		return output.PrintYAML(out, export)
-	default:
-		// matrix has no tabular form; "table" (the global default) falls through to JSON.
+	case "json":
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(export); err != nil {
 			return fmt.Errorf("failed to output JSON: %w", err)
 		}
 		return nil
+	default:
+		// Render the matrix as an aligned table for the default --format=table.
+		tp := output.NewTablePrinter("IMAGE", "RUNTIME", "VERSION", "TIER", "ARCHES")
+		for _, img := range export.Images {
+			tp.AddRow(img.ID, img.Runtime, img.Version, img.Tier, strings.Join(img.Architectures, ","))
+		}
+		return tp.Print(out)
 	}
 }

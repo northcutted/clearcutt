@@ -13,8 +13,9 @@ import (
 )
 
 type conformanceFlags struct {
-	image  string
-	output string
+	expectRuntime string
+	image         string // deprecated alias for --expect-runtime
+	output        string
 }
 
 var conformanceOpts conformanceFlags
@@ -35,19 +36,28 @@ type ConformanceCheck struct {
 func NewConformanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "conformance",
-		Short: "Execute runtime conformance and smoke test suites",
+		Short: "Audit the current host/container environment for runtime conformance",
 	}
 
 	runCmd := &cobra.Command{
 		Use:   "run",
-		Short: "Run the full conformance suite against the local host environment",
-		Long:  `Executes detailed unprivileged operator audits, CA certificate lookups, /tmp write access checks, and runtime interpreter validations.`,
+		Short: "Run the conformance suite against the current environment",
+		Long: `Audits the environment the CLI is running in (host or container): unprivileged
+operator UID, a writable /tmp, CA-certificate bundles, timezone data, and any
+language runtimes found on PATH.
+
+This inspects the *current* environment, not a remote image. To conformance-test a
+specific image, run the CLI inside that container (e.g. as its ENTRYPOINT, or via
+'docker run --entrypoint clearcutt <image> conformance run'). Use --expect-runtime
+to assert that a particular language interpreter (java, python, node, ...) is present.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runConformanceSuite()
 		},
 	}
 
-	runCmd.Flags().StringVar(&conformanceOpts.image, "image", "host", "Target image ID metadata context")
+	runCmd.Flags().StringVar(&conformanceOpts.expectRuntime, "expect-runtime", "host", "Language runtime to assert is present on PATH (e.g. java, python, node); 'host' asserts none")
+	runCmd.Flags().StringVar(&conformanceOpts.image, "image", "", "Deprecated alias for --expect-runtime")
+	_ = runCmd.Flags().MarkHidden("image")
 	runCmd.Flags().StringVar(&conformanceOpts.output, "output", "", "Output JSON report file destination")
 
 	cmd.AddCommand(runCmd)
@@ -55,6 +65,11 @@ func NewConformanceCmd() *cobra.Command {
 }
 
 func runConformanceSuite() error {
+	// --image is a deprecated alias; honour it only when --expect-runtime is unset.
+	if conformanceOpts.image != "" && conformanceOpts.expectRuntime == "host" {
+		conformanceOpts.expectRuntime = conformanceOpts.image
+	}
+
 	checks := []ConformanceCheck{}
 	hasFailures := false
 
@@ -186,10 +201,10 @@ func runConformanceSuite() error {
 	for _, rc := range runtimeChecks {
 		// Determine if this runtime is explicitly expected based on the image ID metadata context
 		isExpected := false
-		if conformanceOpts.image != "host" {
-			normalizedImage := strings.ToLower(conformanceOpts.image)
+		if conformanceOpts.expectRuntime != "host" {
+			normalizedExpect := strings.ToLower(conformanceOpts.expectRuntime)
 			normalizedID := strings.ToLower(rc.ID)
-			if strings.Contains(normalizedImage, normalizedID) {
+			if strings.Contains(normalizedExpect, normalizedID) {
 				isExpected = true
 			}
 		}
@@ -226,7 +241,7 @@ func runConformanceSuite() error {
 	}
 
 	report := ConformanceReport{
-		ImageID:    conformanceOpts.image,
+		ImageID:    conformanceOpts.expectRuntime,
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 		Status:     overallStatus,
 		Assertions: checks,

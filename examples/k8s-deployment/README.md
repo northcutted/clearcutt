@@ -33,7 +33,7 @@ When a deployment is submitted, Kyverno intercepts the API request and performs 
                                      │
              ┌───────────────────────┴───────────────────────┐
              ▼                                               ▼
-     1. Signature Check                              2. SBOM Check
+     1. Signature Check                              2. Attestation Check
 ┌───────────────────────────┐                   ┌───────────────────────────┐
 │ Is the OCI image signed   │                   │ Does a signed SPDX SBOM   │
 │ by our verified GitHub    │                   │ attestation exist in the  │
@@ -46,12 +46,29 @@ When a deployment is submitted, Kyverno intercepts the API request and performs 
                          [ ADMITTED TO CLUSTER ]
 ```
 
-### Keyless OIDC Assertions:
+For downstream applications rebased with `clearcutt app rebase`, the same policy
+file includes a template pair of rules for `ghcr.io/acme/*`:
+
+*   The rebased image digest must be signed by the pinned rebase-engine workflow.
+*   A signed `https://clearcutt.dev/attestations/rebase/v1` predicate must exist.
+*   The predicate must say `rebaseDecision: allowed`, `developerSignatureVerified: true`, and must carry the expected developer identity and issuer.
+
+Kyverno evaluates signatures and attestations as separate `verifyImages` entries,
+so the policy keeps the base-image signature rule, SBOM rule, rebase-engine
+signature rule, and rebase-attestation rule split for clarity.
+
+### Keyless OIDC Assertions
 Instead of managing static public/private keys in Kyverno (which introduces key rotation overhead), the policy verifies our **GitHub Actions OIDC Identity**. 
 *   It checks that the certificate issuer was `https://token.actions.githubusercontent.com`.
 *   It asserts that the certificate subject was our non-falsifiable release workflow: `https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main`.
 
-This guarantees that **only** images compiled, scanned, and signed inside your official, secure CI/CD release workflow can ever be deployed onto your production nodes!
+For rebased downstream applications, replace the `acme` placeholders with your
+developer and rebase-engine workflow subjects. Pin exact workflow identities
+wherever practical; broad regexes reduce the value of the gate.
+
+For the build, developer-sign, diff, rebase, and attestation flow that feeds
+these admission checks across every supported stack, see
+[`docs/app-lifecycle.md`](../../docs/app-lifecycle.md).
 
 ---
 
