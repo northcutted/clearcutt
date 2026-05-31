@@ -1,4 +1,4 @@
-.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate test agent-sync
+.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate test agent-sync e2e-test
 
 agent-sync:
 	bash .agent/sync.sh
@@ -36,4 +36,8 @@ core-verify:
 core-remediation-tests:
 	cd core && python3 -m unittest tests/test_remediation_pipeline.py
 
+e2e-test: cli-build
+	bash core/tests/e2e-runtimes.sh $(STACK)
+
 test: cli-vet cli-test site-typecheck site-build core-remediation-tests
+
