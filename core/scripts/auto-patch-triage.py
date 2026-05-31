@@ -29,6 +29,12 @@ def env_int(name, default):
 def load_remediation_plan(cap):
     plan_path = os.path.join("build-outputs", "remediation-plan.json")
     cmd = ["./scripts/remediation-broker.py", "--out", plan_path, "--quiet"]
+    vuln_root = os.environ.get("VULN_ROOT")
+    vuln_dir = os.environ.get("REMEDIATION_VULN_DIR")
+    if vuln_root:
+        cmd.extend(["--vuln-root", vuln_root])
+    if vuln_dir:
+        cmd.extend(["--vuln-dir", vuln_dir])
     include_dev_only = os.environ.get("INCLUDE_DEV_ONLY_REMEDIATION", "").lower()
     if include_dev_only in {"1", "true", "yes"}:
         cmd.append("--include-dev-only")

@@ -63,6 +63,21 @@ class RemediationPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "postInstall"):
             draft_agent.validate_recipe(recipe, "zlib", "CVE-2026-12345")
 
+    def test_phase_hook_remediation_recipe_is_rejected(self):
+        recipe = {
+            "route": "fetchpatch",
+            "package_attribute": "openssl",
+            "patch_url": "https://github.com/openssl/openssl/commit/abc.patch",
+            "overlay_expression": (
+                'openssl = prev.openssl.overrideAttrs (old: { '
+                'postPatch = (old.postPatch or "") + "\\ntrue\\n"; '
+                "});"
+            ),
+        }
+
+        with self.assertRaisesRegex(ValueError, "postPatch"):
+            draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
     def test_recipe_can_target_nix_attribute_that_differs_from_scanned_package(self):
         recipe = {
             "route": "version_bump",
@@ -77,9 +92,163 @@ class RemediationPipelineTests(unittest.TestCase):
 
         self.assertIn("python313 =", expr)
 
+    def test_deterministic_resolver_uses_explicit_source_evidence(self):
+        campaign = {
+            "package": "zlib",
+            "cve": "CVE-2026-12345",
+            "fixedVersion": "1.3.2",
+            "remediationEvidence": {
+                "package_attribute": "zlib",
+                "source_url": "https://zlib.net/zlib-1.3.2.tar.gz",
+                "sha256": "sha256-deadbeef",
+            },
+        }
+
+        recipe = draft_agent.resolve_deterministic_recipe(
+            campaign,
+            "zlib",
+            "CVE-2026-12345",
+            "1.3.2",
+            env={},
+            evidence_entries=[],
+        )
+
+        self.assertIsNotNone(recipe)
+        self.assertEqual(recipe["route"], "version_bump")
+        self.assertEqual(recipe["fixed_version"], "1.3.2")
+        self.assertIn("zlib = prev.zlib.overrideAttrs", recipe["overlay_expression"])
+        self.assertIn("sha256-deadbeef", recipe["overlay_expression"])
+
+    def test_deterministic_resolver_uses_explicit_patch_evidence(self):
+        campaign = {
+            "package": "openssl",
+            "cve": "CVE-2026-12345",
+            "fixedVersion": "3.4.1",
+            "remediationEvidence": {
+                "patch_url": "https://github.com/openssl/openssl/commit/abc.patch",
+                "patch_sha256": "sha256-feedface",
+            },
+        }
+
+        recipe = draft_agent.resolve_deterministic_recipe(
+            campaign,
+            "openssl",
+            "CVE-2026-12345",
+            "3.4.1",
+            env={},
+            evidence_entries=[],
+        )
+
+        self.assertIsNotNone(recipe)
+        self.assertEqual(recipe["route"], "fetchpatch")
+        self.assertIn("prev.fetchpatch", recipe["overlay_expression"])
+        self.assertIn("sha256-feedface", recipe["overlay_expression"])
+
+    def test_deterministic_resolver_uses_external_evidence_provider(self):
+        campaign = {
+            "package": "zlib",
+            "cve": "CVE-2026-12345",
+            "installedVersion": "1.3.1",
+            "fixedVersion": "1.3.2",
+        }
+
+        recipe = draft_agent.resolve_deterministic_recipe(
+            campaign,
+            "zlib",
+            "CVE-2026-12345",
+            "1.3.2",
+            env={},
+            evidence_entries=[
+                {
+                    "package": "zlib",
+                    "cve": "CVE-2026-12345",
+                    "installedVersion": "1.3.1",
+                    "fixedVersion": "1.3.2",
+                    "packageAttribute": "zlib",
+                    "sourceUrl": "https://zlib.net/zlib-1.3.2.tar.gz",
+                    "sourceSha256": "sha256-provider",
+                }
+            ],
+        )
+
+        self.assertIsNotNone(recipe)
+        self.assertEqual(recipe["route"], "version_bump")
+        self.assertIn("sha256-provider", recipe["overlay_expression"])
+
+    def test_deterministic_resolver_refuses_scanner_fixed_version_alone(self):
+        campaign = {
+            "package": "gradle",
+            "cve": "CVE-2026-22816",
+            "installedVersion": "8.14.4",
+            "fixedVersion": "9.3.0",
+        }
+
+        recipe = draft_agent.resolve_deterministic_recipe(
+            campaign,
+            "gradle",
+            "CVE-2026-22816",
+            "9.3.0",
+            env={},
+            evidence_entries=[],
+        )
+
+        self.assertIsNone(recipe)
+
+    def test_package_name_matching_avoids_substring_false_positives(self):
+        self.assertTrue(draft_agent.package_name_matches("openssl", {"openssl", ""}))
+        self.assertTrue(draft_agent.package_name_matches("openssl", {"openssl-3.4.1", ""}))
+        self.assertFalse(draft_agent.package_name_matches("ssl", {"openssl", ""}))
+        self.assertFalse(draft_agent.package_name_matches("ssl", {"ssl-cert", ""}))
+
+    def test_verify_remediation_removed_requires_at_least_one_passed_scan(self):
+        old_scan = draft_agent.scan_artifact_for_finding
+        try:
+            draft_agent.scan_artifact_for_finding = lambda artifact, cve, package: {
+                "target": artifact["target"],
+                "status": "skipped",
+                "reason": "native target has no OCI archive",
+                "remainingFindings": [],
+            }
+            ok, validation = draft_agent.verify_remediation_removed(
+                [{"target": "java21-native"}],
+                "CVE-2026-12345",
+                "zlib",
+            )
+            self.assertFalse(ok)
+            self.assertEqual(validation[0]["status"], "skipped")
+
+            draft_agent.scan_artifact_for_finding = lambda artifact, cve, package: {
+                "target": artifact["target"],
+                "status": "passed",
+                "reason": "original CVE/package pair removed",
+                "remainingFindings": [],
+            }
+            ok, _ = draft_agent.verify_remediation_removed(
+                [{"target": "java21-slim", "tarPath": "unused"}],
+                "CVE-2026-12345",
+                "zlib",
+            )
+            self.assertTrue(ok)
+        finally:
+            draft_agent.scan_artifact_for_finding = old_scan
+
+    def test_agent_sandbox_uses_ephemeral_home(self):
+        res = subprocess.run(
+            ["./scripts/agent-sandbox.sh", "bash", "-lc", 'printf "%s" "$HOME"'],
+            cwd=CORE_ROOT,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotEqual(res.stdout, os.environ.get("HOME", ""))
+        self.assertIn("clearcutt-agent-home", res.stdout)
+
     def test_agent_nix_invocations_accept_repo_flake_cache_config(self):
         setup_action = (REPO_ROOT / ".github" / "actions" / "setup-nix" / "action.yml").read_text()
         release_workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        scheduled_scan = (REPO_ROOT / ".github" / "workflows" / "scheduled-scan.yml").read_text()
+        patch_agent = (REPO_ROOT / ".github" / "workflows" / "cve-patch-agent.yml").read_text()
 
         self.assertIn("--accept-flake-config", draft_agent.NIX_FLAKE_FLAGS)
         self.assertIn("accept-flake-config = true", setup_action)
@@ -92,6 +261,12 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertIn("R2 origin narinfo is signed", release_workflow)
         self.assertIn("secret-key=$PWD/secret-key.pem", release_workflow)
         self.assertIn("^Sig: clearcutt-cache-1:", release_workflow)
+        self.assertIn("OPENROUTER_FREE_MODEL: \"openrouter/free\"", scheduled_scan)
+        self.assertIn("OPENROUTER_PAID_MODEL: \"openrouter/free\"", scheduled_scan)
+        self.assertIn("OPENROUTER_FALLBACK_MODEL: \"openrouter/free\"", scheduled_scan)
+        self.assertIn("OPENROUTER_FREE_MODEL: \"openrouter/free\"", patch_agent)
+        self.assertIn("OPENROUTER_PAID_MODEL: \"openrouter/free\"", patch_agent)
+        self.assertIn("OPENROUTER_FALLBACK_MODEL: \"openrouter/free\"", patch_agent)
 
     def test_broker_prioritizes_fixed_runtime_production_campaigns(self):
         vuln_dir = self.tmp_path / "vulnerabilities" / "v1.0.0"
@@ -145,6 +320,40 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertEqual(default_plan["summary"]["devOnlyCampaignCount"], 1)
         self.assertEqual(len(opt_in_plan["campaigns"]), 1)
         self.assertEqual(opt_in_plan["campaigns"][0]["package"], "gradle")
+
+    def test_auto_patch_dispatcher_forwards_explicit_vuln_root_from_core_cwd(self):
+        vuln_dir = self.tmp_path / "vulnerabilities" / "v1.0.0"
+        vuln_dir.mkdir(parents=True)
+        finding = {
+            "id": "CVE-2026-67890",
+            "severity": "Critical",
+            "packageName": "gradle",
+            "packageVersion": "9.2.0",
+            "layer": "runtime",
+            "fixedIn": "9.3.0",
+            "fixState": "fixed",
+        }
+        with open(vuln_dir / "java21-dev-amd64.json", "w", encoding="utf-8") as handle:
+            json.dump({"findings": [finding]}, handle)
+
+        env = os.environ.copy()
+        env["VULN_ROOT"] = str(self.tmp_path / "vulnerabilities")
+        env["MAX_FINDINGS_PER_RUN"] = "1"
+        env["MAX_PATCH_FAILURES_PER_RUN"] = "1"
+        env.pop("INCLUDE_DEV_ONLY_REMEDIATION", None)
+
+        res = subprocess.run(
+            [str(CORE_ROOT / "scripts" / "auto-patch-triage.py")],
+            cwd=CORE_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("source=", res.stdout)
+        self.assertIn(str(vuln_dir), res.stdout)
+        self.assertIn("dev-tier-only", res.stdout)
 
     def test_remediation_scan_mode_fails_closed_when_grype_missing(self):
         node = shutil.which("node")

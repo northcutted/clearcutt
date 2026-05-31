@@ -47,6 +47,51 @@ def latest_vulnerability_dir(root):
     return os.path.join(root, dirs[0])
 
 
+def vulnerability_root_stats(root):
+    abs_root = os.path.abspath(root)
+    exists = os.path.isdir(root)
+    version_dirs = []
+    scan_files = []
+    if exists:
+        version_dirs = sorted(
+            name
+            for name in os.listdir(root)
+            if os.path.isdir(os.path.join(root, name))
+        )
+        scan_files = glob.glob(os.path.join(root, "*", "*.json"))
+        if not scan_files:
+            scan_files = glob.glob(os.path.join(root, "*.json"))
+    return {
+        "root": root,
+        "abs_root": abs_root,
+        "exists": exists,
+        "version_dirs": version_dirs,
+        "scan_file_count": len(scan_files),
+    }
+
+
+def print_vulnerability_root_diagnostics(root, selected_dir=None):
+    stats = vulnerability_root_stats(root)
+    print(f"[broker] cwd={os.getcwd()}", file=sys.stderr)
+    print(f"[broker] checked_vuln_root={stats['root']}", file=sys.stderr)
+    print(f"[broker] absolute_vuln_root={stats['abs_root']}", file=sys.stderr)
+    print(f"[broker] vuln_root_exists={str(stats['exists']).lower()}", file=sys.stderr)
+    print(
+        f"[broker] scan_artifacts_present={str(stats['scan_file_count'] > 0).lower()}",
+        file=sys.stderr,
+    )
+    print(f"[broker] version_dir_count={len(stats['version_dirs'])}", file=sys.stderr)
+    print(f"[broker] scan_json_count={stats['scan_file_count']}", file=sys.stderr)
+    if stats["version_dirs"]:
+        print(
+            "[broker] newest_version_dirs="
+            + ", ".join(sorted(stats["version_dirs"], key=parse_version, reverse=True)[:5]),
+            file=sys.stderr,
+        )
+    if selected_dir:
+        print(f"[broker] selected_vuln_dir={selected_dir}", file=sys.stderr)
+
+
 def split_target_file(path):
     name = os.path.basename(path)
     match = re.match(r"^(.+)-(amd64|arm64)\.json$", name)
@@ -240,9 +285,11 @@ def main():
     vuln_dir = args.vuln_dir or latest_vulnerability_dir(args.vuln_root)
     if not vuln_dir:
         print("[broker] no vulnerability scan directory found", file=sys.stderr)
+        print_vulnerability_root_diagnostics(args.vuln_root)
         return 1
     if not os.path.isdir(vuln_dir):
         print(f"[broker] vulnerability directory does not exist: {vuln_dir}", file=sys.stderr)
+        print_vulnerability_root_diagnostics(args.vuln_root, selected_dir=vuln_dir)
         return 1
 
     plan = build_plan(vuln_dir, args.limit, include_dev_only=args.include_dev_only)

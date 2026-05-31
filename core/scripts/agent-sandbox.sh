@@ -13,7 +13,7 @@ elif [ -f /Users/eddie/.nix-profile/etc/profile.d/nix.sh ]; then
 fi
 
 # Status UI feedback
-echo -e "\033[1;35m[Sandbox Isolation]\033[0m Scrubbing all enterprise environment keys and credentials..." >&2
+echo -e "\033[1;35m[Sandbox Isolation]\033[0m Scrubbing all enterprise environment keys and filesystem credentials..." >&2
 
 # Inspect parent environment safely
 if [[ -n "${ENTERPRISE_MIRROR_URL:-}" ]] || [[ -n "${ENTERPRISE_MIRROR_USER:-}" ]] || [[ -n "${ENTERPRISE_MIRROR_TOKEN:-}" ]]; then
@@ -26,11 +26,18 @@ if [[ -n "${PATH:-}" ]]; then
   CLEAN_PATH="${PATH}"
 fi
 
-# Execute target command inside completely clean system context
+# Keep LLM-authored commands away from ~/.config, ~/.netrc, ~/.aws, SSH keys,
+# and other ambient host credentials. The real build isolation is still Nix's
+# sandbox; this wrapper strips process env and gives tools an empty home.
+SANDBOX_HOME="${AGENT_SANDBOX_HOME:-$(mktemp -d "${TMPDIR:-/tmp}/clearcutt-agent-home.XXXXXX")}"
+
+# Execute target command inside a scrubbed process context
 exec env -i \
   PATH="$CLEAN_PATH" \
-  HOME="$HOME" \
-  USER="$USER" \
+  HOME="$SANDBOX_HOME" \
+  XDG_CONFIG_HOME="$SANDBOX_HOME/.config" \
+  XDG_CACHE_HOME="$SANDBOX_HOME/.cache" \
+  USER="${USER:-agent}" \
   TERM="${TERM:-xterm-256color}" \
   SHELL="/bin/bash" \
   "$@"

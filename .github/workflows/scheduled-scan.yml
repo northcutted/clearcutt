@@ -19,7 +19,7 @@ permissions:
   pull-requests: write
 
 # Only one remediation scan in flight at a time — concurrent runs would race
-# on `cve-remediation/*` branches and `core/overlays/patch-cache.json`.
+# on `cve-remediation/*` branches and remote PR state.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -95,6 +95,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_FREE_MODEL: "openrouter/free"
           OPENROUTER_PAID_MODEL: "openrouter/free"
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
           # Cap how many distinct findings one run will attempt. Anything over
@@ -103,6 +104,7 @@ jobs:
           # Dev-tier-only campaigns are intentionally not included here. They
           # can be tested with the include_dev_only workflow dispatch input.
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ inputs.include_dev_only }}
+          VULN_ROOT: ../site/src/data/vulnerabilities
           MAX_PATCH_FAILURES_PER_RUN: "1"
         working-directory: core
         run: ./scripts/auto-patch-triage.py

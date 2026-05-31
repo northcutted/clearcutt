@@ -23,7 +23,7 @@ if [[ "$BRANCH" != "cve-remediation/"* ]]; then
 fi
 
 echo "Pushing $BRANCH to origin..."
-git push origin "$BRANCH" --force
+git push origin "$BRANCH" --force-with-lease
 
 TITLE="chore: automated CVE patch remediation for ${PACKAGE} (${CVE})"
 
