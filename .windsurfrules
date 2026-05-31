@@ -4,7 +4,7 @@
 #
 # Target: .cursorrules
 # Source: .agent/onboard.md, .agent/instructions.md, .agent/architecture.md, .agent/lessons_learned.md
-# Compiled At: 2026-05-30 21:27:56
+# Compiled At: 2026-05-30 21:30:29
 #
 # To modify these instructions, edit the source files under '.agent/' and run:
 #   make agent-sync
