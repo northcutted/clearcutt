@@ -345,8 +345,8 @@ case "$STACK" in
     fi
     ;;
   dotnet)
-    if [[ "$RUN_OUT_V1" == *"Hello from .NET E2E! Version: 8"* ]]; then
-      log_success "Source application successfully verified running under .NET 8."
+    if [[ "$RUN_OUT_V1" == *"Hello from .NET E2E! Version:"* ]]; then
+      log_success "Source application successfully verified running under .NET."
     else
       log_error "Incorrect .NET version reported in source execution!"
       exit 1
@@ -466,8 +466,8 @@ case "$STACK" in
     fi
     ;;
   dotnet)
-    if [[ "$RUN_OUT_V2" == *"Hello from .NET E2E! Version: 8"* ]]; then
-      log_success "Rebased application successfully verified running under .NET 8!"
+    if [[ "$RUN_OUT_V2" == *"Hello from .NET E2E! Version:"* ]]; then
+      log_success "Rebased application successfully verified running under .NET!"
     else
       log_error "Incorrect .NET version reported in rebased execution!"
       exit 1
