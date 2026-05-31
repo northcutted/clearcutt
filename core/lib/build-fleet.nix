@@ -41,6 +41,17 @@ let
     chmod 755 $out/app
   '';
 
+  # Compile standard FHS dynamic linker symlinks to support running FHS dynamic binaries natively
+  lib64Symlink = pkgs.runCommand "lib64-symlink" {} ''
+    mkdir -p $out/lib64 $out/lib
+    if [ -f ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
+      ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+    fi
+    if [ -f ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
+      ln -s ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
+    fi
+  '';
+
   # Resolve tier-specific base tools
   resolveTierPackages = { tier }:
     if tier == "dev" then
@@ -88,6 +99,7 @@ in
       groupFile
       tmpDir
       appDir
+      lib64Symlink
     ];
 
     allContents = baseContents ++ tierPkgs ++ langPkgs ++ extraPackages;
