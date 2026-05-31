@@ -71,13 +71,33 @@ type VulnSummary = {
 };
 function vulnBadgeClass(v: VulnSummary | null | undefined): string {
   if (!v) return 'chip border-ink-700 text-ink-300';
-  if (v.critical > 0) return 'chip-danger';
-  if (v.high > 0) return 'chip-warn';
+  const eligible = v.remediation?.eligible ?? 0;
+  const critical = v.critical ?? 0;
+  const high = v.high ?? 0;
+  const totalCritHigh = critical + high;
+  
+  if (eligible > 0) {
+    if (v.critical > 0) return 'chip-danger';
+    return 'chip-warn';
+  }
+  if (totalCritHigh > 0) {
+    return 'chip border-emerald-800 bg-emerald-950/20 text-emerald-400 font-semibold';
+  }
   return 'chip-accent';
 }
 function vulnBadgeLabel(v: VulnSummary | null | undefined): string {
   if (!v) return 'no scan';
-  return `${v.critical} crit · ${v.high} high`;
+  const eligible = v.remediation?.eligible ?? 0;
+  const critical = v.critical ?? 0;
+  const high = v.high ?? 0;
+  const totalCritHigh = critical + high;
+  if (eligible > 0) {
+    return `${eligible} eligible fix${eligible > 1 ? 'es' : ''}`;
+  }
+  if (totalCritHigh > 0) {
+    return 'VEX Triaged';
+  }
+  return '0 eligible';
 }
 function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
   if (!v) return 'No vulnerability scan has been attached yet.';
@@ -301,10 +321,10 @@ function evidenceTitle(label: string, ok: boolean | undefined): string {
                 <div class="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-ink-800/40">
                   <div class="flex flex-wrap gap-1">
                     {tier === 'distroless' && (
-                      <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">STIG-ALIGNED</span>
+                      <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">SHELL-FREE</span>
                     )}
                     {tier !== 'dev' && (
-                      <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">FIPS READY</span>
+                      <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">FIPS CAPABLE</span>
                     )}
                     {tier === 'dev' && (
                       <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/20 text-[7.5px] font-bold text-amber-400 tracking-wider">BUILD ONLY</span>

@@ -32,12 +32,12 @@ const evidenceCoverage = index
             <span class="chip-accent">Cryptographically Secure Container Architectures</span>
             <h1 class="heading text-4xl sm:text-5xl lg:text-6xl font-black leading-tight text-ink-50 uppercase">
               Enterprise Compliance,<br />
-              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Sealed.</span>
+              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
             </h1>
-            <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">- That's the ClearCutt Advantage</p>
+            <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">- That's the ClearCutt Blueprint</p>
           </div>
           <p class="text-base sm:text-lg text-ink-200 leading-relaxed max-w-xl font-sans">
-            ClearCutt is a free, open-source base image blueprint built declaratively using Nix. Use our hardened shell-less runtimes straight out of the box, or fork the repository to easily customize your own enterprise container fleet.
+            ClearCutt is an open-source container hardening blueprint built declaratively using Nix. The catalog below serves as a live worked-example of a production image feed. Downstream teams are expected to fork this blueprint to run and govern their own custom internal feeds.
           </p>
 
           <div class="flex flex-wrap gap-4 pt-2">
@@ -91,7 +91,7 @@ const evidenceCoverage = index
       <header class="flex flex-wrap items-end justify-between gap-4 border-b border-ink-800/40 pb-3">
         <div>
           <h2 class="heading text-xl sm:text-2xl font-bold">Interactive Platform Perspective</h2>
-          <p class="text-xs sm:text-sm text-ink-300">Switch perspectives to see how ClearCutt serves both business leaders and security operators.</p>
+          <p class="text-xs sm:text-sm text-ink-300">Switch perspectives to see how ClearCutt serves both platform engineering teams and security auditors.</p>
         </div>
 
         <!-- Sliding Selector Switch -->
@@ -101,14 +101,14 @@ const evidenceCoverage = index
             data-perspective-btn="executive"
             class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider transition-all select-none text-accent-soft bg-accent/15 border border-accent/20"
           >
-            Executive &amp; Sales
+            For Platform Teams
           </button>
           <button
             type="button"
             data-perspective-btn="developer"
             class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider text-ink-300 transition-all select-none border border-transparent"
           >
-            Security &amp; Operator
+            For Security Auditors
           </button>
         </div>
       </header>
@@ -120,10 +120,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Zero Risk Supply Chain</h3>
+            <h3 class="font-bold text-ink-50">Reduced Attack Surface</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            Eliminate software supply chain surprises. Our hermetic building prevents outside package injection, yielding standard runtimes with absolute reproducibility.
+            Reduce software supply chain surprises. Our hermetic Nix-based compilation prevents untracked package injection, yielding standard runtimes with verifiable reproducibility.
           </p>
         </div>
 
@@ -132,10 +132,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.249-8.25-3.286zm0 13.036h.008v.008H12v-.008z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Enterprise Compliance</h3>
+            <h3 class="font-bold text-ink-50">Enterprise Suitability</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            ClearCutt Distroless images are STIG-Aligned out-of-the-box by omitting potential shell injection vectors, while all production runtimes support FIPS 140-3 capable cryptographic paths.
+            ClearCutt Distroless images reduce several STIG-relevant execution vectors by default, while production runtimes can be customized to bind to FIPS-validated cryptographic modules.
           </p>
         </div>
 
@@ -144,10 +144,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">High Developer Velocity</h3>
+            <h3 class="font-bold text-ink-50">High Reusability</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            No rebuild friction. Our caching saves gigabytes of package downloading time, shrinking base images and accelerating pipeline deployments cleanly.
+            Forkable blueprint. Download reference runtimes, or easily spin up a fully customizable internal base image pipeline and feed for your organization.
           </p>
         </div>
       </div>
@@ -159,10 +159,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Nix Store Closures</h3>
+            <h3 class="font-bold text-ink-50">Verifiable Store Closures</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            Hermetic compilation only packs transitively reachable dependencies into `nix/store`. Prunes shells, coreutils, and diagnostic binaries for production.
+            Hermetic Nix compilations ensure only transitively reachable packages enter the closure. Every byte can be traced back to its declarative source.
           </p>
         </div>
 
@@ -171,10 +171,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Kyverno Cluster Gates</h3>
+            <h3 class="font-bold text-ink-50">OIDC Verification Gates</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            Enforce OIDC identities dynamically at admission. Click any image page to download instant copy-paste admission rules blocking un-signed OCI tags.
+            Verify keyless signatures at cluster admission using GitHub OIDC identities. Prevent the execution of unsigned or altered OCI containers.
           </p>
         </div>
 
@@ -183,10 +183,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Nightly CVE Telemetry</h3>
+            <h3 class="font-bold text-ink-50">Exploitability Triage</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed">
-            Our SBOMs are evaluated nightly against current vulnerability feeds, refreshing safety scores without triggering resource-intensive image rebuilds.
+            Assess real risk with OpenVEX records instead of raw CVE noise. Zero-rebuild triage separates inert base issues from active exposure.
           </p>
         </div>
       </div>
@@ -195,7 +195,18 @@ const evidenceCoverage = index
     <!-- Active Gating Telemetry -->
     {evidenceCoverage && (
       <div class="space-y-4">
-        <h2 class="heading text-xl font-bold border-b border-ink-800/40 pb-2">Supply Chain Health &amp; Telemetry</h2>
+        <!-- Blueprint Reference Notice -->
+        <div class="rounded-xl border border-amber-500/20 bg-amber-950/10 p-4 text-xs text-amber-200/90 leading-relaxed font-sans">
+          <strong>Blueprint Reference Notice:</strong> This catalog represents a live-worked reference feed generated from the canonical <code>northcutted/clearcutt</code> blueprint. These images are verified worked-examples of our hardening methods. Organizations should fork this blueprint repository to compile, sign, and host their own internal production-grade base image feeds under their own OIDC identities.
+        </div>
+
+        <div class="flex flex-wrap items-end justify-between gap-2 border-b border-ink-800/40 pb-2">
+          <h2 class="heading text-xl font-bold">Supply Chain Health &amp; Telemetry</h2>
+          <span class="text-[10.5px] font-mono text-ink-400 uppercase tracking-wider">
+            Catalog Compiled: {new Date(index!.generatedAt).toLocaleString()} • Target: {index!.registryBase}
+          </span>
+        </div>
+
         <div class="grid gap-4 sm:grid-cols-4">
           <!-- Stat 1 -->
           <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
@@ -219,20 +230,20 @@ const evidenceCoverage = index
 
           <!-- Stat 3 -->
           <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Compliance Status</span>
+            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Structural Standards</span>
             <div class="text-lg font-bold text-accent-soft flex items-center gap-1.5 pt-1">
               <span class="relative flex h-2 w-2">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              STIG / FIPS
+              Shell-Free / Overlays
             </div>
-            <p class="text-[10px] text-ink-300">Distroless STIG, Prod FIPS</p>
+            <p class="text-[10px] text-ink-300">Distroless Shell-Free</p>
           </div>
 
           <!-- Stat 4 -->
           <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Runtimes Managed</span>
+            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Reference Runtimes</span>
             <div class="flex items-baseline gap-1">
               <span class="text-2xl font-bold font-mono text-ink-50">{published}</span>
               <span class="text-xs text-ink-300 font-mono">/ {totalSlots}</span>

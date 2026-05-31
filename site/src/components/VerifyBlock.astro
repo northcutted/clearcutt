@@ -94,6 +94,66 @@ spec:
     <p class="mt-1 text-xs text-ink-400">Run local cryptographic OIDC audits and generate Kyverno cluster policies to enforce supply chain integrity.</p>
   </div>
 
+  <!-- Direct Cryptographic Evidence segment -->
+  <div class="surface-soft border border-ink-800/60 rounded-2xl p-5 space-y-4">
+    <h4 class="text-sm font-bold text-ink-50 uppercase tracking-wider">Direct Cryptographic Evidence &amp; Verification</h4>
+    <div class="grid gap-4 sm:grid-cols-2 text-xs font-sans">
+      <div class="space-y-2">
+        <div>
+          <span class="text-ink-400 font-bold block uppercase text-[10px]">Expected Certificate Subject</span>
+          <code class="text-[11px] text-accent-soft block truncate bg-ink-950/80 px-2 py-1 rounded border border-ink-800 font-mono mt-0.5">{subject}</code>
+        </div>
+        <div>
+          <span class="text-ink-400 font-bold block uppercase text-[10px]">Expected Certificate OIDC Issuer</span>
+          <code class="text-[11px] text-ink-100 block truncate bg-ink-950/80 px-2 py-1 rounded border border-ink-800 font-mono mt-0.5">{issuer}</code>
+        </div>
+        {release.signature?.rekorLogIndex && (
+          <div>
+            <span class="text-ink-400 font-bold block uppercase text-[10px]">Rekor Transparency Log</span>
+            <a 
+              href={`https://search.sigstore.dev/?logIndex=${release.signature.rekorLogIndex}`}
+              target="_blank" 
+              rel="noreferrer" 
+              class="inline-flex items-center gap-1.5 text-accent hover:text-accent-soft mt-1 font-semibold underline"
+            >
+              <span>View Log Index #{release.signature.rekorLogIndex} on search.sigstore.dev →</span>
+            </a>
+          </div>
+        )}
+      </div>
+
+      <div class="space-y-2">
+        <div>
+          <span class="text-ink-400 font-bold block uppercase text-[10px]">Manifest Index Digest</span>
+          <code class="text-[11px] text-ink-100 block truncate bg-ink-950/80 px-2 py-1 rounded border border-ink-800 font-mono mt-0.5">{release.manifestDigest || 'N/A'}</code>
+        </div>
+        {release.assetUrls.sbom && Object.keys(release.assetUrls.sbom).length > 0 && (
+          <div>
+            <span class="text-ink-400 font-bold block uppercase text-[10px]">Raw SPDX SBOMs</span>
+            <div class="flex flex-wrap gap-2 mt-1">
+              {Object.entries(release.assetUrls.sbom).map(([arch, url]) => (
+                <a 
+                  href={url}
+                  target="_blank" 
+                  rel="noreferrer" 
+                  class="chip border-accent-soft/30 hover:border-accent text-ink-200"
+                >
+                  Download {arch.toUpperCase()} SBOM →
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+    
+    <div class="space-y-1.5 border-t border-ink-800/40 pt-4">
+      <span class="text-ink-400 font-bold block uppercase text-[10px]">One-step Audit Command</span>
+      <p class="text-xs text-ink-300">Run the official end-to-end verification script locally to pull the OCI manifest, verify signatures, audit SPDX structure, and check OpenVEX triage records:</p>
+      <CopyBlock language="shell" code={`curl -sSL https://raw.githubusercontent.com/${ownerRepo}/main/scripts/verify-image.sh | bash -s -- ${digestRef}`} />
+    </div>
+  </div>
+
   <Tabs name={`verify-${image.id}`} tabs={[
     { id: 'clearcutt', label: 'ClearCutt CLI' },
     { id: 'cosign', label: 'Cosign' },

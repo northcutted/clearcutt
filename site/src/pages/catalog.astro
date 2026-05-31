@@ -28,13 +28,9 @@ const evidenceCoverage = index
   <section class="space-y-8 pb-10">
     <div class="space-y-4 max-w-3xl">
       <span class="chip-accent">For platform &amp; security engineers shipping enterprise containers</span>
-      <h1 class="heading text-4xl sm:text-5xl">Hardened images you can verify.</h1>
+      <h1 class="heading text-4xl sm:text-5xl">Hardened reference runtimes you can verify.</h1>
       <p class="text-base text-ink-200">
-        A multi-arch base image fleet (Linux <code class="font-mono text-ink-100">amd64</code>
-        and <code class="font-mono text-ink-100">arm64</code>) built declaratively from Nix
-        store layers on top of a mandated enterprise OS base. Published images are gated to
-        carry an SPDX SBOM, SLSA provenance, and a keyless Sigstore signature attached to the
-        GHCR manifest; the catalog shows each evidence channel separately so gaps stay visible.
+        ClearCutt is an open-source container hardening blueprint built declaratively using Nix store layers. The catalog below serves as a live worked-example of a production image feed. Downstream platform teams can fork the blueprint to build and govern their own custom internal feeds.
       </p>
       <p class="text-sm text-ink-300">
         CVE counts on the catalog are refreshed nightly against current vulnerability
@@ -134,11 +130,11 @@ const evidenceCoverage = index
               <!-- Item 3 -->
               <div class="space-y-1.5">
                 <h3 class="font-bold text-ink-50 flex items-center gap-1.5">
-                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">STIG-ALIGNED</span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">FIPS READY</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">SHELL-FREE</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">FIPS CAPABLE</span>
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  <strong>STIG-Aligned</strong> is active on Distroless tiers to meet strict host-hardening criteria. <strong>FIPS Ready</strong> images are compiled against FIPS-validated cryptographic modules.
+                  <strong>Shell-Free</strong> indicates that shells, core utilities, and typical dynamic execution vectors are omitted from the runtime. <strong>FIPS Capable</strong> indicates support for mapping to FIPS-validated cryptographic modules.
                 </p>
               </div>
             </div>
@@ -158,7 +154,7 @@ const evidenceCoverage = index
               On {index!.latestTag} only
             </button>
             <button type="button" data-filter-btn="cve" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
-              Has critical/high CVEs
+              Requires runtime patching
             </button>
             <span class="ml-auto text-ink-300">Filters are stacked: each adds to the selection above.</span>
           </div>

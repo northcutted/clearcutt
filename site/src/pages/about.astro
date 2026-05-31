@@ -64,50 +64,56 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         <div class="relative rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/5 to-accent-soft/10 p-6 shadow-xl overflow-hidden">
           <div class="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent/5 blur-[40px] pointer-events-none" />
           <div class="relative z-10 space-y-2">
-            <h2 class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">THE CLEARCUTT ADVANTAGE</h2>
+            <h2 class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">THE CLEARCUTT BLUEPRINT</h2>
             <div class="heading text-xl sm:text-2xl font-black uppercase text-ink-50 tracking-wide">
               Enterprise Compliance,<br />
-              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Sealed.</span>
+              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
             </div>
             <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
-              ClearCutt is not an opinionated OS—it is a free, open-source base image blueprint built with Nix. Use our secure target closures straight out of the box, or easily fork and adapt them to overlay on top of your mandated corporate base images as a robust compliance bandaid.
+              ClearCutt is not an opinionated OS—it is an open-source base image blueprint built with Nix. Downstream teams can fork and adapt the blueprint to compile, customize, and govern their own internal base image feeds or graft secure closures onto existing mandated base OS layers.
             </p>
           </div>
         </div>
 
         <header class="space-y-2">
           <h2 class="heading text-xl text-ink-50">About ClearCutt</h2>
+          
+          <!-- Project Status & Maturity Notice -->
+          <div class="rounded-xl border border-blue-500/20 bg-blue-950/10 p-4 text-xs text-blue-200/90 leading-relaxed font-sans mb-4">
+            <strong>Project Status &amp; Readiness:</strong> ClearCutt is a pre-1.0 open-source blueprint currently maintained by a single author. The public catalog serves as a worked-example of a live image hardening feed. Before utilizing these runtimes in critical production environments, downstream organizations are strongly encouraged to fork the repository, host their own builds, and conduct independent verification.
+          </div>
+
           <p>
-            ClearCutt is a free, open-source base image blueprint designed for platform and security engineers who want cryptographically certifiable, shell-less runtime containers. Unlike traditional opinionated container fleets, ClearCutt is a highly customisable framework built with Nix. You can use our hardened runtimes straight out of the box, or easily fork and adapt the repository to overlay on top of your own mandated corporate base OS (like Red Hat UBI, Amazon Linux, or Ubuntu Pro) as an enterprise compliance bandaid.
+            ClearCutt is a free, open-source base image blueprint designed for platform and security engineers who want cryptographically certifiable, shell-less runtime containers. Unlike traditional opinionated base OS projects, ClearCutt is a forkable framework built with Nix. Downstream teams are expected to fork this repository to compile and govern their own custom internal container feeds, or overlay safe Nix closures on top of standard base images (like Red Hat UBI or Ubuntu Pro).
           </p>
           <p>
-            Our declarative supply chain pipeline compiles target runtimes as isolated <code class="font-mono text-ink-100">/nix/store</code> closures. Every artifact displayed in this catalog is the mathematical output of a single, hermetic, reproducible build—signed, attested, and fully re-verifiable inside your Kubernetes clusters.
+            Our supply chain pipeline compiles target runtimes as isolated, hermetically-built <code class="font-mono text-ink-100">/nix/store</code> closures. The catalog serves as a live worked-example proving the end-to-end verifiability of our OCI builds, from OIDC-based signing to transparent OpenVEX exploitability records.
           </p>
         </header>
 
         <!-- Compliance & Audit Alignment Section -->
         <section class="space-y-4">
-          <h2 class="heading text-xl text-ink-50">Enterprise Compliance &amp; Audit Posture</h2>
+          <h2 class="heading text-xl text-ink-50">Structural Hardening &amp; Compliance Traits</h2>
           <p class="text-sm">
-            Auditing modern cloud-native systems requires proof of configuration. ClearCutt translates traditional soft policies into mathematically verifiable runtime attributes:
+            Auditing modern cloud-native systems requires proof of configuration. ClearCutt translates traditional soft policies into verifiable, structural traits:
           </p>
           <div class="grid gap-4 sm:grid-cols-3">
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">
               <div class="flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">STIG-Aligned</h3>
+                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">STIG-Relevant Structure</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                Our distroless tier satisfies DISA STIG container requirements out-of-the-box by omitting all shells, package managers, and core utilities—eliminating typical execution escape paths by default.
+                Our distroless tier satisfies structural container integrity guidelines by omitting all shells, package managers, and core system utilities—greatly reducing typical command injection escape paths.
               </p>
             </div>
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">
               <div class="flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">FIPS 140-3 Capable</h3>
+                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Cryptographic Overlays</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                By leveraging Nix configurations, images link only to FIPS-validated cryptographic modules (like OpenSSL) or easily customize to bind to approved government-mandated baseline overlays.
+                Using declarative Nix definitions, runtimes can be customized to bind exclusively to verified cryptographic modules (like OpenSSL in FIPS mode) or graft closures directly onto validated government overlays.
               </p>
             </div>
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">

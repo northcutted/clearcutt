@@ -43,7 +43,7 @@ runs:
         ASSET="clearcutt-${OS}-${ARCH}"
         echo "[clearcutt] Downloading ${ASSET} (${VERSION})..."
         curl -fsSL -o "${RUNNER_TEMP}/clearcutt" \
-          "https://github.com/northcutted/clearcutt/releases/download/${VERSION}/${ASSET}"
+          "https://github.com/${{ github.action_repository }}/releases/download/${VERSION}/${ASSET}"
         chmod +x "${RUNNER_TEMP}/clearcutt"
         echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
         "${RUNNER_TEMP}/clearcutt" --version

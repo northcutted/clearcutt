@@ -179,6 +179,26 @@ jobs:
         working-directory: site
         run: npm ci || npm install
 
+      - name: Setup Go
+        uses: actions/setup-go@3041dec5d6902b93051d8f8a37f595b179373674 # v5.2.0
+        with:
+          go-version: '1.23'
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Generate OpenVEX documents
+        run: |
+          mkdir -p site/public/vex
+          for id in $(jq -r '.images[].id' site/src/data/catalog/index.json | sort -u); do
+            echo "Generating OpenVEX for ${id}..."
+            ./clearcutt --catalog site/src/data/catalog vex "${id}" --output site/public/vex/"${id}".json
+          done
+
       - name: Resolve Pages base path
         id: pages_base
         run: |

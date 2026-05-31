@@ -67,8 +67,8 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         {passed
           ? <StatusPill kind="ok" label="Vulnerability gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
-        {image.tier.id === 'distroless' && <StatusPill kind="ok" label="STIG-Aligned" />}
-        {image.tier.id !== 'dev' && <StatusPill kind="ok" label="FIPS 140-3 Capable" />}
+        {image.tier.id === 'distroless' && <StatusPill kind="ok" label="Shell-Free (STIG-Relevant)" />}
+        {image.tier.id !== 'dev' && <StatusPill kind="ok" label="Cryptographic Overlays Capable" />}
         {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>
       {release.manifestDigest && (

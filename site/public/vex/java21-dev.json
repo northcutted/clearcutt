@@ -1,0 +1,658 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://clearcutt.internal/vex/java21-dev/v0.2.1",
+  "author": "ClearCutt Security Platform Gating Engine",
+  "role": "Document Creator",
+  "timestamp": "2026-05-31T15:55:04Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-4176"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-7210"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-6100"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-p93r-85wp-75v3"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2018-6553"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3298"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-cj8j-37rh-8475"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-4775"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-52356"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-3087"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-82j2-j2ch-gfr8"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-22816"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-22865"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-4786"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-6fmv-xxpf-w3cw"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-7598"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-72hv-8253-57qq"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-vrpq-qp53-qv56"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-r6v5-fh4h-64xc"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-4p46-pwfr-66x6"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-68468"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-68471"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-24401"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-j288-q9x7-2f5v"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-6277"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-37769"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-pg9f-39pc-qf8g"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-h97m-ww89-6jmq"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-6019"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-15366"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-15367"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-8328"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-1502"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2021-3468"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-38469"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-38470"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-38471"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-38472"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-38473"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-59529"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-68276"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-34933"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-c3fc-8qff-9hwx"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-434x-w66g-qw3r"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-6228"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-12781"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2023-4039"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-pwjx-qhcg-rvj4"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-p53j-g8pw-4w5f"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-rr8g-9fpq-6wmg"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-3220"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-965h-392x-2mh5"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-xgp8-3hg3-c2mh"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-cq8v-f236-94qc"
+      },
+      "products": [
+        {
+          "@id": "pkg:nix/java21-dev@v0.2.1"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Finding is active and under platform triage."
+    }
+  ]
+}
