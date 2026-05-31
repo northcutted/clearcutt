@@ -56,7 +56,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
       ]}>
         <div data-panel-id="compile" data-panel-active="true" class="space-y-3">
           <p class="text-xs text-ink-300">Requires Go 1.26+ installed on your system. Run compilation in the repository directory root:</p>
-          <CopyBlock language="shell" code={`git clone https://github.com/${ownerRepo}.git\ncd clearcutt\ngo build -o clearcutt ./cmd/clearcutt\n./clearcutt --version`} />
+          <CopyBlock language="shell" code={`git clone https://github.com/${ownerRepo}.git\ncd clearcutt\nmake cli-build\n./clearcutt --version`} />
         </div>
         <div data-panel-id="download" data-panel-active="false" class="space-y-3">
           <p class="text-xs text-ink-300">Run this shell command to fetch and install the correct architecture binary automatically:</p>

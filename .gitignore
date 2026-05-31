@@ -1,6 +1,7 @@
 # Local-dev cosign key cache (see pipeline.sh ensure_cosign_keys).
 # Must never be committed — these are signing keys, even if labelled "ephemeral".
 .nix-enterprise-auth-cache/
+core/.nix-enterprise-auth-cache/
 
 # Any stray signing material that lands at the repo root.
 cosign.key
@@ -14,5 +15,7 @@ result/*
 result
 *.tar.gz
 build-outputs/*
+core/build-outputs/*
 .claude/*
 /clearcutt
+/cli/clearcutt

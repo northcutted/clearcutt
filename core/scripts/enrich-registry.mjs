@@ -18,8 +18,9 @@ import path from 'node:path';
 import { X509Certificate } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = process.env.ENRICHMENT_DIR || path.join(ROOT, 'site', 'src', 'data', 'enrichment');
+const CORE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = path.resolve(CORE_ROOT, '..');
+const OUT = process.env.ENRICHMENT_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'enrichment');
 
 const LANG_KEYS = [
   'coreLTS', 'java21', 'java25', 'node22', 'node24',

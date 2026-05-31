@@ -76,7 +76,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <!-- Install block -->
         <div class="space-y-2">
           <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Compile and link to PATH</h3>
-          <CopyBlock language="shell" code={`# Clone and build the binary\ngit clone https://github.com/${ownerRepo}.git\ncd clearcutt\ngo build -o clearcutt ./cmd/clearcutt\n\n# Move to PATH for global access\nchmod +x clearcutt\nsudo mv clearcutt /usr/local/bin/clearcutt`} />
+          <CopyBlock language="shell" code={`# Clone and build the binary\ngit clone https://github.com/${ownerRepo}.git\ncd clearcutt\nmake cli-build\n\n# Move to PATH for global access\nchmod +x clearcutt\nsudo mv clearcutt /usr/local/bin/clearcutt`} />
         </div>
 
         <!-- Verify block -->

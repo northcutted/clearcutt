@@ -37,7 +37,7 @@ const REGISTRY_LINES: Record<string, number> = {
   rust:   142,
   cc:     152,
 };
-const BUILDER_LINE = 70; // lib/build-fleet.nix buildFleetImage entrypoint
+const BUILDER_LINE = 70; // core/lib/build-fleet.nix buildFleetImage entrypoint
 
 function slotState(img: ReturnType<typeof byId.get>) {
   if (!img) return 'pending' as const;

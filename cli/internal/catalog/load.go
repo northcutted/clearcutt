@@ -25,15 +25,15 @@ func decodeJSON(data []byte, v interface{}) error {
 // catalogNotFoundError returns an actionable error when the catalog directory or
 // its index.json is missing, pointing the user at how to obtain a catalog rather
 // than surfacing a bare "no such file" from the OS. The catalog is a generated
-// artifact (see scripts/gather-catalog.mjs) and is not committed to the repo.
+// artifact (see core/scripts/gather-catalog.mjs) and is not committed to the repo.
 func catalogNotFoundError(catalogPath, missingPath string, cause error) error {
 	return fmt.Errorf(`no ClearCutt catalog found at %q (looked for %s).
 
 The CLI reads a generated catalog of image records. To obtain one:
   - generate it from a clone of this repo:
-        node scripts/gather-catalog.mjs        (writes to site/src/data/catalog)
+        node core/scripts/gather-catalog.mjs   (writes to site/src/data/catalog)
   - or point --catalog at an existing catalog directory, e.g. the bundled fixture:
-        clearcutt list --catalog internal/testdata/catalog
+        clearcutt list --catalog cli/internal/testdata/catalog
 
 underlying error: %w`, catalogPath, missingPath, cause)
 }

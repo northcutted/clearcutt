@@ -8,8 +8,8 @@
 //   2) --limit N to restrict to N most recent releases (default: 10)
 //
 // Outputs:
-//   site/src/data/catalog/index.json
-//   site/src/data/catalog/images/<lang><ver>-<tier>.json
+//   ../../site/src/data/catalog/index.json
+//   ../../site/src/data/catalog/images/<lang><ver>-<tier>.json
 
 import fs from 'node:fs/promises';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,17 +18,18 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT_DIR = path.join(ROOT, 'site', 'src', 'data', 'catalog');
+const CORE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = path.resolve(CORE_ROOT, '..');
+const OUT_DIR = path.join(REPO_ROOT, 'site', 'src', 'data', 'catalog');
 const IMG_DIR = path.join(OUT_DIR, 'images');
 const ENRICHMENT_DIR =
-  process.env.ENRICHMENT_DIR || path.join(ROOT, 'site', 'src', 'data', 'enrichment');
+  process.env.ENRICHMENT_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'enrichment');
 // Downloaded SBOMs are persisted here so scan-vulnerabilities.mjs can run
 // grype against local files without re-fetching from GitHub.
 const SBOM_CACHE_DIR =
-  process.env.SBOM_CACHE_DIR || path.join(ROOT, 'site', 'src', 'data', 'sboms');
+  process.env.SBOM_CACHE_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'sboms');
 const VULN_DIR =
-  process.env.VULN_DIR || path.join(ROOT, 'site', 'src', 'data', 'vulnerabilities');
+  process.env.VULN_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'vulnerabilities');
 
 const LANGUAGES = {
   coreLTS: { id: 'core', display: 'Core', version: 'LTS' },

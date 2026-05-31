@@ -9,7 +9,7 @@ import {
 } from './catalog-schema';
 
 // Astro runs build steps with cwd set to the project root (site/). Data is
-// generated there by scripts/gather-catalog.mjs before the build runs.
+// generated there by core/scripts/gather-catalog.mjs before the build runs.
 const DATA_ROOT = path.resolve(process.cwd(), 'src/data/catalog');
 
 let cachedIndex: CatalogIndexT | null = null;
@@ -81,7 +81,7 @@ export function loadIndex(): CatalogIndexT {
   const file = path.join(DATA_ROOT, 'index.json');
   if (!fs.existsSync(file)) {
     throw new Error(
-      `Catalog index not found at ${file}. Run scripts/gather-catalog.mjs first.`,
+      `Catalog index not found at ${file}. Run core/scripts/gather-catalog.mjs first.`,
     );
   }
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));

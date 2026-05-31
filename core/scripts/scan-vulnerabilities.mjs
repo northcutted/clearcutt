@@ -4,8 +4,8 @@
 // second pass and merges them into each image record.
 //
 // Inputs (env):
-//   SBOM_CACHE_DIR  default: site/src/data/sboms
-//   VULN_DIR        default: site/src/data/vulnerabilities
+//   SBOM_CACHE_DIR  default: ../../site/src/data/sboms
+//   VULN_DIR        default: ../../site/src/data/vulnerabilities
 //   SCAN_MODE       catalog (default), remediation, or release
 //   GRYPE_BIN       grype executable override for tests
 //
@@ -20,9 +20,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SBOM_DIR = process.env.SBOM_CACHE_DIR || path.join(ROOT, 'site', 'src', 'data', 'sboms');
-const OUT_DIR = process.env.VULN_DIR || path.join(ROOT, 'site', 'src', 'data', 'vulnerabilities');
+const CORE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = path.resolve(CORE_ROOT, '..');
+const SBOM_DIR = process.env.SBOM_CACHE_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'sboms');
+const OUT_DIR = process.env.VULN_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'vulnerabilities');
 const GRYPE_OPTS = (process.env.GRYPE_OPTS || '').split(' ').filter(Boolean);
 const GRYPE_BIN = process.env.GRYPE_BIN || 'grype';
 const args = parseArgs(process.argv.slice(2));

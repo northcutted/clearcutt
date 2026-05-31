@@ -133,8 +133,8 @@
             echo
 
             # Source transient credentials broker
-            if [ -f ./lib/credential-broker.sh ]; then
-              source ./lib/credential-broker.sh
+            if [ -f ${./lib/credential-broker.sh} ]; then
+              source ${./lib/credential-broker.sh}
             fi
           '';
         };

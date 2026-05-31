@@ -9,7 +9,8 @@ import tempfile
 import unittest
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+CORE_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = CORE_ROOT.parent
 
 
 def load_module(name, path):
@@ -19,8 +20,8 @@ def load_module(name, path):
     return module
 
 
-draft_agent = load_module("cve_draft_agent", ROOT / "scripts" / "cve-draft-agent.py")
-broker = load_module("remediation_broker", ROOT / "scripts" / "remediation-broker.py")
+draft_agent = load_module("cve_draft_agent", CORE_ROOT / "scripts" / "cve-draft-agent.py")
+broker = load_module("remediation_broker", CORE_ROOT / "scripts" / "remediation-broker.py")
 
 
 class RemediationPipelineTests(unittest.TestCase):
@@ -77,8 +78,8 @@ class RemediationPipelineTests(unittest.TestCase):
         self.assertIn("python313 =", expr)
 
     def test_agent_nix_invocations_accept_repo_flake_cache_config(self):
-        setup_action = (ROOT / ".github" / "actions" / "setup-nix" / "action.yml").read_text()
-        release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+        setup_action = (REPO_ROOT / ".github" / "actions" / "setup-nix" / "action.yml").read_text()
+        release_workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
         self.assertIn("--accept-flake-config", draft_agent.NIX_FLAKE_FLAGS)
         self.assertIn("accept-flake-config = true", setup_action)
@@ -156,8 +157,8 @@ class RemediationPipelineTests(unittest.TestCase):
         env["SBOM_CACHE_DIR"] = str(self.tmp_path / "missing-sboms")
 
         res = subprocess.run(
-            [node, str(ROOT / "scripts" / "scan-vulnerabilities.mjs"), "--mode", "remediation"],
-            cwd=ROOT,
+            [node, str(CORE_ROOT / "scripts" / "scan-vulnerabilities.mjs"), "--mode", "remediation"],
+            cwd=CORE_ROOT,
             env=env,
             capture_output=True,
             text=True,
@@ -215,8 +216,8 @@ JSON
         env["VULN_DIR"] = str(out_dir)
 
         res = subprocess.run(
-            [node, str(ROOT / "scripts" / "scan-vulnerabilities.mjs"), "--mode", "remediation"],
-            cwd=ROOT,
+            [node, str(CORE_ROOT / "scripts" / "scan-vulnerabilities.mjs"), "--mode", "remediation"],
+            cwd=CORE_ROOT,
             env=env,
             capture_output=True,
             text=True,
@@ -231,9 +232,9 @@ JSON
         self.assertIn("Primary Python 3.13 runtime", finding["inclusion"]["summary"])
 
     def test_release_wording_matches_fixable_cve_policy(self):
-        flake = (ROOT / "flake.nix").read_text()
-        release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-        latest_notes = (ROOT / "docs" / "releases" / "v0.11.1.md").read_text()
+        flake = (CORE_ROOT / "flake.nix").read_text()
+        release_workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        latest_notes = (REPO_ROOT / "docs" / "releases" / "v0.11.1.md").read_text()
 
         self.assertNotIn("Zero-CVE", flake)
         self.assertNotIn("Zero-CVE", release_workflow)
@@ -282,7 +283,7 @@ else:
         res = subprocess.run(
             [
                 node,
-                str(ROOT / "scripts" / "verify-release-evidence.mjs"),
+                str(CORE_ROOT / "scripts" / "verify-release-evidence.mjs"),
                 "--ref",
                 "ghcr.io/example/clearcutt-dotnet8:v1-dev",
                 "--digest",
@@ -296,7 +297,7 @@ else:
                 "--source-branch",
                 "main",
             ],
-            cwd=ROOT,
+            cwd=CORE_ROOT,
             env=env,
             capture_output=True,
             text=True,
@@ -324,6 +325,16 @@ else:
                     "latestTag": "v1.0.0",
                     "signed": True,
                     "provenance": True,
+                    "lifecycle": {
+                        "status": "active",
+                        "support": "lts",
+                        "productionAllowed": True,
+                    },
+                    "runtimeContract": {
+                        "shellPresent": True,
+                        "packageManagerPresent": False,
+                        "productionTier": True,
+                    },
                     "evidence": {
                         "signature": False,
                         "provenance": True,
@@ -338,6 +349,25 @@ else:
             "tag": "v1.0.0",
             "signature": None,
             "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+            "lifecycle": {
+                "status": "active",
+                "support": "lts",
+                "productionAllowed": True,
+            },
+            "runtimeContract": {
+                "shellPresent": True,
+                "packageManagerPresent": False,
+                "productionTier": True,
+            },
+            "exceptions": {
+                "total": 0,
+                "expired": 0,
+                "active": 0,
+                "acceptedRisk": 0,
+                "noFixAvailable": 0,
+                "falsePositive": 0,
+                "inheritedFromBase": 0,
+            },
             "evidence": {
                 "signature": False,
                 "provenance": True,
@@ -354,15 +384,20 @@ else:
         }
         (catalog / "index.json").write_text(json.dumps(index), encoding="utf-8")
         (images / "coreLTS-slim.json").write_text(
-            json.dumps({"releases": [release]}),
+            json.dumps({
+                "id": "coreLTS-slim",
+                "lifecycle": release["lifecycle"],
+                "runtimeContract": release["runtimeContract"],
+                "releases": [release],
+            }),
             encoding="utf-8",
         )
 
         env = os.environ.copy()
         env["CATALOG_DIR"] = str(catalog)
         res = subprocess.run(
-            [node, str(ROOT / "scripts" / "verify-catalog-data.mjs")],
-            cwd=ROOT,
+            [node, str(CORE_ROOT / "scripts" / "verify-catalog-data.mjs")],
+            cwd=CORE_ROOT,
             env=env,
             capture_output=True,
             text=True,
@@ -399,6 +434,16 @@ else:
                     "latestTag": "v1.0.0",
                     "signed": True,
                     "provenance": True,
+                    "lifecycle": {
+                        "status": "active",
+                        "support": "lts",
+                        "productionAllowed": True,
+                    },
+                    "runtimeContract": {
+                        "shellPresent": True,
+                        "packageManagerPresent": False,
+                        "productionTier": True,
+                    },
                     "evidence": evidence,
                 }
             ],
@@ -407,20 +452,44 @@ else:
             "tag": "v1.0.0",
             "signature": {"cosignBundlePresent": True},
             "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+            "lifecycle": {
+                "status": "active",
+                "support": "lts",
+                "productionAllowed": True,
+            },
+            "runtimeContract": {
+                "shellPresent": True,
+                "packageManagerPresent": False,
+                "productionTier": True,
+            },
+            "exceptions": {
+                "total": 0,
+                "expired": 0,
+                "active": 0,
+                "acceptedRisk": 0,
+                "noFixAvailable": 0,
+                "falsePositive": 0,
+                "inheritedFromBase": 0,
+            },
             "evidence": evidence,
             "architectures": [],
         }
         (catalog / "index.json").write_text(json.dumps(index), encoding="utf-8")
         (images / "coreLTS-slim.json").write_text(
-            json.dumps({"releases": [release]}),
+            json.dumps({
+                "id": "coreLTS-slim",
+                "lifecycle": release["lifecycle"],
+                "runtimeContract": release["runtimeContract"],
+                "releases": [release],
+            }),
             encoding="utf-8",
         )
 
         env = os.environ.copy()
         env["CATALOG_DIR"] = str(catalog)
         res = subprocess.run(
-            [node, str(ROOT / "scripts" / "verify-catalog-data.mjs")],
-            cwd=ROOT,
+            [node, str(CORE_ROOT / "scripts" / "verify-catalog-data.mjs")],
+            cwd=CORE_ROOT,
             env=env,
             capture_output=True,
             text=True,

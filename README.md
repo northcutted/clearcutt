@@ -11,6 +11,21 @@ By leveraging **Nix**, ClearCutt compiles target language runtimes (e.g., Java, 
 
 ---
 
+## Monorepo Layout
+
+ClearCutt is organized as a three-part monorepo:
+
+| Workspace | Purpose | Common commands |
+| :--- | :--- | :--- |
+| `core/` | Nix image factory, runtime overlays, release pipeline, vulnerability scanning, and image conformance tests. | `cd core && nix develop`, `make core-verify` |
+| `cli/` | Go governance CLI (`clearcutt`) and its tests. | `make cli-build`, `make cli-test` |
+| `site/` | Astro catalog site and generated catalog data. | `make site-dev`, `make site-build` |
+
+Shared contracts and consumer material remain at the root: `schemas/`, `docs/`,
+`examples/`, and `.github/`.
+
+---
+
 ## Technical Architecture, Core Decisions & Security Trade-offs
 
 Traditional base images force platform teams to choose between bloated operating systems (raising the CVE attack surface) or complex base image migrations. ClearCutt addresses this using the following architectural paradigms and documented trade-offs:
@@ -70,6 +85,7 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 ### 1. Enter the Gated Development Environment
 Ensure you have Nix installed with flakes enabled. Enter the secure workspace shell:
 ```bash
+cd core
 nix develop --extra-experimental-features "nix-command flakes"
 ```
 This drops you into a workspace shell preloaded with all necessary build and security binaries (including `patchelf`, `trivy`, `cosign`, and `container-structure-test`).
@@ -77,7 +93,7 @@ This drops you into a workspace shell preloaded with all necessary build and sec
 ### 2. Run the Gated Automated Test Suite
 ClearCutt implements a comprehensive gating test suite to verify dynamic dynamic linker safety, non-privileged boundaries, distroless shell absence, and credential brokerage leaks:
 ```bash
-./tests/verify.sh
+make core-verify
 ```
 
 ---
@@ -90,13 +106,13 @@ To simplify local image discovery, platform inspection, and supply-chain policy 
 
 Compile the binary from the root of the repository:
 ```bash
-go build -o clearcutt ./cmd/clearcutt
+make cli-build
 ```
 
 > [!NOTE]
-> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate it with `node scripts/gather-catalog.mjs` (writes to `site/src/data/catalog`, the default `--catalog` path), or point `--catalog` at any catalog directory — e.g. the bundled fixture `internal/testdata/catalog` for a quick offline demo:
+> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate it with `node core/scripts/gather-catalog.mjs` (writes to `site/src/data/catalog`, the default `--catalog` path), or point `--catalog` at any catalog directory — e.g. the bundled fixture `cli/internal/testdata/catalog` for a quick offline demo:
 > ```bash
-> ./clearcutt list --catalog internal/testdata/catalog
+> ./clearcutt list --catalog cli/internal/testdata/catalog
 > ```
 
 ### CLI Command Reference

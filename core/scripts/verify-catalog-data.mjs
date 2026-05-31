@@ -6,8 +6,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CATALOG_DIR = process.env.CATALOG_DIR || path.join(ROOT, 'site', 'src', 'data', 'catalog');
+const CORE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = path.resolve(CORE_ROOT, '..');
+const CATALOG_DIR = process.env.CATALOG_DIR || path.join(REPO_ROOT, 'site', 'src', 'data', 'catalog');
 const strictEvidence = process.env.CATALOG_STRICT_EVIDENCE !== '0';
 
 function readJson(file) {

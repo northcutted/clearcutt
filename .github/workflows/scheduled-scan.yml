@@ -19,7 +19,7 @@ permissions:
   pull-requests: write
 
 # Only one remediation scan in flight at a time — concurrent runs would race
-# on `cve-remediation/*` branches and `overlays/patch-cache.json`.
+# on `cve-remediation/*` branches and `core/overlays/patch-cache.json`.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -52,9 +52,9 @@ jobs:
           path: |
             site/src/data/enrichment
             site/src/data/sboms
-          key: catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
           restore-keys: |
-            catalog-data-${{ runner.os }}-${{ hashFiles('scripts/gather-catalog.mjs', 'scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
 
       - name: Gather release assets → catalog JSON
@@ -63,12 +63,12 @@ jobs:
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: "10"
-        run: node scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
+        run: node core/scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
 
       - name: Run Remediation Scan
         env:
           SCAN_MODE: remediation
-        run: ./scripts/scheduled-scan.sh
+        run: ./core/scripts/scheduled-scan.sh
 
       - name: Configure Git Credentials
         run: |
@@ -84,7 +84,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Run Brokered CVE Patch Dispatcher
@@ -104,6 +104,7 @@ jobs:
           # can be tested with the include_dev_only workflow dispatch input.
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ inputs.include_dev_only }}
           MAX_PATCH_FAILURES_PER_RUN: "1"
+        working-directory: core
         run: ./scripts/auto-patch-triage.py
 
       - name: Upload Scanned Vulnerabilities

@@ -70,7 +70,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
@@ -79,6 +79,7 @@ jobs:
       # Build, generate SBOM, and scan with Syft + Grype locally.
       # Omit --publish to prevent any registry copy or keyless OIDC signing.
       - name: Run Build and Security Gate
+        working-directory: core
         run: |
           nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
@@ -89,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
           retention-days: 7
 
   integration-checks:
@@ -106,7 +107,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
 
       # Required for structure tests and patchelf inside the suite
@@ -114,6 +115,7 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Execute Gating Suite
+        working-directory: core
         run: |
           nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
 
@@ -128,16 +130,19 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
           cache: true
 
       - name: Go Vet
+        working-directory: cli
         run: go vet ./...
 
       - name: Go Build
-        run: go build -o clearcutt ./cmd/clearcutt
+        run: make cli-build
 
       - name: Go Test
+        working-directory: cli
         run: go test -v ./...
 
       - name: Run Schema Drift Guard
@@ -149,4 +154,3 @@ jobs:
             ./clearcutt inspect "$img" --strict >/dev/null
           done
           echo "Drift guard check PASSED!"
-

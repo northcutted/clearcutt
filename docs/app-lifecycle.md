@@ -344,7 +344,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: sigstore/cosign-installer@v4
       - name: Build clearcutt
-        run: go build -o clearcutt ./cmd/clearcutt
+        run: make cli-build
       - name: Check candidate base
         run: |
           ./clearcutt app diff-base \

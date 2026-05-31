@@ -85,7 +85,7 @@ This Pull Request was automatically drafted by the **ClearCutt CVE Patch Draftin
 - **Package:** \`${PACKAGE}\`
 - **Installed version:** \`${INSTALLED_VERSION}\`
 - **CVE:** \`${CVE}\`
-- **Overlay file:** \`overlays/cve/\` (one file per remediation)
+- **Overlay file:** \`core/overlays/cve/\` (one file per remediation)
 
 $SUMMARY_SECTION
 
@@ -96,7 +96,7 @@ scan output. The full 13-language x 3-tier x 2-arch matrix runs in this PR's \`p
 **do not merge until that suite is green.**
 
 ### Rollback
-To revert, delete the new file under \`overlays/cve/\` and re-merge to main.
+To revert, delete the new file under \`core/overlays/cve/\` and re-merge to main.
 EOF
 )
 

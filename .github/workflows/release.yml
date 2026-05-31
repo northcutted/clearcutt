@@ -142,7 +142,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('**/flake.lock', 'overlays/**') }}
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
@@ -160,6 +160,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Unified Gating and Release Pipeline
+        working-directory: core
         env:
           GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
         run: |
@@ -170,6 +171,7 @@ jobs:
             "${{ matrix.language }}-${{ matrix.tier }}"
 
       - name: Copy Certified Derivations to Cloudflare R2 Cache
+        working-directory: core
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -263,6 +265,7 @@ jobs:
           echo "::warning::R2 origin narinfo is signed, but Cloudflare edge still served stale metadata: $NARINFO_URL"
 
       - name: Stage arch-suffixed release assets
+        working-directory: core
         env:
           MATRIX_SYSTEM: ${{ matrix.system }}
         run: |
@@ -280,28 +283,28 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.sbom.json
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.sbom.json
           retention-days: 7
 
       - name: Upload Test Results Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-test-results-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.test-results.json
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.test-results.json
           retention-days: 7
 
       - name: Upload SBOM Artifact (legacy unsuffixed for attestation)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: attestation-sbom-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
           retention-days: 7
 
       - name: Upload Test Results Artifact (legacy unsuffixed for attestation)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: attestation-test-results-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
           retention-days: 7
 
   build-cli:
@@ -320,7 +323,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
           cache: true
 
       - name: Compile CLI Matrix
@@ -343,10 +347,13 @@ jobs:
             goarch=$(echo "$p" | cut -d'/' -f2)
             name=$(echo "$p" | cut -d'/' -f3)
             echo "Compiling $name ($goos/$goarch)..."
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
-              -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION" \
-              -o "build-outputs/$name" \
-              ./cmd/clearcutt
+            (
+              cd cli
+              CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
+                -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION" \
+                -o "../build-outputs/$name" \
+                ./cmd/clearcutt
+            )
           done
 
 
@@ -680,7 +687,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          node scripts/verify-release-evidence.mjs \
+          node core/scripts/verify-release-evidence.mjs \
             --ref "${{ matrix.target.image }}:${{ matrix.target.versionedTag }}" \
             --digest "${{ matrix.target.digest }}" \
             --repo "${{ github.repository }}" \
