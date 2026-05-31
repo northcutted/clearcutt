@@ -1,4 +1,7 @@
-.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate test
+.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate test agent-sync
+
+agent-sync:
+	bash .agent/sync.sh
 
 cli-build:
 	cd cli && go build -o ../clearcutt ./cmd/clearcutt
