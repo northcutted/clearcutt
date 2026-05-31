@@ -158,8 +158,8 @@ build_nix_base() {
 build_nix_base "$BASE_ID_V1" "latest"
 build_nix_base "$BASE_ID_V2" "latest"
 
-local base_name_v1=$(echo "${BASE_ID_V1}" | tr '[:upper:]' '[:lower:]')
-local base_name_v2=$(echo "${BASE_ID_V2}" | tr '[:upper:]' '[:lower:]')
+base_name_v1=$(echo "${BASE_ID_V1}" | tr '[:upper:]' '[:lower:]')
+base_name_v2=$(echo "${BASE_ID_V2}" | tr '[:upper:]' '[:lower:]')
 BASE_V1="${REGISTRY_HOST}/clearcutt/${base_name_v1}:latest"
 BASE_V2="${REGISTRY_HOST}/clearcutt/${base_name_v2}:latest"
 
