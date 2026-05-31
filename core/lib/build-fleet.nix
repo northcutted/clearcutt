@@ -135,6 +135,7 @@ in
       WorkingDir = "/app";
       Env = [
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
         "HOME=/app"
         "TMPDIR=/tmp"
         "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
