@@ -52,13 +52,11 @@ rec {
           overlayName = "clearcuttJava21";
           raw = [ (getPkg [ [ "jdk21" ] [ "openjdk21" ] ] "Java 21 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
-          runtimeTransformer = pkg: if pkg ? jre then pkg.jre else pkg;
         };
         "25" = {
           overlayName = "clearcuttJava25";
           raw = [ (getPkg [ [ "jdk25" ] [ "openjdk25" ] ] "Java 25 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
-          runtimeTransformer = pkg: if pkg ? jre then pkg.jre else pkg;
         };
       };
     };

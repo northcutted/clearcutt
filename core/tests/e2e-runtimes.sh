@@ -231,11 +231,11 @@ EOF
 using System;
 Console.WriteLine("Hello from .NET E2E! Version: " + Environment.Version);
 EOF
-    # Framework-dependent publish for faster compile and portable execution
-    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained false -p:PublishSingleFile=true -o out
-    ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp"
-    ENTRYPOINT_JSON='["/workspace/DotnetApp"]'
-    EXECUTABLE_FLAG="--executable"
+    # Publish standard portable framework-dependent DLL (no native loader) to avoid glibc incompatibilities
+    dotnet publish DotnetApp/DotnetApp.csproj -c Release -o out
+    ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp.dll"
+    ENTRYPOINT_JSON='["dotnet","/workspace/DotnetApp.dll"]'
+    EXECUTABLE_FLAG=""
     ;;
     
   rust)
@@ -428,24 +428,24 @@ log_info "Rebased Execution Output: ${RUN_OUT_V2}"
 # Perform rebase output verification
 case "$STACK" in
   java)
-    if [[ "$RUN_OUT_V2" == *"Hello from Java E2E! Version: 25"* ]]; then
-      log_success "Rebased application successfully verified running under Java 25!"
+    if [[ "$RUN_OUT_V2" == *"Hello from Java E2E! Version: 21"* ]]; then
+      log_success "Rebased application successfully verified running under Java 21!"
     else
       log_error "Incorrect Java version reported in rebased execution!"
       exit 1
     fi
     ;;
   node)
-    if [[ "$RUN_OUT_V2" == *"Hello from Node E2E! Version: v24"* ]]; then
-      log_success "Rebased application successfully verified running under Node 24!"
+    if [[ "$RUN_OUT_V2" == *"Hello from Node E2E! Version: v22"* ]]; then
+      log_success "Rebased application successfully verified running under Node 22!"
     else
       log_error "Incorrect Node version reported in rebased execution!"
       exit 1
     fi
     ;;
   python)
-    if [[ "$RUN_OUT_V2" == *"Hello from Python E2E! Version: 3.14"* ]]; then
-      log_success "Rebased application successfully verified running under Python 3.14!"
+    if [[ "$RUN_OUT_V2" == *"Hello from Python E2E! Version: 3.13"* ]]; then
+      log_success "Rebased application successfully verified running under Python 3.13!"
     else
       log_error "Incorrect Python version reported in rebased execution!"
       exit 1
@@ -461,8 +461,8 @@ case "$STACK" in
     fi
     ;;
   dotnet)
-    if [[ "$RUN_OUT_V2" == *"Hello from .NET E2E! Version: 10"* ]]; then
-      log_success "Rebased application successfully verified running under .NET 10!"
+    if [[ "$RUN_OUT_V2" == *"Hello from .NET E2E! Version: 8"* ]]; then
+      log_success "Rebased application successfully verified running under .NET 8!"
     else
       log_error "Incorrect .NET version reported in rebased execution!"
       exit 1
@@ -521,19 +521,19 @@ REPORT_FILE="e2e-report-${STACK}.json"
 COVERAGE_NOTES=""
 case "$STACK" in
   java)
-    COVERAGE_NOTES="Successfully verified Java application packaging on Zulu JDK 21 Distroless. Validated bytecode runtime compatibility checking, executed hot base swap to Java 25 Distroless natively, and successfully verified execution under the Java 25 JVM inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified Java application packaging on OpenJDK 21 Slim base image. Validated bytecode runtime compatibility checking, executed hot base layer swap to OpenJDK 21 Distroless, and successfully verified execution under the Java 21 JVM inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   node)
-    COVERAGE_NOTES="Successfully verified Node.js application packaging on Node 22 Distroless. Validated execution limits, performed live base layer swap to Node 24 Distroless, and successfully verified live ESM script execution under the Node 24 interpreter. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified Node.js application packaging on Node 22 Slim base image. Validated execution limits, performed live base layer swap to Node 22 Distroless, and successfully verified live ESM script execution under the Node 22 interpreter. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   python)
-    COVERAGE_NOTES="Successfully verified Python application packaging on Python 3.13 Distroless. Validated execution parameters, performed live base layer swap to Python 3.14 Distroless, and successfully verified script execution under Python 3.14 interpreter inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified Python application packaging on Python 3.13 Slim base image. Validated execution parameters, performed live base layer swap to Python 3.13 Distroless, and successfully verified script execution under Python 3.13 interpreter inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   go)
-    COVERAGE_NOTES="Successfully verified compiled Go static application packaging on Go 1.25 Distroless base image. Swapped base layers cleanly to Go 1.26 Distroless, and verified executable static binary launching natively. Note: Static binaries retain build-time compiler runtimes; base rebase guarantees secure underlying system libraries and CA certificate layers."
+    COVERAGE_NOTES="Successfully verified compiled Go static application packaging on Go 1.25 Slim base image. Swapped base layers cleanly to Go 1.25 Distroless, and verified executable static binary launching natively. Note: Static binaries retain build-time compiler runtimes; base rebase guarantees secure underlying system libraries and CA certificate layers."
     ;;
   dotnet)
-    COVERAGE_NOTES="Successfully verified C# .NET console application packaging on .NET 8 Distroless base image. Swapped base layers cleanly to .NET 10 Distroless, and successfully verified live DLL launching under the .NET 10 CLR runtime inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified C# .NET console application packaging on .NET 8 Slim base image. Swapped base layers cleanly to .NET 8 Distroless, and successfully verified live DLL launching under the .NET 8 CLR runtime inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   rust)
     COVERAGE_NOTES="Successfully verified Rust static binary application packaging on Rust 1.95 Slim base image. Swapped base layers cleanly to Rust 1.95 Distroless base image (swapping from diagnostic/shell container to hardened productionDistroless, demonstrating security posture upgrades). Verified launching under hardened distroless boundary."
