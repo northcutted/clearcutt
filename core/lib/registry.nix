@@ -39,7 +39,7 @@ rec {
   languages = {
     core = {
       versions = {
-        "1" = {
+        "LTS" = {
           overlayName = "clearcuttCore";
           raw = [ (pkgs.coreutils-full or pkgs.coreutils) (pkgs.bashInteractive or pkgs.bash) ];
         };
