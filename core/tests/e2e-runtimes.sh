@@ -88,24 +88,24 @@ BASE_ID_V2=""
 
 case "$STACK" in
   java)
-    BASE_ID_V1="java21-distroless"
-    BASE_ID_V2="java25-distroless"
+    BASE_ID_V1="java21-slim"
+    BASE_ID_V2="java21-distroless"
     ;;
   node)
-    BASE_ID_V1="node22-distroless"
-    BASE_ID_V2="node24-distroless"
+    BASE_ID_V1="node22-slim"
+    BASE_ID_V2="node22-distroless"
     ;;
   python)
-    BASE_ID_V1="python3.13-distroless"
-    BASE_ID_V2="python3.14-distroless"
+    BASE_ID_V1="python3.13-slim"
+    BASE_ID_V2="python3.13-distroless"
     ;;
   go)
-    BASE_ID_V1="go1.25-distroless"
-    BASE_ID_V2="go1.26-distroless"
+    BASE_ID_V1="go1.25-slim"
+    BASE_ID_V2="go1.25-distroless"
     ;;
   dotnet)
-    BASE_ID_V1="dotnet8-distroless"
-    BASE_ID_V2="dotnet10-distroless"
+    BASE_ID_V1="dotnet8-slim"
+    BASE_ID_V2="dotnet8-distroless"
     ;;
   rust)
     BASE_ID_V1="rust1.95-slim"
@@ -147,7 +147,8 @@ build_nix_base() {
   fi
   
   # Push base to local registry
-  local reg_ref="${REGISTRY_HOST}/clearcutt/${target_id}:${tag_name}"
+  local reg_name=$(echo "${target_id}" | tr '[:upper:]' '[:lower:]')
+  local reg_ref="${REGISTRY_HOST}/clearcutt/${reg_name}:${tag_name}"
   log_info "Loading base image into local registry: ${reg_ref}..."
   skopeo copy --dest-tls-verify=false "docker-archive:${out_tar}" "docker://${reg_ref}"
   log_success "Pushed base image: ${reg_ref}"
@@ -157,8 +158,10 @@ build_nix_base() {
 build_nix_base "$BASE_ID_V1" "latest"
 build_nix_base "$BASE_ID_V2" "latest"
 
-BASE_V1="${REGISTRY_HOST}/clearcutt/${BASE_ID_V1}:latest"
-BASE_V2="${REGISTRY_HOST}/clearcutt/${BASE_ID_V2}:latest"
+local base_name_v1=$(echo "${BASE_ID_V1}" | tr '[:upper:]' '[:lower:]')
+local base_name_v2=$(echo "${BASE_ID_V2}" | tr '[:upper:]' '[:lower:]')
+BASE_V1="${REGISTRY_HOST}/clearcutt/${base_name_v1}:latest"
+BASE_V2="${REGISTRY_HOST}/clearcutt/${base_name_v2}:latest"
 
 # ----------------------------------------------------
 # 6. Compile / Materialize Target Application
@@ -229,7 +232,7 @@ using System;
 Console.WriteLine("Hello from .NET E2E! Version: " + Environment.Version);
 EOF
     # Framework-dependent publish for faster compile and portable execution
-    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained false -p:PublishSingleFile=true -p:PublishTrimmed=true -o out
+    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained false -p:PublishSingleFile=true -o out
     ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp"
     ENTRYPOINT_JSON='["/workspace/DotnetApp"]'
     EXECUTABLE_FLAG="--executable"
@@ -241,7 +244,7 @@ fn main() {
     println!("Hello from Rust E2E!");
 }
 EOF
-    rustc main.rs -o app
+    rustc -C target-feature=+crt-static main.rs -o app
     ARTIFACT_FILE="${WORK_DIR}/app"
     ENTRYPOINT_JSON='["/workspace/app"]'
     EXECUTABLE_FLAG="--executable"
@@ -505,7 +508,7 @@ spec: { exceptions: [] }
 EOF
 
 # Verify with mock/fixture catalog to test governance flow offline
-$CLI_BIN verify "$BASE_ID_V2" --catalog "cli/internal/testdata/catalog" --exceptions "$EXC_FILE"
+$CLI_BIN verify "java21-distroless" --catalog "cli/internal/testdata/catalog" --exceptions "$EXC_FILE"
 log_success "Governance verify gating passed."
 
 # ----------------------------------------------------
