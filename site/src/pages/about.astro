@@ -2,12 +2,13 @@
 import Base from '../layouts/Base.astro';
 import CopyBlock from '../components/CopyBlock.astro';
 import { loadIndex } from '../lib/catalog';
+import { claims } from '../lib/claims';
 
 let index;
 try { index = loadIndex(); } catch { index = null; }
 const decisionsUrl = index ? `${index.repoUrl}/blob/main/docs/decisions.md` : 'https://github.com';
 
-const sample = index?.images[0];
+const sample = index?.images.find(img => img.tier === 'distroless') ?? index?.images[0];
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'OWNER/REPO';
 const latestTag = index?.latestTag ?? 'vX.Y.Z';
 
@@ -70,7 +71,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
               <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
             </div>
             <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
-              ClearCutt is not an opinionated OS—it is an open-source base image blueprint built with Nix. Downstream teams can fork and adapt the blueprint to compile, customize, and govern their own internal base image feeds or graft secure closures onto existing mandated base OS layers.
+              {claims.hero.description}
             </p>
           </div>
         </div>
@@ -104,7 +105,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
                 <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">STIG-Relevant Structure</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                Our distroless tier satisfies structural container integrity guidelines by omitting all shells, package managers, and core system utilities—greatly reducing typical command injection escape paths.
+                {claims.stig.description}
               </p>
             </div>
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">
@@ -113,7 +114,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
                 <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Cryptographic Overlays</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                Using declarative Nix definitions, runtimes can be customized to bind exclusively to verified cryptographic modules (like OpenSSL in FIPS mode) or graft closures directly onto validated government overlays.
+                {claims.cryptography.description}
               </p>
             </div>
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">
@@ -206,7 +207,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
           </p>
           <p class="text-xs text-ink-300">
             The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>
-            pinned to <code class="font-mono text-ink-100">{latestTag}</code>. Swap in any image
+            pinned to <code class="font-mono text-ink-100">{latestTag}-{sample?.tier ?? 'distroless'}</code>. Swap in any image
             from the catalog — the verification flow is identical.
           </p>
         </header>

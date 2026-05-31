@@ -13,7 +13,7 @@ const { title, description, noIndex } = Astro.props;
 let index;
 try { index = loadIndex(); } catch { index = null; }
 
-const fullTitle = title ? `${title} · ClearCutt Catalog` : 'ClearCutt Hardened Fleet Catalog';
+const fullTitle = title ? `${title} · ClearCutt Catalog` : 'ClearCutt — Hardened Image Blueprint';
 const desc =
   description ??
   'Cryptographically certified, SLSA Level 3 multi-arch container images. Browse SBOMs, attestations, and provenance for every release.';
@@ -70,7 +70,7 @@ const url = base;
           </span>
           <div class="leading-tight">
             <div class="text-sm font-semibold text-ink-50">ClearCutt</div>
-            <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Hardened Fleet Catalog</div>
+            <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Hardened Image Blueprint</div>
           </div>
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">

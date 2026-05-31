@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import { loadIndex } from '../lib/catalog';
+import { claims } from '../lib/claims';
 
 let index;
 try { index = loadIndex(); } catch { /* no catalog data yet; render the page without telemetry */ }
@@ -31,13 +32,13 @@ const evidenceCoverage = index
           <div class="space-y-3">
             <span class="chip-accent">Cryptographically Secure Container Architectures</span>
             <h1 class="heading text-4xl sm:text-5xl lg:text-6xl font-black leading-tight text-ink-50 uppercase">
-              Enterprise Compliance,<br />
+              Hardened Image Blueprints,<br />
               <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
             </h1>
             <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">- That's the ClearCutt Blueprint</p>
           </div>
           <p class="text-base sm:text-lg text-ink-200 leading-relaxed max-w-xl font-sans">
-            ClearCutt is an open-source container hardening blueprint built declaratively using Nix. The catalog below serves as a live worked-example of a production image feed. Downstream teams are expected to fork this blueprint to run and govern their own custom internal feeds.
+            {claims.hero.description}
           </p>
 
           <div class="flex flex-wrap gap-4 pt-2">
@@ -78,7 +79,7 @@ const evidenceCoverage = index
                   <span class="text-[9px] uppercase tracking-widest font-bold text-ink-400 font-sans">Base Integration</span>
                   <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-ink-900 border border-ink-800 text-[7.5px] font-sans font-bold text-ink-300 tracking-wider">FLEXIBLE OVERLAY</span>
                 </div>
-                <div class="mt-1.5 font-mono text-[10px] text-ink-200 leading-normal">Use out-of-the-box, or overlay on UBI/Ubuntu</div>
+                <div class="mt-1.5 font-mono text-[10px] text-ink-200 leading-normal">Use as reference, or overlay on UBI/Ubuntu</div>
               </div>
             </div>
           </div>
@@ -98,14 +99,14 @@ const evidenceCoverage = index
         <div class="inline-flex rounded-full border border-ink-800 bg-ink-950/60 p-1 font-sans text-[11px]">
           <button
             type="button"
-            data-perspective-btn="executive"
+            data-perspective-btn="operator"
             class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider transition-all select-none text-accent-soft bg-accent/15 border border-accent/20"
           >
             For Platform Teams
           </button>
           <button
             type="button"
-            data-perspective-btn="developer"
+            data-perspective-btn="auditor"
             class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider text-ink-300 transition-all select-none border border-transparent"
           >
             For Security Auditors
@@ -113,17 +114,17 @@ const evidenceCoverage = index
         </div>
       </header>
 
-      <!-- EXECUTIVE VIEW PANEL -->
-      <div data-perspective-panel="executive" class="grid gap-6 sm:grid-cols-3">
+      <!-- OPERATOR VIEW PANEL -->
+      <div data-perspective-panel="operator" class="grid gap-6 sm:grid-cols-3">
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
           <header class="flex items-center gap-2">
             <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Reduced Attack Surface</h3>
+            <h3 class="font-bold text-ink-50">{claims.reproducibility.title}</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
-            Reduce software supply chain surprises. Our hermetic Nix-based compilation prevents untracked package injection, yielding standard runtimes with verifiable reproducibility.
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
+            {claims.reproducibility.description} <a href={`${base}about?tab=audit`} class="text-accent-soft underline hover:text-accent font-semibold ml-1">Run verification checks →</a>
           </p>
         </div>
 
@@ -132,10 +133,10 @@ const evidenceCoverage = index
             <span class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.249-8.25-3.286zm0 13.036h.008v.008H12v-.008z" /></svg>
             </span>
-            <h3 class="font-bold text-ink-50">Enterprise Suitability</h3>
+            <h3 class="font-bold text-ink-50">{claims.stig.title}</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
-            ClearCutt Distroless images reduce several STIG-relevant execution vectors by default, while production runtimes can be customized to bind to FIPS-validated cryptographic modules.
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
+            ClearCutt Distroless images satisfy structural container integrity guidelines by omitting shells, package managers, and core system utilities, and can be customized to bind to verified cryptographic modules such as OpenSSL in FIPS mode.
           </p>
         </div>
 
@@ -146,14 +147,14 @@ const evidenceCoverage = index
             </span>
             <h3 class="font-bold text-ink-50">High Reusability</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
             Forkable blueprint. Download reference runtimes, or easily spin up a fully customizable internal base image pipeline and feed for your organization.
           </p>
         </div>
       </div>
 
-      <!-- DEVELOPER VIEW PANEL -->
-      <div data-perspective-panel="developer" class="hidden grid gap-6 sm:grid-cols-3">
+      <!-- AUDITOR VIEW PANEL -->
+      <div data-perspective-panel="auditor" class="hidden grid gap-6 sm:grid-cols-3">
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
           <header class="flex items-center gap-2">
             <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
@@ -161,7 +162,7 @@ const evidenceCoverage = index
             </span>
             <h3 class="font-bold text-ink-50">Verifiable Store Closures</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
             Hermetic Nix compilations ensure only transitively reachable packages enter the closure. Every byte can be traced back to its declarative source.
           </p>
         </div>
@@ -173,7 +174,7 @@ const evidenceCoverage = index
             </span>
             <h3 class="font-bold text-ink-50">OIDC Verification Gates</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
             Verify keyless signatures at cluster admission using GitHub OIDC identities. Prevent the execution of unsigned or altered OCI containers.
           </p>
         </div>
@@ -185,7 +186,7 @@ const evidenceCoverage = index
             </span>
             <h3 class="font-bold text-ink-50">Exploitability Triage</h3>
           </header>
-          <p class="text-sm text-ink-200 leading-relaxed">
+          <p class="text-sm text-ink-200 leading-relaxed font-sans">
             Assess real risk with OpenVEX records instead of raw CVE noise. Zero-rebuild triage separates inert base issues from active exposure.
           </p>
         </div>
@@ -215,7 +216,11 @@ const evidenceCoverage = index
               <span class="text-2xl font-bold font-mono text-ink-50">{evidenceCoverage.signatures}</span>
               <span class="text-xs text-ink-300 font-mono">/ {published}</span>
             </div>
-            <p class="text-[10px] text-ink-300">100% keyless OIDC signed</p>
+            <p class="text-[10px] text-ink-300">
+              {evidenceCoverage.signatures === published && published > 0
+                ? "All images keyless OIDC signed"
+                : `${evidenceCoverage.signatures} of ${published} signed (pending)`}
+            </p>
           </div>
 
           <!-- Stat 2 -->
@@ -225,7 +230,11 @@ const evidenceCoverage = index
               <span class="text-2xl font-bold font-mono text-ink-50">{evidenceCoverage.provenance}</span>
               <span class="text-xs text-ink-300 font-mono">/ {published}</span>
             </div>
-            <p class="text-[10px] text-ink-300">SLSA Level 3 certified</p>
+            <p class="text-[10px] text-ink-300">
+              {evidenceCoverage.provenance === published && published > 0
+                ? "All images SLSA Level 3 provenanced"
+                : `${evidenceCoverage.provenance} of ${published} provenanced (pending)`}
+            </p>
           </div>
 
           <!-- Stat 3 -->
