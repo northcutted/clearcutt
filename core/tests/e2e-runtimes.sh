@@ -231,8 +231,8 @@ EOF
 using System;
 Console.WriteLine("Hello from .NET E2E! Version: " + Environment.Version);
 EOF
-    # Publish framework-dependent single-file executable (relies on base image FHS symlinks for glibc)
-    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained false -p:PublishSingleFile=true -o out
+    # Publish self-contained single-file executable (relies on base image FHS symlinks for glibc and C++ runtime)
+    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o out
     ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp"
     ENTRYPOINT_JSON='["/workspace/DotnetApp"]'
     EXECUTABLE_FLAG="--executable"
@@ -538,7 +538,7 @@ case "$STACK" in
     COVERAGE_NOTES="Successfully verified compiled Go static application packaging on Go 1.25 Slim base image. Swapped base layers cleanly to Go 1.25 Distroless, and verified executable static binary launching natively. Note: Static binaries retain build-time compiler runtimes; base rebase guarantees secure underlying system libraries and CA certificate layers."
     ;;
   dotnet)
-    COVERAGE_NOTES="Successfully verified C# .NET console application packaging on .NET 8 Slim base image. Swapped base layers cleanly to .NET 8 Distroless, and successfully verified live DLL launching under the .NET 8 CLR runtime inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified C# .NET console application packaging on .NET 8 Slim base image. Swapped base layers cleanly to .NET 8 Distroless, and successfully verified live self-contained single-file binary execution under the glibc/C++ FHS dynamic library loader layers inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   rust)
     COVERAGE_NOTES="Successfully verified Rust static binary application packaging on Rust 1.95 Slim base image. Swapped base layers cleanly to Rust 1.95 Distroless base image (swapping from diagnostic/shell container to hardened productionDistroless, demonstrating security posture upgrades). Verified launching under hardened distroless boundary."
