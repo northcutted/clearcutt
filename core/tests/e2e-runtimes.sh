@@ -230,6 +230,9 @@ build_nix_base() {
   log_info "Loading base image into local registry: ${reg_ref}..."
   skopeo copy --dest-tls-verify=false "docker-archive:${out_tar}" "docker://${reg_ref}"
   log_success "Pushed base image: ${reg_ref}"
+  
+  # Pre-pull base images into local docker daemon so layer inspections can run natively
+  docker pull "$reg_ref"
   return 0
 }
 
@@ -387,6 +390,10 @@ fi
 BUILD_OUT=$($CLI_BIN "${BUILD_ARGS[@]}")
 log_info "Build output: ${BUILD_OUT}"
 
+# Explicitly pull the daemonless build output into Docker daemon so inspect/runs execute successfully
+log_info "Pulling built app image ${APP_REF} from localhost registry..."
+docker pull "$APP_REF"
+
 # Real evidence check: verify the image exists in Docker daemon/registry
 if docker inspect "$APP_REF" >/dev/null 2>&1; then
   E2E_APP_BUILD="pass"
@@ -525,6 +532,10 @@ REBASE_OUT=$($CLI_BIN app rebase \
   --sign \
   --attest)
 log_info "Rebase output: ${REBASE_OUT}"
+
+# Explicitly pull the daemonless rebase output into Docker daemon so layer validations run natively
+log_info "Pulling rebased app image ${REBASED_REF} from localhost registry..."
+docker pull "$REBASED_REF"
 
 # Mathematical Layer Swap Invariant Assertions
 log_info "Performing live mathematical layer swap verification..."
