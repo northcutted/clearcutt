@@ -30,7 +30,7 @@ func checkStatus(checks []VerifyCheckResult, id string) (string, bool) {
 // The fixture java21-distroless is fully attested, production-allowed, and has a
 // single HIGH finding (CVE-2026-9999) deferred to the base layer.
 func TestVerify_AllRequirementsPass(t *testing.T) {
-	stdout, err := runCLI(t, "verify", "java21-distroless",
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json",
 		"--require-signature", "--require-sbom", "--require-provenance",
 		"--require-tests", "--require-vuln-scan", "--require-production")
@@ -49,7 +49,7 @@ func TestVerify_AllRequirementsPass(t *testing.T) {
 }
 
 func TestVerify_ThresholdFailsAndReturnsSentinel(t *testing.T) {
-	stdout, err := runCLI(t, "verify", "java21-distroless",
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0")
 	if !errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("expected ErrCheckFailed, got %v", err)
@@ -65,7 +65,7 @@ func TestVerify_ThresholdFailsAndReturnsSentinel(t *testing.T) {
 
 func TestVerify_ActiveExceptionExemptsFinding(t *testing.T) {
 	excPath := writeExceptions(t, "2999-01-01") // far-future expiry => active
-	stdout, err := runCLI(t, "verify", "java21-distroless",
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0",
 		"--allow-exceptions", "--exceptions", excPath)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestVerify_ActiveExceptionExemptsFinding(t *testing.T) {
 // silent no-op when omitted).
 func TestVerify_ExceptionsFileAloneHonorsExceptions(t *testing.T) {
 	excPath := writeExceptions(t, "2999-01-01") // far-future expiry => active
-	stdout, err := runCLI(t, "verify", "java21-distroless",
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0",
 		"--exceptions", excPath)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestVerify_ExceptionsFileAloneHonorsExceptions(t *testing.T) {
 
 func TestVerify_ExpiredExceptionIsNotHonored(t *testing.T) {
 	excPath := writeExceptions(t, "2000-01-01") // past expiry => expired
-	stdout, err := runCLI(t, "verify", "java21-distroless",
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0",
 		"--allow-exceptions", "--exceptions", excPath)
 	if !errors.Is(err, ErrCheckFailed) {
@@ -140,7 +140,7 @@ spec:
 
 func TestVerify_HumanOutputAndMissingImage(t *testing.T) {
 	// Human (table) output should render a result banner.
-	stdout, err := runCLI(t, "verify", "java21-distroless", "--catalog", fixtureCatalog())
+	stdout, err := runCLI(t, "verify", "image", "java21-distroless", "--catalog", fixtureCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestVerify_HumanOutputAndMissingImage(t *testing.T) {
 	}
 
 	// A missing image is a real error (not a gate failure) and must not be ErrCheckFailed.
-	if _, err := runCLI(t, "verify", "does-not-exist", "--catalog", fixtureCatalog()); err == nil || errors.Is(err, ErrCheckFailed) {
+	if _, err := runCLI(t, "verify", "image", "does-not-exist", "--catalog", fixtureCatalog()); err == nil || errors.Is(err, ErrCheckFailed) {
 		t.Errorf("expected a load error for missing image, got %v", err)
 	}
 }

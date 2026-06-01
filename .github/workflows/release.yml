@@ -682,12 +682,24 @@ jobs:
           crane version
           slsa-verifier version
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
       - name: Verify signature, attestations, and provenance
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          node core/scripts/verify-release-evidence.mjs \
+          ./clearcutt verify release-evidence \
             --ref "${{ matrix.target.image }}:${{ matrix.target.versionedTag }}" \
             --digest "${{ matrix.target.digest }}" \
             --repo "${{ github.repository }}" \

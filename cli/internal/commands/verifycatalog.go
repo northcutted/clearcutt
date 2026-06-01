@@ -57,7 +57,7 @@ type rawReleaseRecord struct {
 // contradictory trust data. It replaces core/scripts/verify-catalog-data.mjs.
 func NewVerifyCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "verify-catalog",
+		Use:   "catalog",
 		Short: "Verify the latest catalog release publishes complete, internally consistent trust data",
 		Long: `Cross-checks the generated catalog index against each latest image record: the
 index summary's evidence flags must agree with the authoritative release

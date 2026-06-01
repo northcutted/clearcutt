@@ -25,7 +25,7 @@ site-typecheck:
 	cd site && npm run typecheck
 
 site-verify-catalog: cli-build
-	./clearcutt verify-catalog --catalog site/src/data/catalog
+	./clearcutt verify catalog --catalog site/src/data/catalog
 
 catalog-generate: cli-build
 	./clearcutt catalog gather

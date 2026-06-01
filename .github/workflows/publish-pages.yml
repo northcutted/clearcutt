@@ -147,7 +147,7 @@ jobs:
         run: ./clearcutt catalog gather --limit "$RELEASE_LIMIT"
 
       - name: Verify latest catalog evidence completeness
-        run: ./clearcutt verify-catalog --catalog site/src/data/catalog
+        run: ./clearcutt verify catalog --catalog site/src/data/catalog
 
       - name: Upload catalog artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

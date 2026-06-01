@@ -79,7 +79,7 @@ func TestVerifyCatalogFailsWhenSignatureInferredFromProvenance(t *testing.T) {
 	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
 	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
 
-	stdout, err := runCLI(t, "--catalog", dir, "verify-catalog")
+	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {
 		t.Fatalf("expected verification to fail, got success:\n%s", stdout)
 	}
@@ -113,7 +113,7 @@ func TestVerifyCatalogAcceptsCompleteLatestEvidence(t *testing.T) {
 	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
 	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
 
-	stdout, err := runCLI(t, "--catalog", dir, "verify-catalog")
+	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err != nil {
 		t.Fatalf("expected verification to pass, got %v:\n%s", err, stdout)
 	}
@@ -135,7 +135,7 @@ func TestVerifyCatalogFailsWhenNoLatestImages(t *testing.T) {
 	}
 	writeCatalogFixture(t, dir, index, map[string]any{})
 
-	stdout, err := runCLI(t, "--catalog", dir, "verify-catalog")
+	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {
 		t.Fatalf("expected verification to fail, got success:\n%s", stdout)
 	}
@@ -168,7 +168,7 @@ func TestVerifyCatalogFailsWhenRequiredRawFieldsAreMissing(t *testing.T) {
 	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
 	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
 
-	stdout, err := runCLI(t, "--catalog", dir, "verify-catalog")
+	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {
 		t.Fatalf("expected verification to fail, got success:\n%s", stdout)
 	}

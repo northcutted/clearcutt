@@ -45,10 +45,29 @@ type VerifyResponse struct {
 	Checks []VerifyCheckResult `json:"checks"`
 }
 
-// NewVerifyCmd creates the Cobra verify command.
+// NewVerifyCmd is the parent of the verification subcommands. Each is usable
+// standalone: gate a published image against policy (image), check the generated
+// catalog is complete and consistent (catalog), or verify a published ref's
+// Sigstore + SLSA release evidence (release-evidence).
 func NewVerifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "verify <image-id>",
+		Use:   "verify",
+		Short: "Verify images, catalog data, and release evidence",
+		Long: `Verification subcommands:
+  image            gate a specific catalog image against policy contract gates
+  catalog          check the generated catalog publishes complete, consistent trust data
+  release-evidence verify a published image ref's Sigstore signature + SLSA provenance`,
+	}
+	cmd.AddCommand(newVerifyImageCmd())
+	cmd.AddCommand(NewVerifyCatalogCmd())
+	cmd.AddCommand(NewVerifyReleaseEvidenceCmd())
+	return cmd
+}
+
+// newVerifyImageCmd gates a specific catalog image against policy contracts.
+func newVerifyImageCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "image <image-id>",
 		Short: "Verify a specific ClearCutt image against policy contract gates",
 		Long:  `Enforces signatures, SBOMs, SLSA provenance, smoke tests, vulnerability limits, and lifecycle constraints.`,
 		Args:  cobra.ExactArgs(1),
