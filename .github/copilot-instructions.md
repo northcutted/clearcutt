@@ -219,4 +219,4 @@ This persistent ledger records critical repository-specific constraints, environ
 
 ### Astro Catalog Generation Requirement
 * **Context:** Building the Astro site in `site/` will fail or display blank data if the catalog has not been compiled.
-* **Lesson:** Before running `npm run build` or `npm run dev` in `site/`, you must generate the catalog data using `node core/scripts/gather-catalog.mjs` (or `make catalog-generate`).
+* **Lesson:** Before running `npm run build` or `npm run dev` in `site/`, you must generate the catalog data using `./clearcutt catalog gather` (or `make catalog-generate`).

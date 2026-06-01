@@ -38,12 +38,18 @@ else
   log_fail "Grype CLI is missing. Install Grype to execute scheduled scans."
 fi
 
-# 2. Invoke vulnerabilities scanner with Node.js
-if [[ -f ./scripts/scan-vulnerabilities.mjs ]]; then
-  log_info "Running SBOM vulnerability scans and classifications..."
-  node ./scripts/scan-vulnerabilities.mjs --mode "$SCAN_MODE"
-else
-  log_fail "vulnerability scanning script 'scripts/scan-vulnerabilities.mjs' is missing!"
+# 2. Invoke vulnerability scanner through the ClearCutt CLI
+CLEARCUTT_BIN="${CLEARCUTT_BIN:-../clearcutt}"
+if [[ ! -x "$CLEARCUTT_BIN" ]]; then
+  CLEARCUTT_BIN="$(command -v clearcutt || true)"
 fi
+if [[ -z "$CLEARCUTT_BIN" ]]; then
+  log_fail "ClearCutt CLI is missing. Build it with 'cd cli && go build -o ../clearcutt ./cmd/clearcutt'."
+fi
+
+SBOM_CACHE_DIR="${SBOM_CACHE_DIR:-../site/src/data/sboms}"
+VULN_DIR="${VULN_DIR:-../site/src/data/vulnerabilities}"
+log_info "Running SBOM vulnerability scans and classifications..."
+"$CLEARCUTT_BIN" scan --mode "$SCAN_MODE" --sbom-dir "$SBOM_CACHE_DIR" --out-dir "$VULN_DIR"
 
 log_pass "SBOM vulnerability scanning and runtime vs base classification completed successfully."

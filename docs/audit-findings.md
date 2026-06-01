@@ -40,9 +40,9 @@ This document maps all user-facing superlative, compliance, and metric claims id
    - Currently hardcodes `https://github.com/northcutted/clearcutt/releases/download/...` to download the CLI utility.
    - Can be parameterized using standard Actions context variable `${{ github.action_repository }}` to make it completely fork-safe.
 3. **Scripts & Conformance**:
-   - `core/scripts/gather-catalog.mjs`: Core catalog index aggregator that writes `site/src/data/catalog/index.json`.
-   - `core/scripts/scan-vulnerabilities.mjs`: Invokes Grype to scan cached SBOMs and emits reports under `site/src/data/vulnerabilities`.
+   - `clearcutt catalog gather` / `clearcutt catalog enrich` (Go CLI): Core catalog aggregators that write `site/src/data/catalog/index.json` and registry enrichment data.
+   - `clearcutt scan` (Go CLI, `cli/internal/commands/scan.go`): Invokes Grype to scan cached SBOMs and emits reports under `site/src/data/vulnerabilities`.
    - `core/tests/verify.sh`: Local automated PR gate running Container Structure Tests, credential checks, binary hermeticity, and overlays checking.
 4. **Stats / Telemetry Sourcing**:
    - Stats shown on `site/src/pages/index.astro` are loaded at build-time using `loadIndex()` from `site/src/lib/catalog.ts`, which reads `site/src/data/catalog/index.json`.
-   - Since `index.json` is generated directly from the release assets and live registry metadata by `gather-catalog.mjs`, these numbers are already dynamic, but lack a displayed generation timestamp.
+   - Since `index.json` is generated directly from the release assets and live registry metadata by the Go catalog commands, these numbers are already dynamic, but lack a displayed generation timestamp.

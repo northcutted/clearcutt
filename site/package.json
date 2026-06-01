@@ -9,8 +9,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "postbuild": "pagefind --site dist",
-    "typecheck": "astro check",
-    "verify:catalog": "node ../core/scripts/verify-catalog-data.mjs"
+    "typecheck": "astro check"
   },
   "dependencies": {
     "astro": "^5.6.1",

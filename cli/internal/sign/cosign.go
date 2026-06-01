@@ -24,7 +24,8 @@ type Cosign struct {
 
 	// run is the exec seam; tests substitute it to assert argument construction
 	// without a real cosign binary or network.
-	run func(bin string, args []string, stdout, stderr io.Writer) error
+	run       func(bin string, args []string, stdout, stderr io.Writer) error
+	runOutput func(bin string, args []string, stderr io.Writer) ([]byte, error)
 }
 
 // New constructs a Cosign driver. binary defaults to "cosign" when empty.
@@ -41,6 +42,13 @@ func execRun(bin string, args []string, stdout, stderr io.Writer) error {
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin // permit interactive keyless OIDC when run locally
 	return cmd.Run()
+}
+
+func execRunOutput(bin string, args []string, stderr io.Writer) ([]byte, error) {
+	cmd := exec.Command(bin, args...)
+	cmd.Stderr = stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Output()
 }
 
 // Available reports whether the cosign binary can be found on PATH.
@@ -86,6 +94,23 @@ func (c *Cosign) VerifyAttestation(ref, predicateType string) error {
 		ref)
 }
 
+// VerifyImageJSON verifies a keyless signature and returns cosign's JSON output.
+func (c *Cosign) VerifyImageJSON(ref string) ([]byte, error) {
+	if err := c.validateIdentity(); err != nil {
+		return nil, err
+	}
+	return c.execOutput("verify",
+		ref,
+		"--certificate-identity-regexp", c.Identity,
+		"--certificate-oidc-issuer", c.Issuer,
+		"--output", "json")
+}
+
+// DownloadAttestations returns the JSONL stream from `cosign download attestation`.
+func (c *Cosign) DownloadAttestations(ref string) ([]byte, error) {
+	return c.execOutput("download", "attestation", ref)
+}
+
 func (c *Cosign) exec(args ...string) error {
 	runner := c.run
 	if runner == nil {
@@ -95,6 +120,18 @@ func (c *Cosign) exec(args ...string) error {
 		return fmt.Errorf("cosign %s failed: %w", args[0], err)
 	}
 	return nil
+}
+
+func (c *Cosign) execOutput(args ...string) ([]byte, error) {
+	runner := c.runOutput
+	if runner == nil {
+		runner = execRunOutput
+	}
+	out, err := runner(c.Binary, args, c.Stderr)
+	if err != nil {
+		return nil, fmt.Errorf("cosign %s failed: %w", args[0], err)
+	}
+	return out, nil
 }
 
 // validateIdentity refuses verification against an empty or wildcard signer — the

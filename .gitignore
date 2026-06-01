@@ -19,3 +19,4 @@ core/build-outputs/*
 .claude/*
 /clearcutt
 /cli/clearcutt
+.agent/active_context.md

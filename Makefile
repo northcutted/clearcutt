@@ -1,4 +1,4 @@
-.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate test agent-sync e2e-test
+.PHONY: cli-build cli-test cli-vet site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan test agent-sync e2e-test
 
 agent-sync:
 	bash .agent/sync.sh
@@ -24,11 +24,20 @@ site-build:
 site-typecheck:
 	cd site && npm run typecheck
 
-site-verify-catalog:
-	cd site && npm run verify:catalog
+site-verify-catalog: cli-build
+	./clearcutt verify-catalog --catalog site/src/data/catalog
 
-catalog-generate:
-	node core/scripts/gather-catalog.mjs
+catalog-generate: cli-build
+	./clearcutt catalog gather
+
+catalog-enrich: cli-build
+	./clearcutt catalog enrich
+
+catalog-build: cli-build
+	./clearcutt catalog build
+
+catalog-scan: cli-build
+	./clearcutt scan --mode catalog
 
 core-verify:
 	cd core && nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
@@ -40,4 +49,3 @@ e2e-test: cli-build
 	bash core/tests/e2e-runtimes.sh $(STACK)
 
 test: cli-vet cli-test site-typecheck site-build core-remediation-tests
-
