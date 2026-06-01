@@ -194,8 +194,8 @@ case "$STACK" in
     BASE_ID_V2="cc15-distroless"
     ;;
   core)
-    BASE_ID_V1="core1-slim"
-    BASE_ID_V2="core1-distroless"
+    BASE_ID_V1="coreLTS-slim"
+    BASE_ID_V2="coreLTS-distroless"
     ;;
   *)
     log_error "Unsupported language stack: $STACK"
