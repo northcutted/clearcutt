@@ -95,6 +95,16 @@ func TestAppDiffBaseOfflineCompatibility(t *testing.T) {
 	}
 }
 
+func TestRuntimeCompatAcceptsCoreLTSLine(t *testing.T) {
+	ok, reason := runtimeCompat("coreLTS-slim", "coreLTS-distroless")
+	if !ok {
+		t.Fatalf("expected coreLTS tiers to be compatible, got %q", reason)
+	}
+	if !strings.Contains(reason, "coreLTS") {
+		t.Fatalf("expected coreLTS compatibility reason, got %q", reason)
+	}
+}
+
 func TestAppRebaseCommandVerifiesSignsAndAttestsDigestRefs(t *testing.T) {
 	client, host := commandTestRegistry(t)
 	restoreOCIClient(t, client)
