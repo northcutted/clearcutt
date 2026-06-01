@@ -551,7 +551,7 @@ test_cve_remediation_gates() {
         continue
       fi
       smoke_link="build-outputs/${smoke_target}-link"
-      if ! nix build ".#${smoke_target}" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
+      if ! nix build ".#\"${smoke_target}\"" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
         log_fail "G4 Gate Failed: unable to build ${smoke_target} for smoke testing."
       fi
       cp -L "$smoke_link" "$smoke_tar"
