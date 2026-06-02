@@ -6,7 +6,6 @@ spec:
   base:
     allowedImages:
       - java21-distroless
-      - java21-slim
     requireDigestPinned: true
     requireKnownBase: true
   supplyChain:

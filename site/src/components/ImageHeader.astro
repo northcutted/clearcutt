@@ -67,7 +67,7 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
         {passed
           ? <StatusPill kind="ok" label="Vulnerability gate passed" />
           : <StatusPill kind="warn" label="Gate pending" />}
-        {image.tier.id === 'distroless' && <StatusPill kind="ok" label="Shell-Free (STIG-Relevant)" />}
+        {image.tier.id === 'distroless' && <StatusPill kind="ok" label="Shell-Free" />}
         {image.tier.id !== 'dev' && <StatusPill kind="ok" label="Cryptographic Overlays Capable" />}
         {isStale && <StatusPill kind="warn" label="maintenance-stale" />}
       </div>
@@ -98,7 +98,7 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
             <span>Lifecycle Advisory: {release.lifecycle.status.toUpperCase()} IMAGE</span>
           </div>
           <p class="leading-relaxed">
-            {release.lifecycle.status === 'preview' && 'This image is currently in Preview status. It is fully certified but not recommended for production environments until general availability.'}
+            {release.lifecycle.status === 'preview' && 'This image is currently in Preview status. It has catalog evidence, but is not recommended for production environments until general availability.'}
             {release.lifecycle.status === 'deprecated' && 'Warning: This image version has been Deprecated. Security patches are no longer active; please plan downstream migration immediately.'}
             {release.lifecycle.status === 'experimental' && 'Advisory: This image is designated as experimental/development only and is strictly not allowed in production workloads.'}
             {release.lifecycle.status === 'blocked' && 'CRITICAL: This image is blocked due to standard non-compliance or critical gating failures.'}

@@ -102,52 +102,42 @@ jobs:
             catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
 
-      - name: Set release limit
+      - name: Resolve fleet catalog parameters
         id: params
-        run: echo "limit=${{ github.event.inputs.release_limit || '10' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          FLEET=$(./clearcutt --format json matrix export --source fleet)
+          DEFAULT_LIMIT=$(jq -r '.catalog.releaseLimit' <<< "$FLEET")
+          SCAN_DEPTH=$(jq -r '.catalog.scanDepth' <<< "$FLEET")
+          INPUT_LIMIT="${{ github.event.inputs.release_limit || '' }}"
+          if [[ -n "$INPUT_LIMIT" ]]; then
+            echo "limit=${INPUT_LIMIT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "limit=${DEFAULT_LIMIT}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "scan_depth=${SCAN_DEPTH}" >> "$GITHUB_OUTPUT"
 
-      - name: Gather release assets → catalog JSON
+      - name: Build catalog data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
           FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        working-directory: ${{ github.workspace }}
-        run: ./clearcutt catalog gather --limit "$RELEASE_LIMIT"
-
-      - name: Enrich with GHCR metadata
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_OWNER: ${{ github.repository_owner }}
-          GH_REPO: ${{ github.event.repository.name }}
-          FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        run: ./clearcutt catalog enrich --limit "${{ steps.params.outputs.limit }}"
-
-      # Refreshes the newest catalog tags with grype and preserves older
-      # vulnerability JSON from the cache. CVE data freshness comes from the
-      # grype DB (refreshed above), not from the SBOMs themselves, so a forced
-      # refresh still scans the full cache when schema or scoring logic changes.
-      - name: Scan SBOMs with grype
-        env:
-          SCAN_MODE: catalog
-          SCAN_TAG_DEPTH: "4"
           SCAN_ALL_TAGS: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        run: ./clearcutt scan --mode catalog
-
-      - name: Re-run gather to fold enrichment + vulnerabilities in
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_OWNER: ${{ github.repository_owner }}
-          GH_REPO: ${{ github.event.repository.name }}
-          RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
-          # No FORCE_REFRESH_ALL here: by this point SBOMs are already on disk
-          # from the first pass, and we just need to re-fold the enrichment
-          # and vulnerability scan output into per-image records.
-        run: ./clearcutt catalog gather --limit "$RELEASE_LIMIT"
-
-      - name: Verify latest catalog evidence completeness
-        run: ./clearcutt verify catalog --catalog site/src/data/catalog
+        run: |
+          set -euo pipefail
+          if [[ "${FORCE_REFRESH_ALL}" == "1" ]]; then
+            ./clearcutt catalog build \
+              --limit "$RELEASE_LIMIT" \
+              --scan-depth "${{ steps.params.outputs.scan_depth }}" \
+              --force-refresh-all \
+              --scan-all
+          else
+            ./clearcutt catalog build \
+              --limit "$RELEASE_LIMIT" \
+              --scan-depth "${{ steps.params.outputs.scan_depth }}"
+          fi
 
       - name: Upload catalog artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

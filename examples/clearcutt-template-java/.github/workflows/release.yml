@@ -1,29 +1,72 @@
-name: Secure Build & Certify
+name: Build, Sign, Attest, and Certify
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
   id-token: write
+  attestations: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/clearcutt-template-java:latest
 
 jobs:
-  build-and-certify:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
 
-      # Build and push your application image first (omitted in this template),
-      # then certify it against ClearCutt's contracts using the published action:
-      - name: Certify Application Against ClearCutt Contracts
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}
+
+      - uses: sigstore/cosign-installer@v4
+
+      - name: Sign image digest
+        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Attach cosign SBOM attestation
+        run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Attach GitHub build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attach GitHub SBOM attestation
+        uses: actions/attest-sbom@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+      - name: Certify image against ClearCutt contracts
         uses: northcutted/clearcutt/.github/actions/certify-app@v0.11.1
         with:
-          image: 'ghcr.io/${{ github.repository }}/clearcutt-template-java:latest'
-          base: 'java21-distroless'
-          policy: 'certification-policy.yaml'
-          # Pin the signer identity that built/signed the image — never a wildcard:
-          certificate-identity-regexp: 'https://github.com/${{ github.repository }}/.github/workflows/.*'
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          base: java21-distroless
+          policy: certification-policy.yaml
+          certificate-identity-regexp: '^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/heads/main$'

@@ -1,7 +1,7 @@
 # ClearCutt Hardened Fleets
 
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
-[![SLSA Level 3](https://img.shields.io/badge/SLSA-Level%203-green.svg)](https://slsa.dev)
+[![SLSA Build L3](https://img.shields.io/badge/SLSA-Build%20L3-green.svg)](https://slsa.dev)
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
@@ -42,7 +42,7 @@ Instead of forcing downstream applications to migrate to a new OS, ClearCutt pac
 ClearCutt generates three distinct lifecycle tiers tailored for different stages of the delivery pipeline:
 *   **`dev` (Builder Tier):** Equipped with raw runtime packages, interactive debugging shells (`bash`), standard utilities (`git`, `curl`), and CA certificates. Includes our integrated transient credential broker.
 *   **`slim` (Diagnostic Runtime Tier):** A lean production execution environment that retains CA certificates, the target language runtime, and basic troubleshooting capabilities (`busybox`, `/bin/bash`).
-*   **`distroless` (Hardened Zero-Utility Tier):** The ultimate production target. Contains **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
+*   **`distroless` (Hardened Zero-Utility Tier):** The most minimal production target. Contains no interactive shells or coreutils (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
 * > [!WARNING]
   > **Mitigation Boundary:** Removing shell binaries prevents `exec()`-based spawning of system shells (a common vector in remote command injection). However, it **does not mitigate other forms of Remote Code Execution (RCE)**. Code injection that executes direct system calls, spawns bundled executables, utilizes dynamic interpreter APIs (such as Python's `os.execve`), or launches Java processes using a custom-packaged shell binary is unaffected by this boundary.
 
@@ -161,7 +161,7 @@ Enforce software supply chain compliance checks locally or inside CI/CD gates. V
 ```
 
 #### 4. `certify` (Downstream Container Auditor)
-Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absolute absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
+Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
 ```bash
 # Export the target OCI container archive
 docker save ghcr.io/acme/my-app:latest -o my-app.tar

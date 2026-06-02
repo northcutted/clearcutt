@@ -105,7 +105,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
             <h3 class="font-bold text-base text-ink-50">Declarative Downstream Auditer</h3>
           </div>
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
-            Audits downstream application image tarballs offline. Unpacks layered filesystems in-memory to verify the absolute absence of shells, interactive package managers, and root UIDs.
+            Audits downstream application image tarballs offline. Unpacks layered filesystems in-memory to verify the absence of shells, interactive package managers, and root UIDs.
           </p>
           <CopyBlock language="shell" code={`# Export docker/podman OCI tarball\ndocker save ghcr.io/acme/my-app:latest -o my-app.tar\n\n# Run declarative offline certification checks\nclearcutt certify my-app.tar \\\n  --base java25-distroless \\\n  --policy certification-policy.yaml`} />
         </div>

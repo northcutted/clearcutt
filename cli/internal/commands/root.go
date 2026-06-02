@@ -44,6 +44,7 @@ and manage hardened multi-architecture enterprise base images.`,
 	// use one piece (e.g. just build base images) or adopt the whole lifecycle.
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "build", Title: "Build Your Catalog:"},
+		&cobra.Group{ID: "platform", Title: "Operate The Platform Kit:"},
 		&cobra.Group{ID: "secure", Title: "Keep It Secure:"},
 		&cobra.Group{ID: "verify", Title: "Verify It:"},
 		&cobra.Group{ID: "certify", Title: "Certify New Images:"},
@@ -62,6 +63,8 @@ and manage hardened multi-architecture enterprise base images.`,
 	add("build", NewReleaseCmd())
 	add("build", NewMatrixCmd())
 	add("build", NewOverlayCmd())
+	// Operate the forkable product kit
+	add("platform", NewPlatformCmd())
 	// Keep it secure
 	add("secure", NewScanCmd())
 	add("secure", NewRemediationCmd())

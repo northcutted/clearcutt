@@ -32,10 +32,10 @@ const evidenceCoverage = index
           <div class="space-y-3">
             <span class="chip-accent">Cryptographically Secure Container Architectures</span>
             <h1 class="heading text-4xl sm:text-5xl lg:text-6xl font-black leading-tight text-ink-50 uppercase">
-              Hardened Image Blueprints,<br />
-              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
+              Forkable Image Platform,<br />
+              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Evidence Built In.</span>
             </h1>
-            <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">- That's the ClearCutt Blueprint</p>
+            <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">- Build, govern, catalog, certify, remediate</p>
           </div>
           <p class="text-base sm:text-lg text-ink-200 leading-relaxed max-w-xl font-sans">
             {claims.hero.description}
@@ -45,8 +45,8 @@ const evidenceCoverage = index
             <a href={`${base}catalog`} class="rounded-full bg-accent hover:bg-accent-soft px-6 py-3 text-sm font-semibold uppercase tracking-wider text-ink-950 shadow-lg shadow-accent/25 hover:scale-[1.02] transition">
               Explore Catalog →
             </a>
-            <a href={`${base}about`} class="rounded-full border border-ink-700 bg-ink-950/30 hover:border-ink-600 px-6 py-3 text-sm font-semibold uppercase tracking-wider text-ink-200 hover:text-ink-50 transition">
-              Learn Architecture
+            <a href={`${base}platform-kit`} class="rounded-full border border-ink-700 bg-ink-950/30 hover:border-ink-600 px-6 py-3 text-sm font-semibold uppercase tracking-wider text-ink-200 hover:text-ink-50 transition">
+              Fork The Kit
             </a>
           </div>
         </div>
@@ -67,7 +67,7 @@ const evidenceCoverage = index
               <!-- Middle Layer: Nix store path closures -->
               <div class="transform -rotate-x-12 -rotate-y-12 rotate-z-3 border border-accent/40 bg-accent/5 backdrop-blur rounded-xl p-4 shadow-[0_8px_30px_rgb(var(--accent)/0.05)] hover:translate-y-[-4px] transition duration-300">
                 <div class="flex items-center justify-between">
-                  <span class="text-[9px] uppercase tracking-widest font-bold text-accent-soft">Safe Core Runtime</span>
+                  <span class="text-[9px] uppercase tracking-widest font-bold text-accent-soft">Runtime Fleet</span>
                   <svg class="h-3.5 w-3.5 text-accent-soft" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 12h18M5.636 5.636l12.728 12.728M5.636 18.364L18.364 5.636" /></svg>
                 </div>
                 <div class="mt-1.5 font-mono text-[10px] text-ink-100 truncate">Nix Immutable store closures</div>
@@ -76,10 +76,10 @@ const evidenceCoverage = index
               <!-- Bedrock Layer: Enterprise OS base overlay -->
               <div class="transform -rotate-x-12 -rotate-y-12 rotate-z-3 border border-ink-800 bg-ink-950/80 backdrop-blur rounded-xl p-4 shadow-lg hover:translate-y-[-4px] transition duration-300">
                 <div class="flex items-center justify-between">
-                  <span class="text-[9px] uppercase tracking-widest font-bold text-ink-400 font-sans">Base Integration</span>
+                  <span class="text-[9px] uppercase tracking-widest font-bold text-ink-400 font-sans">App Teams</span>
                   <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-ink-900 border border-ink-800 text-[7.5px] font-sans font-bold text-ink-300 tracking-wider">FLEXIBLE OVERLAY</span>
                 </div>
-                <div class="mt-1.5 font-mono text-[10px] text-ink-200 leading-normal">Use as reference, or overlay on UBI/Ubuntu</div>
+                <div class="mt-1.5 font-mono text-[10px] text-ink-200 leading-normal">dev, certify, rebase, deploy</div>
               </div>
             </div>
           </div>
@@ -136,7 +136,7 @@ const evidenceCoverage = index
             <h3 class="font-bold text-ink-50">{claims.stig.title}</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            ClearCutt Distroless images satisfy structural container integrity guidelines by omitting shells, package managers, and core system utilities, and can be customized to bind to verified cryptographic modules such as OpenSSL in FIPS mode.
+            ClearCutt distroless images reduce runtime utility surface by omitting shells, package managers, and core system tools. The security model names what that proves, and what it does not.
           </p>
         </div>
 
@@ -148,7 +148,7 @@ const evidenceCoverage = index
             <h3 class="font-bold text-ink-50">High Reusability</h3>
           </header>
           <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            Forkable blueprint. Download reference runtimes, or easily spin up a fully customizable internal base image pipeline and feed for your organization.
+            Forkable platform kit. Publish your own signed fleet, catalog site, app templates, CI/CD checks, admission policies, and approved remediation PR flow.
           </p>
         </div>
       </div>
@@ -232,7 +232,7 @@ const evidenceCoverage = index
             </div>
             <p class="text-[10px] text-ink-300">
               {evidenceCoverage.provenance === published && published > 0
-                ? "All images SLSA Level 3 provenanced"
+                ? "All images have SLSA Build L3 provenance"
                 : `${evidenceCoverage.provenance} of ${published} provenanced (pending)`}
             </p>
           </div>

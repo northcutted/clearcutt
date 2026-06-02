@@ -48,10 +48,10 @@ export function getImageMetadata(
           'Hosting basic diagnostics utilities that require limited interactive terminal tools'
         ];
       } else {
-        description = `This Core distroless image represents our most secure, zero-trust base container. It excludes all shells, coreutils, and package managers, providing only glibc, CA certificates, and timezone registries in a near-zero attack surface.`;
+        description = `This Core distroless image is the smallest Core runtime tier. It excludes shells, coreutils, and package managers, providing glibc, CA certificates, and timezone registries with a reduced utility surface.`;
         useCases = [
           'Hosting pre-compiled statically-linked Go, Rust, or C/C++ microservices',
-          'Zero-trust production deployments requiring zero-vulnerability guarantees',
+          'Production deployments that need a shell-free base with current vulnerability evidence',
           'Secure runtime hosting for highly sensitive data ingestion and messaging layers'
         ];
       }
@@ -73,11 +73,11 @@ export function getImageMetadata(
           'Hosting modular JRE processes with optimized memory configurations'
         ];
       } else {
-        description = `This Java Runtime Environment (JRE) distroless image delivers a highly hardened, shell-less Zulu JRE ${languageVersion} runtime. It strips away all system binaries, minimizing the JVM container's vulnerability footprint to near-zero.`;
+        description = `This Java Runtime Environment (JRE) distroless image delivers a hardened, shell-less Zulu JRE ${languageVersion} runtime. It strips away shell and package-manager utilities while preserving a standard JVM runtime boundary.`;
         useCases = [
-          'Zero-trust production hosting for highly sensitive financial or medical Java APIs',
+          'Production hosting for sensitive financial or medical Java APIs',
           'Deploying optimized Spring Boot microservices with minimal OCI layer overhead',
-          'Strict regulatory compliance environments requiring zero shell vectors'
+          'Strict environments that require shell-free runtime images'
         ];
       }
       break;
@@ -98,11 +98,11 @@ export function getImageMetadata(
           'Hosting lightweight server-side rendering (SSR) applications with limited OS access'
         ];
       } else {
-        description = `This Node.js distroless image packages a fully hardened, shell-less Node.js ${languageVersion} engine. It excludes all package managers (npm, yarn) and shell layers, providing the ultimate zero-trust JavaScript container runtime.`;
+        description = `This Node.js distroless image packages a hardened, shell-less Node.js ${languageVersion} engine. It excludes package managers (npm, yarn) and shell layers while keeping the Node runtime directly executable.`;
         useCases = [
-          'Hosting mission-critical production backend microservices in zero-trust environments',
+          'Hosting mission-critical production backend microservices in locked-down environments',
           'Deploying performance-sensitive REST or gRPC APIs with minimal layer counts',
-          'Secure runtime hosting that is immune to command-injection exploit paths'
+          'Secure runtime hosting that resists common shell-spawn exploit paths'
         ];
       }
       break;
@@ -126,8 +126,8 @@ export function getImageMetadata(
         description = `This Python distroless image packages a hardened, shell-less Python ${languageVersion} runtime. By excluding pip, setuptools, and shell binaries, it delivers a secure environment with an extremely small attack surface.`;
         useCases = [
           'Hosting production-grade FastAPI and Django APIs in secure OCI environments',
-          'Deploying pre-packaged machine learning models (scikit-learn, TensorFlow) in zero-trust clusters',
-          'Secure background worker execution requiring near-zero vulnerability surface area'
+          'Deploying pre-packaged machine learning models (scikit-learn, TensorFlow) in locked-down clusters',
+          'Secure background worker execution requiring a shell-free runtime surface'
         ];
       }
       break;
@@ -148,10 +148,10 @@ export function getImageMetadata(
           'Executing Go automation scripts with configurable network or OS system calls'
         ];
       } else {
-        description = `This Go distroless image offers an ultra-hardened, zero-trust OCI container base with no shell and no utilities. It is optimized for hosting statically and dynamically linked Go binaries.`;
+        description = `This Go distroless image offers a hardened OCI container base with no shell and no utility layer. It is optimized for hosting statically and dynamically linked Go binaries.`;
         useCases = [
-          'Hardened, zero-trust production hosting of highly sensitive Go REST and gRPC microservices',
-          'Deploying edge containers and cloud-native agents with absolute minimal storage footprint',
+          'Hardened production hosting of highly sensitive Go REST and gRPC microservices',
+          'Deploying edge containers and cloud-native agents with a minimal storage footprint',
           'Achieving maximum protection against remote execution exploits (no shell to hijack)'
         ];
       }
@@ -173,11 +173,11 @@ export function getImageMetadata(
           'Hosting lightweight server-side .NET processes with limited operating system dependencies'
         ];
       } else {
-        description = `This .NET ASP.NET runtime distroless image delivers an ultra-hardened, shell-less enterprise hosting container. It minimizes the vulnerability footprint of the C# runtime stack to near-zero.`;
+        description = `This .NET ASP.NET runtime distroless image delivers a hardened, shell-less enterprise hosting container. It minimizes the runtime utility surface around the C# runtime stack.`;
         useCases = [
           'Hardened production hosting of C# microservices, financial APIs, and enterprise backends',
           'Deploying ASP.NET Core apps with strict regulatory requirements (PCI-DSS, HIPAA)',
-          'Strict zero-trust clusters looking to eliminate container-breakout shell vulnerabilities'
+          'Strict clusters looking to eliminate container-breakout shell utilities'
         ];
       }
       break;
@@ -200,7 +200,7 @@ export function getImageMetadata(
       } else {
         description = `This Rust distroless image delivers a highly hardened, shell-less base container containing only glibc and CA trust anchors. It is optimized for hosting statically and dynamically compiled Rust microservices.`;
         useCases = [
-          'Production zero-trust deployments of ultra-high-performance Rust web servers and gRPC APIs',
+          'Production deployments of ultra-high-performance Rust web servers and gRPC APIs',
           'Deploying resource-constrained edge-computing nodes and embedded container workloads',
           'Eliminating all potential shell-injection exploit paths in mission-critical environments'
         ];
@@ -223,10 +223,10 @@ export function getImageMetadata(
           'Deploying legacy system binaries in a containerized, CVE-remediated staging sandbox'
         ];
       } else {
-        description = `This C/C++ distroless base provides a hardened OCI workspace with no shells. It is designed to act as a secure, zero-trust host for statically and dynamically compiled C/C++ binaries.`;
+        description = `This C/C++ distroless base provides a hardened OCI workspace with no shells. It is designed to host statically and dynamically compiled C/C++ binaries with a minimal runtime surface.`;
         useCases = [
           'Highly secure production hosting of pre-compiled C/C++ server nodes and daemons',
-          'Zero-trust edge deployments looking to achieve minimal container footprint and zero CVE exposure',
+          'Edge deployments looking for minimal container footprint and current vulnerability evidence',
           'Executing compiled network filters and low-level controllers in hardened environments'
         ];
       }

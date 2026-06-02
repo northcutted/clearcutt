@@ -1,10 +1,14 @@
-# ClearCutt Manual Vulnerability Scan & Remediation Gateway
+# ClearCutt Approved Vulnerability Remediation Gateway
 # Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Manual fail-closed remediation scan with planned AI patch drafting
+# Paradigm: Scheduled/gated remediation planning with bounded PR drafting
 
-name: ClearCutt Manual Remediation Scan
+name: ClearCutt Approved Remediation Scan
 
 on:
+  schedule:
+    # Weekly planning run. The workflow drafts PRs for review; it does not merge
+    # or deploy patched images automatically.
+    - cron: "0 11 * * 1"
   workflow_dispatch:
     inputs:
       include_dev_only:
@@ -67,6 +71,18 @@ jobs:
           cd cli
           go build -o ../clearcutt ./cmd/clearcutt
 
+      - name: Resolve fleet remediation parameters
+        id: fleet
+        run: |
+          set -euo pipefail
+          FLEET=$(./clearcutt --format json matrix export --source fleet)
+          {
+            echo "scan_depth=$(jq -r '.remediation.scanDepth' <<< "$FLEET")"
+            echo "max_findings=$(jq -r '.remediation.maxFindingsPerRun' <<< "$FLEET")"
+            echo "max_failures=$(jq -r '.remediation.maxPatchFailuresPerRun' <<< "$FLEET")"
+            echo "include_dev_only=$(jq -r '.remediation.includeDevOnly' <<< "$FLEET")"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Gather release assets → catalog JSON
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,9 +94,25 @@ jobs:
       - name: Run Remediation Scan
         env:
           SCAN_MODE: remediation
-          SCAN_TAG_DEPTH: "1"
+          SCAN_TAG_DEPTH: ${{ steps.fleet.outputs.scan_depth }}
           CLEARCUTT_BIN: ${{ github.workspace }}/clearcutt
         run: ./core/scripts/scheduled-scan.sh
+
+      - name: Generate approved remediation plan
+        env:
+          VULN_ROOT: site/src/data/vulnerabilities
+          INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
+        run: |
+          set -euo pipefail
+          INCLUDE_ARGS=()
+          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
+            INCLUDE_ARGS+=(--include-dev-only)
+          fi
+          ./clearcutt --format json remediation plan \
+            --vuln-root "$VULN_ROOT" \
+            --limit "${{ steps.fleet.outputs.max_findings }}" \
+            --out core/build-outputs/remediation-plan.json \
+            "${INCLUDE_ARGS[@]}"
 
       - name: Configure Git Credentials
         run: |
@@ -112,18 +144,24 @@ jobs:
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
           # Cap how many distinct findings one run will attempt. Anything over
           # this gets picked up on the next scheduled run.
-          MAX_FINDINGS_PER_RUN: "1"
-          # Dev-tier-only campaigns are intentionally not included here. They
-          # can be tested with the include_dev_only workflow dispatch input.
-          INCLUDE_DEV_ONLY_REMEDIATION: ${{ inputs.include_dev_only }}
+          MAX_FINDINGS_PER_RUN: ${{ steps.fleet.outputs.max_findings }}
+          # Dev-tier-only campaigns are intentionally off by default. They can be
+          # tested with the include_dev_only workflow dispatch input.
+          INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
           VULN_ROOT: ../site/src/data/vulnerabilities
-          MAX_PATCH_FAILURES_PER_RUN: "1"
+          MAX_PATCH_FAILURES_PER_RUN: ${{ steps.fleet.outputs.max_failures }}
         working-directory: core
         run: |
+          INCLUDE_ARGS=()
+          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
+            INCLUDE_ARGS+=(--include-dev-only)
+          fi
           ../clearcutt remediation run \
             --vuln-root "$VULN_ROOT" \
             --limit "$MAX_FINDINGS_PER_RUN" \
-            --max-failures "$MAX_PATCH_FAILURES_PER_RUN"
+            --max-failures "$MAX_PATCH_FAILURES_PER_RUN" \
+            --plan-out build-outputs/remediation-plan.json \
+            "${INCLUDE_ARGS[@]}"
 
       - name: Upload Scanned Vulnerabilities
         if: always()
@@ -131,4 +169,12 @@ jobs:
         with:
           name: vulnerabilities-data
           path: site/src/data/vulnerabilities/
+          retention-days: 7
+
+      - name: Upload Remediation Plan
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: remediation-plan
+          path: core/build-outputs/remediation-plan.json
           retention-days: 7

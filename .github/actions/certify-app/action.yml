@@ -67,6 +67,7 @@ runs:
         clearcutt certify /tmp/clearcutt-app-image.tar \
           --policy ${{ inputs.policy }} \
           --base ${{ inputs.base }} \
+          --image-ref ${{ inputs.image }} \
           --format json > /tmp/certification-report.json
         cat /tmp/certification-report.json
 

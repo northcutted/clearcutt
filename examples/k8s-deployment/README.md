@@ -1,6 +1,6 @@
 # ClearCutt Kubernetes Deployment & Admission Gating Blueprint
 
-This blueprint demonstrates how to run **ClearCutt Hardened container images** inside **Kubernetes (K8s)** with absolute process sandboxing, and establishes an end-to-end **"Keyboard to Cloud"** trust validation loop at admission time.
+This blueprint demonstrates how to run **ClearCutt Hardened container images** inside **Kubernetes (K8s)** with strict process sandboxing, and establishes an end-to-end **"Keyboard to Cloud"** trust validation loop at admission time.
 
 ---
 

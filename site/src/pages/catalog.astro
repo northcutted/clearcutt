@@ -109,7 +109,7 @@ const evidenceCoverage = index
                   Supply Chain Evidence
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Green icons indicate verified cryptographically bound evidence attached to the OCI manifest: Sigstore keyless OIDC signature, SLSA Level 3 provenance, and SPDX SBOM.
+                  Green icons indicate verified cryptographically bound evidence attached to the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM.
                 </p>
               </div>
 
@@ -123,7 +123,7 @@ const evidenceCoverage = index
                   Vulnerability Gates
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Images show <strong>Gate Passed</strong> if they contain zero active Critical or High vulnerabilities. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
+                  Images show <strong>Gate Passed</strong> when current scan data reports no active Critical or High findings. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
                 </p>
               </div>
 
@@ -131,10 +131,10 @@ const evidenceCoverage = index
               <div class="space-y-1.5">
                 <h3 class="font-bold text-ink-50 flex items-center gap-1.5">
                   <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">SHELL-FREE</span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">FIPS CAPABLE</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">EVIDENCE PINNED</span>
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  <strong>Shell-Free</strong> indicates that shells, core utilities, and typical dynamic execution vectors are omitted from the runtime. <strong>FIPS Capable</strong> indicates support for mapping to FIPS-validated cryptographic modules.
+                  <strong>Shell-Free</strong> indicates that shells, core utilities, and package managers are omitted from the runtime. <strong>Evidence Pinned</strong> means the catalog exposes signatures, SBOMs, provenance, and workflow identities separately.
                 </p>
               </div>
             </div>

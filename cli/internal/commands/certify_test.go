@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -203,6 +204,43 @@ func TestCertify_EvidenceChecksAreSkippedNotPassed(t *testing.T) {
 		if st != "skip" {
 			t.Errorf("%s expected skip, got %q", id, st)
 		}
+	}
+}
+
+func TestCertifyImageRefSatisfiesDigestPinnedPolicy(t *testing.T) {
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte(`apiVersion: clearcutt.dev/v1
+kind: CertificationPolicy
+metadata:
+  name: digest-policy
+spec:
+  base:
+    allowedImages:
+      - java21-distroless
+    requireDigestPinned: true
+    requireKnownBase: true
+  supplyChain:
+    requireSignature: false
+    requireProvenance: false
+    requireSbom: false
+  runtime:
+    requireNonRoot: true
+    forbidShell: true
+    forbidPackageManagers: true
+    forbidDevTier: true
+  vulnerabilities:
+    maxCritical: 999
+    maxHigh: 999
+`), 0o644); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	tarball := dockerTarball(t, mockConfig(t, "10001"), createMockLayerTar(t, []string{"app/main.js"}))
+	resp, err := runCertifyJSON(t, tarball, "--policy", policy, "--image-ref", "ghcr.io/acme/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if err != nil {
+		t.Fatalf("expected image-ref digest pin to satisfy policy, got %v", err)
+	}
+	if st, _ := certifyCheck(resp, "policy.base.digestPinned"); st != "pass" {
+		t.Fatalf("digestPinned expected pass, got %q", st)
 	}
 }
 

@@ -16,7 +16,7 @@ try { index = loadIndex(); } catch { index = null; }
 const fullTitle = title ? `${title} · ClearCutt Catalog` : 'ClearCutt — Hardened Image Blueprint';
 const desc =
   description ??
-  'Cryptographically certified, SLSA Level 3 multi-arch container images. Browse SBOMs, attestations, and provenance for every release.';
+  'Forkable hardened image platform kit. Browse signatures, SBOMs, SLSA Build L3 provenance, vulnerability evidence, and app-team onboarding templates.';
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const url = base;
 ---
@@ -75,6 +75,7 @@ const url = base;
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
           <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Getting Started</a>
+          <a href={`${base}platform-kit`} class="text-ink-200 hover:text-ink-50 transition">Platform Kit</a>
           <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
           <a href={`${base}app-lifecycle`} class="text-ink-200 hover:text-ink-50 transition">App Lifecycle</a>
           <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI Tools</a>

@@ -99,37 +99,47 @@ jobs:
             git push origin "$VERSION_TAG"
           fi
 
+  fleet-matrix:
+    name: Resolve Fleet Matrix
+    needs: [check-version, release-gate]
+    runs-on: ubuntu-latest
+    outputs:
+      release_matrix: ${{ steps.matrix.outputs.release_matrix }}
+      image_matrix: ${{ steps.matrix.outputs.image_matrix }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Export fleet matrices
+        id: matrix
+        run: |
+          set -euo pipefail
+          RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
+          IMAGE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix image | jq -c .)
+          echo "release_matrix=${RELEASE_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "image_matrix=${IMAGE_MATRIX}" >> "$GITHUB_OUTPUT"
+
   publish-matrix:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [check-version, release-gate]
+    needs: [check-version, release-gate, fleet-matrix]
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
-      matrix:
-        system: [
-          "x86_64-linux",
-          "aarch64-linux"
-        ]
-        language: [
-          "coreLTS",
-          "java21",
-          "java25",
-          "node22",
-          "node24",
-          "python3.13",
-          "python3.14",
-          "go1.25",
-          "go1.26",
-          "dotnet8",
-          "dotnet10",
-          "rust1.95",
-          "cc15"
-        ]
-        tier: [
-          "dev",
-          "slim",
-          "distroless"
-        ]
+      matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -387,7 +397,7 @@ jobs:
 
   assemble-multiarch:
     name: Assemble Multi-Arch Manifest (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [check-version, publish-matrix, release-gate]
+    needs: [check-version, publish-matrix, release-gate, fleet-matrix]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -395,27 +405,7 @@ jobs:
       attestations: write
     strategy:
       fail-fast: false
-      matrix:
-        language: [
-          "coreLTS",
-          "java21",
-          "java25",
-          "node22",
-          "node24",
-          "python3.13",
-          "python3.14",
-          "go1.25",
-          "go1.26",
-          "dotnet8",
-          "dotnet10",
-          "rust1.95",
-          "cc15"
-        ]
-        tier: [
-          "dev",
-          "slim",
-          "distroless"
-        ]
+      matrix: ${{ fromJSON(needs.fleet-matrix.outputs.image_matrix) }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -709,33 +699,13 @@ jobs:
 
   export-provenance:
     name: Export SLSA Provenance Asset (${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [check-version, provenance, verify-release-evidence, release-gate]
+    needs: [check-version, provenance, verify-release-evidence, release-gate, fleet-matrix]
     runs-on: ubuntu-latest
     permissions:
       packages: read
     strategy:
       fail-fast: false
-      matrix:
-        language: [
-          "coreLTS",
-          "java21",
-          "java25",
-          "node22",
-          "node24",
-          "python3.13",
-          "python3.14",
-          "go1.25",
-          "go1.26",
-          "dotnet8",
-          "dotnet10",
-          "rust1.95",
-          "cc15"
-        ]
-        tier: [
-          "dev",
-          "slim",
-          "distroless"
-        ]
+      matrix: ${{ fromJSON(needs.fleet-matrix.outputs.image_matrix) }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -826,11 +796,11 @@ jobs:
           done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" -o -name "clearcutt-*" -o -name "*.sig" -o -name "SHA256SUMS.txt" \) -size +0 -print0)
           
           if [ ${#files[@]} -gt 0 ]; then
-            echo "Uploading ${#files[@]} certified assets to release: v${{ needs.check-version.outputs.version }}..."
+            echo "Uploading ${#files[@]} verified assets to release: v${{ needs.check-version.outputs.version }}..."
             gh release upload "v${{ needs.check-version.outputs.version }}" "${files[@]}" --clobber
             echo "Release assets successfully attached."
           else
-            echo "No non-empty certified assets found to upload."
+            echo "No non-empty verified assets found to upload."
           fi
 
       - name: Finalize Release Notes
@@ -845,7 +815,7 @@ jobs:
           read -r -d '' FINAL_NOTES <<EOF || true
           # 🚀 ClearCutt Hardened Fleet Release $TAG_NAME
 
-          This release has been **cryptographically certified** with **no fixable Critical/High CVEs in gated production tiers at release time** and **SLSA Level 3 non-falsifiable provenance** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
+          This release has been **cryptographically verified** with **no fixable Critical/High CVEs in gated production tiers at release time** and **SLSA Build L3 provenance verified by the configured release workflow** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
 
           The public catalog may still show newly disclosed, unfixed, dev-tier, or base-layer findings after release because the site rescans published SBOMs against the latest Grype database.
 
