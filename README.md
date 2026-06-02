@@ -152,7 +152,7 @@ Query high-fidelity security metadata, dynamic entrypoints, non-root user settin
 Enforce software supply chain compliance checks locally or inside CI/CD gates. Validate OIDC signatures, SBOM attestations, SLSA levels, smoke test status, active support lifecycles, and maximum vulnerability counts:
 ```bash
 # Enforce strict supply chain gates locally
-./clearcutt verify java25-distroless \
+./clearcutt verify image java25-distroless \
   --require-signature \
   --require-sbom \
   --max-critical 0 \

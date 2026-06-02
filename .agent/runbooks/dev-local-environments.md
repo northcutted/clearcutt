@@ -3,6 +3,49 @@
 Status: **proposed, not started.** Self-contained handoff. Owner approved the
 concept and the two-path design (native Nix preferred, dev container fallback).
 
+## Start here
+
+This runbook is the source of truth for the next agent. Do **not** re-plan the
+feature from scratch unless the catalog or flake shape has changed materially.
+
+1. Read this file, then skim:
+   - `cli/internal/commands/root.go`
+   - `cli/internal/catalog/types.go`
+   - `cli/internal/catalog/load.go`
+   - `core/flake.nix`
+2. Implement **Increment 1** first: `clearcutt dev <image-id> --devcontainer`.
+   This proves catalog resolution, dev-tier selection, and filesystem output
+   without requiring Docker, Podman, Nix, registry access, or network.
+3. Keep all unit tests offline. Stub `docker`, `podman`, `nerdctl`, and `nix`
+   binaries on `PATH` when testing command construction.
+4. Use direct workspace commands for local verification (`cd cli && go test ./...`
+   etc.). On Eddie's machine, broad `make` targets may fail before recipes run
+   because of the local `xcrun` toolchain issue.
+
+## Deliverables
+
+- New CLI command: `clearcutt dev <image-id>`.
+- `--devcontainer` mode writes or prints a valid `.devcontainer/devcontainer.json`.
+- `--container` mode executes the selected container engine with predictable
+  mount, working directory, user, and image-ref behavior.
+- `--nix` mode initially uses the currently available native closure attr; after
+  the flake work lands, it should switch to per-target `nix develop`.
+- `core/flake.nix` eventually exposes per-target dev shells for dev-tier targets.
+- Docs/help text make the inner-loop workflow visible without replacing the
+  existing build/secure/verify/certify/app lifecycle pillars.
+
+## Acceptance criteria
+
+- A non-dev id such as `java21-distroless` resolves to the `java21-dev` local
+  environment target, and no-shell tiers are rejected rather than launched.
+- All generated/constructed refs are pinned to a release tag; use digest pinning
+  where the catalog exposes enough information to do so safely.
+- `--devcontainer` output is deterministic and test-covered against the committed
+  fixture catalog.
+- `--container` and `--nix` tests prove argv construction with fake binaries;
+  unit tests never contact a real registry or GitHub.
+- `cd cli && go test ./... -count=1 && go vet ./...` is green before handoff.
+
 ## Goal & why
 
 Add the missing "inner loop" to the platform: let a developer work *in* the exact

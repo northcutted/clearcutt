@@ -83,7 +83,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <div class="space-y-2 border-t border-ink-800/40 pt-5">
           <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">2. Enforce local policies</h3>
           <p class="text-xs text-ink-400">Validate OIDC signatures and verify that active image vulnerability risks fall below your custom SLA limits:</p>
-          <CopyBlock language="shell" code={`clearcutt verify java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3`} />
+          <CopyBlock language="shell" code={`clearcutt verify image java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3`} />
         </div>
 
         <!-- Certify block -->

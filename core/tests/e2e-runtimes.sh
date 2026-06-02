@@ -704,7 +704,7 @@ sed -i.bak -e "s/java21-distroless/${BASE_ID_V2}/g" \
 rm -f "${INDEX_JSON}.bak"
 
 # Run a real verify check against the dynamically registered stack base
-$CLI_BIN verify "$BASE_ID_V2" --catalog "$CATALOG_DIR" --exceptions "$EXC_FILE"
+$CLI_BIN verify image "$BASE_ID_V2" --catalog "$CATALOG_DIR" --exceptions "$EXC_FILE"
 log_success "Governance verify gating passed."
 E2E_GOV_VERIFY="pass"
 

@@ -18,7 +18,7 @@ const runtimeId = image.language.id === 'c' ? 'cc15' : `${image.language.id}${im
 
 const clearcuttInspect = `clearcutt inspect ${image.id} --tag ${release.tag}`;
 
-const clearcuttVerify = `clearcutt verify ${image.id} \\
+const clearcuttVerify = `clearcutt verify image ${image.id} \\
   --tag ${release.tag} \\
   --require-production \\
   --require-signature \\

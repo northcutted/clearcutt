@@ -94,6 +94,20 @@ func TestVerify_ExceptionsFileAloneHonorsExceptions(t *testing.T) {
 	}
 }
 
+func TestVerify_LegacyImageFormStillAcceptsImageFlags(t *testing.T) {
+	excPath := writeExceptions(t, "2999-01-01") // far-future expiry => active
+	stdout, err := runCLI(t, "verify", "java21-distroless",
+		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0",
+		"--exceptions", excPath)
+	if err != nil {
+		t.Fatalf("legacy verify form should still accept image flags, got: %v\n%s", err, stdout)
+	}
+	resp := decodeVerify(t, stdout)
+	if resp.Status != "pass" {
+		t.Fatalf("expected pass with legacy verify form, got %q", resp.Status)
+	}
+}
+
 func TestVerify_ExpiredExceptionIsNotHonored(t *testing.T) {
 	excPath := writeExceptions(t, "2000-01-01") // past expiry => expired
 	stdout, err := runCLI(t, "verify", "image", "java21-distroless",

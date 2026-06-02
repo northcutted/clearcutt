@@ -57,7 +57,14 @@ func NewVerifyCmd() *cobra.Command {
   image            gate a specific catalog image against policy contract gates
   catalog          check the generated catalog publishes complete, consistent trust data
   release-evidence verify a published image ref's Sigstore signature + SLSA provenance`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVerify(args[0])
+		},
 	}
+	// Preserve the original `verify <image-id>` automation path while keeping
+	// `verify image <image-id>` as the documented command.
+	addVerifyImageFlags(cmd, true)
 	cmd.AddCommand(newVerifyImageCmd())
 	cmd.AddCommand(NewVerifyCatalogCmd())
 	cmd.AddCommand(NewVerifyReleaseEvidenceCmd())
@@ -76,6 +83,12 @@ func newVerifyImageCmd() *cobra.Command {
 		},
 	}
 
+	addVerifyImageFlags(cmd, false)
+
+	return cmd
+}
+
+func addVerifyImageFlags(cmd *cobra.Command, hidden bool) {
 	cmd.Flags().StringVar(&verifyOpts.tag, "tag", "", "Enforce policies against a specific versioned tag (defaults to latest)")
 	cmd.Flags().BoolVar(&verifyOpts.requireProduction, "require-production", false, "Require that the image is approved for production deployment")
 	cmd.Flags().BoolVar(&verifyOpts.allowPreview, "allow-preview", false, "Allow images currently marked in the 'preview' lifecycle status")
@@ -91,7 +104,27 @@ func newVerifyImageCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&verifyOpts.allowExceptions, "allow-exceptions", false, "Deprecated/no-op: exceptions are honoured automatically whenever --exceptions is provided")
 	cmd.Flags().BoolVar(&verifyOpts.failOnExpiredExceptions, "fail-on-expired-exceptions", true, "Fail verification if any matched exception is expired")
 
-	return cmd
+	if !hidden {
+		return
+	}
+	for _, name := range []string{
+		"tag",
+		"require-production",
+		"allow-preview",
+		"allow-deprecated",
+		"require-signature",
+		"require-sbom",
+		"require-provenance",
+		"require-tests",
+		"require-vuln-scan",
+		"max-critical",
+		"max-high",
+		"exceptions",
+		"allow-exceptions",
+		"fail-on-expired-exceptions",
+	} {
+		_ = cmd.Flags().MarkHidden(name)
+	}
 }
 
 func runVerify(imageID string) error {

@@ -95,7 +95,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
             Enforces software supply chain compliance checks. Gates on signatures, SBOMs, SLSA level requirements, smoke test status, active support lifecycles, and maximum vulnerability counts.
           </p>
-          <CopyBlock language="shell" code={`# Enforce full gate limits locally\nclearcutt verify java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --exceptions exceptions.yaml`} />
+          <CopyBlock language="shell" code={`# Enforce full gate limits locally\nclearcutt verify image java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --exceptions exceptions.yaml`} />
         </div>
 
         <!-- certify -->
