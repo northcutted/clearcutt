@@ -142,6 +142,19 @@ jobs:
       - name: Go Build
         run: make cli-build
 
+      - name: Dev Command Integration Smoke
+        run: |
+          dev_json="$(./clearcutt --catalog site/src/data/catalog dev java21-distroless --devcontainer --print)"
+          printf '%s\n' "$dev_json" | jq -e '
+            .name == "ClearCutt java21-dev" and
+            .workspaceFolder == "/app" and
+            .remoteUser == "10001" and
+            .containerEnv.CLEARCUTT_IMAGE_ID == "java21-dev" and
+            .containerEnv.CLEARCUTT_IMAGE_TAG != "" and
+            (.image | test("^ghcr\\.io/.+/clearcutt-java21:v[0-9][^:]*-dev@sha256:[0-9a-f]{64}$"))
+          ' >/dev/null
+          echo "Dev command integration smoke PASSED!"
+
       - name: Go Test
         working-directory: cli
         run: go test -v ./...

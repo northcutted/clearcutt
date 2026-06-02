@@ -48,6 +48,7 @@ and manage hardened multi-architecture enterprise base images.`,
 		&cobra.Group{ID: "verify", Title: "Verify It:"},
 		&cobra.Group{ID: "certify", Title: "Certify New Images:"},
 		&cobra.Group{ID: "apps", Title: "Manage Applications:"},
+		&cobra.Group{ID: "develop", Title: "Develop Locally:"},
 		&cobra.Group{ID: "browse", Title: "Browse The Catalog:"},
 	)
 
@@ -75,6 +76,8 @@ and manage hardened multi-architecture enterprise base images.`,
 	add("apps", NewAppCmd())
 	add("apps", NewMirrorCmd())
 	add("apps", NewPolicyCmd())
+	// Develop locally
+	add("develop", NewDevCmd())
 	// Browse the catalog
 	add("browse", NewListCmd())
 	add("browse", NewInspectCmd())

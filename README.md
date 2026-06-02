@@ -179,7 +179,23 @@ Runs local assertions against OCI base images or active containers completely of
 ./clearcutt conformance run --image java25-distroless
 ```
 
-#### 6. `overlay generate` (Nix Overlay Scaffolder)
+#### 6. `dev` (Pinned Local Development Environments)
+Launch the dev-tier sibling for any ClearCutt runtime line. The command pins the release tag, writes VS Code/Codespaces devcontainer definitions, or opens the same environment through a local container engine or Nix:
+```bash
+# Commit a release-tag-pinned devcontainer definition
+./clearcutt dev java21-distroless --devcontainer
+
+# Run the dev image locally with a writable bind mount
+./clearcutt dev java21-distroless --container --engine docker
+
+# Run a non-interactive CI smoke inside the dev image
+./clearcutt dev java21-distroless --container --command 'java -version'
+
+# Prefer the current Nix native runtime closure
+./clearcutt dev java21-distroless --nix
+```
+
+#### 7. `overlay generate` (Nix Overlay Scaffolder)
 Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCutt secure runtimes directly on top of corporate base OS layers (e.g., Red Hat UBI, Ubuntu Pro, Amazon Linux). Includes Makefile, smoke tests, Containerfile, and GHA workflows:
 ```bash
 # Scaffold workspace to graft Java 25 JRE onto RHEL UBI9
@@ -190,14 +206,14 @@ Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCu
   --output my-java25-overlay/
 ```
 
-#### 7. `exceptions validate` (Exceptions Schema Auditor)
+#### 8. `exceptions validate` (Exceptions Schema Auditor)
 Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
 ```bash
 # Audit exceptions configurations for syntax and expiration
 ./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
 ```
 
-#### 8. `mirror` / `mirror verify` (Secure OCI Layer Replication)
+#### 9. `mirror` / `mirror verify` (Secure OCI Layer Replication)
 Generates high-fidelity `skopeo` and `cosign` shell script templates to securely replicate multi-arch base layers into internal registries while preserving Sigstore OIDC signatures, attestations, and OCI referrers. Supports verification of replicated artifacts:
 ```bash
 # Generate replication script
@@ -207,7 +223,7 @@ Generates high-fidelity `skopeo` and `cosign` shell script templates to securely
 ./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
 ```
 
-#### 9. `app build` / `app diff-base` / `app rebase` (Downstream Application Lifecycle)
+#### 10. `app build` / `app diff-base` / `app rebase` (Downstream Application Lifecycle)
 Build and update downstream application images on ClearCutt bases without a Docker daemon. The rebase path swaps only base layers and preserves application layers byte-for-byte; it refuses runtime major/minor changes and requires a verified developer signature before emitting a signed "allowed" rebase attestation.
 
 For language-specific examples across Core/static, Java, Node.js, Python, Go,
