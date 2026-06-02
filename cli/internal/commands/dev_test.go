@@ -16,11 +16,10 @@ const devTestDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const devTestRef = "ghcr.io/acme/clearcutt/clearcutt-java21:v1.2.3-dev@" + devTestDigest
 
 func TestDevcontainerWritesResolvedDevSiblingConfig(t *testing.T) {
-	catalogDir := writeDevCommandCatalog(t, true, true)
 	outputPath := filepath.Join(t.TempDir(), "devcontainer.json")
 
 	stdout, err := runCLI(t,
-		"--catalog", catalogDir,
+		"--catalog", devFixtureCatalog(),
 		"dev", "java21-distroless",
 		"--devcontainer",
 		"--output", outputPath,
@@ -62,6 +61,10 @@ func TestDevcontainerWritesResolvedDevSiblingConfig(t *testing.T) {
 	if got := cfg.ContainerEnv["CLEARCUTT_IMAGE_TAG"]; got != "v1.2.3" {
 		t.Fatalf("CLEARCUTT_IMAGE_TAG = %q", got)
 	}
+}
+
+func devFixtureCatalog() string {
+	return filepath.Join("..", "testdata", "dev-catalog")
 }
 
 func TestDevcontainerPrintUsesCataloglessPinnedFallback(t *testing.T) {

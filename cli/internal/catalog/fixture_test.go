@@ -69,6 +69,28 @@ func TestCatalogLoadAndValidation(t *testing.T) {
 	}
 }
 
+func TestDevCatalogFixtureLoadAndValidation(t *testing.T) {
+	catalogPath := filepath.Join("..", "testdata", "dev-catalog")
+
+	idx, err := catalog.LoadCatalogIndex(catalogPath)
+	if err != nil {
+		t.Fatalf("Failed to load dev catalog index: %v", err)
+	}
+	if err := catalog.ValidateCatalogIndex(idx); err != nil {
+		t.Fatalf("Dev catalog index validation failed: %v", err)
+	}
+
+	for _, imageID := range []string{"java21-distroless", "java21-dev"} {
+		rec, err := catalog.LoadImageRecord(catalogPath, imageID)
+		if err != nil {
+			t.Fatalf("Failed to load dev catalog image %s: %v", imageID, err)
+		}
+		if err := catalog.ValidateImageRecord(rec); err != nil {
+			t.Fatalf("Dev catalog image %s validation failed: %v", imageID, err)
+		}
+	}
+}
+
 func TestListFiltersAndJSON(t *testing.T) {
 	catalogPath := filepath.Join("..", "testdata", "catalog")
 

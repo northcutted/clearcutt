@@ -209,8 +209,17 @@ esac
 # ----------------------------------------------------
 # 4.5. Verify Local Dev Environment Resolution
 # ----------------------------------------------------
-log_info "Executing clearcutt dev integration smoke for ${BASE_ID_V2}..."
-DEV_JSON=$($CLI_BIN --catalog "site/src/data/catalog" dev "$BASE_ID_V2" --devcontainer --print)
+log_info "Executing clearcutt dev fixture-catalog smoke..."
+DEV_FIXTURE_JSON=$($CLI_BIN --catalog "cli/internal/testdata/dev-catalog" dev "java21-distroless" --devcontainer --print)
+DEV_FIXTURE_REF=$(echo "$DEV_FIXTURE_JSON" | jq -r '.image')
+if [ "$DEV_FIXTURE_REF" != "ghcr.io/acme/clearcutt/clearcutt-java21:v1.2.3-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]; then
+  log_error "Dev command fixture catalog ref mismatch: ${DEV_FIXTURE_REF}"
+  exit 1
+fi
+log_success "Dev command resolved committed fixture catalog: ${DEV_FIXTURE_REF}"
+
+log_info "Executing clearcutt dev catalogless smoke for ${BASE_ID_V2}..."
+DEV_JSON=$($CLI_BIN --catalog ".missing-clearcutt-catalog-for-dev-smoke" dev "$BASE_ID_V2" --tag "v1.0.0" --devcontainer --print)
 DEV_IMAGE_ID=$(echo "$DEV_JSON" | jq -r '.containerEnv.CLEARCUTT_IMAGE_ID')
 DEV_IMAGE_REF=$(echo "$DEV_JSON" | jq -r '.image')
 DEV_IMAGE_TAG=$(echo "$DEV_JSON" | jq -r '.containerEnv.CLEARCUTT_IMAGE_TAG')
@@ -225,10 +234,6 @@ fi
 if [[ "$DEV_IMAGE_REF" != *":${DEV_IMAGE_TAG}-dev"* ]]; then
   log_error "Dev command did not emit a release-tag-pinned dev image ref: ${DEV_IMAGE_REF}"
   exit 1
-fi
-
-if [[ "$DEV_IMAGE_REF" != *"@sha256:"* ]]; then
-  log_warn "Dev command emitted a tag-pinned ref without digest; catalog release has no manifest digest: ${DEV_IMAGE_REF}"
 fi
 
 if [ "$DEV_WORKDIR" != "/app" ]; then

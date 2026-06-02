@@ -1,0 +1,51 @@
+{
+  "id": "java21-distroless",
+  "language": {
+    "id": "java",
+    "displayName": "Java",
+    "version": "21"
+  },
+  "tier": {
+    "id": "distroless",
+    "name": "Distroless",
+    "blurb": "Hardened runtime tier."
+  },
+  "registry": "ghcr.io/acme/clearcutt",
+  "imageName": "clearcutt-java21",
+  "fullName": "ghcr.io/acme/clearcutt/clearcutt-java21",
+  "lifecycle": {
+    "status": "active",
+    "support": "lts",
+    "productionAllowed": true
+  },
+  "runtimeContract": {
+    "user": "10001",
+    "workingDir": "/app",
+    "shellPresent": false,
+    "packageManagerPresent": false,
+    "productionTier": true
+  },
+  "releases": [
+    {
+      "tag": "v1.2.3",
+      "publishedAt": "2026-06-01T00:00:00Z",
+      "isLatest": true,
+      "manifestDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "architectures": [],
+      "attestations": [],
+      "assetUrls": {},
+      "lifecycle": {
+        "status": "active",
+        "support": "lts",
+        "productionAllowed": true
+      },
+      "runtimeContract": {
+        "user": "10001",
+        "workingDir": "/app",
+        "shellPresent": false,
+        "packageManagerPresent": false,
+        "productionTier": true
+      }
+    }
+  ]
+}

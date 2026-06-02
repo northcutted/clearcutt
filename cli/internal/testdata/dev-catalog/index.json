@@ -1,0 +1,92 @@
+{
+  "generatedAt": "2026-06-01T00:00:00Z",
+  "owner": "acme",
+  "repo": "clearcutt",
+  "repoUrl": "https://github.com/acme/clearcutt",
+  "registryBase": "ghcr.io/acme/clearcutt",
+  "latestTag": "v1.2.3",
+  "releases": [
+    {
+      "tag": "v1.2.3",
+      "publishedAt": "2026-06-01T00:00:00Z",
+      "isLatest": true
+    }
+  ],
+  "languages": [
+    {
+      "id": "java",
+      "displayName": "Java",
+      "version": "21"
+    }
+  ],
+  "tiers": [
+    {
+      "id": "dev",
+      "name": "Dev",
+      "blurb": "Builder tier with shells and toolchains."
+    },
+    {
+      "id": "distroless",
+      "name": "Distroless",
+      "blurb": "Hardened runtime tier."
+    }
+  ],
+  "images": [
+    {
+      "id": "java21-distroless",
+      "language": "java",
+      "languageDisplay": "Java",
+      "languageVersion": "21",
+      "tier": "distroless",
+      "latestTag": "v1.2.3",
+      "latestManifestDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "latestPackageCount": 1,
+      "architectures": [
+        "amd64"
+      ],
+      "signed": false,
+      "provenance": false,
+      "passed": true,
+      "lifecycle": {
+        "status": "active",
+        "support": "lts",
+        "productionAllowed": true
+      },
+      "runtimeContract": {
+        "user": "10001",
+        "workingDir": "/app",
+        "shellPresent": false,
+        "packageManagerPresent": false,
+        "productionTier": true
+      }
+    },
+    {
+      "id": "java21-dev",
+      "language": "java",
+      "languageDisplay": "Java",
+      "languageVersion": "21",
+      "tier": "dev",
+      "latestTag": "v1.2.3",
+      "latestManifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "latestPackageCount": 1,
+      "architectures": [
+        "amd64"
+      ],
+      "signed": false,
+      "provenance": false,
+      "passed": true,
+      "lifecycle": {
+        "status": "active",
+        "support": "lts",
+        "productionAllowed": false
+      },
+      "runtimeContract": {
+        "user": "10001",
+        "workingDir": "/app",
+        "shellPresent": true,
+        "packageManagerPresent": true,
+        "productionTier": false
+      }
+    }
+  ]
+}
