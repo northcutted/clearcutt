@@ -102,13 +102,28 @@
           ) (pkgs.lib.filter (x: x != "core") languages)
         );
 
+        # Per-target hardened dev shells mirror each dev image's runtime closure,
+        # so `nix develop .#java21-dev` drops you into the same toolchain the
+        # java21:dev image ships. Built natively per host (incl. Darwin) for the
+        # local inner loop — this is what `clearcutt dev --nix` resolves to.
+        devTargetShells = pkgs.lib.listToAttrs (
+          pkgs.lib.concatMap (lang:
+            pkgs.lib.map (ver: {
+              name = "${lang}${ver}-dev";
+              value = nativeHelpers.mkHardenedShell { language = lang; version = ver; };
+            }) (pkgs.lib.attrByPath [ lang ] [] versions)
+          ) languages
+        );
+
       in
       {
         # Expose all generated images and raw packages as outputs
         packages = matrixPackages // rawPackages;
 
-        # Expose default dev shell equipped with the transient enterprise credentials broker
-        devShells.default = hostPkgs.mkShell {
+        # Default dev shell (build/gating tooling) plus per-target dev shells
+        # (devTargetShells) for the local inner loop.
+        devShells = {
+          default = hostPkgs.mkShell {
           name = "clearcutt-dev-shell";
 
           # System tools required for local builds, scanning, and inspection
@@ -137,7 +152,8 @@
               source ${./lib/credential-broker.sh}
             fi
           '';
-        };
+          };
+        } // devTargetShells;
       }
     ) // {
       # Raw overlays for downstream consumers

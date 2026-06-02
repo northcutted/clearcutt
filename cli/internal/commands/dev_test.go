@@ -241,10 +241,8 @@ func TestDevNixExecutesPinnedNativeAttr(t *testing.T) {
 		"--extra-experimental-features",
 		"nix-command flakes",
 		"--accept-flake-config",
-		"shell",
-		"github:acme/clearcutt/v1.2.3#java21-native",
-		"--command",
-		"/bin/testshell",
+		"develop",
+		"github:acme/clearcutt/v1.2.3#java21-dev",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("nix args mismatch\ngot:  %#v\nwant: %#v", got, want)
@@ -292,10 +290,10 @@ func TestDevNixCommandExecutesThroughShell(t *testing.T) {
 		"--extra-experimental-features",
 		"nix-command flakes",
 		"--accept-flake-config",
-		"shell",
-		"github:acme/clearcutt/v1.2.3#java21-native",
+		"develop",
+		"github:acme/clearcutt/v1.2.3#java21-dev",
 		"--command",
-		"/bin/testshell",
+		"bash",
 		"-lc",
 		"java -version",
 	}

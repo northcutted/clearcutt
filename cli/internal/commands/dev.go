@@ -128,16 +128,13 @@ func resolveDevMode(target devTarget) (string, error) {
 		return "container", nil
 	}
 	if devOpts.useNix {
-		if target.NativeAttr == "" {
-			return "", fmt.Errorf("no Nix native package is currently exposed for %s; use --container or --devcontainer", target.ImageID)
-		}
 		return "nix", nil
 	}
 
-	if target.NativeAttr != "" {
-		if _, err := exec.LookPath("nix"); err == nil {
-			return "nix", nil
-		}
+	// Auto-detect: prefer the Nix dev shell when nix is available (every dev
+	// target exposes one, including core); otherwise fall back to a container.
+	if _, err := exec.LookPath("nix"); err == nil {
+		return "nix", nil
 	}
 	return "container", nil
 }
@@ -462,28 +459,23 @@ func hostUserMapping() string {
 }
 
 func runDevNix(target devTarget) error {
-	if target.NativeAttr == "" {
-		return fmt.Errorf("no Nix native package is currently exposed for %s; use --container or --devcontainer", target.ImageID)
-	}
 	if _, err := exec.LookPath("nix"); err != nil {
 		return fmt.Errorf("nix was not found on PATH")
 	}
-	flakeRef := fmt.Sprintf("github:%s/%s/%s#%s", target.Owner, target.Repo, target.Tag, target.NativeAttr)
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	// Every dev target exposes a per-target hardened dev shell in the flake
+	// (devShells.<system>.<lang><ver>-dev), so `develop` into it — pinned to the
+	// release tag for a reproducible toolchain that mirrors the dev image.
+	flakeRef := fmt.Sprintf("github:%s/%s/%s#%s", target.Owner, target.Repo, target.Tag, target.ImageID)
 	args := []string{
 		"--extra-experimental-features", "nix-command flakes",
 		"--accept-flake-config",
-		"shell", flakeRef,
-		"--command", shell,
+		"develop", flakeRef,
 	}
 	if devOpts.command != "" {
-		args = append(args, "-lc", devOpts.command)
+		args = append(args, "--command", "bash", "-lc", devOpts.command)
 	}
 	if !GlobalOpts.Quiet {
-		fmt.Fprintf(out, "Launching Nix shell %s\n", flakeRef)
+		fmt.Fprintf(out, "Launching Nix dev shell %s\n", flakeRef)
 	}
 	return runExternal("nix", args...)
 }
