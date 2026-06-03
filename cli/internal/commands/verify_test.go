@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/catalog"
 )
 
 func decodeVerify(t *testing.T, stdout string) VerifyResponse {
@@ -165,5 +167,77 @@ func TestVerify_HumanOutputAndMissingImage(t *testing.T) {
 	// A missing image is a real error (not a gate failure) and must not be ErrCheckFailed.
 	if _, err := runCLI(t, "verify", "image", "does-not-exist", "--catalog", fixtureCatalog()); err == nil || errors.Is(err, ErrCheckFailed) {
 		t.Errorf("expected a load error for missing image, got %v", err)
+	}
+}
+
+func TestVerifyYAMLAndLifecycleBranches(t *testing.T) {
+	dir := writeCommandSmokeCatalog(t)
+	stdout, err := runCLI(t,
+		"--catalog", dir,
+		"--format", "yaml",
+		"verify", "image", "java21-distroless",
+		"--tag", "v1.0.0",
+		"--require-signature",
+		"--require-tests",
+		"--require-production",
+	)
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("expected preview/missing evidence to fail, got %v\n%s", err, stdout)
+	}
+	for _, want := range []string{"status: fail", "signature.present", "tests.passed", "lifecycle.productionAllowed", "lifecycle.status"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in YAML verification report:\n%s", want, stdout)
+		}
+	}
+
+	stdout, err = runCLI(t,
+		"--catalog", dir,
+		"--format", "json",
+		"verify", "image", "java21-distroless",
+		"--tag", "v1.0.0",
+		"--allow-preview",
+		"--max-critical", "0",
+	)
+	if err != nil {
+		t.Fatalf("allow-preview verification should pass without production/test requirements: %v\n%s", err, stdout)
+	}
+	resp := decodeVerify(t, stdout)
+	if st, _ := checkStatus(resp.Checks, "vulnerabilities.threshold.critical"); st != "pass" {
+		t.Fatalf("expected critical threshold pass, got %+v", resp.Checks)
+	}
+}
+
+func TestVerifyLifecycleStatusFailures(t *testing.T) {
+	dir := writeCommandSmokeCatalog(t)
+	rec, err := catalog.LoadImageRecord(dir, "java21-distroless")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := rec.Releases[0]
+	base.Evidence = &catalog.EvidenceSummary{Signature: true, Provenance: true, SBOM: true, Tests: true, Vulnerabilities: true, ArchCount: 1, SBOMArchCount: 1, TestArchCount: 1, PassedTestArchCount: 1, VulnerabilityArchCount: 1}
+	base.Lifecycle.ProductionAllowed = true
+	rec.Releases = nil
+	for _, status := range []string{"deprecated", "eol", "blocked"} {
+		rel := base
+		rel.Tag = "v-" + status
+		rel.Lifecycle.Status = status
+		rec.Releases = append(rec.Releases, rel)
+	}
+	writeCatalogJSON(t, filepath.Join(dir, "images", "java21-distroless.json"), rec)
+
+	for _, tag := range []string{"v-deprecated", "v-eol", "v-blocked"} {
+		stdout, err := runCLI(t, "--catalog", dir, "--format", "json", "verify", "image", "java21-distroless", "--tag", tag)
+		if !errors.Is(err, ErrCheckFailed) {
+			t.Fatalf("%s should fail lifecycle verification, got %v\n%s", tag, err, stdout)
+		}
+		resp := decodeVerify(t, stdout)
+		if st, _ := checkStatus(resp.Checks, "lifecycle.status"); st != "fail" {
+			t.Fatalf("%s expected lifecycle.status fail, got %+v", tag, resp.Checks)
+		}
+	}
+
+	stdout, err := runCLI(t, "--catalog", dir, "--format", "json", "verify", "image", "java21-distroless", "--tag", "v-deprecated", "--allow-deprecated")
+	if err != nil {
+		t.Fatalf("allow-deprecated should pass deprecated lifecycle: %v\n%s", err, stdout)
 	}
 }

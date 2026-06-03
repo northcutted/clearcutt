@@ -435,6 +435,84 @@ func TestDevModeRejectsMultipleModes(t *testing.T) {
 	}
 }
 
+func TestDevHelperBranches(t *testing.T) {
+	rec := &catalog.ImageRecord{Registry: "ghcr.io/acme/platform/", ImageName: "clearcutt-java21"}
+	if got := imageFullName(rec); got != "ghcr.io/acme/platform/clearcutt-java21" {
+		t.Fatalf("imageFullName registry branch = %q", got)
+	}
+	rec.FullName = "ghcr.io/acme/full"
+	if got := imageFullName(rec); got != "ghcr.io/acme/full" {
+		t.Fatalf("imageFullName fullName branch = %q", got)
+	}
+	if lang, version, ok := catalogRuntimeLine("coreLTS-distroless"); !ok || lang != "core" || version != "LTS" {
+		t.Fatalf("core runtime line = %q %q %v", lang, version, ok)
+	}
+	if lang, version, ok := catalogRuntimeLine("python3.14-slim"); !ok || lang != "python" || version != "3.14" {
+		t.Fatalf("python runtime line = %q %q %v", lang, version, ok)
+	}
+	if _, _, ok := catalogRuntimeLine("not-a-runtime"); ok {
+		t.Fatal("invalid runtime line should not parse")
+	}
+	if got := nativeAttrFromRuntime("core", "LTS"); got != "" {
+		t.Fatalf("core native attr should be empty, got %q", got)
+	}
+	if got := stringOrDefault(stringPtr(""), "fallback"); got != "fallback" {
+		t.Fatalf("empty string pointer should fall back, got %q", got)
+	}
+}
+
+func TestResolveContainerEngineValidationBranches(t *testing.T) {
+	old := devOpts
+	t.Cleanup(func() { devOpts = old })
+
+	devOpts.engine = "notreal"
+	if _, err := resolveContainerEngine(); err == nil || !strings.Contains(err.Error(), "--engine must be docker") {
+		t.Fatalf("expected invalid engine error, got %v", err)
+	}
+
+	devOpts.engine = "docker"
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	if err := os.Setenv("PATH", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveContainerEngine(); err == nil || !strings.Contains(err.Error(), "was not found on PATH") {
+		t.Fatalf("expected missing configured engine error, got %v", err)
+	}
+}
+
+func TestDevFallbackAndMountBranches(t *testing.T) {
+	oldDev := devOpts
+	oldCatalog := GlobalOpts.CatalogPath
+	devOpts = devFlags{}
+	GlobalOpts.CatalogPath = filepath.Join(t.TempDir(), "missing")
+	t.Cleanup(func() {
+		devOpts = oldDev
+		GlobalOpts.CatalogPath = oldCatalog
+	})
+
+	if _, err := fallbackDevTarget("java21-distroless", os.ErrNotExist); err == nil || !strings.Contains(err.Error(), "Use --tag") {
+		t.Fatalf("expected fallback without tag error, got %v", err)
+	}
+	devOpts.tag = "v9.9.9"
+	target, err := fallbackDevTarget("coreLTS-distroless", os.ErrNotExist)
+	if err != nil {
+		t.Fatalf("core fallback target failed: %v", err)
+	}
+	if target.NativeAttr != "" || target.ImageID != "coreLTS-dev" || !strings.Contains(target.ImageRef, "corelts") {
+		t.Fatalf("unexpected core fallback target: %+v", target)
+	}
+	devOpts.mount = ""
+	mount, err := resolveDevMount()
+	if err != nil || mount == "" {
+		t.Fatalf("default mount failed: mount=%q err=%v", mount, err)
+	}
+	devOpts.mount = t.TempDir()
+	if mount, err = resolveDevMount(); err != nil || !filepath.IsAbs(mount) {
+		t.Fatalf("explicit mount failed: mount=%q err=%v", mount, err)
+	}
+}
+
 func TestDevCommandFlagRejectsDevcontainerMode(t *testing.T) {
 	catalogDir := writeDevCommandCatalog(t, true, true)
 	stdout, err := runCLI(t,

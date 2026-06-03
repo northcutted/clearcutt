@@ -162,9 +162,24 @@ jobs:
           ' >/dev/null
           echo "Dev command integration smoke PASSED!"
 
-      - name: Go Test
+      - name: Go Test with Coverage
         working-directory: cli
-        run: go test -v ./...
+        env:
+          COVERAGE_MIN: "85.0"
+        run: ./scripts/go-coverage.sh
+
+      - name: Upload Go Coverage Report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-coverage
+          path: |
+            cli/coverage.out
+            cli/coverage.txt
+            cli/coverage-packages.txt
+            cli/coverage-low-functions.txt
+            cli/coverage.html
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Run Schema Drift Guard
         run: |

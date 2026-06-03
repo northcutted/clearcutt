@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,28 @@ func TestMatrixExportFromFleetEmitsGitHubImageMatrix(t *testing.T) {
 	}
 }
 
+func TestMatrixExportFleetTableYAMLAndValidation(t *testing.T) {
+	path := writeFleetConfig(t, t.TempDir())
+	stdout, err := runCLI(t, "matrix", "export", "--source", "fleet", "--fleet-config", path)
+	if err != nil {
+		t.Fatalf("fleet table matrix failed: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "fleet") || !strings.Contains(stdout, "ghcr.io/acme") {
+		t.Fatalf("unexpected fleet table output:\n%s", stdout)
+	}
+	stdout, err = runCLI(t, "--format", "yaml", "matrix", "export", "--source", "fleet", "--fleet-config", path)
+	if err != nil {
+		t.Fatalf("fleet yaml matrix failed: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "registryBase: ghcr.io/acme/platform") {
+		t.Fatalf("unexpected fleet YAML output:\n%s", stdout)
+	}
+	stdout, err = runCLI(t, "matrix", "export", "--source", "fleet", "--fleet-config", path, "--github-actions", "--matrix", "wrong")
+	if err == nil || !strings.Contains(err.Error(), "--matrix must be release or image") {
+		t.Fatalf("expected invalid matrix kind error, got %v\n%s", err, stdout)
+	}
+}
+
 func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFleetConfig(t, dir)
@@ -74,6 +97,39 @@ func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 		if !strings.Contains(release, needle) {
 			t.Fatalf("generated release workflow missing %q:\n%s", needle, release)
 		}
+	}
+}
+
+func TestPlatformInitWritesStarterKitAndHonorsForce(t *testing.T) {
+	root := t.TempDir()
+	stdout, err := runCLI(t, "platform", "init", "--output", root, "--owner", "acme", "--repo", "platform")
+	if err != nil {
+		t.Fatalf("platform init failed: %v\n%s", err, stdout)
+	}
+	for _, rel := range []string{
+		"clearcutt.fleet.yaml",
+		"docs/platform-kit.md",
+		"examples/clearcutt-template-java/Dockerfile",
+		"examples/clearcutt-template-node/Dockerfile",
+		"examples/clearcutt-template-python/Dockerfile",
+		"examples/clearcutt-template-go/Dockerfile",
+	} {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Fatalf("expected generated %s: %v", rel, err)
+		}
+	}
+	doc, err := os.ReadFile(filepath.Join(root, "docs", "platform-kit.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(doc), "ghcr.io/acme/platform") || !strings.Contains(string(doc), "SLSA Build L3 provenance") {
+		t.Fatalf("platform doc missing product copy:\n%s", doc)
+	}
+	if _, err := runCLI(t, "platform", "init", "--output", root, "--owner", "acme", "--repo", "platform"); err == nil {
+		t.Fatal("expected second init without --force to reject existing files")
+	}
+	if stdout, err := runCLI(t, "platform", "init", "--output", root, "--owner", "acme", "--repo", "platform", "--force"); err != nil {
+		t.Fatalf("platform init --force failed: %v\n%s", err, stdout)
 	}
 }
 
@@ -108,5 +164,16 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 	}
 	if got.Status != "pass" {
 		t.Fatalf("status = %q, checks = %#v", got.Status, got.Checks)
+	}
+}
+
+func TestPlatformStatusFailsMissingRootAndRendersYAML(t *testing.T) {
+	root := t.TempDir()
+	stdout, err := runCLI(t, "--format", "yaml", "platform", "status", "--output", root)
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("expected missing platform root to fail, got %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "status: fail") || !strings.Contains(stdout, "fleet.config") || !strings.Contains(stdout, "release.workflow") {
+		t.Fatalf("expected YAML failure report, got:\n%s", stdout)
 	}
 }

@@ -19,4 +19,9 @@ core/build-outputs/*
 .claude/*
 /clearcutt
 /cli/clearcutt
+cli/coverage.out
+cli/coverage.txt
+cli/coverage.html
+cli/coverage-packages.txt
+cli/coverage-low-functions.txt
 .agent/active_context.md

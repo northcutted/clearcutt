@@ -84,12 +84,7 @@ func runCatalogGather() error {
 		return err
 	}
 
-	source := &githubReleaseSource{
-		owner:  owner,
-		repo:   repo,
-		token:  os.Getenv("GITHUB_TOKEN"),
-		client: http.DefaultClient,
-	}
+	source := newReleaseSource(owner, repo, os.Getenv("GITHUB_TOKEN"))
 	releases, err := source.ListReleases(catalogGatherOpts.limit)
 	if err != nil {
 		return err
@@ -141,6 +136,18 @@ func runCatalogGather() error {
 	}
 	fmt.Fprintf(out, "[gather] wrote index.json with %d images\n", len(index.Images))
 	return nil
+}
+
+// newReleaseSource builds the GitHub release source. It is a package var so
+// tests can inject an offline fake and exercise the full gather-to-index path
+// without touching api.github.com.
+var newReleaseSource = func(owner, repo, token string) ReleaseSource {
+	return &githubReleaseSource{
+		owner:  owner,
+		repo:   repo,
+		token:  token,
+		client: http.DefaultClient,
+	}
 }
 
 type githubReleaseSource struct {

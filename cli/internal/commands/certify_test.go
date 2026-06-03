@@ -10,7 +10,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/catalog"
 )
 
 func createMockLayerTar(t *testing.T, filenames []string) []byte {
@@ -104,6 +107,33 @@ func ociTarball(t *testing.T, config, layer []byte) string {
 		"blobs/sha256/" + cfgDigest:   config,
 		"blobs/sha256/" + layerDigest: layer,
 		"blobs/sha256/" + manDigest:   man,
+	})
+}
+
+func nestedOCITarball(t *testing.T, config, layer []byte) string {
+	t.Helper()
+	cfgDigest := sha256Hex(config)
+	layerDigest := sha256Hex(layer)
+	man, _ := json.Marshal(ociManifest{
+		Config: ociDescriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: "sha256:" + cfgDigest, Size: int64(len(config))},
+		Layers: []ociDescriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: "sha256:" + layerDigest, Size: int64(len(layer))}},
+	})
+	manDigest := sha256Hex(man)
+	nested, _ := json.Marshal(ociIndex{Manifests: []ociDescriptor{{MediaType: "application/vnd.oci.image.manifest.v1+json", Digest: "sha256:" + manDigest, Size: int64(len(man))}}})
+	nestedDigest := sha256Hex(nested)
+	index, _ := json.Marshal(ociIndex{Manifests: []ociDescriptor{{
+		MediaType:   "application/vnd.oci.image.index.v1+json",
+		Digest:      "sha256:" + nestedDigest,
+		Size:        int64(len(nested)),
+		Annotations: map[string]string{"org.opencontainers.image.ref.name": "ghcr.io/acme/app@sha256:" + nestedDigest},
+	}}})
+	return createMockTarball(t, map[string][]byte{
+		"oci-layout":                   []byte(`{"imageLayoutVersion":"1.0.0"}`),
+		"index.json":                   index,
+		"blobs/sha256/" + cfgDigest:    config,
+		"blobs/sha256/" + layerDigest:  layer,
+		"blobs/sha256/" + manDigest:    man,
+		"blobs/sha256/" + nestedDigest: nested,
 	})
 }
 
@@ -241,6 +271,232 @@ spec:
 	}
 	if st, _ := certifyCheck(resp, "policy.base.digestPinned"); st != "pass" {
 		t.Fatalf("digestPinned expected pass, got %q", st)
+	}
+}
+
+func TestCertifyPolicyFailuresAndYAMLReporting(t *testing.T) {
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte(`apiVersion: clearcutt.dev/v1
+kind: CertificationPolicy
+metadata:
+  name: strict-production
+spec:
+  base:
+    allowedImages:
+      - python3.14-slim
+    requireDigestPinned: true
+  supplyChain:
+    requireSignature: true
+    requireProvenance: true
+    requireSbom: true
+    minimumSlsaLevel: 3
+  runtime:
+    requireNonRoot: true
+    forbidShell: true
+    forbidPackageManagers: true
+    forbidDevTier: true
+  vulnerabilities:
+    maxCritical: 0
+    maxHigh: 0
+`), 0o644); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	tarball := dockerTarball(t, mockConfig(t, "10001"), createMockLayerTar(t, []string{"app/main.js"}))
+	stdout, err := runCLI(t,
+		"certify", tarball,
+		"--base", "java21-distroless",
+		"--catalog", fixtureCatalog(),
+		"--policy", policy,
+		"--format", "json",
+	)
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("expected strict policy to fail, got %v\n%s", err, stdout)
+	}
+	var resp CertifyResponse
+	if err := json.Unmarshal([]byte(stdout), &resp); err != nil {
+		t.Fatalf("parse certify output: %v\n%s", err, stdout)
+	}
+	for id, want := range map[string]string{
+		"policy.base.allowed":             "fail",
+		"policy.base.digestPinned":        "fail",
+		"policy.supplychain.slsaLevel":    "skip",
+		"policy.vulnerabilities.critical": "pass",
+		"policy.vulnerabilities.high":     "fail",
+		"evidence.signature.verified":     "skip",
+		"evidence.sbom.present":           "skip",
+		"evidence.provenance.present":     "skip",
+	} {
+		if got, ok := certifyCheck(resp, id); !ok || got != want {
+			t.Fatalf("%s status = %q ok=%v, want %q; response=%+v", id, got, ok, want, resp)
+		}
+	}
+
+	stdout, err = runCLI(t,
+		"certify", tarball,
+		"--base", "java21-distroless",
+		"--catalog", fixtureCatalog(),
+		"--format", "yaml",
+	)
+	if err != nil {
+		t.Fatalf("expected YAML certify pass, got %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "status: pass") || !strings.Contains(stdout, "config.user.nonroot") {
+		t.Fatalf("expected YAML certify report, got:\n%s", stdout)
+	}
+}
+
+func TestCertifyTarballParsingAndLayerErrorBranches(t *testing.T) {
+	tempDir := t.TempDir()
+	if _, err := loadImageTarball(filepath.Join(tempDir, "missing.tar"), tempDir); err == nil || !strings.Contains(err.Error(), "unable to open") {
+		t.Fatalf("expected missing tarball error, got %v", err)
+	}
+
+	badGzip := filepath.Join(tempDir, "bad.tgz")
+	if err := os.WriteFile(badGzip, []byte("not-gzip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadImageTarball(badGzip, tempDir); err == nil || !strings.Contains(err.Error(), "gzip") {
+		t.Fatalf("expected gzip init error, got %v", err)
+	}
+
+	config := mockConfig(t, "10001")
+	layer := createMockLayerTar(t, []string{"app/main.js"})
+	tarball := nestedOCITarball(t, config, layer)
+	img, err := loadImageTarball(tarball, t.TempDir())
+	if err != nil {
+		t.Fatalf("load nested OCI: %v", err)
+	}
+	if img.format != "oci" || len(img.repoTags) != 1 || len(img.configRaw) == 0 || len(img.layerPaths) != 1 {
+		t.Fatalf("unexpected nested OCI resolution: %+v", img)
+	}
+	if blobPath(map[string]string{}, "not-a-digest") != "" || readBlob(map[string]string{}, "sha256:missing") != nil {
+		t.Fatal("blob helpers should ignore malformed or missing digests")
+	}
+
+	badLayerTarball := dockerTarball(t, mockConfig(t, "10001"), []byte("not a tar layer"))
+	resp, err := runCertifyJSON(t, badLayerTarball)
+	if err != nil {
+		t.Fatalf("unreadable layer audit should skip, not fail: %v", err)
+	}
+	if st, _ := certifyCheck(resp, "contract.shell.absence"); st != "skip" {
+		t.Fatalf("expected shell audit skip for unreadable layer, got %q", st)
+	}
+}
+
+func TestCertifyRejectsInvalidPolicyDocuments(t *testing.T) {
+	tarball := dockerTarball(t, mockConfig(t, "10001"), createMockLayerTar(t, []string{"app/main.js"}))
+	policy := filepath.Join(t.TempDir(), "policy.yaml")
+	if err := os.WriteFile(policy, []byte(`apiVersion: wrong/v1
+kind: CertificationPolicy
+metadata:
+  name: invalid
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := runCLI(t, "certify", tarball, "--policy", policy)
+	if err == nil || !strings.Contains(err.Error(), "invalid certification policy apiVersion") {
+		t.Fatalf("expected invalid policy apiVersion error, got %v\n%s", err, stdout)
+	}
+	if err := os.WriteFile(policy, []byte(`apiVersion: clearcutt.dev/v1
+kind: WrongKind
+metadata:
+  name: invalid
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err = runCLI(t, "certify", tarball, "--policy", policy)
+	if err == nil || !strings.Contains(err.Error(), "invalid certification policy kind") {
+		t.Fatalf("expected invalid policy kind error, got %v\n%s", err, stdout)
+	}
+}
+
+func TestCertifyVulnGateCatalogCountsAndExceptions(t *testing.T) {
+	oldCatalog := GlobalOpts.CatalogPath
+	GlobalOpts.CatalogPath = writeCommandSmokeCatalog(t)
+	t.Cleanup(func() { GlobalOpts.CatalogPath = oldCatalog })
+
+	policy := &CertificationPolicyDoc{}
+	policy.Spec.Vulnerabilities.MaxCritical = 0
+	policy.Spec.Vulnerabilities.MaxHigh = 0
+
+	statuses := map[string]string{}
+	certifyVulnGate(policy, "java21-distroless", func(id, status, message string) {
+		statuses[id] = status
+	})
+	if statuses["policy.vulnerabilities.critical"] != "fail" || statuses["policy.vulnerabilities.high"] != "pass" {
+		t.Fatalf("unexpected smoke catalog vuln statuses: %#v", statuses)
+	}
+
+	exceptionsFile := filepath.Join(t.TempDir(), "exceptions.yaml")
+	if err := os.WriteFile(exceptionsFile, []byte(`apiVersion: clearcutt.dev/v1
+kind: VulnerabilityExceptions
+metadata:
+  name: test-exceptions
+spec:
+  exceptions:
+    - id: CVE-NEW
+      package: zlib
+      image: java21-distroless
+      release: v2.0.0
+      status: accepted_risk
+      reason: temporary_business_exception
+      owner: security
+      createdAt: 2026-01-01
+      expiresAt: 2999-01-01
+      references:
+        - https://example.invalid/risk
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy.Spec.Vulnerabilities.AllowExceptions = true
+	policy.Spec.Vulnerabilities.ExceptionFile = exceptionsFile
+	statuses = map[string]string{}
+	certifyVulnGate(policy, "java21-distroless", func(id, status, message string) {
+		statuses[id] = status
+	})
+	if statuses["policy.vulnerabilities.critical"] != "pass" {
+		t.Fatalf("active exception should suppress critical finding, got %#v", statuses)
+	}
+
+	countDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(countDir, "images"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	GlobalOpts.CatalogPath = countDir
+	writeCatalogJSON(t, filepath.Join(countDir, "images", "counts-only.json"), catalog.ImageRecord{
+		ID:       "counts-only",
+		Language: catalog.LanguageInfo{ID: "java", DisplayName: "Java", Version: "21"},
+		Tier:     catalog.TierInfo{ID: "distroless", Name: "Distroless", Blurb: "Minimal runtime"},
+		Releases: []catalog.ReleaseEntry{{
+			Tag:       "v1.0.0",
+			IsLatest:  true,
+			AssetURLs: catalog.AssetURLs{},
+			Architectures: []catalog.ArchPayload{{
+				Arch:   "amd64",
+				OS:     "linux",
+				Layers: []catalog.LayerInfo{},
+				Labels: map[string]string{},
+				SBOM:   catalog.SBOMInfo{Tool: "syft", Packages: []catalog.PackageEntry{}},
+				Vulnerabilities: &catalog.VulnerabilitiesInfo{
+					Scanner: "grype",
+					CountsBySeverity: catalog.SeverityCounts{
+						Critical: 0,
+						High:     2,
+					},
+					Findings: []catalog.FindingInfo{},
+				},
+			}},
+		}},
+	})
+	countPolicy := &CertificationPolicyDoc{}
+	countPolicy.Spec.Vulnerabilities.MaxCritical = 0
+	countPolicy.Spec.Vulnerabilities.MaxHigh = 1
+	statuses = map[string]string{}
+	certifyVulnGate(countPolicy, "counts-only", func(id, status, message string) {
+		statuses[id] = status
+	})
+	if statuses["policy.vulnerabilities.critical"] != "pass" || statuses["policy.vulnerabilities.high"] != "fail" {
+		t.Fatalf("count-only vulnerability gate statuses = %#v", statuses)
 	}
 }
 

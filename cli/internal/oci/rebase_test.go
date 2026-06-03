@@ -276,6 +276,82 @@ func TestRebaseRejectsBoundaryMismatch(t *testing.T) {
 	}
 }
 
+func TestOCIHelperErrorBranches(t *testing.T) {
+	client := NewInsecureClient()
+	if _, err := (&Resolved{}).ManifestDigest(); err == nil || !strings.Contains(err.Error(), "neither image nor index") {
+		t.Fatalf("expected empty resolved digest error, got %v", err)
+	}
+	if _, err := client.parseRef("not a ref"); err == nil {
+		t.Fatal("invalid image reference should fail")
+	}
+
+	amd64 := v1.Platform{OS: "linux", Architecture: "amd64"}
+	img := testBaseImage(t, 601, 1, amd64)
+	if labels, err := imageLabels(img); err != nil || labels["org.opencontainers.image.source"] == "" {
+		t.Fatalf("imageLabels = %v err=%v", labels, err)
+	}
+	if !platformMatches(&v1.Platform{OS: "linux", Architecture: "amd64", Variant: "v8"}, &v1.Platform{OS: "linux", Architecture: "amd64"}) {
+		t.Fatal("platform without requested variant should match")
+	}
+	if platformMatches(nil, &v1.Platform{OS: "linux"}) || platformMatches(&v1.Platform{OS: "windows", Architecture: "amd64"}, &v1.Platform{OS: "linux"}) {
+		t.Fatal("platform mismatch branches returned true")
+	}
+	if got := platformString(&v1.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"}); got != "linux/arm64/v8" {
+		t.Fatalf("platformString variant = %q", got)
+	}
+	if got := platformString(nil); got != "<nil>" {
+		t.Fatalf("platformString nil = %q", got)
+	}
+	idx := testIndex(t, img)
+	if _, err := childImage(idx, &v1.Platform{OS: "linux", Architecture: "s390x"}); err == nil || !strings.Contains(err.Error(), "linux/s390x") {
+		t.Fatalf("expected missing child platform error, got %v", err)
+	}
+
+	if _, err := client.Rebase(RebaseOptions{}); err == nil || !strings.Contains(err.Error(), "requires AppRef") {
+		t.Fatalf("expected missing rebase options error, got %v", err)
+	}
+	if _, err := client.oldBaseForAppImage("app", img, nil); err == nil || !strings.Contains(err.Error(), "not marked rebasable") {
+		t.Fatalf("expected non-rebasable image error, got %v", err)
+	}
+	cfg, err := img.ConfigFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg = cfg.DeepCopy()
+	cfg.Config.Labels[LabelRebasable] = "true"
+	img, err = mutate.ConfigFile(img, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.oldBaseForAppImage("app", img, nil); err == nil || !strings.Contains(err.Error(), "no recorded base boundary") {
+		t.Fatalf("expected missing base boundary error, got %v", err)
+	}
+}
+
+func TestOCIBuildHelperBranches(t *testing.T) {
+	client := NewInsecureClient()
+	if _, err := client.BuildApp(BuildOptions{}); err == nil || !strings.Contains(err.Error(), "requires ArtifactPath") {
+		t.Fatalf("expected missing build options error, got %v", err)
+	}
+	artifact := t.TempDir() + "/app"
+	if err := os.WriteFile(artifact, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.BuildApp(BuildOptions{ArtifactPath: artifact, DestPath: "/app", TargetRef: "example/app:1"}); err == nil || !strings.Contains(err.Error(), "non-empty entrypoint") {
+		t.Fatalf("expected missing entrypoint error, got %v", err)
+	}
+	layer, err := artifactLayer(artifact, "", false, types.DockerLayer)
+	if err == nil || layer != nil {
+		t.Fatalf("expected empty destination error, got layer=%v err=%v", layer, err)
+	}
+	if _, err := artifactLayer(t.TempDir()+"/missing", "/app", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "failed to read artifact") {
+		t.Fatalf("expected missing artifact error, got %v", err)
+	}
+	if mt, err := appLayerMediaType(testBaseImage(t, 602, 1, v1.Platform{OS: "linux", Architecture: "amd64"})); err != nil || mt != types.DockerLayer {
+		t.Fatalf("expected docker layer media type, got %s err=%v", mt, err)
+	}
+}
+
 func testRegistry(t *testing.T) (*Client, string) {
 	t.Helper()
 	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
