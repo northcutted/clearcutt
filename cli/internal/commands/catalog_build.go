@@ -31,7 +31,7 @@ func newCatalogBuildCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&catalogBuildOpts.forceRefreshAll, "force-refresh-all", parseScanBool(os.Getenv("FORCE_REFRESH_ALL")), "Refresh enrichment and SBOMs for every release")
 	cmd.Flags().StringVar(&catalogBuildOpts.scanDepth, "scan-depth", envOr("SCAN_TAG_DEPTH", "4"), "Newest cached tag count to scan")
 	cmd.Flags().BoolVar(&catalogBuildOpts.scanAll, "scan-all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached SBOM tag")
-	cmd.Flags().BoolVar(&catalogBuildOpts.lenientEvidence, "lenient-evidence", false, "Run verify-catalog without requiring signature/provenance/tests")
+	cmd.Flags().BoolVar(&catalogBuildOpts.lenientEvidence, "lenient-evidence", false, "Run verify catalog without requiring signature/provenance/tests")
 	return cmd
 }
 

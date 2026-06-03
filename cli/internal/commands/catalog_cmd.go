@@ -9,11 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +77,7 @@ func runCatalogGather() error {
 	if registryBase == "" {
 		registryBase = "ghcr.io/" + strings.ToLower(owner) + "/" + strings.ToLower(repo)
 	}
-	outDir := firstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
+	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
 	imgDir := filepath.Join(outDir, "images")
 	if err := os.MkdirAll(imgDir, 0o755); err != nil {
 		return err
@@ -94,7 +93,7 @@ func runCatalogGather() error {
 		generatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if len(releases) == 0 {
-		ok, err := rebuildIndexFromExistingImages(owner, repo, registryBase, outDir, catalogGatherOpts.vulnDir, generatedAt)
+		ok, err := catalogbuild.RebuildIndexFromExistingImages(owner, repo, registryBase, outDir, catalogGatherOpts.vulnDir, generatedAt)
 		if err != nil {
 			return err
 		}
@@ -102,15 +101,15 @@ func runCatalogGather() error {
 			fmt.Fprintln(out, "[gather] rebuilt index.json from existing image records")
 			return nil
 		}
-		empty := buildCatalogIndex(owner, repo, registryBase, generatedAt, nil, nil)
+		empty := catalogbuild.BuildIndex(owner, repo, registryBase, generatedAt, nil, nil)
 		return writeJSONFile(filepath.Join(outDir, "index.json"), empty)
 	}
 
-	refreshSet := refreshTagSet(releases, catalogGatherOpts.forceRefreshAll, catalogGatherOpts.forceRefreshTags)
-	targets := gatherTargets(catalogGatherOpts.targets)
-	images := []gatherImageRecord{}
+	refreshSet := catalogbuild.RefreshTagSet(releases, catalogGatherOpts.forceRefreshAll, catalogGatherOpts.forceRefreshTags)
+	targets := catalogbuild.Targets(catalogGatherOpts.targets)
+	images := []catalogbuild.ImageRecord{}
 	for _, target := range targets {
-		rec, err := buildImageRecord(target, releases, refreshSet, gatherBuildOptions{
+		rec, err := catalogbuild.BuildImageRecord(target, releases, refreshSet, catalogbuild.BuildOptions{
 			RegistryBase:  registryBase,
 			SBOMCacheDir:  catalogGatherOpts.sbomCacheDir,
 			EnrichmentDir: catalogGatherOpts.enrichmentDir,
@@ -130,7 +129,7 @@ func runCatalogGather() error {
 		images = append(images, *rec)
 		fmt.Fprintf(out, "[gather] wrote %s (%d releases)\n", target, len(rec.Releases))
 	}
-	index := buildCatalogIndex(owner, repo, registryBase, generatedAt, releases, images)
+	index := catalogbuild.BuildIndex(owner, repo, registryBase, generatedAt, releases, images)
 	if err := writeJSONFile(filepath.Join(outDir, "index.json"), index); err != nil {
 		return err
 	}
@@ -141,7 +140,7 @@ func runCatalogGather() error {
 // newReleaseSource builds the GitHub release source. It is a package var so
 // tests can inject an offline fake and exercise the full gather-to-index path
 // without touching api.github.com.
-var newReleaseSource = func(owner, repo, token string) ReleaseSource {
+var newReleaseSource = func(owner, repo, token string) catalogbuild.ReleaseSource {
 	return &githubReleaseSource{
 		owner:  owner,
 		repo:   repo,
@@ -157,7 +156,7 @@ type githubReleaseSource struct {
 	client *http.Client
 }
 
-func (s *githubReleaseSource) ListReleases(limit int) ([]catalogRelease, error) {
+func (s *githubReleaseSource) ListReleases(limit int) ([]catalogbuild.Release, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -187,24 +186,24 @@ func (s *githubReleaseSource) ListReleases(limit int) ([]catalogRelease, error) 
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
-	releases := []catalogRelease{}
+	releases := []catalogbuild.Release{}
 	for _, rel := range raw {
 		if rel.Draft {
 			continue
 		}
-		assets := make([]catalogAsset, 0, len(rel.Assets))
+		assets := make([]catalogbuild.Asset, 0, len(rel.Assets))
 		for _, asset := range rel.Assets {
-			assets = append(assets, catalogAsset{
+			assets = append(assets, catalogbuild.Asset{
 				Name:   asset.Name,
 				URL:    asset.BrowserDownloadURL,
 				Size:   asset.Size,
 				Digest: asset.Digest,
 			})
 		}
-		releases = append(releases, catalogRelease{
+		releases = append(releases, catalogbuild.Release{
 			Tag:         rel.TagName,
 			Name:        rel.Name,
-			PublishedAt: firstNonEmptyStr(rel.PublishedAt, rel.CreatedAt),
+			PublishedAt: catalogbuild.FirstNonEmptyStr(rel.PublishedAt, rel.CreatedAt),
 			Prerelease:  rel.Prerelease,
 			Assets:      assets,
 		})
@@ -215,7 +214,7 @@ func (s *githubReleaseSource) ListReleases(limit int) ([]catalogRelease, error) 
 	return releases, nil
 }
 
-func (s *githubReleaseSource) DownloadAsset(asset catalogAsset) ([]byte, error) {
+func (s *githubReleaseSource) DownloadAsset(asset catalogbuild.Asset) ([]byte, error) {
 	return s.get(asset.URL, "application/octet-stream")
 }
 
@@ -291,187 +290,6 @@ func parseGitHubRemote(remote string) (string, string) {
 		return parts[0], parts[1]
 	}
 	return "", ""
-}
-
-func gatherTargets(filter string) []string {
-	allowed := map[string]bool{}
-	if filter != "" {
-		for _, target := range strings.Split(filter, ",") {
-			target = strings.TrimSpace(target)
-			if target != "" {
-				allowed[target] = true
-			}
-		}
-	}
-	targets := []string{}
-	for _, langKey := range gatherLanguageOrder {
-		for _, tier := range gatherTierOrder {
-			target := langKey + "-" + tier
-			if len(allowed) == 0 || allowed[target] {
-				targets = append(targets, target)
-			}
-		}
-	}
-	return targets
-}
-
-func buildCatalogIndex(owner, repo, registryBase, generatedAt string, releases []catalogRelease, images []gatherImageRecord) gatherCatalogIndex {
-	var latest *catalogRelease
-	for i := range releases {
-		if !releases[i].Prerelease {
-			latest = &releases[i]
-			break
-		}
-	}
-	if latest == nil && len(releases) > 0 {
-		latest = &releases[0]
-	}
-	releaseSummaries := make([]catalog.ReleaseSummary, 0, len(releases))
-	for i := range releases {
-		releaseSummaries = append(releaseSummaries, catalog.ReleaseSummary{
-			Tag:         releases[i].Tag,
-			PublishedAt: releases[i].PublishedAt,
-			IsLatest:    latest != nil && releases[i].Tag == latest.Tag,
-		})
-	}
-	summaries := make([]gatherCatalogImageSummary, 0, len(images))
-	for _, img := range images {
-		if len(img.Releases) > 0 {
-			summaries = append(summaries, summarizeImageForIndex(img))
-		}
-	}
-	latestTag := ""
-	if latest != nil {
-		latestTag = latest.Tag
-	}
-	return gatherCatalogIndex{
-		GeneratedAt:  generatedAt,
-		Owner:        owner,
-		Repo:         repo,
-		RepoURL:      fmt.Sprintf("https://github.com/%s/%s", owner, repo),
-		RegistryBase: registryBase,
-		LatestTag:    latestTag,
-		Releases:     releaseSummaries,
-		Languages:    gatherLanguageList(),
-		Tiers:        gatherTierList(),
-		Images:       summaries,
-	}
-}
-
-func gatherLanguageList() []gatherLanguageOut {
-	out := []gatherLanguageOut{}
-	seen := map[string]int{}
-	for _, key := range gatherLanguageOrder {
-		lang := gatherLanguages[key]
-		entry := gatherLanguageOut{ID: lang.ID, DisplayName: lang.Display, Version: lang.Version}
-		seenKey := lang.ID + "-" + lang.Version
-		if idx, ok := seen[seenKey]; ok {
-			out[idx] = entry
-			continue
-		}
-		seen[seenKey] = len(out)
-		out = append(out, entry)
-	}
-	return out
-}
-
-func gatherTierList() []gatherTierOut {
-	out := make([]gatherTierOut, 0, len(gatherTierOrder))
-	for _, id := range gatherTierOrder {
-		tier := gatherTiers[id]
-		out = append(out, gatherTierOut{ID: id, Name: tier.Name, Blurb: tier.Blurb})
-	}
-	return out
-}
-
-func rebuildIndexFromExistingImages(owner, repo, registryBase, outDir, vulnDir, generatedAt string) (bool, error) {
-	imgDir := filepath.Join(outDir, "images")
-	entries, err := os.ReadDir(imgDir)
-	if err != nil {
-		return false, nil
-	}
-	files := []string{}
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
-			files = append(files, entry.Name())
-		}
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		return false, nil
-	}
-	images := []gatherImageRecord{}
-	for _, file := range files {
-		imagePath := filepath.Join(imgDir, file)
-		data, err := os.ReadFile(imagePath)
-		if err != nil {
-			return false, err
-		}
-		var img gatherImageRecord
-		if err := json.Unmarshal(data, &img); err != nil {
-			return false, err
-		}
-		for i := range img.Releases {
-			lastRebuiltAt := firstNonEmptyStr(img.Releases[i].LastRebuiltAt, img.Releases[i].PublishedAt)
-			for j := range img.Releases[i].Architectures {
-				arch := &img.Releases[i].Architectures[j]
-				raw, info := loadVulnerabilities(img.Releases[i].Tag, img.ID, arch.Arch, vulnDir)
-				if raw != nil {
-					arch.Vulnerabilities = raw
-					arch.vulnInfo = info
-				} else if arch.Vulnerabilities != nil {
-					var parsed catalog.VulnerabilitiesInfo
-					if err := json.Unmarshal(*arch.Vulnerabilities, &parsed); err == nil {
-						arch.vulnInfo = &parsed
-					}
-				}
-				if arch.vulnInfo != nil && arch.vulnInfo.ScannedAt != "" && arch.vulnInfo.ScannedAt > lastRebuiltAt {
-					lastRebuiltAt = arch.vulnInfo.ScannedAt
-				}
-			}
-			img.Releases[i].LastRebuiltAt = lastRebuiltAt
-			img.Releases[i].Evidence = releaseEvidenceFromGather(&img.Releases[i])
-		}
-		if err := writeJSONFile(imagePath, img); err != nil {
-			return false, err
-		}
-		if len(img.Releases) > 0 {
-			images = append(images, img)
-		}
-	}
-	if len(images) == 0 {
-		return false, nil
-	}
-
-	byTag := map[string]catalogRelease{}
-	for _, img := range images {
-		for _, rel := range img.Releases {
-			if _, ok := byTag[rel.Tag]; !ok {
-				byTag[rel.Tag] = catalogRelease{Tag: rel.Tag, PublishedAt: rel.PublishedAt}
-			}
-		}
-	}
-	releases := make([]catalogRelease, 0, len(byTag))
-	for _, rel := range byTag {
-		releases = append(releases, rel)
-	}
-	sort.Slice(releases, func(i, j int) bool { return releases[i].PublishedAt > releases[j].PublishedAt })
-	latestTag := ""
-	if len(images[0].Releases) > 0 {
-		latestTag = images[0].Releases[0].Tag
-	}
-	for i := range releases {
-		releases[i].Prerelease = releases[i].Tag != latestTag
-	}
-	index := buildCatalogIndex(owner, repo, registryBase, generatedAt, releases, images)
-	index.LatestTag = latestTag
-	for i := range index.Releases {
-		index.Releases[i].IsLatest = index.Releases[i].Tag == latestTag
-	}
-	if err := writeJSONFile(filepath.Join(outDir, "index.json"), index); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func writeJSONFile(path string, value any) error {

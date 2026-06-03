@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// verifyreleaseevidence.go ports core/scripts/verify-release-evidence.mjs into
+// verify_release_evidence.go ports core/scripts/verify-release-evidence.mjs into
 // the CLI. It verifies one published image ref against the registry: resolved
 // digest, Sigstore keyless signature, SBOM + test-results attestations, SLSA
 // provenance, and GitHub-native provenance. Identity is matched EXACTLY

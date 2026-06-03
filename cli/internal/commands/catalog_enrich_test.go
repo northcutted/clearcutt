@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/sign"
 )
@@ -194,7 +195,7 @@ func TestCatalogEnrichmentMergeAndCertificateMetadata(t *testing.T) {
 	workflowURL := "https://github.com/acme/clearcutt/actions/workflows/release.yml"
 	subject := "sha256:abcd"
 	apiURL := "https://api.github.com/users/acme/attestations/sha256:abcd"
-	input := []gatherEnrichmentAttestation{
+	input := []catalogbuild.EnrichmentAttestation{
 		{Kind: "test-results", PredicateType: "https://cosign.sigstore.dev/attestation/v1", SubjectDigest: &subject, Sources: []string{"oci"}},
 		{Kind: "slsa-provenance", PredicateType: "https://slsa.dev/provenance/v1", SubjectDigest: &subject, RunURL: &runURL, TransparencyLogIndex: &logIndex, Sources: []string{"oci"}},
 		{Kind: "slsa-provenance", PredicateType: "https://slsa.dev/provenance/v1", SubjectDigest: &subject, WorkflowURL: &workflowURL, GithubAPIURL: &apiURL, RunURL: &runURL, TransparencyLogIndex: &logIndex, Sources: []string{"github"}},
@@ -203,7 +204,7 @@ func TestCatalogEnrichmentMergeAndCertificateMetadata(t *testing.T) {
 	if len(merged) != 2 {
 		t.Fatalf("expected duplicate SLSA attestations to merge, got %#v", merged)
 	}
-	if merged[0].Kind != "slsa-provenance" || !stringSliceContains(merged[0].Sources, "oci") || !stringSliceContains(merged[0].Sources, "github") {
+	if merged[0].Kind != "slsa-provenance" || !catalogbuild.StringSliceContains(merged[0].Sources, "oci") || !catalogbuild.StringSliceContains(merged[0].Sources, "github") {
 		t.Fatalf("unexpected merged order/sources: %#v", merged)
 	}
 	if merged[0].GithubAPIURL == nil || merged[0].WorkflowURL == nil {
@@ -357,8 +358,8 @@ func TestRegistryCatalogEnricherPullsRegistryEvidenceAndMergesAttestations(t *te
 		t.Fatalf("expected merged SLSA and test attestations, got %#v", enrichment.Attestations)
 	}
 	if enrichment.Attestations[0].Kind != "slsa-provenance" ||
-		!stringSliceContains(enrichment.Attestations[0].Sources, "oci") ||
-		!stringSliceContains(enrichment.Attestations[0].Sources, "github") {
+		!catalogbuild.StringSliceContains(enrichment.Attestations[0].Sources, "oci") ||
+		!catalogbuild.StringSliceContains(enrichment.Attestations[0].Sources, "github") {
 		t.Fatalf("expected merged OCI/GitHub SLSA sources first, got %#v", enrichment.Attestations)
 	}
 }

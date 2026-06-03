@@ -1,19 +1,15 @@
 package commands
 
 import (
-	"archive/tar"
-	"bufio"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/certify"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
@@ -78,52 +74,6 @@ type CertifyResponse struct {
 	Status string               `json:"status"` // pass or fail
 	Image  string               `json:"image"`
 	Checks []CertifyCheckResult `json:"checks"`
-}
-
-// DockerManifest represents the legacy `docker save` manifest.json structure.
-type DockerManifest struct {
-	Config   string   `json:"Config"`
-	RepoTags []string `json:"RepoTags"`
-	Layers   []string `json:"Layers"`
-}
-
-// ociDescriptor is the subset of an OCI content descriptor we need to walk an
-// OCI-layout image archive (index.json -> manifest -> config/layers).
-type ociDescriptor struct {
-	MediaType   string            `json:"mediaType"`
-	Digest      string            `json:"digest"`
-	Size        int64             `json:"size"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type ociIndex struct {
-	Manifests []ociDescriptor `json:"manifests"`
-}
-
-type ociManifest struct {
-	Config ociDescriptor   `json:"config"`
-	Layers []ociDescriptor `json:"layers"`
-}
-
-// OCIImageConfig represents standard OCI runtime configuration metadata.
-type OCIImageConfig struct {
-	Config struct {
-		User       string            `json:"User"`
-		WorkingDir string            `json:"WorkingDir"`
-		Env        []string          `json:"Env"`
-		Entrypoint []string          `json:"Entrypoint"`
-		Cmd        []string          `json:"Cmd"`
-		Labels     map[string]string `json:"Labels"`
-	} `json:"config"`
-}
-
-// tarImage holds the resolved pieces of an image tarball, abstracting over the
-// legacy docker-save and OCI-layout on-disk formats.
-type tarImage struct {
-	format     string   // "docker", "oci", or "" when unrecognized
-	configRaw  []byte   // OCI image config JSON
-	repoTags   []string // best-effort image references
-	layerPaths []string // temp-file paths of layer blobs (may be gzip-compressed)
 }
 
 func NewCertifyCmd() *cobra.Command {
@@ -199,15 +149,15 @@ func runCertify(tarPath string) error {
 	}
 	defer os.RemoveAll(tempDir)
 
-	img, err := loadImageTarball(tarPath, tempDir)
+	img, err := certify.LoadImageArchive(tarPath, tempDir)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(certifyOpts.imageRef) != "" {
-		img.repoTags = append(img.repoTags, strings.TrimSpace(certifyOpts.imageRef))
+		img.RepoTags = append(img.RepoTags, strings.TrimSpace(certifyOpts.imageRef))
 	}
 
-	switch img.format {
+	switch img.Format {
 	case "docker":
 		addCheck("manifest.parsed", "pass", "Parsed legacy docker-save image manifest")
 	case "oci":
@@ -216,9 +166,9 @@ func runCertify(tarPath string) error {
 		addCheck("manifest.parsed", "fail", "Unrecognized image archive: expected a docker-save manifest.json or an OCI-layout index.json")
 	}
 
-	if len(img.configRaw) > 0 {
-		var config OCIImageConfig
-		if err := json.Unmarshal(img.configRaw, &config); err != nil {
+	if len(img.ConfigRaw) > 0 {
+		var config certify.OCIImageConfig
+		if err := json.Unmarshal(img.ConfigRaw, &config); err != nil {
 			addCheck("config.parsed", "fail", fmt.Sprintf("Failed to parse OCI config JSON structure: %v", err))
 		} else {
 			addCheck("config.parsed", "pass", "Successfully parsed OCI image configuration specs")
@@ -248,7 +198,7 @@ func runCertify(tarPath string) error {
 				addCheck("config.labels.compliance", "fail", "Compliance Notice: Image lacks required org.opencontainers.image compliance labels")
 			}
 		}
-	} else if img.format != "" {
+	} else if img.Format != "" {
 		addCheck("config.parsed", "fail", "OCI image configuration blob was not found in the tarball archive")
 	}
 
@@ -267,8 +217,8 @@ func runCertify(tarPath string) error {
 		packageManagersFound := []string{}
 		scanErrors := 0
 
-		for _, layerPath := range img.layerPaths {
-			shells, pkgs, err := scanLayerForRuntimeTools(layerPath)
+		for _, layerPath := range img.LayerPaths {
+			shells, pkgs, err := certify.ScanLayerForRuntimeTools(layerPath)
 			if err != nil {
 				scanErrors++
 				continue
@@ -278,7 +228,7 @@ func runCertify(tarPath string) error {
 		}
 
 		// If we couldn't read any layer, don't claim a clean result we didn't verify.
-		if scanErrors > 0 && scanErrors == len(img.layerPaths) {
+		if scanErrors > 0 && scanErrors == len(img.LayerPaths) {
 			addCheck("contract.shell.absence", "skip", "Could not read any image layers (unsupported layer encoding); shell audit not performed")
 			addCheck("contract.package_manager.absence", "skip", "Could not read any image layers (unsupported layer encoding); package-manager audit not performed")
 		} else {
@@ -333,7 +283,7 @@ func runCertify(tarPath string) error {
 		// 2. Digest pinning, evaluated against the image's own references.
 		if policy.Spec.Base.RequireDigestPinned {
 			isDigestPinned := strings.Contains(baseID, "@sha256:")
-			for _, ref := range img.repoTags {
+			for _, ref := range img.RepoTags {
 				if strings.Contains(ref, "@sha256:") {
 					isDigestPinned = true
 					break
@@ -479,196 +429,4 @@ func certifyVulnGate(policy *CertificationPolicyDoc, baseID string, addCheck fun
 			addCheck("policy.vulnerabilities.high", "pass", fmt.Sprintf("High vulnerabilities count %d is within policy limit %d", maxHighFound, policy.Spec.Vulnerabilities.MaxHigh))
 		}
 	}
-}
-
-// loadImageTarball extracts every regular file from an image tarball into tempDir
-// and resolves the image config and layer blobs for either a legacy docker-save
-// archive (manifest.json) or an OCI-layout archive (index.json + blobs/). Files are
-// stored under opaque names, so crafted entry paths cannot escape tempDir.
-func loadImageTarball(tarPath, tempDir string) (*tarImage, error) {
-	file, err := os.Open(tarPath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to open image file: %w", err)
-	}
-	defer file.Close()
-
-	var reader io.Reader = file
-	if strings.HasSuffix(tarPath, ".gz") || strings.HasSuffix(tarPath, ".tgz") {
-		gz, err := gzip.NewReader(file)
-		if err != nil {
-			return nil, fmt.Errorf("unable to initialize gzip reader: %w", err)
-		}
-		defer gz.Close()
-		reader = gz
-	}
-
-	entries := map[string]string{} // cleaned tar entry name -> temp file path
-	tr := tar.NewReader(reader)
-	idx := 0
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("error reading tar archive: %w", err)
-		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
-			continue
-		}
-		name := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
-		dest := filepath.Join(tempDir, fmt.Sprintf("e%06d", idx))
-		idx++
-		df, err := os.Create(dest)
-		if err != nil {
-			return nil, fmt.Errorf("failed to stage tar entry: %w", err)
-		}
-		if _, err := io.Copy(df, tr); err != nil {
-			df.Close()
-			return nil, fmt.Errorf("failed to stage tar entry %q: %w", name, err)
-		}
-		df.Close()
-		entries[name] = dest
-	}
-
-	img := &tarImage{}
-
-	// Legacy docker-save: manifest.json at the archive root.
-	if p, ok := entries["manifest.json"]; ok {
-		if data, err := os.ReadFile(p); err == nil {
-			var manifests []DockerManifest
-			if err := json.Unmarshal(data, &manifests); err == nil && len(manifests) > 0 {
-				img.format = "docker"
-				img.repoTags = manifests[0].RepoTags
-				if cp, ok := entries[path.Clean(manifests[0].Config)]; ok {
-					img.configRaw, _ = os.ReadFile(cp)
-				}
-				for _, layer := range manifests[0].Layers {
-					if lp, ok := entries[path.Clean(layer)]; ok {
-						img.layerPaths = append(img.layerPaths, lp)
-					}
-				}
-				return img, nil
-			}
-		}
-	}
-
-	// OCI-layout: index.json referencing blobs/sha256/<hex>.
-	if p, ok := entries["index.json"]; ok {
-		img.format = "oci"
-		resolveOCIImage(entries, p, img)
-		return img, nil
-	}
-
-	return img, nil // format == "" -> unrecognized
-}
-
-// resolveOCIImage walks index.json -> manifest -> {config, layers}, descending one
-// level when the index points at a nested image index (multi-arch).
-func resolveOCIImage(entries map[string]string, indexPath string, img *tarImage) {
-	data, err := os.ReadFile(indexPath)
-	if err != nil {
-		return
-	}
-	var index ociIndex
-	if err := json.Unmarshal(data, &index); err != nil || len(index.Manifests) == 0 {
-		return
-	}
-
-	desc := index.Manifests[0]
-	if ref, ok := desc.Annotations["org.opencontainers.image.ref.name"]; ok {
-		img.repoTags = append(img.repoTags, ref)
-	}
-
-	manData := readBlob(entries, desc.Digest)
-	if manData == nil {
-		return
-	}
-	var man ociManifest
-	if err := json.Unmarshal(manData, &man); err != nil {
-		return
-	}
-	// Nested index (manifest list) -> pick the first concrete manifest.
-	if man.Config.Digest == "" && len(man.Layers) == 0 {
-		var nested ociIndex
-		if err := json.Unmarshal(manData, &nested); err == nil && len(nested.Manifests) > 0 {
-			if inner := readBlob(entries, nested.Manifests[0].Digest); inner != nil {
-				_ = json.Unmarshal(inner, &man)
-			}
-		}
-	}
-
-	img.configRaw = readBlob(entries, man.Config.Digest)
-	for _, layer := range man.Layers {
-		if lp := blobPath(entries, layer.Digest); lp != "" {
-			img.layerPaths = append(img.layerPaths, lp)
-		}
-	}
-}
-
-// blobPath maps an OCI digest (sha256:hex) to the staged blob file path.
-func blobPath(entries map[string]string, digest string) string {
-	parts := strings.SplitN(digest, ":", 2)
-	if len(parts) != 2 {
-		return ""
-	}
-	if p, ok := entries["blobs/"+parts[0]+"/"+parts[1]]; ok {
-		return p
-	}
-	return ""
-}
-
-func readBlob(entries map[string]string, digest string) []byte {
-	p := blobPath(entries, digest)
-	if p == "" {
-		return nil
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return nil
-	}
-	return data
-}
-
-// scanLayerForRuntimeTools inspects a single layer blob (transparently handling
-// gzip-compressed layers) for interactive shells and package managers.
-func scanLayerForRuntimeTools(layerPath string) (shells, pkgs []string, err error) {
-	f, err := os.Open(layerPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer f.Close()
-
-	br := bufio.NewReader(f)
-	var reader io.Reader = br
-	if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-		gz, gerr := gzip.NewReader(br)
-		if gerr != nil {
-			return nil, nil, gerr
-		}
-		defer gz.Close()
-		reader = gz
-	}
-
-	tr := tar.NewReader(reader)
-	for {
-		hdr, terr := tr.Next()
-		if terr == io.EOF {
-			break
-		}
-		if terr != nil {
-			return nil, nil, terr
-		}
-		name := strings.TrimPrefix(path.Clean(hdr.Name), "/")
-
-		switch name {
-		case "bin/sh", "bin/bash", "bin/ash", "bin/zsh",
-			"usr/bin/sh", "usr/bin/bash", "usr/bin/ash", "usr/bin/zsh":
-			shells = append(shells, name)
-		case "sbin/apk", "usr/bin/apk", "usr/bin/apt", "usr/bin/apt-get",
-			"usr/bin/dpkg", "usr/bin/dnf", "usr/bin/yum", "usr/bin/microdnf":
-			pkgs = append(pkgs, name)
-		}
-	}
-	return shells, pkgs, nil
 }
