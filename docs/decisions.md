@@ -1,4 +1,4 @@
-# ClearCutt Hardened Fleets Architecture Decisions (ADR)
+# ClearCutt Architecture Decisions (ADR)
 
 This document traces the design logic and rationale behind the key security constraints and architectural choices implemented across the ClearCutt ecosystem.
 

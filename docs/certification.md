@@ -131,11 +131,19 @@ clearcutt app rebase \
 ```
 
 ### 2.4 GitLab CI Integration
-For GitLab CI pipelines, execute the certification audit inside a secure runner stage:
+For GitLab CI pipelines, execute the certification audit inside a secure runner stage by downloading the compiled release binary:
 ```yaml
 certify:
   stage: test
-  image: ghcr.io/northcutted/clearcutt/cli:latest
+  image: alpine:latest
+  # Pin a released CLI version — never track a moving tag in a supply-chain gate.
+  # Bump this as you adopt new releases.
+  variables:
+    CLEARCUTT_VERSION: "v0.11.1"
+  before_script:
+    - apk add --no-cache curl
+    - curl -fsSL -o /usr/local/bin/clearcutt "https://github.com/northcutted/clearcutt/releases/download/${CLEARCUTT_VERSION}/clearcutt-linux-amd64"
+    - chmod +x /usr/local/bin/clearcutt
   script:
     - clearcutt certify app-image.tar --policy policy.yaml --base java25-distroless
   artifacts:

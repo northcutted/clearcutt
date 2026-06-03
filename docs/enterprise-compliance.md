@@ -1,6 +1,6 @@
 # Enterprise Compliance Layering: Nix Closures on Corporate Base Images
 
-ClearCutt Hardened Fleets are designed with architectural flexibility at their core. By default, we recommend utilizing our **Slim** or **Distroless** tiers, which offer ultra-lightweight, zero-utility base environments with zero bloated operating system packages (massively reducing your attack surface and vulnerabilities).
+ClearCutt is designed with architectural flexibility at its core. By default, we recommend utilizing our **Slim** or **Distroless** tiers, which offer ultra-lightweight, zero-utility base environments with zero bloated operating system packages (massively reducing your attack surface and vulnerabilities).
 
 However, in many regulated enterprise environments, corporate security mandates require that all container images derive from a specific, certified operating system baseline—such as **Red Hat Universal Base Image (UBI)**, **Ubuntu Pro / Ubuntu Minimal**, or **Amazon Linux 2023**.
 
@@ -17,7 +17,7 @@ In a standard Dockerfile build, updating a runtime on a mandated OS base require
 
 ClearCutt leverages Nix's `dockerTools.buildLayeredImage` and the `fromImage` parameter to stack self-contained `/nix/store` closures **directly on top** of the mandated base image. 
 
-Because `/nix/store` paths are immutable and dynamically linked to their own isolated dependencies (including highly-optimized, zero-CVE versions of `glibc` and `openssl`), **they never pollute, modify, or conflict with the host operating system layers**.
+Because `/nix/store` paths are immutable and dynamically linked to their own isolated dependencies (including minimal, pinned builds of `glibc` and `openssl`), **they do not overwrite or modify the host operating system's own libraries and configuration**.
 
 ```
 +-------------------------------------------------------+

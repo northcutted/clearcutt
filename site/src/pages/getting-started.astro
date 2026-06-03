@@ -130,7 +130,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
           <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">3. Local Audits</h3>
           <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-            Run conformance audits offline with <code class="font-mono text-ink-100">clearcutt conformance run --image java25-distroless</code> to verify DNS, CA certificate chains, timezone mappings, and rootless sandboxes before deployment.
+            Run conformance audits offline with <code class="font-mono text-ink-100">clearcutt conformance run --expect-runtime java</code> to verify DNS, CA certificate chains, timezone mappings, and rootless sandboxes before deployment.
           </p>
         </div>
       </div>

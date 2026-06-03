@@ -29,4 +29,4 @@ Identify core applications that do not require shell-based execution at runtime:
 ## 4. Step 4: Enforce Admission Gating (Strict Verification)
 Deploy Kyverno ClusterPolicies or OPA Gatekeeper constraints:
 - Require Cosign keyless signatures and SLSA level-3 provenance attestations.
-- Run `clearcutt certify` inside GitHub Actions or GitLab CI pipelines to mathematically block compliance drifts before pushing to production registries.
+- Run `clearcutt certify` inside GitHub Actions or GitLab CI pipelines to programmatically enforce compliance constraints before pushing to production registries.

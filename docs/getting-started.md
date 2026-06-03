@@ -83,7 +83,7 @@ The `clearcutt` CLI is a single, zero-daemon Go governance engine designed to en
   ```
 
 > [!IMPORTANT]
-> **Catalog data is required (and not committed).** `verify`, `inspect`, `list`, and the other discovery commands read a generated catalog of image records. Generate it from a clone with `./clearcutt catalog gather` (writes to `site/src/data/catalog`, the default `--catalog` path), or pass `--catalog cli/internal/testdata/catalog` to try the commands against the bundled fixture image.
+> **Catalog data is required (and not committed).** `verify`, `inspect`, `list`, and the other discovery commands read a generated catalog of image records. Generate it from a clone with `./clearcutt catalog build` (writes to `site/src/data/catalog`, the default `--catalog` path), or pass `--catalog cli/internal/testdata/catalog` to try the commands against the bundled fixture image.
 
 ### 2. Verify Your Security Gates
 

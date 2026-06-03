@@ -153,3 +153,20 @@ spec:
 		}
 	}
 }
+
+func TestExceptionsInit(t *testing.T) {
+	tempPath := filepath.Join(t.TempDir(), "new-exceptions.yaml")
+	stdout, err := runCLI(t, "exceptions", "init", tempPath)
+	if err != nil {
+		t.Fatalf("expected exceptions init to succeed, got: %v\n%s", err, stdout)
+	}
+
+	if _, err := os.Stat(tempPath); err != nil {
+		t.Fatalf("expected exceptions template file to be created, got error: %v", err)
+	}
+
+	// Validate the initialized template to verify it conforms to the schema rules
+	if _, err := runCLI(t, "exceptions", "validate", tempPath); err != nil {
+		t.Errorf("expected initialized template to be fully valid, got: %v", err)
+	}
+}

@@ -28,8 +28,7 @@ const clearcuttVerify = `clearcutt verify image ${image.id} \\
   --max-high 5`;
 
 const clearcuttConformance = `clearcutt conformance run \\
-  --image ${image.id} \\
-  --tag ${release.tag}`;
+  --expect-runtime ${image.language.id}`;
 
 const clearcuttOverlay = `clearcutt overlay generate \\
   --runtime ${runtimeId} \\
@@ -149,8 +148,11 @@ spec:
     
     <div class="space-y-1.5 border-t border-ink-800/40 pt-4">
       <span class="text-ink-400 font-bold block uppercase text-[10px]">One-step Audit Command</span>
-      <p class="text-xs text-ink-300">Run the official end-to-end verification script locally to pull the OCI manifest, verify signatures, audit SPDX structure, and check OpenVEX triage records:</p>
-      <CopyBlock language="shell" code={`curl -sSL https://raw.githubusercontent.com/${ownerRepo}/main/scripts/verify-image.sh | bash -s -- ${digestRef}`} />
+      <p class="text-xs text-ink-300">Run the native compiled Go CLI command locally to verify the registry digest, Sigstore signature, SBOM and test attestations, and SLSA provenance:</p>
+      <CopyBlock language="shell" code={`clearcutt verify release-evidence \\
+  --ref ${digestRef} \\
+  --repo ${ownerRepo} \\
+  --workflow-identity '${subject}'`} />
     </div>
   </div>
 
