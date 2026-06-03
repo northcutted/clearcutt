@@ -1,0 +1,385 @@
+{
+  "image": {
+    "id": "python3.13-slim",
+    "language": {
+      "id": "python",
+      "displayName": "Python",
+      "version": "3.13",
+      "icon": null
+    },
+    "tier": {
+      "id": "slim",
+      "name": "Slim",
+      "blurb": "Runtime tier — language runtime plus minimal troubleshooting binaries."
+    },
+    "registry": "ghcr.io/northcutted/clearcutt",
+    "imageName": "clearcutt-python3.13",
+    "fullName": "ghcr.io/northcutted/clearcutt/clearcutt-python3.13",
+    "releases": [
+      {
+        "tag": "v1.0.0",
+        "publishedAt": "2026-05-29T13:44:59Z",
+        "lastRebuiltAt": "2026-05-29T15:05:00Z",
+        "isLatest": true,
+        "manifestDigest": "sha256:manifest-enriched",
+        "totalSize": 24,
+        "architectures": [
+          {
+            "arch": "amd64",
+            "os": "linux",
+            "imageDigest": "sha256:image-amd64",
+            "imageSize": 11,
+            "layerCount": 1,
+            "layers": [
+              {
+                "digest": "sha256:layer-amd64",
+                "size": 7,
+                "diffID": null
+              }
+            ],
+            "labels": {
+              "org.opencontainers.image.source": "https://github.com/northcutted/clearcutt"
+            },
+            "sbom": {
+              "tool": "syft",
+              "createdAt": "2026-05-29T13:44:59Z",
+              "rootDigest": "sha256:deadbeefcafef00d",
+              "packageCount": 2,
+              "packages": [
+                {
+                  "name": "python3.13",
+                  "version": "3.13.1",
+                  "purl": "pkg:generic/python@3.13.1",
+                  "cpes": [],
+                  "license": "PSF-2.0",
+                  "supplier": "NOASSERTION",
+                  "nixStorePath": null,
+                  "spdxId": "SPDXRef-Package-python",
+                  "layerDigest": null
+                },
+                {
+                  "name": "zlib",
+                  "version": "1.3.1",
+                  "purl": "pkg:nix/zlib@1.3.1",
+                  "cpes": [
+                    "cpe:2.3:a:zlib:zlib:1.3.1:*:*:*:*:*:*:*"
+                  ],
+                  "license": "Zlib",
+                  "supplier": "Organization: nixpkgs",
+                  "nixStorePath": "/nix/store/abc123-zlib-1.3.1",
+                  "spdxId": "SPDXRef-Package-zlib",
+                  "layerDigest": "sha256:layer1digestaaaa"
+                }
+              ]
+            },
+            "testResults": {
+              "status": "passed",
+              "timestamp": "2026-05-29T13:59:00Z",
+              "assertions": [
+                {
+                  "name": "SBOM generation",
+                  "status": "passed"
+                }
+              ]
+            },
+            "vulnerabilities": {
+              "scannedAt": "2026-05-29T15:00:00Z",
+              "scanner": "grype-test",
+              "dbBuiltAt": null,
+              "countsBySeverity": {
+                "critical": 1,
+                "high": 0,
+                "medium": 1,
+                "low": 0,
+                "negligible": 0,
+                "unknown": 0
+              },
+              "findings": [
+                {
+                  "id": "CVE-2026-0001",
+                  "severity": "Critical",
+                  "packageName": "python3.13",
+                  "packageVersion": "3.13.1",
+                  "purl": "pkg:generic/python@3.13.1",
+                  "layer": "runtime",
+                  "fixedIn": "3.13.2",
+                  "fixState": "fixed"
+                },
+                {
+                  "id": "CVE-2026-0003",
+                  "severity": "Medium",
+                  "packageName": "zlib",
+                  "packageVersion": "1.3.1",
+                  "purl": "pkg:nix/zlib@1.3.1",
+                  "layer": "runtime",
+                  "fixedIn": null,
+                  "fixState": "unknown"
+                }
+              ]
+            }
+          },
+          {
+            "arch": "arm64",
+            "os": "linux",
+            "imageDigest": "sha256:image-arm64",
+            "imageSize": 13,
+            "layerCount": 1,
+            "layers": [
+              {
+                "digest": "sha256:layer-arm64",
+                "size": 9,
+                "diffID": "sha256:diff-arm64"
+              }
+            ],
+            "labels": {},
+            "sbom": {
+              "tool": "syft",
+              "createdAt": "2026-05-29T13:44:59Z",
+              "rootDigest": "sha256:deadbeefcafef00d",
+              "packageCount": 2,
+              "packages": [
+                {
+                  "name": "python3.13",
+                  "version": "3.13.1",
+                  "purl": "pkg:generic/python@3.13.1",
+                  "cpes": [],
+                  "license": "PSF-2.0",
+                  "supplier": "NOASSERTION",
+                  "nixStorePath": null,
+                  "spdxId": "SPDXRef-Package-python",
+                  "layerDigest": null
+                },
+                {
+                  "name": "zlib",
+                  "version": "1.3.1",
+                  "purl": "pkg:nix/zlib@1.3.1",
+                  "cpes": [
+                    "cpe:2.3:a:zlib:zlib:1.3.1:*:*:*:*:*:*:*"
+                  ],
+                  "license": "Zlib",
+                  "supplier": "Organization: nixpkgs",
+                  "nixStorePath": "/nix/store/abc123-zlib-1.3.1",
+                  "spdxId": "SPDXRef-Package-zlib",
+                  "layerDigest": "sha256:layer1digestaaaa"
+                }
+              ]
+            },
+            "testResults": {
+              "status": "passed",
+              "timestamp": "2026-05-29T14:00:00Z",
+              "assertions": [
+                {
+                  "name": "Vulnerability gate",
+                  "status": "passed"
+                }
+              ]
+            },
+            "vulnerabilities": {
+              "scannedAt": "2026-05-29T15:05:00Z",
+              "scanner": "grype-test",
+              "dbBuiltAt": null,
+              "countsBySeverity": {
+                "critical": 1,
+                "high": 1,
+                "medium": 0,
+                "low": 0,
+                "negligible": 0,
+                "unknown": 0
+              },
+              "findings": [
+                {
+                  "id": "CVE-2026-0001",
+                  "severity": "Critical",
+                  "packageName": "python3.13",
+                  "packageVersion": "3.13.1",
+                  "purl": "pkg:generic/python@3.13.1",
+                  "layer": "runtime",
+                  "fixedIn": "3.13.2",
+                  "fixState": "fixed"
+                },
+                {
+                  "id": "CVE-2026-0002",
+                  "severity": "High",
+                  "packageName": "openssl",
+                  "packageVersion": "3.5.0",
+                  "purl": "pkg:nix/openssl@3.5.0",
+                  "layer": "base",
+                  "fixedIn": null,
+                  "fixState": "unknown"
+                }
+              ]
+            }
+          }
+        ],
+        "signature": {
+          "cosignBundlePresent": true,
+          "rekorLogIndex": 12345,
+          "certificate": {
+            "subject": "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "runInvocation": null
+          }
+        },
+        "provenance": {
+          "predicateType": "https://slsa.dev/provenance/v1",
+          "builder": {
+            "id": "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/tags/v1.0.0"
+          },
+          "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+          "sourceUri": "https://github.com/northcutted/clearcutt",
+          "sourceRevision": null,
+          "slsaLevel": 3
+        },
+        "attestations": [
+          {
+            "kind": "slsa-provenance",
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "subjectName": "ghcr.io/northcutted/clearcutt/clearcutt-python3.13",
+            "subjectDigest": "sha256:subject",
+            "signerIdentity": "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "runUrl": "https://github.com/northcutted/clearcutt/actions/runs/1/attempts/1",
+            "workflowUrl": "https://github.com/northcutted/clearcutt/actions/workflows/release.yml",
+            "githubApiUrl": "https://api.github.com/users/northcutted/attestations/sha256:subject",
+            "transparencyLogIndex": 67890,
+            "transparencyUrl": "https://search.sigstore.dev/?logIndex=67890",
+            "sources": [
+              "oci",
+              "github"
+            ],
+            "releaseAssetUrl": "https://example.invalid/python3.13-slim.intoto.jsonl"
+          }
+        ],
+        "assetUrls": {
+          "sbom": {
+            "amd64": "https://example.invalid/python3.13-slim-amd64.sbom.json",
+            "arm64": "https://example.invalid/python3.13-slim-arm64.sbom.json"
+          },
+          "provenance": "https://example.invalid/python3.13-slim.intoto.jsonl",
+          "testResults": {
+            "amd64": "https://example.invalid/python3.13-slim-amd64.test-results.json"
+          },
+          "digest": "https://example.invalid/python3.13-slim.digest.json"
+        },
+        "lifecycle": {
+          "status": "active",
+          "support": "current",
+          "productionAllowed": true,
+          "deprecatedAt": null,
+          "eolAt": null,
+          "reason": null
+        },
+        "runtimeContract": {
+          "user": "10001",
+          "workingDir": "/app",
+          "shellPresent": true,
+          "packageManagerPresent": false,
+          "caCertificatesPresent": true,
+          "timezoneDataPresent": true,
+          "defaultEntrypoint": "/usr/bin/python",
+          "productionTier": true
+        },
+        "exceptions": {
+          "total": 0,
+          "expired": 0,
+          "active": 0,
+          "acceptedRisk": 0,
+          "noFixAvailable": 0,
+          "falsePositive": 0,
+          "inheritedFromBase": 0
+        },
+        "evidence": {
+          "signature": true,
+          "provenance": true,
+          "sbom": true,
+          "tests": true,
+          "vulnerabilities": true,
+          "archCount": 2,
+          "sbomArchCount": 2,
+          "testArchCount": 2,
+          "passedTestArchCount": 2,
+          "vulnerabilityArchCount": 2
+        }
+      }
+    ],
+    "lifecycle": {
+      "status": "active",
+      "support": "current",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    }
+  },
+  "summary": {
+    "id": "python3.13-slim",
+    "language": "python",
+    "languageDisplay": "Python",
+    "languageVersion": "3.13",
+    "tier": "slim",
+    "latestTag": "v1.0.0",
+    "latestManifestDigest": "sha256:manifest-enriched",
+    "latestPackageCount": 2,
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "signed": true,
+    "provenance": true,
+    "evidence": {
+      "signature": true,
+      "provenance": true,
+      "sbom": true,
+      "tests": true,
+      "vulnerabilities": true,
+      "archCount": 2,
+      "sbomArchCount": 2,
+      "testArchCount": 2,
+      "passedTestArchCount": 2,
+      "vulnerabilityArchCount": 2
+    },
+    "passed": true,
+    "vulnSummary": {
+      "critical": 1,
+      "high": 1,
+      "medium": 1,
+      "low": 0,
+      "scannedAt": "2026-05-29T15:05:00Z",
+      "remediation": {
+        "eligible": 1,
+        "baseLayer": 1,
+        "noFixedVersion": 0,
+        "belowPriorityThreshold": 0,
+        "otherDeferred": 0
+      }
+    },
+    "lifecycle": {
+      "status": "active",
+      "support": "current",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    }
+  }
+}

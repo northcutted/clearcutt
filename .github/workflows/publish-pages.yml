@@ -43,24 +43,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node
-        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v6.0.0
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: cli/go.sum
 
-      - name: Install crane, cosign, grype
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Install cosign and grype
         run: |
           set -euo pipefail
-          # crane via go-containerregistry release tarball
-          CRANE_VERSION=v0.20.6
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin crane
-          crane version
           # cosign binary pinned to match the release workflow's signer
           # (cosign-release in release.yml). The release signs OCI image indexes
-          # with cosign v3's default new bundle format, so enrich-registry.mjs
+          # with cosign v3's default new bundle format, so the Go catalog enricher
           # must read with the same major to resolve those attestations; pinning
           # avoids writer/reader format drift.
           COSIGN_VERSION=v3.0.6
@@ -74,15 +74,17 @@ jobs:
       - name: Refresh grype DB
         run: grype db update
 
-      - name: Authenticate crane to GHCR
+      - name: Authenticate registry client to GHCR
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # Cache the per-release enrichment + SBOM downloads. Old releases are
-      # immutable: once an image is published, its manifest digests, layers,
-      # OCI labels, and cosign attestations never change. The gather + enrich
-      # scripts refresh only the most recent tag (controlled via FORCE_REFRESH_*
-      # env vars) and read everything older straight off disk.
+      # Cache the per-release enrichment, SBOM downloads, and vulnerability
+      # scan output. Old releases are immutable: once an image is published, its
+      # manifest digests, layers, OCI labels, and cosign attestations never
+      # change. The catalog gather + enrich commands refresh only the most recent tag
+      # (controlled via FORCE_REFRESH_* env vars) and read everything older
+      # straight off disk. Vulnerability JSON is cached so the scanner can
+      # refresh a bounded recent window while preserving older catalog data.
       #
       # Cache key scheme: the run_id makes each saved entry immutable (GH
       # Actions cache keys can't be overwritten); restore-keys do a prefix
@@ -94,55 +96,48 @@ jobs:
           path: |
             site/src/data/enrichment
             site/src/data/sboms
-          key: catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+            site/src/data/vulnerabilities
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
           restore-keys: |
-            catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
 
-      - name: Set release limit
+      - name: Resolve fleet catalog parameters
         id: params
-        run: echo "limit=${{ github.event.inputs.release_limit || '10' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          FLEET=$(./clearcutt --format json matrix export --source fleet)
+          DEFAULT_LIMIT=$(jq -r '.catalog.releaseLimit' <<< "$FLEET")
+          SCAN_DEPTH=$(jq -r '.catalog.scanDepth' <<< "$FLEET")
+          INPUT_LIMIT="${{ github.event.inputs.release_limit || '' }}"
+          if [[ -n "$INPUT_LIMIT" ]]; then
+            echo "limit=${INPUT_LIMIT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "limit=${DEFAULT_LIMIT}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "scan_depth=${SCAN_DEPTH}" >> "$GITHUB_OUTPUT"
 
-      - name: Gather release assets → catalog JSON
+      - name: Build catalog data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
           FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        working-directory: ${{ github.workspace }}
-        run: node core/scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
-
-      - name: Enrich with GHCR metadata
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_OWNER: ${{ github.repository_owner }}
-          GH_REPO: ${{ github.event.repository.name }}
-          FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        run: node core/scripts/enrich-registry.mjs
-
-      # Scans each cached SBOM with grype. CVE data freshness comes from the
-      # grype DB (refreshed above), not from the SBOMs themselves — so this
-      # surfaces newly-disclosed vulnerabilities against pinned package
-      # versions every time the workflow runs (including nightly cron).
-      - name: Scan SBOMs with grype
-        env:
-          SCAN_MODE: catalog
-        run: node core/scripts/scan-vulnerabilities.mjs --mode catalog
-
-      - name: Re-run gather to fold enrichment + vulnerabilities in
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_OWNER: ${{ github.repository_owner }}
-          GH_REPO: ${{ github.event.repository.name }}
-          RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
-          # No FORCE_REFRESH_ALL here: by this point SBOMs are already on disk
-          # from the first pass, and we just need to re-fold the enrichment
-          # and vulnerability scan output into per-image records.
-        run: node core/scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
-
-      - name: Verify latest catalog evidence completeness
-        run: node core/scripts/verify-catalog-data.mjs
+          SCAN_ALL_TAGS: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          if [[ "${FORCE_REFRESH_ALL}" == "1" ]]; then
+            ./clearcutt catalog build \
+              --limit "$RELEASE_LIMIT" \
+              --scan-depth "${{ steps.params.outputs.scan_depth }}" \
+              --force-refresh-all \
+              --scan-all
+          else
+            ./clearcutt catalog build \
+              --limit "$RELEASE_LIMIT" \
+              --scan-depth "${{ steps.params.outputs.scan_depth }}"
+          fi
 
       - name: Upload catalog artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

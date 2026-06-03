@@ -500,14 +500,14 @@ test_cve_remediation_gates() {
 
   # G2 Closure Diff Verification: Comparing a closure to itself should pass
   log_info "Verifying G2: Closure Diff Analysis..."
-  if ! ./scripts/verify-closure-diff.sh core ".#coreLTS-slim" ".#coreLTS-slim"; then
+  if ! ./tests/verify-closure-diff.sh core ".#coreLTS-slim" ".#coreLTS-slim"; then
     log_fail "G2 Gate Failed: Valid closure comparison failed."
   fi
   
   # Assert G2 correctly fails on invalid/unexplained package addition (only on Linux where G2 is fully active)
   if [[ "$(uname -s)" == "Linux" ]]; then
     log_info "Asserting G2 fails on unexplained package addition..."
-    if ./scripts/verify-closure-diff.sh core ".#coreLTS-slim" ".#coreLTS-dev" &>/dev/null; then
+    if ./tests/verify-closure-diff.sh core ".#coreLTS-slim" ".#coreLTS-dev" &>/dev/null; then
       log_fail "G2 Security Failure: Allowed unexplained packages to pass!"
     fi
   else
@@ -551,13 +551,13 @@ test_cve_remediation_gates() {
         continue
       fi
       smoke_link="build-outputs/${smoke_target}-link"
-      if ! nix build ".#${smoke_target}" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
+      if ! nix build ".#\"${smoke_target}\"" --out-link "$smoke_link" --extra-experimental-features "nix-command flakes" --accept-flake-config; then
         log_fail "G4 Gate Failed: unable to build ${smoke_target} for smoke testing."
       fi
       cp -L "$smoke_link" "$smoke_tar"
       rm -f "$smoke_link"
     fi
-    if ! ./scripts/run-smoke-tests.sh "$smoke_lang" "$smoke_ver" "$smoke_tier" "$smoke_tar"; then
+    if ! ./tests/run-smoke-tests.sh "$smoke_lang" "$smoke_ver" "$smoke_tier" "$smoke_tar"; then
       log_fail "G4 Gate Failed: ${smoke_target} failed functional checks."
     fi
   done

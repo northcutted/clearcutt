@@ -1,0 +1,40 @@
+{
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-DocumentRoot-Image",
+      "name": "clearcutt-python3.13-slim",
+      "primaryPackagePurpose": "CONTAINER",
+      "versionInfo": "sha256:rootfallback",
+      "checksums": [{ "algorithm": "SHA256", "checksumValue": "deadbeefcafef00d" }]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zlib",
+      "name": "zlib",
+      "versionInfo": "1.3.1",
+      "supplier": "Organization: nixpkgs",
+      "licenseDeclared": "Zlib",
+      "licenseConcluded": "NOASSERTION",
+      "sourceInfo": "acquired package info from /nix/store/abc123-zlib-1.3.1",
+      "externalRefs": [
+        { "referenceType": "cpe23Type", "referenceLocator": "cpe:2.3:a:zlib:zlib:1.3.1:*:*:*:*:*:*:*" },
+        { "referenceType": "purl", "referenceLocator": "pkg:nix/zlib@1.3.1" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-python",
+      "name": "python3.13",
+      "versionInfo": "3.13.1",
+      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "PSF-2.0",
+      "externalRefs": [
+        { "referenceType": "purl", "referenceLocator": "pkg:generic/python@3.13.1" }
+      ]
+    }
+  ],
+  "files": [
+    { "SPDXID": "SPDXRef-File-layer1", "comment": "layerID: sha256:layer1digestaaaa" }
+  ],
+  "relationships": [
+    { "relationshipType": "OTHER", "spdxElementId": "SPDXRef-Package-zlib", "relatedSpdxElement": "SPDXRef-File-layer1" }
+  ]
+}

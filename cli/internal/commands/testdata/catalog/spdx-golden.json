@@ -1,0 +1,39 @@
+{
+  "packages": [
+    {
+      "name": "python3.13",
+      "version": "3.13.1",
+      "purl": "pkg:generic/python@3.13.1",
+      "cpes": [],
+      "license": "PSF-2.0",
+      "supplier": "NOASSERTION",
+      "nixStorePath": null,
+      "spdxId": "SPDXRef-Package-python",
+      "layerDigest": null
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "purl": "pkg:nix/zlib@1.3.1",
+      "cpes": [
+        "cpe:2.3:a:zlib:zlib:1.3.1:*:*:*:*:*:*:*"
+      ],
+      "license": "Zlib",
+      "supplier": "Organization: nixpkgs",
+      "nixStorePath": "/nix/store/abc123-zlib-1.3.1",
+      "spdxId": "SPDXRef-Package-zlib",
+      "layerDigest": "sha256:layer1digestaaaa"
+    }
+  ],
+  "rootDigest": "sha256:deadbeefcafef00d",
+  "provenance": {
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "builder": {
+      "id": "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/tags/v1.0.0"
+    },
+    "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+    "sourceUri": "https://github.com/northcutted/clearcutt",
+    "sourceRevision": null,
+    "slsaLevel": 3
+  }
+}

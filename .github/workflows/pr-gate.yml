@@ -83,6 +83,7 @@ jobs:
         run: |
           nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
             --system "${{ matrix.system }}" \
+            --skip-local-signing \
             "${{ matrix.language }}-${{ matrix.tier }}"
 
       # Upload the validated SBOM JSON as an artifact for audit checking
@@ -141,16 +142,53 @@ jobs:
       - name: Go Build
         run: make cli-build
 
-      - name: Go Test
+      - name: Dev Command Integration Smoke
+        run: |
+          dev_json="$(./clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --devcontainer --print)"
+          printf '%s\n' "$dev_json" | jq -e '
+            .name == "ClearCutt java21-dev" and
+            .workspaceFolder == "/app" and
+            .remoteUser == "10001" and
+            .containerEnv.CLEARCUTT_IMAGE_ID == "java21-dev" and
+            .containerEnv.CLEARCUTT_IMAGE_TAG == "v1.2.3" and
+            .image == "ghcr.io/acme/clearcutt/clearcutt-java21:v1.2.3-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ' >/dev/null
+
+          fallback_json="$(./clearcutt --catalog "$RUNNER_TEMP/missing-clearcutt-catalog" dev java21-distroless --tag v0.2.1 --devcontainer --print)"
+          printf '%s\n' "$fallback_json" | jq -e '
+            .containerEnv.CLEARCUTT_IMAGE_ID == "java21-dev" and
+            .containerEnv.CLEARCUTT_IMAGE_TAG == "v0.2.1" and
+            .image == "ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.2.1-dev"
+          ' >/dev/null
+          echo "Dev command integration smoke PASSED!"
+
+      - name: Go Test with Coverage
         working-directory: cli
-        run: go test -v ./...
+        env:
+          COVERAGE_MIN: "85.0"
+        run: ./scripts/go-coverage.sh
+
+      - name: Upload Go Coverage Report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-coverage
+          path: |
+            cli/coverage.out
+            cli/coverage.txt
+            cli/coverage-packages.txt
+            cli/coverage-low-functions.txt
+            cli/coverage.html
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Run Schema Drift Guard
         run: |
           # Verify every catalog JSON compiles strictly against the Go data models
           # with zero unmapped/unknown fields.
-          for img in java21-distroless java25-distroless python3.13-distroless python3.14-distroless node22-distroless node24-distroless go1.25-distroless go1.26-distroless dotnet8-distroless dotnet10-distroless rust1.95-distroless cc15-distroless coreLTS-distroless; do
+          fixture_catalog="cli/internal/testdata/catalog"
+          mapfile -t images < <(python3 -c 'import json, sys; catalog = json.load(open(sys.argv[1], encoding="utf-8")); print("\n".join(image["id"] for image in catalog.get("images", [])))' "$fixture_catalog/index.json")
+          for img in "${images[@]}"; do
             echo "Checking strict catalog drift for $img..."
-            ./clearcutt inspect "$img" --strict >/dev/null
+            ./clearcutt --catalog "$fixture_catalog" inspect "$img" --strict >/dev/null
           done
           echo "Drift guard check PASSED!"

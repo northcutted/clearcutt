@@ -45,6 +45,36 @@ func TestNewStatementSplitsSubjectDigest(t *testing.T) {
 	}
 }
 
+func TestStatementAndPredicateErrorBranches(t *testing.T) {
+	p := validPredicate()
+	for name, mutate := range map[string]func(*Predicate){
+		"source":       func(p *Predicate) { p.SourceImage = "" },
+		"sourceDigest": func(p *Predicate) { p.SourceDigest = "" },
+		"newDigest":    func(p *Predicate) { p.NewBaseDigest = "" },
+		"preserved":    func(p *Predicate) { p.PreservedAppLayers = nil },
+		"decision":     func(p *Predicate) { p.RebaseDecision = "maybe" },
+	} {
+		bad := p
+		mutate(&bad)
+		if err := bad.Validate(); err == nil {
+			t.Fatalf("%s predicate unexpectedly validated", name)
+		}
+	}
+	blocked := p
+	blocked.RebaseDecision = DecisionBlocked
+	blocked.DeveloperIdentity = ""
+	blocked.DeveloperSignatureVerified = false
+	if err := blocked.Validate(); err != nil {
+		t.Fatalf("blocked predicate should not require dual-control fields: %v", err)
+	}
+	if _, err := NewStatement("ghcr.io/acme/app", "not-a-digest", validPredicate()); err == nil {
+		t.Fatal("NewStatement should reject malformed subject digest")
+	}
+	if alg, _, ok := splitDigest("not-a-digest"); ok || alg != "" {
+		t.Fatalf("malformed digest should not parse, alg=%q ok=%v", alg, ok)
+	}
+}
+
 func validPredicate() Predicate {
 	return Predicate{
 		SourceImage:                "ghcr.io/acme/app:1.0.0",

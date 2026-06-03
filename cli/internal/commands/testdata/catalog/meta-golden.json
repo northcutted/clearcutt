@@ -1,0 +1,1133 @@
+{
+  "coreLTS-dev": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/bin/sh",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "coreLTS-slim": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/bin/sh",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "coreLTS-distroless": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/bin/sh",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java21-dev": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java21-slim": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java21-distroless": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java25-dev": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java25-slim": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "java25-distroless": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/local/bin/java",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node22-dev": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node22-slim": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node22-distroless": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node24-dev": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node24-slim": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "node24-distroless": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/node",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.13-dev": {
+    "lifecycle": {
+      "status": "active",
+      "support": "current",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.13-slim": {
+    "lifecycle": {
+      "status": "active",
+      "support": "current",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.13-distroless": {
+    "lifecycle": {
+      "status": "active",
+      "support": "current",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.14-dev": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.14-slim": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "python3.14-distroless": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/python",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.25-dev": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.25-slim": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.25-distroless": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.26-dev": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.26-slim": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "go1.26-distroless": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/go",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet8-dev": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet8-slim": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet8-distroless": {
+    "lifecycle": {
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet10-dev": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet10-slim": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "dotnet10-distroless": {
+    "lifecycle": {
+      "status": "preview",
+      "support": "preview",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": "/usr/bin/dotnet",
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "rust1.95-dev": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "rust1.95-slim": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "rust1.95-distroless": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "cc15-dev": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": true,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": false
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "cc15-slim": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": true,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  },
+  "cc15-distroless": {
+    "lifecycle": {
+      "status": "experimental",
+      "support": "unsupported",
+      "productionAllowed": false,
+      "deprecatedAt": null,
+      "eolAt": null,
+      "reason": null
+    },
+    "runtimeContract": {
+      "user": "10001",
+      "workingDir": "/app",
+      "shellPresent": false,
+      "packageManagerPresent": false,
+      "caCertificatesPresent": true,
+      "timezoneDataPresent": true,
+      "defaultEntrypoint": null,
+      "productionTier": true
+    },
+    "exceptions": {
+      "total": 0,
+      "expired": 0,
+      "active": 0,
+      "acceptedRisk": 0,
+      "noFixAvailable": 0,
+      "falsePositive": 0,
+      "inheritedFromBase": 0
+    }
+  }
+}

@@ -63,6 +63,7 @@ E2E_APP_REBASE="fail"
 E2E_DOCKER_REBASED="fail"
 E2E_GOV_VERIFY="fail"
 E2E_GOV_CERTIFY="fail"
+E2E_DEV_COMMAND="fail"
 
 E2E_SOURCE_LAYERS=0
 E2E_REBASED_LAYERS=0
@@ -84,7 +85,8 @@ write_e2e_report() {
      [ "$E2E_APP_REBASE" = "pass" ] && \
      { [ "$E2E_DOCKER_REBASED" = "pass" ] || [ "$E2E_DOCKER_REBASED" = "skip" ]; } && \
      [ "$E2E_GOV_VERIFY" = "pass" ] && \
-     [ "$E2E_GOV_CERTIFY" = "pass" ]; then
+     [ "$E2E_GOV_CERTIFY" = "pass" ] && \
+     [ "$E2E_DEV_COMMAND" = "pass" ]; then
     E2E_STATUS="passed"
     log_success "All required E2E matrix checks successfully completed!"
   else
@@ -113,7 +115,8 @@ write_e2e_report() {
     "appRebase": "${E2E_APP_REBASE}",
     "dockerExecutionRebased": "${E2E_DOCKER_REBASED}",
     "governanceVerify": "${E2E_GOV_VERIFY}",
-    "governanceCertify": "${E2E_GOV_CERTIFY}"
+    "governanceCertify": "${E2E_GOV_CERTIFY}",
+    "devCommand": "${E2E_DEV_COMMAND}"
   },
   "metrics": {
     "sourceAppLayersCount": ${E2E_SOURCE_LAYERS},
@@ -194,14 +197,52 @@ case "$STACK" in
     BASE_ID_V2="cc15-distroless"
     ;;
   core)
-    BASE_ID_V1="core1-slim"
-    BASE_ID_V2="core1-distroless"
+    BASE_ID_V1="coreLTS-slim"
+    BASE_ID_V2="coreLTS-distroless"
     ;;
   *)
     log_error "Unsupported language stack: $STACK"
     exit 1
     ;;
 esac
+
+# ----------------------------------------------------
+# 4.5. Verify Local Dev Environment Resolution
+# ----------------------------------------------------
+log_info "Executing clearcutt dev fixture-catalog smoke..."
+DEV_FIXTURE_JSON=$($CLI_BIN --catalog "cli/internal/testdata/dev-catalog" dev "java21-distroless" --devcontainer --print)
+DEV_FIXTURE_REF=$(echo "$DEV_FIXTURE_JSON" | jq -r '.image')
+if [ "$DEV_FIXTURE_REF" != "ghcr.io/acme/clearcutt/clearcutt-java21:v1.2.3-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ]; then
+  log_error "Dev command fixture catalog ref mismatch: ${DEV_FIXTURE_REF}"
+  exit 1
+fi
+log_success "Dev command resolved committed fixture catalog: ${DEV_FIXTURE_REF}"
+
+log_info "Executing clearcutt dev catalogless smoke for ${BASE_ID_V2}..."
+DEV_JSON=$($CLI_BIN --catalog ".missing-clearcutt-catalog-for-dev-smoke" dev "$BASE_ID_V2" --tag "v1.0.0" --devcontainer --print)
+DEV_IMAGE_ID=$(echo "$DEV_JSON" | jq -r '.containerEnv.CLEARCUTT_IMAGE_ID')
+DEV_IMAGE_REF=$(echo "$DEV_JSON" | jq -r '.image')
+DEV_IMAGE_TAG=$(echo "$DEV_JSON" | jq -r '.containerEnv.CLEARCUTT_IMAGE_TAG')
+DEV_WORKDIR=$(echo "$DEV_JSON" | jq -r '.workspaceFolder')
+EXPECTED_DEV_ID="${BASE_ID_V2%-*}-dev"
+
+if [ "$DEV_IMAGE_ID" != "$EXPECTED_DEV_ID" ]; then
+  log_error "Dev command resolved ${BASE_ID_V2} to ${DEV_IMAGE_ID}; expected ${EXPECTED_DEV_ID}."
+  exit 1
+fi
+
+if [[ "$DEV_IMAGE_REF" != *":${DEV_IMAGE_TAG}-dev"* ]]; then
+  log_error "Dev command did not emit a release-tag-pinned dev image ref: ${DEV_IMAGE_REF}"
+  exit 1
+fi
+
+if [ "$DEV_WORKDIR" != "/app" ]; then
+  log_error "Dev command workspaceFolder mismatch. Expected /app, got ${DEV_WORKDIR}"
+  exit 1
+fi
+
+E2E_DEV_COMMAND="pass"
+log_success "Dev command resolved pinned local environment: ${DEV_IMAGE_REF}"
 
 # ----------------------------------------------------
 # 5. Compile and Register Nix Base Images Natively
@@ -704,7 +745,7 @@ sed -i.bak -e "s/java21-distroless/${BASE_ID_V2}/g" \
 rm -f "${INDEX_JSON}.bak"
 
 # Run a real verify check against the dynamically registered stack base
-$CLI_BIN verify "$BASE_ID_V2" --catalog "$CATALOG_DIR" --exceptions "$EXC_FILE"
+$CLI_BIN verify image "$BASE_ID_V2" --catalog "$CATALOG_DIR" --exceptions "$EXC_FILE"
 log_success "Governance verify gating passed."
 E2E_GOV_VERIFY="pass"
 

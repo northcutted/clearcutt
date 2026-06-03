@@ -33,6 +33,7 @@ type remediationFlags struct {
 	vulnDir        string
 	includeDevOnly bool
 	limit          int
+	out            string
 }
 
 var remediationOpts remediationFlags
@@ -129,8 +130,11 @@ func NewRemediationCmd() *cobra.Command {
 	planCmd.Flags().StringVar(&remediationOpts.vulnDir, "vuln-dir", "", "Specific vulnerability scan directory to read")
 	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", false, "Include dev-tier-only campaigns")
 	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", 0, "Maximum campaigns to emit")
+	planCmd.Flags().StringVar(&remediationOpts.out, "out", "", "Write the plan JSON to this path (in addition to stdout output)")
 
 	cmd.AddCommand(planCmd)
+	cmd.AddCommand(NewRemediationRunCmd())
+	cmd.AddCommand(NewRemediationOpenPRCmd())
 	return cmd
 }
 
@@ -144,6 +148,26 @@ func runRemediationPlan() error {
 		return err
 	}
 
+	if remediationOpts.out != "" {
+		if err := writeRemediationPlanFile(remediationOpts.out, plan); err != nil {
+			return err
+		}
+	}
+
+	// --quiet collapses the plan to a single machine-greppable summary line so
+	// callers that consume --out (e.g. the auto-patch dispatcher) keep clean
+	// logs instead of the full JSON payload.
+	if GlobalOpts.Quiet {
+		s := plan.Summary
+		fmt.Fprintf(
+			out,
+			"[remediation] campaigns=%d candidates=%d production=%d dev_only=%d deferred=%d criteria=high-critical-runtime-with-fixed-version source=%s\n",
+			s.CampaignCount, s.CandidateCampaignCount, s.ProductionCampaignCount,
+			s.DevOnlyCampaignCount, s.DeferredCount, plan.SourceDir,
+		)
+		return nil
+	}
+
 	switch strings.ToLower(GlobalOpts.Format) {
 	case "json":
 		return output.PrintJSON(out, plan)
@@ -152,6 +176,22 @@ func runRemediationPlan() error {
 	default:
 		return printRemediationPlanTable(plan)
 	}
+}
+
+func writeRemediationPlanFile(path string, plan *RemediationPlan) error {
+	raw, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode remediation plan: %w", err)
+	}
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create plan output directory %s: %w", dir, err)
+		}
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil {
+		return fmt.Errorf("failed to write remediation plan to %s: %w", path, err)
+	}
+	return nil
 }
 
 func resolveRemediationVulnDir(vulnRoot, vulnDir string) (string, error) {

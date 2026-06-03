@@ -21,6 +21,7 @@ import (
 
 type certifyFlags struct {
 	base             string
+	imageRef         string
 	requireSignature bool
 	requireSbom      bool
 	requireProv      bool
@@ -141,6 +142,7 @@ from an offline tarball; those checks are reported as skipped with guidance.`,
 	}
 
 	cmd.Flags().StringVar(&certifyOpts.base, "base", "", "Optional ClearCutt base image ID the app claims to derive from (e.g. java21-distroless)")
+	cmd.Flags().StringVar(&certifyOpts.imageRef, "image-ref", "", "Original image reference used to produce the tarball (enables digest-pinning checks when docker-save metadata drops @sha256 refs)")
 	cmd.Flags().BoolVar(&certifyOpts.requireSignature, "require-signature", false, "Require signed attestations to exist for downstream image layers")
 	cmd.Flags().BoolVar(&certifyOpts.requireSbom, "require-sbom", false, "Require SPDX SBOM attachments to exist for downstream image layers")
 	cmd.Flags().BoolVar(&certifyOpts.requireProv, "require-provenance", false, "Require SLSA Level-3 build provenance attestations")
@@ -200,6 +202,9 @@ func runCertify(tarPath string) error {
 	img, err := loadImageTarball(tarPath, tempDir)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(certifyOpts.imageRef) != "" {
+		img.repoTags = append(img.repoTags, strings.TrimSpace(certifyOpts.imageRef))
 	}
 
 	switch img.format {

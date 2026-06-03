@@ -56,3 +56,33 @@ func TestConformanceRun_ReportIsWellFormed(t *testing.T) {
 		t.Errorf("passed report should return nil error, got %v", err)
 	}
 }
+
+func TestConformanceRunMissingExpectedRuntimeWritesStdout(t *testing.T) {
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	if err := os.Setenv("PATH", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, err := runCLI(t, "conformance", "run", "--expect-runtime", "node")
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("expected missing runtime to fail gate, got %v\n%s", err, stdout)
+	}
+	var report ConformanceReport
+	if uerr := json.Unmarshal([]byte(stdout), &report); uerr != nil {
+		t.Fatalf("stdout report is not valid JSON: %v\n%s", uerr, stdout)
+	}
+	if report.ImageID != "node" || report.Status != "failed" {
+		t.Fatalf("unexpected missing-runtime report: %#v", report)
+	}
+	found := false
+	for _, assertion := range report.Assertions {
+		if assertion.Name == "runtime.interpreter.node" && assertion.Status == "fail" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected failed node interpreter assertion, got %#v", report.Assertions)
+	}
+}

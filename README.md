@@ -1,7 +1,7 @@
 # ClearCutt Hardened Fleets
 
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
-[![SLSA Level 3](https://img.shields.io/badge/SLSA-Level%203-green.svg)](https://slsa.dev)
+[![SLSA Build L3](https://img.shields.io/badge/SLSA-Build%20L3-green.svg)](https://slsa.dev)
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
@@ -42,7 +42,7 @@ Instead of forcing downstream applications to migrate to a new OS, ClearCutt pac
 ClearCutt generates three distinct lifecycle tiers tailored for different stages of the delivery pipeline:
 *   **`dev` (Builder Tier):** Equipped with raw runtime packages, interactive debugging shells (`bash`), standard utilities (`git`, `curl`), and CA certificates. Includes our integrated transient credential broker.
 *   **`slim` (Diagnostic Runtime Tier):** A lean production execution environment that retains CA certificates, the target language runtime, and basic troubleshooting capabilities (`busybox`, `/bin/bash`).
-*   **`distroless` (Hardened Zero-Utility Tier):** The ultimate production target. Contains **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
+*   **`distroless` (Hardened Zero-Utility Tier):** The most minimal production target. Contains no interactive shells or coreutils (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
 * > [!WARNING]
   > **Mitigation Boundary:** Removing shell binaries prevents `exec()`-based spawning of system shells (a common vector in remote command injection). However, it **does not mitigate other forms of Remote Code Execution (RCE)**. Code injection that executes direct system calls, spawns bundled executables, utilizes dynamic interpreter APIs (such as Python's `os.execve`), or launches Java processes using a custom-packaged shell binary is unaffected by this boundary.
 
@@ -152,7 +152,7 @@ Query high-fidelity security metadata, dynamic entrypoints, non-root user settin
 Enforce software supply chain compliance checks locally or inside CI/CD gates. Validate OIDC signatures, SBOM attestations, SLSA levels, smoke test status, active support lifecycles, and maximum vulnerability counts:
 ```bash
 # Enforce strict supply chain gates locally
-./clearcutt verify java25-distroless \
+./clearcutt verify image java25-distroless \
   --require-signature \
   --require-sbom \
   --max-critical 0 \
@@ -161,7 +161,7 @@ Enforce software supply chain compliance checks locally or inside CI/CD gates. V
 ```
 
 #### 4. `certify` (Downstream Container Auditor)
-Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absolute absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
+Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
 ```bash
 # Export the target OCI container archive
 docker save ghcr.io/acme/my-app:latest -o my-app.tar
@@ -179,7 +179,23 @@ Runs local assertions against OCI base images or active containers completely of
 ./clearcutt conformance run --image java25-distroless
 ```
 
-#### 6. `overlay generate` (Nix Overlay Scaffolder)
+#### 6. `dev` (Pinned Local Development Environments)
+Launch the dev-tier sibling for any ClearCutt runtime line. The command pins the release tag, writes VS Code/Codespaces devcontainer definitions, or opens the same environment through a local container engine or Nix:
+```bash
+# Commit a release-tag-pinned devcontainer definition
+./clearcutt dev java21-distroless --devcontainer
+
+# Run the dev image locally with a writable bind mount
+./clearcutt dev java21-distroless --container --engine docker
+
+# Run a non-interactive CI smoke inside the dev image
+./clearcutt dev java21-distroless --container --command 'java -version'
+
+# Prefer the current Nix native runtime closure
+./clearcutt dev java21-distroless --nix
+```
+
+#### 7. `overlay generate` (Nix Overlay Scaffolder)
 Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCutt secure runtimes directly on top of corporate base OS layers (e.g., Red Hat UBI, Ubuntu Pro, Amazon Linux). Includes Makefile, smoke tests, Containerfile, and GHA workflows:
 ```bash
 # Scaffold workspace to graft Java 25 JRE onto RHEL UBI9
@@ -190,14 +206,14 @@ Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCu
   --output my-java25-overlay/
 ```
 
-#### 7. `exceptions validate` (Exceptions Schema Auditor)
+#### 8. `exceptions validate` (Exceptions Schema Auditor)
 Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
 ```bash
 # Audit exceptions configurations for syntax and expiration
 ./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
 ```
 
-#### 8. `mirror` / `mirror verify` (Secure OCI Layer Replication)
+#### 9. `mirror` / `mirror verify` (Secure OCI Layer Replication)
 Generates high-fidelity `skopeo` and `cosign` shell script templates to securely replicate multi-arch base layers into internal registries while preserving Sigstore OIDC signatures, attestations, and OCI referrers. Supports verification of replicated artifacts:
 ```bash
 # Generate replication script
@@ -207,7 +223,7 @@ Generates high-fidelity `skopeo` and `cosign` shell script templates to securely
 ./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
 ```
 
-#### 9. `app build` / `app diff-base` / `app rebase` (Downstream Application Lifecycle)
+#### 10. `app build` / `app diff-base` / `app rebase` (Downstream Application Lifecycle)
 Build and update downstream application images on ClearCutt bases without a Docker daemon. The rebase path swaps only base layers and preserves application layers byte-for-byte; it refuses runtime major/minor changes and requires a verified developer signature before emitting a signed "allowed" rebase attestation.
 
 For language-specific examples across Core/static, Java, Node.js, Python, Go,

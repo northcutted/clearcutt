@@ -1,16 +1,16 @@
 export const claims = {
   hero: {
     title: "Hardened Image Blueprints, Hermetically Built.",
-    slogan: "Enterprise Compliance, Hermetically Built.",
-    description: "ClearCutt is not an opinionated OS—it is an open-source base image blueprint built with Nix. Downstream teams can fork and adapt the blueprint to compile, customize, and govern their own internal base image feeds or graft secure closures onto existing mandated base OS layers."
+    slogan: "Fork the kit. Own the trust chain.",
+    description: "ClearCutt is a free, forkable platform kit for publishing an internal base-image fleet, catalog site, app-team templates, admission policies, and approved remediation workflows under your own GitHub OIDC identities."
   },
   stig: {
-    title: "STIG-Relevant Structure",
-    description: "Our distroless tier satisfies structural container integrity guidelines by omitting all shells, package managers, and core system utilities—greatly reducing typical command injection escape paths."
+    title: "Structural Hardening",
+    description: "The distroless tier omits shells, package managers, and core system utilities. That reduces common shell-spawn escape paths, while keeping the exact boundary visible in the security model."
   },
   cryptography: {
-    title: "Cryptographic Overlays",
-    description: "Using declarative Nix definitions, runtimes can be customized to bind exclusively to verified cryptographic modules (like OpenSSL in FIPS mode) or graft closures directly onto validated government overlays."
+    title: "Cryptographic Evidence",
+    description: "Images expose independently verifiable Sigstore signatures, SBOM attestations, SLSA Build L3 provenance, test evidence, and release metadata that downstream gates can pin to exact workflow identities."
   },
   reproducibility: {
     title: "Hermetic Store Closures",

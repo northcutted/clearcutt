@@ -1,0 +1,67 @@
+apiVersion: clearcutt.dev/v1
+kind: FleetConfig
+metadata:
+  name: clearcutt-reference-fleet
+registry:
+  host: ghcr.io
+  owner: northcutted
+  repository: clearcutt
+  imagePrefix: clearcutt
+site:
+  title: ClearCutt Hardened Image Fleet
+  pages: true
+  basePath: /clearcutt
+  description: Fork this kit to publish your own trusted base-image fleet, catalog, policies, and app-team templates under your GitHub OIDC identities.
+matrix:
+  systems:
+    - x86_64-linux
+    - aarch64-linux
+  languages:
+    - coreLTS
+    - java21
+    - java25
+    - node22
+    - node24
+    - python3.13
+    - python3.14
+    - go1.25
+    - go1.26
+    - dotnet8
+    - dotnet10
+    - rust1.95
+    - cc15
+  tiers:
+    - dev
+    - slim
+    - distroless
+release:
+  sourceBranch: main
+  workflowIdentity: https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main
+  slsaBuilder: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+rebase:
+  workflowIdentity: https://github.com/northcutted/clearcutt/.github/workflows/rebase.yml@refs/heads/main
+catalog:
+  releaseLimit: 10
+  scanDepth: "4"
+  scanAll: false
+admission:
+  engine: kyverno
+  environment: production
+  namespace: apps
+  denyDevTier: true
+  requireSlsa: true
+  requireSbom: true
+  requireSignature: true
+  requireDigest: true
+remediation:
+  mode: approved-pr
+  scanDepth: "1"
+  maxFindingsPerRun: 1
+  maxPatchFailuresPerRun: 1
+  includeDevOnly: false
+templates:
+  runtimes:
+    - java
+    - node
+    - python
+    - go

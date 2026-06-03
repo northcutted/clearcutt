@@ -114,6 +114,7 @@ certify_target() {
   local publish="$3"
   local registry="$4"
   local repo="$5"
+  local local_signing="$6"
 
   log_info "========================================================"
   log_info "Processing matrix target: ${BLUE}$target${RESET} [Platform: ${BLUE}$system${RESET}]"
@@ -270,20 +271,24 @@ EOF
     fi
   else
     # Local-only fallback signature
-    log_info "Signing OCI archive locally..."
-    ensure_cosign_keys
-    # COSIGN_PASSWORD is already exported by ensure_cosign_keys with a fresh
-    # random value — don't overwrite it here.
+    if [[ "$local_signing" == "true" ]]; then
+      log_info "Signing OCI archive locally..."
+      ensure_cosign_keys
+      # COSIGN_PASSWORD is already exported by ensure_cosign_keys with a fresh
+      # random value — don't overwrite it here.
 
-    # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility.
-    # To work around a Cosign v3 bug where omitting --output-signature when --bundle is passed
-    # causes it to open an empty filename ("open : no such file or directory"), we provide both.
-    local bundle_path="$OUTPUT_DIR/$target.sigstore.json"
-    if cosign sign-blob --key "$KEYS_DIR/cosign.key" --bundle "$bundle_path" --output-signature "$sig_path" "$tar_path"; then
-      log_success "SLSA local signature bundle written -> $bundle_path"
+      # We employ a standardized Sigstore bundle file format for Cosign v3 compatibility.
+      # To work around a Cosign v3 bug where omitting --output-signature when --bundle is passed
+      # causes it to open an empty filename ("open : no such file or directory"), we provide both.
+      local bundle_path="$OUTPUT_DIR/$target.sigstore.json"
+      if cosign sign-blob --key "$KEYS_DIR/cosign.key" --bundle "$bundle_path" --output-signature "$sig_path" "$tar_path"; then
+        log_success "SLSA local signature bundle written -> $bundle_path"
+      else
+        log_error "Cosign local signing failed."
+        return 1
+      fi
     else
-      log_error "Cosign local signing failed."
-      return 1
+      log_info "Skipping local archive signing for non-publish certification."
     fi
   fi
 
@@ -296,6 +301,7 @@ EOF
 main() {
   local run_patch=false
   local publish=false
+  local local_signing=true
   # Detect current system platform natively
   local current_system
   if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -338,6 +344,10 @@ main() {
         publish=true
         shift
         ;;
+      --skip-local-signing)
+        local_signing=false
+        shift
+        ;;
       --registry)
         registry="$2"
         shift 2
@@ -369,7 +379,7 @@ main() {
   local failed=0
   for target in "${target_list[@]}"; do
     report_scm_status "pending" "Running compile and scan certification for $target"
-    if certify_target "$target" "$system" "$publish" "$registry" "$repo"; then
+    if certify_target "$target" "$system" "$publish" "$registry" "$repo" "$local_signing"; then
       report_scm_status "success" "Certified matrix target $target successfully"
     else
       log_error "Certification failed for target $target"

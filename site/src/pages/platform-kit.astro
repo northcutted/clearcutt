@@ -1,0 +1,74 @@
+---
+import Base from '../layouts/Base.astro';
+import CopyBlock from '../components/CopyBlock.astro';
+import { loadIndex } from '../lib/catalog';
+
+let index;
+try { index = loadIndex(); } catch { index = null; }
+const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
+---
+<Base title="Platform Kit" description="Fork ClearCutt to publish your own signed image fleet, catalog, app templates, admission policies, and approved remediation workflow.">
+  <section class="space-y-10 pb-10">
+    <header class="space-y-4 max-w-3xl">
+      <span class="chip-accent">For platform engineering teams</span>
+      <h1 class="heading text-4xl sm:text-5xl">Fork the kit. Own the trust chain.</h1>
+      <p class="text-base text-ink-200">
+        ClearCutt is packaged as a forkable operating kit: configure a fleet, publish signed
+        base images, deploy a catalog site, generate app-team templates, certify downstream
+        images, and draft bounded remediation PRs without adopting a hosted control plane.
+      </p>
+    </header>
+
+    <div class="grid gap-5 lg:grid-cols-3">
+      <section class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+        <h2 class="heading text-lg text-ink-50">Configure</h2>
+        <p class="text-sm text-ink-200">
+          <code>clearcutt.fleet.yaml</code> is the single source of truth for registry owner,
+          matrix targets, site settings, admission defaults, scan windows, and remediation caps.
+        </p>
+      </section>
+      <section class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+        <h2 class="heading text-lg text-ink-50">Publish</h2>
+        <p class="text-sm text-ink-200">
+          GitHub Actions builds the configured matrix, signs images, attaches SBOMs, verifies
+          SLSA Build L3 provenance, and deploys catalog evidence to Pages.
+        </p>
+      </section>
+      <section class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
+        <h2 class="heading text-lg text-ink-50">Onboard</h2>
+        <p class="text-sm text-ink-200">
+          App teams get matching dev images, runtime bases, certification policies, release
+          workflows, and optional zero-rebuild rebase workflows.
+        </p>
+      </section>
+    </div>
+
+    <section class="space-y-4 max-w-3xl">
+      <h2 class="heading text-xl text-ink-50">Operator Commands</h2>
+      <CopyBlock language="shell" code={`git clone https://github.com/${ownerRepo}.git
+cd clearcutt
+
+# Check that the forkable platform kit is wired together
+clearcutt platform status
+
+# Generate an app-team starter
+clearcutt app template java --output examples/payments-api
+
+# Build catalog data from releases, registry evidence, SBOMs, and scans
+clearcutt catalog build --limit 10 --scan-depth 4`} />
+    </section>
+
+    <section class="space-y-4 max-w-3xl">
+      <h2 class="heading text-xl text-ink-50">Evidence Boundaries</h2>
+      <p class="text-sm text-ink-200">
+        The catalog reports signatures, SBOMs, SLSA Build L3 provenance, test results, and
+        vulnerability scans independently. A missing evidence channel stays visible instead of
+        being inferred from another check.
+      </p>
+      <p class="text-sm text-ink-200">
+        Remediation is approved automation: scheduled scans create ranked plans and draft PRs
+        for review. The workflow does not silently merge, deploy, or rewrite production images.
+      </p>
+    </section>
+  </section>
+</Base>

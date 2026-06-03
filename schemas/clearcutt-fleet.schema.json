@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clearcutt.dev/schemas/clearcutt-fleet.schema.json",
+  "title": "ClearCutt Fleet Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "registry",
+    "matrix",
+    "release",
+    "catalog",
+    "admission",
+    "remediation",
+    "templates"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "clearcutt.dev/v1"
+    },
+    "kind": {
+      "const": "FleetConfig"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "owner", "repository", "imagePrefix"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "imagePrefix": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "pages": {
+          "type": "boolean"
+        },
+        "basePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["systems", "languages", "tiers"],
+      "properties": {
+        "systems": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": ["x86_64-linux", "aarch64-linux"]
+          }
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": ["dev", "slim", "distroless"]
+          }
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceBranch", "workflowIdentity", "slsaBuilder"],
+      "properties": {
+        "sourceBranch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workflowIdentity": {
+          "type": "string",
+          "pattern": "^https://github.com/.+/.github/workflows/.+@refs/.+"
+        },
+        "slsaBuilder": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "rebase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflowIdentity": {
+          "type": "string"
+        }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseLimit", "scanDepth", "scanAll"],
+      "properties": {
+        "releaseLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scanDepth": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "scanAll": {
+          "type": "boolean"
+        }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "environment", "namespace"],
+      "properties": {
+        "engine": {
+          "enum": ["kyverno", "gatekeeper"]
+        },
+        "environment": {
+          "enum": ["development", "production", "strict"]
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "denyDevTier": {
+          "type": "boolean"
+        },
+        "requireSlsa": {
+          "type": "boolean"
+        },
+        "requireSbom": {
+          "type": "boolean"
+        },
+        "requireSignature": {
+          "type": "boolean"
+        },
+        "requireDigest": {
+          "type": "boolean"
+        }
+      }
+    },
+    "remediation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "scanDepth", "maxFindingsPerRun", "maxPatchFailuresPerRun"],
+      "properties": {
+        "mode": {
+          "const": "approved-pr"
+        },
+        "scanDepth": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "maxFindingsPerRun": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxPatchFailuresPerRun": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "includeDevOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "templates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimes"],
+      "properties": {
+        "runtimes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": ["java", "node", "python", "go"]
+          }
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

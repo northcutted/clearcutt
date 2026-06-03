@@ -2,12 +2,11 @@
 //
 // `displayLanguage` and `isPrimaryRuntimePackage` were previously copy-pasted
 // into VulnerabilityTable.tsx and SbomTable.tsx (and mirrored in
-// core/scripts/scan-vulnerabilities.mjs, which is the authoritative *producer* of
-// the `inclusion`/`remediation` metadata the client only recomputes as a
-// fallback). Centralizing the two pure predicates here keeps the CVE table and
-// SBOM table from drifting apart. The scanner intentionally keeps its own copy
-// because it runs as a plain Node process outside the site's TS build — if you
-// change the rules here, update core/scripts/scan-vulnerabilities.mjs to match.
+// `clearcutt scan`, which is the authoritative *producer* of the
+// `inclusion`/`remediation` metadata the client only recomputes as a fallback).
+// Centralizing the two pure predicates here keeps the CVE table and SBOM table
+// from drifting apart. The scanner intentionally keeps its own copy in Go; if
+// you change the rules here, update cli/internal/commands/scan.go to match.
 
 export function displayLanguage(language: string): string {
   switch (language) {

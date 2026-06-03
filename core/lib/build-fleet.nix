@@ -150,6 +150,13 @@ in
   pkgs.dockerTools.buildLayeredImage {
     inherit name tag fromImage maxLayers;
     contents = allContents;
+    extraCommands = ''
+      mkdir -p etc
+      rm -f etc/passwd etc/group
+      cp ${passwdFile}/etc/passwd etc/passwd
+      cp ${groupFile}/etc/group etc/group
+      chmod 0644 etc/passwd etc/group
+    '';
     config = mergedConfig;
   };
 }

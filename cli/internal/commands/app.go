@@ -38,6 +38,7 @@ required) and are the only network-touching commands in the CLI:
 	cmd.AddCommand(newAppBuildCmd())
 	cmd.AddCommand(newAppDiffBaseCmd())
 	cmd.AddCommand(newAppRebaseCmd())
+	cmd.AddCommand(newAppTemplateCmd())
 	return cmd
 }
 
@@ -80,6 +81,9 @@ func parseRuntimeLine(id string) (runtime string, major, minor int, ok bool) {
 	if i := strings.LastIndex(id, "-"); i > 0 {
 		core = id[:i]
 	}
+	if strings.EqualFold(core, "coreLTS") {
+		return "core", 0, 0, true
+	}
 	m := runtimeLineRe.FindStringSubmatch(core)
 	if m == nil {
 		return "", 0, 0, false
@@ -114,6 +118,9 @@ func runtimeCompat(oldID, newID string) (ok bool, reason string) {
 }
 
 func versionLabel(runtime string, major, minor int) string {
+	if runtime == "core" && major == 0 && minor == 0 {
+		return "coreLTS"
+	}
 	if minor == 0 {
 		return fmt.Sprintf("%s%d", runtime, major)
 	}

@@ -1,10 +1,14 @@
-# ClearCutt Manual Vulnerability Scan & Remediation Gateway
+# ClearCutt Approved Vulnerability Remediation Gateway
 # Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Manual fail-closed remediation scan with brokered AI patch drafting
+# Paradigm: Scheduled/gated remediation planning with bounded PR drafting
 
-name: ClearCutt Manual Remediation Scan
+name: ClearCutt Approved Remediation Scan
 
 on:
+  schedule:
+    # Weekly planning run. The workflow drafts PRs for review; it does not merge
+    # or deploy patched images automatically.
+    - cron: "0 11 * * 1"
   workflow_dispatch:
     inputs:
       include_dev_only:
@@ -35,11 +39,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '22'
-
       - name: Install Grype
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
@@ -52,10 +51,37 @@ jobs:
           path: |
             site/src/data/enrichment
             site/src/data/sboms
-          key: catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
           restore-keys: |
-            catalog-data-${{ runner.os }}-${{ hashFiles('core/scripts/gather-catalog.mjs', 'core/scripts/enrich-registry.mjs', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
+
+      # Both the remediation scan and dispatcher now use the Go CLI: `scan`
+      # replaced the retired Node scanner, and `remediation plan` replaced the
+      # retired Python broker.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Resolve fleet remediation parameters
+        id: fleet
+        run: |
+          set -euo pipefail
+          FLEET=$(./clearcutt --format json matrix export --source fleet)
+          {
+            echo "scan_depth=$(jq -r '.remediation.scanDepth' <<< "$FLEET")"
+            echo "max_findings=$(jq -r '.remediation.maxFindingsPerRun' <<< "$FLEET")"
+            echo "max_failures=$(jq -r '.remediation.maxPatchFailuresPerRun' <<< "$FLEET")"
+            echo "include_dev_only=$(jq -r '.remediation.includeDevOnly' <<< "$FLEET")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Gather release assets → catalog JSON
         env:
@@ -63,12 +89,30 @@ jobs:
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: "10"
-        run: node core/scripts/gather-catalog.mjs --limit "$RELEASE_LIMIT"
+        run: ./clearcutt catalog gather --limit "$RELEASE_LIMIT"
 
       - name: Run Remediation Scan
         env:
           SCAN_MODE: remediation
+          SCAN_TAG_DEPTH: ${{ steps.fleet.outputs.scan_depth }}
+          CLEARCUTT_BIN: ${{ github.workspace }}/clearcutt
         run: ./core/scripts/scheduled-scan.sh
+
+      - name: Generate approved remediation plan
+        env:
+          VULN_ROOT: site/src/data/vulnerabilities
+          INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
+        run: |
+          set -euo pipefail
+          INCLUDE_ARGS=()
+          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
+            INCLUDE_ARGS+=(--include-dev-only)
+          fi
+          ./clearcutt --format json remediation plan \
+            --vuln-root "$VULN_ROOT" \
+            --limit "${{ steps.fleet.outputs.max_findings }}" \
+            --out core/build-outputs/remediation-plan.json \
+            "${INCLUDE_ARGS[@]}"
 
       - name: Configure Git Credentials
         run: |
@@ -87,7 +131,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      - name: Run Brokered CVE Patch Dispatcher
+      - name: Run Go Remediation Dispatcher
         # Bound the LLM/build loop. The job-level cap catches infinite loops;
         # this step-level cap stops a single agent invocation from eating the
         # entire 45 min budget if there are many findings.
@@ -100,14 +144,24 @@ jobs:
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
           # Cap how many distinct findings one run will attempt. Anything over
           # this gets picked up on the next scheduled run.
-          MAX_FINDINGS_PER_RUN: "1"
-          # Dev-tier-only campaigns are intentionally not included here. They
-          # can be tested with the include_dev_only workflow dispatch input.
-          INCLUDE_DEV_ONLY_REMEDIATION: ${{ inputs.include_dev_only }}
+          MAX_FINDINGS_PER_RUN: ${{ steps.fleet.outputs.max_findings }}
+          # Dev-tier-only campaigns are intentionally off by default. They can be
+          # tested with the include_dev_only workflow dispatch input.
+          INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
           VULN_ROOT: ../site/src/data/vulnerabilities
-          MAX_PATCH_FAILURES_PER_RUN: "1"
+          MAX_PATCH_FAILURES_PER_RUN: ${{ steps.fleet.outputs.max_failures }}
         working-directory: core
-        run: ./scripts/auto-patch-triage.py
+        run: |
+          INCLUDE_ARGS=()
+          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
+            INCLUDE_ARGS+=(--include-dev-only)
+          fi
+          ../clearcutt remediation run \
+            --vuln-root "$VULN_ROOT" \
+            --limit "$MAX_FINDINGS_PER_RUN" \
+            --max-failures "$MAX_PATCH_FAILURES_PER_RUN" \
+            --plan-out build-outputs/remediation-plan.json \
+            "${INCLUDE_ARGS[@]}"
 
       - name: Upload Scanned Vulnerabilities
         if: always()
@@ -115,4 +169,12 @@ jobs:
         with:
           name: vulnerabilities-data
           path: site/src/data/vulnerabilities/
+          retention-days: 7
+
+      - name: Upload Remediation Plan
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: remediation-plan
+          path: core/build-outputs/remediation-plan.json
           retention-days: 7

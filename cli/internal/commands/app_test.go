@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -64,6 +65,47 @@ func TestAppBuildCommandBuildsRebasableImage(t *testing.T) {
 	}
 }
 
+func TestEmitAppBuildResultTableAndYAMLBranches(t *testing.T) {
+	var buf bytes.Buffer
+	oldOut := out
+	oldFormat := GlobalOpts.Format
+	out = &buf
+	GlobalOpts.Format = "table"
+	t.Cleanup(func() {
+		out = oldOut
+		GlobalOpts.Format = oldFormat
+	})
+
+	result := AppBuildResult{
+		Image:          "ghcr.io/acme/payments:1.0.0",
+		Digest:         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		BaseRef:        "ghcr.io/acme/base@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		BaseID:         "java21-distroless",
+		BaseLastLayer:  "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		AppLayerDigest: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}
+	if err := emitAppBuildResult(result); err != nil {
+		t.Fatalf("emit app build table: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Built and pushed application image") ||
+		!strings.Contains(buf.String(), "base id        : java21-distroless") {
+		t.Fatalf("unexpected table output:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	GlobalOpts.Format = "yaml"
+	if err := emitAppBuildResult(result); err != nil {
+		t.Fatalf("emit app build yaml: %v", err)
+	}
+	if !strings.Contains(buf.String(), "baseId: java21-distroless") {
+		t.Fatalf("unexpected YAML output:\n%s", buf.String())
+	}
+
+	if _, err := parseExecArray(`{"not":"array"}`); err == nil || !strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Fatalf("expected invalid exec-array error, got %v", err)
+	}
+}
+
 func TestAppDiffBaseOfflineCompatibility(t *testing.T) {
 	stdout, err := runCLI(t, "app", "diff-base",
 		"--current-base", "java21-distroless",
@@ -92,6 +134,113 @@ func TestAppDiffBaseOfflineCompatibility(t *testing.T) {
 		"--format", "json")
 	if !errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("expected incompatible base to return ErrCheckFailed, got %v\n%s", err, stdout)
+	}
+}
+
+func TestResolveBaseReferenceCatalogAndRawBranches(t *testing.T) {
+	oldCatalog := GlobalOpts.CatalogPath
+	GlobalOpts.CatalogPath = writeCommandSmokeCatalog(t)
+	t.Cleanup(func() { GlobalOpts.CatalogPath = oldCatalog })
+
+	ref, baseID, version, err := resolveBaseReference("java21-distroless", "")
+	if err != nil {
+		t.Fatalf("resolve catalog base: %v", err)
+	}
+	if baseID != "java21-distroless" || version != "v2.0.0" ||
+		!strings.Contains(ref, "ghcr.io/northcutted/clearcutt/clearcutt-java21@sha256:2222") {
+		t.Fatalf("unexpected catalog base resolution: ref=%q baseID=%q version=%q", ref, baseID, version)
+	}
+
+	ref, baseID, version, err = resolveBaseReference("java21-distroless", "v1.0.0")
+	if err != nil {
+		t.Fatalf("resolve tagged catalog base: %v", err)
+	}
+	if baseID != "java21-distroless" || version != "v1.0.0" ||
+		!strings.Contains(ref, "@sha256:1111") {
+		t.Fatalf("unexpected tagged catalog base resolution: ref=%q baseID=%q version=%q", ref, baseID, version)
+	}
+
+	ref, baseID, version, err = resolveBaseReference("ghcr.io/acme/base:latest", "v9")
+	if err != nil {
+		t.Fatalf("raw base ref should resolve verbatim: %v", err)
+	}
+	if ref != "ghcr.io/acme/base:latest" || baseID != "" || version != "v9" {
+		t.Fatalf("unexpected raw base resolution: ref=%q baseID=%q version=%q", ref, baseID, version)
+	}
+
+	if _, _, _, err = resolveBaseReference("", ""); err == nil || !strings.Contains(err.Error(), "base image is required") {
+		t.Fatalf("expected missing base error, got %v", err)
+	}
+}
+
+func TestEmitAppDiffBaseResultTableAndYAMLBranches(t *testing.T) {
+	var buf bytes.Buffer
+	oldOut := out
+	oldFormat := GlobalOpts.Format
+	out = &buf
+	GlobalOpts.Format = "table"
+	t.Cleanup(func() {
+		out = oldOut
+		GlobalOpts.Format = oldFormat
+	})
+
+	result := AppDiffBaseResult{
+		Image:         "ghcr.io/acme/payments:1.0.0",
+		CurrentBase:   "",
+		CandidateBase: "java21-distroless",
+		Compatible:    false,
+		CompatReason:  "runtime family mismatch",
+		Rebasable:     true,
+		Boundary:      "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+		CurrentVulns:  &sevCounts{Critical: 2, High: 1, Medium: 0, Low: 4},
+		CandidateVulns: &sevCounts{
+			Critical: 1,
+			High:     4,
+			Medium:   0,
+			Low:      4,
+		},
+		VulnDelta:         &sevCounts{Critical: 1, High: -3, Medium: 0, Low: 0},
+		VulnDeltaComputed: true,
+	}
+	if err := emitAppDiffBaseResult(result); err != nil {
+		t.Fatalf("emit table result: %v", err)
+	}
+	table := buf.String()
+	for _, want := range []string{
+		"app image      : ghcr.io/acme/payments:1.0.0",
+		"current base   : -",
+		"compatibility  : INCOMPATIBLE",
+		"Critical",
+		"-1",
+		"+3",
+	} {
+		if !strings.Contains(table, want) {
+			t.Fatalf("expected table output to contain %q, got:\n%s", want, table)
+		}
+	}
+
+	buf.Reset()
+	GlobalOpts.Format = "yaml"
+	if err := emitAppDiffBaseResult(AppDiffBaseResult{
+		CurrentBase:   "java21-distroless",
+		CandidateBase: "java21-distroless",
+		Compatible:    true,
+		CompatReason:  "same runtime family",
+	}); err != nil {
+		t.Fatalf("emit yaml result: %v", err)
+	}
+	if !strings.Contains(buf.String(), "compatible: true") {
+		t.Fatalf("expected YAML output, got:\n%s", buf.String())
+	}
+}
+
+func TestRuntimeCompatAcceptsCoreLTSLine(t *testing.T) {
+	ok, reason := runtimeCompat("coreLTS-slim", "coreLTS-distroless")
+	if !ok {
+		t.Fatalf("expected coreLTS tiers to be compatible, got %q", reason)
+	}
+	if !strings.Contains(reason, "coreLTS") {
+		t.Fatalf("expected coreLTS compatibility reason, got %q", reason)
 	}
 }
 
@@ -200,6 +349,48 @@ func TestAppRebaseCommandRequiresPinnedDeveloperIdentity(t *testing.T) {
 		"--cosign-path", filepath.Join(t.TempDir(), "missing-cosign"))
 	if err == nil || !strings.Contains(err.Error(), "--dev-identity is required") {
 		t.Fatalf("expected missing developer identity error, got %v\n%s", err, stdout)
+	}
+}
+
+func TestEmitAppRebaseResultAndHelpers(t *testing.T) {
+	var buf bytes.Buffer
+	oldOut := out
+	oldFormat := GlobalOpts.Format
+	out = &buf
+	GlobalOpts.Format = "table"
+	t.Cleanup(func() {
+		out = oldOut
+		GlobalOpts.Format = oldFormat
+	})
+
+	result := AppRebaseResult{
+		SourceImage:        "ghcr.io/acme/app:1",
+		SourceDigest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		RebasedRef:         "ghcr.io/acme/app@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		OldBaseDigest:      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		NewBaseDigest:      "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		CompatReason:       "runtime java21 preserved",
+		PreservedAppLayers: []string{"sha256:eeee"},
+		DevSignatureVerify: true,
+		Signed:             true,
+		Attested:           true,
+	}
+	if err := emitAppRebaseResult(result); err != nil {
+		t.Fatalf("emit app rebase table: %v", err)
+	}
+	if !strings.Contains(buf.String(), "verified (dual-control)") || !strings.Contains(buf.String(), "Rebase complete") {
+		t.Fatalf("unexpected app rebase table:\n%s", buf.String())
+	}
+	if verifiedLabel(false) != "not verified" || digestFromRef("ghcr.io/acme/app:tag") != "ghcr.io/acme/app:tag" {
+		t.Fatal("app rebase helper branches returned unexpected values")
+	}
+	buf.Reset()
+	GlobalOpts.Format = "yaml"
+	if err := emitAppRebaseResult(result); err != nil {
+		t.Fatalf("emit app rebase yaml: %v", err)
+	}
+	if !strings.Contains(buf.String(), "attested: true") {
+		t.Fatalf("unexpected app rebase YAML:\n%s", buf.String())
 	}
 }
 
