@@ -8,7 +8,7 @@ This blueprint demonstrates how to run **ClearCutt Hardened container images** i
 
 The [`deployment.yaml`](./deployment.yaml) manifest implements strict Pod Security Standards (PSS) to enforce maximum runtime isolation:
 
-*   **Rootless Context:** Runs the container strictly as unprivileged UID/GID `10001 (appuser)` via Pod-level `runAsUser` settings, blocking container escape vectors.
+*   **Rootless Context:** Runs the container as unprivileged UID/GID `10001 (appuser)` via Pod-level `runAsUser` settings, reducing the blast radius of runtime compromise.
 *   **Immutable RootFS:** Employs `readOnlyRootFilesystem: true` to prevent any modifications to the image layer at runtime.
 *   **Ephemeral `/tmp` Mounting:** Maps `/tmp` to an in-memory `emptyDir` storage volume, allowing applications to write transient files (like cache folders) securely without exposing write pathways on the host node.
 *   **Zero Capabilities:** Drops all standard Linux capabilities (`capabilities.drop: [ALL]`) to prevent kernel interaction exploits.
@@ -88,7 +88,7 @@ these admission checks across every supported stack, see
     ```bash
     kubectl apply -f deployment.yaml
     ```
-4.  Test policy gating. If you try to deploy an unsigned image or one without an SBOM from the clearcutt namespace, Kyverno will dynamically block admission:
+4.  Test policy gating. If you try to deploy an unsigned image or one without the required SBOM attestation from the clearcutt namespace, Kyverno should block admission:
     ```bash
     kubectl run uncertified --image=ghcr.io/northcutted/clearcutt/clearcutt-python3.13:slim
     # Outputs: Error from server: policy clearcutt-verify-provenance error: image verification failed...

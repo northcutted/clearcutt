@@ -90,7 +90,7 @@ The `clearcutt` CLI is a single, zero-daemon Go governance engine designed to en
 Run policy checks on target base images before integrating them in your builds:
 ```bash
 # Check that an image satisfies strict production gates
-clearcutt verify java25-distroless \
+clearcutt verify image java25-distroless \
   --require-signature \
   --require-sbom \
   --max-critical 0 \

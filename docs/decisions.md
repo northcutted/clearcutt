@@ -7,16 +7,16 @@ This document traces the design logic and rationale behind the key security cons
 ## 1. Rootless Context & Hardcoded UID/GID `10001`
 
 * **Decision**: All container images in the slim and distroless tiers are statically configured to run as unprivileged user `10001` and group `10001` (`appuser`).
-* **Rationale**: Running as `root` (UID 0) inside container namespaces remains the single largest risk vector for container escape vulnerabilities (such as CVE-2024-21626). Hardcoding the unprivileged UID `10001` ensures that even if an attacker successfully achieves remote code execution, they remain sandboxed under an unprivileged user space. 
-* **Enterprise Alignment**: The `10001` UID complies directly with the Kubernetes Pod Security Standards (`restricted` profile) and aligns seamlessly with RedHat OpenShift's SCC dynamic group `gid: 0` constraints, allowing both standard K8s clusters and OCP platforms to admit and run the images securely.
+* **Rationale**: Running as `root` (UID 0) inside container namespaces increases the blast radius of container escape vulnerabilities (such as CVE-2024-21626). Using the unprivileged UID `10001` means a successful application exploit starts from a lower-privilege user context.
+* **Enterprise Alignment**: The `10001` UID aligns with Kubernetes Pod Security Standards (`restricted` profile). OpenShift deployments use a separate arbitrary-UID pattern documented in `examples/openshift-deployment/`.
 
 ---
 
 ## 2. Cryptographic Digest-Pinning (`@sha256`)
 
 * **Decision**: All base image templates and production deployments must pin OCI image references using their immutable SHA-256 digest rather than standard mutable version tags.
-* **Rationale**: In standard container registries, tags (like `:latest` or `:1.0.0`) are fully mutable. An attacker who gains write access to a registry can overwrite the tag with a compromised layer graph without altering downstream deployment configurations. In contrast, digest-pinning locks the exact cryptographic signature of the compiled Nix store layers.
-* **Reproducibility**: Pinned digests ensure that every deployment, whether local, CI, or production, runs on the exact same bit-identical image archive, fully preventing tag-drift and man-in-the-middle container substitution attacks.
+* **Rationale**: In standard container registries, tags (like `:latest` or `:1.0.0`) are mutable. An attacker who gains write access to a registry can overwrite the tag with a compromised layer graph without altering downstream deployment configurations. Digest-pinning makes the intended image content explicit.
+* **Reproducibility**: Pinned digests ensure that every deployment, whether local, CI, or production, resolves to the same image archive and closes the common tag-drift path.
 
 ---
 
@@ -24,12 +24,12 @@ This document traces the design logic and rationale behind the key security cons
 
 * **Decision**: Java (specifically Java 21 LTS) was selected as the first comprehensive end-to-end template implementation.
 * **Rationale**: The JVM ecosystem represents the largest enterprise application footprint and has historically been the target of catastrophic classloader injection vulnerabilities (like Log4Shell). Hardening Java applications presents the highest immediate business value.
-* **Hermetic class paths**: By wrapping the Java runtime natively in a Nix store overlay on top of our zero-utility Distroless tier, we ensure that classloading cannot resolve external binaries, dynamic libraries, or temporary directories that are not explicitly gated and cryptographically verified at build time.
+* **Hermetic class paths**: By wrapping the Java runtime in a Nix store closure on top of the distroless tier, classpath and dynamic-linker resolution stay inside the declared runtime closure unless the downstream application explicitly adds more files.
 
 ---
 
 ## 4. Total Elimination of Shells and Utilities in Distroless
 
 * **Decision**: The `distroless` tier strips out every interactive shell (`/bin/sh`, `/bin/bash`, `/bin/ash`, `/bin/zsh`) and core utility binary (`ls`, `cat`) in both `/bin` and `/usr/bin`.
-* **Rationale**: The vast majority of remote code execution (RCE) exploits rely on spawning a local shell binary (such as executing `exec("/bin/sh")` or utilizing shell pipe redirects) to download malware, crawl networks, or extract credentials. By ensuring there are literally no shell binaries present on disk, shell-injection attacks are rendered completely inert.
-* **Attack Surface Reduction**: Stripping core utilities removes the developer's "convenience tools" (like `cat` or `ls`), which is a necessary trade-off to ensure attackers have zero discovery capability if they successfully breach the runtime process space.
+* **Rationale**: Many post-exploitation paths rely on spawning a local shell binary (such as executing `exec("/bin/sh")` or using shell pipe redirects) to download malware, crawl networks, or extract credentials. Removing shell binaries blocks that class of behavior.
+* **Attack Surface Reduction**: Stripping core utilities removes the developer's "convenience tools" (like `cat` or `ls`). That reduces built-in discovery and scripting options after compromise, while the security model still treats other RCE paths as in scope.

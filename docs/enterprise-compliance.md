@@ -1,10 +1,10 @@
 # Enterprise Compliance Layering: Nix Closures on Corporate Base Images
 
-ClearCutt is designed with architectural flexibility at its core. By default, we recommend utilizing our **Slim** or **Distroless** tiers, which offer ultra-lightweight, zero-utility base environments with zero bloated operating system packages (massively reducing your attack surface and vulnerabilities).
+ClearCutt is designed with architectural flexibility at its core. By default, we recommend using the **slim** or **distroless** tiers, which keep the runtime closure small and remove package-manager bloat from the production image.
 
 However, in many regulated enterprise environments, corporate security mandates require that all container images derive from a specific, certified operating system baseline—such as **Red Hat Universal Base Image (UBI)**, **Ubuntu Pro / Ubuntu Minimal**, or **Amazon Linux 2023**.
 
-With ClearCutt's Nix-based compilation architecture, you can satisfy these compliance mandates 100% while keeping your application runtimes (Java, Node.js, Python, Go, .NET) completely updated, secure, and fully traceable.
+With ClearCutt's Nix-based compilation architecture, you can meet those base-image mandates without giving up a separately governed language-runtime closure. The trade-off is explicit: the final image still inherits the mandated base's shell, package manager, and CVE footprint.
 
 ---
 
@@ -13,7 +13,7 @@ With ClearCutt's Nix-based compilation architecture, you can satisfy these compl
 In a standard Dockerfile build, updating a runtime on a mandated OS base requires running package manager commands (e.g. `apt-get` or `dnf`) that write files into the host's `/usr`, `/lib`, and `/var` directories. This introduces:
 1. **Layer bloat** and non-deterministic package drift.
 2. **Version conflicts** between the base OS packages and the application runtime.
-3. **Loss of reproducible guarantees** and traceable supply chains.
+3. **Weaker reproducibility and traceability** for the runtime layer.
 
 ClearCutt leverages Nix's `dockerTools.buildLayeredImage` and the `fromImage` parameter to stack self-contained `/nix/store` closures **directly on top** of the mandated base image. 
 
@@ -31,7 +31,7 @@ Because `/nix/store` paths are immutable and dynamically linked to their own iso
 
 ## 3 Enterprise Base OS Injection Examples
 
-Below are concrete, production-ready Nix declarative flake configurations showing how to stack ClearCutt closures on top of Red Hat UBI, Ubuntu, and Amazon Linux 2023.
+Below are concrete Nix flake patterns for stacking ClearCutt-style closures on top of Red Hat UBI, Ubuntu, and Amazon Linux 2023. Treat them as starting points for your platform fork and policy requirements.
 
 ### 1. Layering on Red Hat Universal Base Image (UBI 9)
 The standard choice for enterprise environments utilizing Red Hat OpenShift or Red Hat Enterprise Linux.
@@ -185,9 +185,9 @@ The standard choice for AWS native services like Amazon ECS, EKS, and AWS Fargat
 
 ## 🛡️ Cryptographic Signature & Attestation Traceability
 
-By standardizing on this stacking architecture, your enterprise supply chain is fully fortified:
+By standardizing on this stacking architecture, your enterprise supply chain gets clearer evidence boundaries:
 
-1. **Deterministic Builds**: Nix guarantees that the `/nix/store` runtime overlay is bit-for-bit reproducible, producing a clean, predictable SPDX SBOM (via Syft) of your runtime closure.
-2. **First-Party Attestations**: Our GHA release workflow generates cryptographically signed build provenance (`actions/attest-build-provenance`) and SBOM attestations (`actions/attest-sbom`) registered directly with the GitHub Attestations service.
-3. **Referrers Copy**: Promoting images via `cosign copy` automatically duplicates these first-party attestations onto the final image tags in your clean registry.
-4. **Admission Control enforcement**: Inside your Kubernetes cluster, an admission controller (e.g., Kyverno) intercepts pods and validates the image digest against the OIDC signature. This guarantees that **only images with a verifiable lineage originating from your secure GHA workflow can ever run**, completely mitigating supply chain compromises and container injection threats.
+1. **Runtime closure evidence**: Nix builds the `/nix/store` runtime overlay from pinned inputs and produces an SBOM for that closure.
+2. **Release attestations**: Your release workflow can generate signed build provenance and SBOM attestations under your GitHub Actions OIDC identity.
+3. **Referrers copy**: Promotion scripts must preserve signatures and attestations when copying images into internal registries.
+4. **Admission control enforcement**: Kyverno or OPA policies can verify image digests, signatures, and selected attestations before scheduling workloads. This narrows the set of images allowed into the cluster, but it does not replace base OS patching, runtime CVE triage, or application-layer controls.

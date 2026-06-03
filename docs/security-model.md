@@ -9,7 +9,7 @@ ClearCutt is designed to establish reliable, evidence-backed supply-chain assura
 - **Digest-Pinned References**: All runtime dependencies and base images are cryptographic digest-pinned to prevent dynamic tag mutation and ensure byte-for-byte reproducibility.
 - **Keyless Signature & SLSA Provenance Verification**: Releases are cryptographically signed using Sigstore Cosign keyless signatures and attested with SLSA level-3 non-falsifiable build provenance.
 - **Minimality & Hardening**:
-  - `distroless` tier is guaranteed shell-free, package-manager-free, and executes under a strict unprivileged operator (`UID 10001:10001`).
+  - `distroless` tier is verified by conformance/certification checks to be shell-free, package-manager-free, and configured for unprivileged execution (`UID 10001:10001`).
   - `slim` tier is package-manager-free and executes under a non-root UID while retaining an interactive shell.
 
 ---

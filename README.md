@@ -9,7 +9,7 @@
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**ClearCutt** is a free, open-source kit for platform and security engineers who need to **own** their container base images instead of trusting someone else's. You fork it once, and out of the box you get a hardened multi-language base-image fleet built with Nix, a signing-and-attestation pipeline, a catalog site, app-team templates, CI/CD policy gates, Kubernetes admission policies, and an approved remediation workflow — all running under **your** GitHub OIDC identities, with no hosted control plane to depend on.
+**ClearCutt** is a free, open-source kit for platform and security engineers who need to **own** their container base images instead of depending on someone else's feed. You fork it once, and out of the box you get a hardened multi-language base-image fleet built with Nix, a signing-and-attestation pipeline, a catalog site, app-team templates, CI/CD policy gates, Kubernetes admission policies, and an approved remediation workflow — all running under **your** GitHub OIDC identities, with no hosted ClearCutt control plane to depend on.
 
 By leveraging **Nix**, ClearCutt compiles target language runtimes (e.g., Java, Node.js, Python) as isolated `/nix/store` closures. While we provide secure, distroless images from-scratch, the blueprint also natively supports grafting these isolated layers directly on top of existing, government-mandated enterprise base OS configurations (such as Red Hat UBI, Amazon Linux, or Ubuntu Pro) as a compliance on-ramp. This lets platform teams stand up a strong, auditable container-security posture — a traceable cryptographic signature and attestation chain from source-code checkout to the Kubernetes admission gateway — while still satisfying legacy corporate image constraints.
 
@@ -17,20 +17,20 @@ By leveraging **Nix**, ClearCutt compiles target language runtimes (e.g., Java, 
 
 ## ClearCutt across the SDLC
 
-ClearCutt does a lot, but it's one tool with one job per phase of the delivery lifecycle. Read the **outcome** to see the value; the **commands & evidence** column points at the section that proves it.
+ClearCutt is best understood as one operating model with two connected loops:
+platform teams publish and govern the trusted base-image fleet; app teams adopt,
+gate, admit, and update against that fleet.
 
-| Phase | What you get (the outcome) | Commands & evidence |
+| Moment | Manager-level value | Platform-engineering depth |
 | :--- | :--- | :--- |
-| **1. Author** | Own your base-image fleet as code — fork it, don't depend on a vendor. | `clearcutt.fleet.yaml` · Nix matrix · `platform init` |
-| **2. Publish** | Every image ships signed, SBOM'd, and SLSA-attested — automatically. | GitHub Actions · `cosign` keyless · SPDX · SLSA Build L3 |
-| **3. Discover** | One catalog shows exactly what's signed and scanned — no guessing. | `clearcutt list` · `inspect` · `matrix` |
-| **4. Adopt** | App teams onboard in minutes — no Nix, no Dockerfile archaeology. | `clearcutt app template` · `dev` tier · devcontainers |
-| **5. Certify** | Block non-compliant images before they leave CI. | `clearcutt certify` · `verify` · `certification-policy.yaml` |
-| **6. Admit** | Only signed, attested images run in your clusters. | Kyverno / OPA admission policies |
-| **7. Operate** | Patch a base once, move every app onto it — **no rebuild**. | `clearcutt app rebase` · VEX/exception triage · `mirror` |
+| **Own the fleet** | Base images become an owned platform capability instead of an external feed you hope stays aligned. | `clearcutt.fleet.yaml`, Nix runtime matrix, `clearcutt platform status`, fork-local GitHub OIDC identities |
+| **Publish evidence** | Every release has visible proof: signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | `clearcutt catalog build`, `release`, `matrix`, Sigstore keyless signing, SPDX attestations, SLSA Build L3 provenance |
+| **Onboard apps** | App teams get a paved path without learning Nix or reverse-engineering base-image contracts. | `clearcutt list`, `inspect`, `dev`, `app template`, `app build`, devcontainers, stack examples |
+| **Gate delivery** | CI and admission can block images that miss your runtime, evidence, or vulnerability policy. | `clearcutt certify`, `verify`, `conformance`, `policy`, `certification-policy.yaml`, Kyverno / OPA bundles |
+| **Operate updates** | Security teams can triage CVEs, document exceptions, and move compatible app images onto patched bases under review. | `clearcutt scan`, `remediation`, `exceptions`, `vex`, `mirror`, `app diff-base`, `app rebase` |
 
 > [!TIP]
-> **Application developers don't need Nix.** Pull, run, and verify the published images with plain Docker, Podman, or Kubernetes. Nix is only for the platform team authoring the fleet in phase 1.
+> **Application developers don't need Nix.** Pull, run, and verify the published images with plain Docker, Podman, or Kubernetes. Nix is only for the platform team authoring the fleet.
 
 ---
 
@@ -335,7 +335,7 @@ spec:
       expiresAt: "2026-08-30"
       references:
         - "https://nvd.nist.gov/vuln/detail/CVE-2026-9999"
-      notes: "Vulnerable functions are completely sealed and unreachable in our distroless runtime closures."
+      notes: "Affected functions are not reachable in our current distroless runtime closure."
 ```
 
 #### 2. Certification Policy Schema (`certification-policy.yaml`)
@@ -409,8 +409,8 @@ jobs:
           certificate-identity-regexp: 'https://github.com/${{ github.repository }}/.github/workflows/.*'
 ```
 
-### 1.5 CI/CD: Zero-Rebuild Base Rebasing
-After a developer workflow signs the original application image, a separate rebase workflow can move the image onto a patched ClearCutt base without recompiling the app layer:
+### 1.5 CI/CD: Compatible-Base Rebasing
+After a developer workflow signs the original application image, a separate rebase workflow can move compatible, rebasable images onto a patched ClearCutt base without rebuilding the app artifact:
 ```yaml
 permissions:
   contents: read
@@ -510,7 +510,11 @@ For deployment onto **Red Hat OpenShift (OCP)**, the project provides dedicated 
 
 ## Fast path: adopt → certify → admit
 
-The quickest way to feel the value is to walk one app team through phases 4–6 of the [lifecycle above](#clearcutt-across-the-sdlc). (Phases 1–3 — authoring and publishing the fleet — are a one-time platform-team setup.) Each step is incremental; you don't have to migrate everything at once:
+The quickest way to feel the value is to walk one app team through the app
+delivery loop: adopt a ClearCutt base, certify the resulting image, then admit
+only evidence-backed images in the cluster. The fleet ownership and evidence
+publishing steps are the one-time platform-team setup. Each step is incremental;
+you do not have to migrate everything at once.
 
 ### Step 1: Scaffold App Starters
 Instead of writing complex custom Dockerfiles, use the Go CLI to bootstrap standard, secure project layouts for app teams:
@@ -540,7 +544,7 @@ Deploy Kyverno policies in your Kubernetes namespaces to enforce supply chain in
 ```bash
 kubectl apply -f examples/k8s-deployment/kyverno-policy.yaml
 ```
-This establishes a cryptographic security gate ensuring only certified and signed base overlays run in production.
+This establishes a cryptographic security gate for signed images with the required catalog evidence.
 
 ---
 

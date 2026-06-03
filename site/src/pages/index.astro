@@ -88,15 +88,15 @@ const evidenceCoverage = index
       </div>
     </div>
 
-    <!-- Lifecycle Spine: one job per phase of the delivery lifecycle -->
+    <!-- Lifecycle Spine: one operating model across platform setup and app delivery -->
     <div class="space-y-4">
       <header class="space-y-1 border-b border-ink-800/40 pb-3">
-        <h2 class="heading text-xl sm:text-2xl font-bold text-ink-50">One kit, the whole delivery lifecycle</h2>
+        <h2 class="heading text-xl sm:text-2xl font-bold text-ink-50">One kit, from fleet ownership to app updates</h2>
         <p class="text-xs sm:text-sm text-ink-300">
-          From authoring a base-image fleet to patching it in production — each phase is a command you run, with evidence attached.
+          Managers see the operating outcome; platform engineers can follow each step into commands, workflow evidence, and policy hooks.
         </p>
       </header>
-      <ol class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <ol class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {claims.lifecycle.map((step, i) => (
           <li class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-2 hover:border-accent/30 transition">
             <div class="flex items-center gap-2">
@@ -109,7 +109,7 @@ const evidenceCoverage = index
         ))}
       </ol>
       <p class="text-[11px] text-ink-400 font-sans leading-relaxed">
-        Application developers don't need Nix — pull, run, and verify the published images with plain Docker, Podman, or Kubernetes. Nix is only for the platform team authoring the fleet in phase&nbsp;1.
+        Application developers don't need Nix — pull, run, and verify the published images with plain Docker, Podman, or Kubernetes. Nix is only for the platform team authoring the fleet.
       </p>
     </div>
 

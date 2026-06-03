@@ -1,8 +1,8 @@
 # ClearCutt Catalog Site Workspace
 
 This workspace owns the Astro catalog site. Generated catalog, enrichment, SBOM,
-and vulnerability data is written under `site/src/data` by scripts in
-`core/scripts`.
+and vulnerability data is written under `site/src/data` by the root
+`clearcutt` CLI and release/catalog workflows.
 
 ```bash
 cd site

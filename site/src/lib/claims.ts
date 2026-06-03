@@ -1,6 +1,6 @@
 // Single source of truth for product messaging. ClearCutt is a kit you fork and
 // run — not a managed service or a registry you depend on. Keep one identity and
-// one lifecycle spine; the homepage and About page both read from here.
+// one operating model; the homepage and About page both read from here.
 export const claims = {
   identity: {
     name: "ClearCutt",
@@ -11,19 +11,17 @@ export const claims = {
     title: "Hardened base images, evidence built in.",
     slogan: "Fork the kit. Own the trust chain.",
     description:
-      "ClearCutt is a free, forkable platform kit for publishing your own hardened base-image fleet — every image signed, SBOM-attested, and SLSA-provenanced — under your own GitHub OIDC identities. You run the pipeline; there's no vendor to trust.",
+      "ClearCutt is a free, forkable platform kit for publishing your own hardened base-image fleet — with signatures, SBOM attestations, SLSA provenance, catalog evidence, app-team templates, and governance gates under your own GitHub OIDC identities. You run the pipeline; there is no hosted ClearCutt control plane to trust.",
   },
-  // The product spine: one job per phase of the delivery lifecycle. A manager
-  // reads the `outcome`; an engineer follows `detail` into the depth. The
-  // homepage renders this as the phase map and the README mirrors it as a table.
+  // The product spine: manager-readable outcomes with engineer-readable controls.
+  // The first two steps are the platform loop; the last three are the repeated
+  // app delivery loop.
   lifecycle: [
-    { phase: "Author",   outcome: "Own your base-image fleet as code — fork it, don't depend on a vendor.", detail: "fleet.yaml · Nix matrix · platform init" },
-    { phase: "Publish",  outcome: "Every image ships signed, SBOM'd, and SLSA-attested — automatically.", detail: "cosign keyless · SPDX · SLSA L3" },
-    { phase: "Discover", outcome: "One catalog shows exactly what's signed and scanned. No guessing.", detail: "list · inspect · matrix" },
-    { phase: "Adopt",    outcome: "App teams onboard in minutes — no Nix, no Dockerfile archaeology.", detail: "app template · dev tier · devcontainers" },
-    { phase: "Certify",  outcome: "Block non-compliant images before they leave CI.", detail: "certify · verify · policy gates" },
-    { phase: "Admit",    outcome: "Only signed, attested images run in your clusters.", detail: "Kyverno / OPA admission" },
-    { phase: "Operate",  outcome: "Patch a base once, move every app onto it — no rebuild.", detail: "app rebase · VEX triage · mirror" },
+    { phase: "Own the fleet", outcome: "Platform teams fork the kit and turn base images into governed source, not a vendor dependency.", detail: "clearcutt.fleet.yaml · Nix matrix · platform status" },
+    { phase: "Publish evidence", outcome: "Release workflows produce signed images, SBOMs, provenance, scans, and a catalog that shows each channel independently.", detail: "catalog build · release evidence · SLSA + Sigstore" },
+    { phase: "Onboard apps", outcome: "App teams get matching dev images, starter templates, and rebasable build paths without learning Nix.", detail: "list · inspect · dev · app template/build" },
+    { phase: "Gate delivery", outcome: "CI and admission policies block images that miss your runtime, evidence, or vulnerability contract.", detail: "certify · verify · conformance · policy" },
+    { phase: "Operate updates", outcome: "Security teams triage findings, document exceptions, and move compatible app layers onto patched bases under review.", detail: "scan · remediation · VEX · app diff-base/rebase" },
   ],
   stig: {
     title: "Structural Hardening",

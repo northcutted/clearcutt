@@ -106,7 +106,7 @@ For stack-specific `app build` examples covering Core/static, Java, Node.js,
 Python, Go, .NET, Rust, and C/C++, see
 [`docs/app-lifecycle.md`](app-lifecycle.md).
 
-### 2.3 Zero-Rebuild Rebasing
+### 2.3 Compatible-Base Rebasing
 
 `clearcutt app rebase` is intentionally more privileged than the offline
 governance commands: it reads and writes an OCI registry and can call `cosign`.
