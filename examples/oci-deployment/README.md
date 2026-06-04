@@ -2,7 +2,7 @@
 
 This blueprint demonstrates how to deploy **ClearCutt Hardened OCI images** inside **Docker Compose** or single-host docker sandboxes utilizing industry-standard security profiles.
 
-By combining the cryptographic immutability of Nix store paths with strict container runtime parameters, we achieve complete containment of target application processes.
+By combining Nix store paths with strict container runtime parameters, this blueprint narrows the writable surface and reduces default process privileges for target application containers.
 
 ---
 
@@ -11,11 +11,11 @@ By combining the cryptographic immutability of Nix store paths with strict conta
 The [`docker-compose.yml`](./docker-compose.yml) template implements the following defense-in-depth measures:
 
 ### 1. Rootless Boundaries (`user: "10001:10001"`)
-Ensures the container process starts natively in our pre-provisioned unprivileged user space. If an attacker manages to break out of the application process, they land on the host system as a completely unprivileged user (UID `10001`), preventing standard container escape vectors.
+Ensures the container process starts in a pre-provisioned unprivileged user space. If an attacker compromises the application process, they start from UID `10001` instead of root, reducing the blast radius of common container escape paths.
 
 ### 2. Immutable Filesystem (`read_only: true`)
 Mounts the container's root layers as read-only. 
-*   **Why Nix fits perfectly:** In standard Docker, `read_only` often breaks containers because applications try to write logs, caches, or binaries to random paths. Because Nix-compiled images store *all* libraries and binaries in read-only `/nix/store` paths, and we map an ephemeral, memory-backed `tmpfs` volume to `/tmp`, the application has exactly what it needs to execute safely while completely blocking any local filesystem write mutations!
+*   **Why Nix helps:** In standard Docker, `read_only` often breaks containers because applications try to write logs, caches, or binaries to random paths. ClearCutt images keep runtime libraries and binaries in read-only `/nix/store` paths, while this blueprint maps an ephemeral `tmpfs` volume to `/tmp` for expected transient writes.
 
 ### 3. Total Capability Drop (`cap_drop: [ALL]`)
 By default, Docker containers retain some kernel capabilities (like raw socket mappings or system time configurations). We drop **all** Linux kernel capabilities. The process can execute code but cannot manipulate network routes, raw device mounts, or OS boundaries.

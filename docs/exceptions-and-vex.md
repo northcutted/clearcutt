@@ -9,6 +9,10 @@ In enterprise environments, blocking builds on every detected CVE is operational
 
 ClearCutt implements an explicit, schema-validated exception model:
 - All exceptions are declared inside an `exceptions.yaml` file conforming to `schemas/exceptions.schema.json`.
+- Initialize a boilerplate exceptions configuration template file using the CLI:
+  ```bash
+  clearcutt exceptions init [output-file]
+  ```
 - Every exception **must** specify:
   - The target `CVE` ID and package name.
   - An unexpired expiration date (`expiresAt` formatted as `YYYY-MM-DD`).
@@ -29,7 +33,7 @@ The `clearcutt vex` command queries exceptions and dynamically outputs OpenVEX (
 ## 3. Enforcement in CI Verification
 When executing policy gating:
 ```bash
-clearcutt verify java25-distroless \
+clearcutt verify image java25-distroless \
   --max-critical 0 --max-high 3 \
   --exceptions exceptions.yaml
 ```

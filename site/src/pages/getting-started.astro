@@ -28,7 +28,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">No Nix Required.</span>
         </div>
         <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
-          Application developers do <strong>not</strong> need Nix installed. Pull, run, and verify our pre-built matrices natively using standard OCI container runtimes (<code class="font-mono text-ink-100">docker</code>, <code class="font-mono text-ink-100">podman</code>, or Kubernetes). Nix is strictly optional, reserved only for platform engineers customizing the compiler blueprints.
+          Application developers do <strong>not</strong> need Nix installed. Pull, run, and verify published image matrices natively using standard OCI container runtimes (<code class="font-mono text-ink-100">docker</code>, <code class="font-mono text-ink-100">podman</code>, or Kubernetes). Nix is for platform engineers who fork the kit and customize the runtime fleet.
         </p>
       </div>
     </div>
@@ -40,7 +40,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <h2 class="heading text-xl text-ink-50">Create a Hardened Multi-Stage Containerfile</h2>
       </div>
       <p class="text-sm text-ink-200">
-        ClearCutt images are divided into functional matrix tiers. Developers use the <code>dev</code> tier as their secure compiler environment, then copy dynamic binary objects into the shell-free <code>distroless</code> tier for secure execution:
+        ClearCutt images are divided into functional matrix tiers. Developers use the <code>dev</code> tier as their compiler environment, then copy built application artifacts into <code>slim</code> or shell-free <code>distroless</code> runtime tiers:
       </p>
 
       <Tabs name="matrix-templates" tabs={[
@@ -130,7 +130,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
           <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">3. Local Audits</h3>
           <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-            Run conformance audits offline with <code class="font-mono text-ink-100">clearcutt conformance run --image java25-distroless</code> to verify DNS, CA certificate chains, timezone mappings, and rootless sandboxes before deployment.
+            Run conformance audits offline with <code class="font-mono text-ink-100">clearcutt conformance run --expect-runtime java</code> to verify DNS, CA certificate chains, timezone mappings, and rootless sandboxes before deployment.
           </p>
         </div>
       </div>

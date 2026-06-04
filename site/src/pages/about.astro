@@ -67,7 +67,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
           <div class="relative z-10 space-y-2">
             <h2 class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">THE CLEARCUTT BLUEPRINT</h2>
             <div class="heading text-xl sm:text-2xl font-black uppercase text-ink-50 tracking-wide">
-              Enterprise Compliance,<br />
+              Hardened Base Images,<br />
               <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
             </div>
             <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
@@ -91,6 +91,17 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
             Our supply chain pipeline compiles target runtimes as isolated, hermetically-built <code class="font-mono text-ink-100">/nix/store</code> closures. The catalog serves as a live worked-example proving the end-to-end verifiability of our OCI builds, from OIDC-based signing to transparent OpenVEX exploitability records.
           </p>
         </header>
+
+        <!-- Supply Chain Architecture Flow Section -->
+        <section class="space-y-4 pt-2">
+          <h2 class="heading text-xl text-ink-50">Supply Chain Architecture Flow</h2>
+          <p class="text-sm">
+            The end-to-end ClearCutt trust flow coordinates hermetic Nix base compilations, OIDC-based signing and attestation metadata, and Kubernetes dynamic policy checks at admission time:
+          </p>
+          <div class="rounded-2xl border border-ink-800 bg-ink-950/40 p-4 sm:p-6 shadow-lg">
+            <img src="/supply-chain-flow.svg" alt="ClearCutt Supply Chain Architecture" class="w-full h-auto" />
+          </div>
+        </section>
 
         <!-- Compliance & Audit Alignment Section -->
         <section class="space-y-4">
@@ -119,11 +130,11 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
             </div>
             <div class="surface-soft border border-ink-800/40 rounded-xl p-4 space-y-2">
               <div class="flex items-center gap-2">
-                <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Continuous Scan</h3>
+                <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Rescan Without Rebuild</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                Continuous compliance is active. Attached SBOMs are queried nightly against live vulnerability feeds, immediately updating risk scores without requiring expensive rebuilds.
+                Because an SPDX SBOM is attached to every image, the catalog re-scans it nightly against the current vulnerability database — newly-disclosed CVEs surface without rebuilding the image. A separate scheduled job drafts remediation PRs for review; nothing merges or deploys on its own.
               </p>
             </div>
           </div>

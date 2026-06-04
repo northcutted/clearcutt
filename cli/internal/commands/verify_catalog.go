@@ -18,8 +18,7 @@ type verifyCatalogFlags struct {
 var verifyCatalogOpts verifyCatalogFlags
 
 // validCatalogSupport enumerates the lifecycle support levels the catalog
-// generator emits. Mirrors the support gate in the retired
-// core/scripts/verify-catalog-data.mjs.
+// generator emits. Mirrors the support gate in the retired Node verifier.
 var validCatalogSupport = map[string]bool{
 	"lts":         true,
 	"current":     true,
@@ -52,9 +51,9 @@ type rawReleaseRecord struct {
 	Exceptions      json.RawMessage `json:"exceptions"`
 }
 
-// NewVerifyCatalogCmd creates the `verify-catalog` command, which fails the
+// NewVerifyCatalogCmd creates the `verify catalog` subcommand, which fails the
 // catalog build when the latest release would publish incomplete or
-// contradictory trust data. It replaces core/scripts/verify-catalog-data.mjs.
+// contradictory trust data. It replaces the retired Node verifier.
 func NewVerifyCatalogCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalog",
@@ -215,8 +214,8 @@ func runVerifyCatalog() error {
 }
 
 // releaseEvidenceSummary returns the release's own evidence summary when present,
-// otherwise recomputes it from the per-architecture payloads — mirroring the
-// releaseEvidence() fallback in the retired verify-catalog-data.mjs.
+// otherwise recomputes it from the per-architecture payloads, mirroring the
+// releaseEvidence() fallback in the retired Node verifier.
 func releaseEvidenceSummary(rel *catalog.ReleaseEntry) catalog.EvidenceSummary {
 	if rel.Evidence != nil {
 		return *rel.Evidence

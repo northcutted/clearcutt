@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/certify"
 )
 
 func createMockLayerTar(t *testing.T, filenames []string) []byte {
@@ -69,7 +70,7 @@ func sha256Hex(b []byte) string {
 
 func mockConfig(t *testing.T, user string) []byte {
 	t.Helper()
-	var config OCIImageConfig
+	var config certify.OCIImageConfig
 	config.Config.User = user
 	config.Config.Labels = map[string]string{"org.opencontainers.image.source": "https://github.com/org/repo"}
 	b, err := json.Marshal(config)
@@ -82,7 +83,7 @@ func mockConfig(t *testing.T, user string) []byte {
 // dockerTarball builds a legacy `docker save` style archive.
 func dockerTarball(t *testing.T, config, layer []byte) string {
 	t.Helper()
-	manifest, _ := json.Marshal([]DockerManifest{{Config: "config.json", RepoTags: []string{"test-app:latest"}, Layers: []string{"layer.tar"}}})
+	manifest, _ := json.Marshal([]certify.DockerManifest{{Config: "config.json", RepoTags: []string{"test-app:latest"}, Layers: []string{"layer.tar"}}})
 	return createMockTarball(t, map[string][]byte{
 		"manifest.json": manifest,
 		"config.json":   config,
@@ -95,12 +96,12 @@ func ociTarball(t *testing.T, config, layer []byte) string {
 	t.Helper()
 	cfgDigest := sha256Hex(config)
 	layerDigest := sha256Hex(layer)
-	man, _ := json.Marshal(ociManifest{
-		Config: ociDescriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: "sha256:" + cfgDigest, Size: int64(len(config))},
-		Layers: []ociDescriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: "sha256:" + layerDigest, Size: int64(len(layer))}},
+	man, _ := json.Marshal(certify.Manifest{
+		Config: certify.Descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: "sha256:" + cfgDigest, Size: int64(len(config))},
+		Layers: []certify.Descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: "sha256:" + layerDigest, Size: int64(len(layer))}},
 	})
 	manDigest := sha256Hex(man)
-	index, _ := json.Marshal(ociIndex{Manifests: []ociDescriptor{{MediaType: "application/vnd.oci.image.manifest.v1+json", Digest: "sha256:" + manDigest, Size: int64(len(man))}}})
+	index, _ := json.Marshal(certify.Index{Manifests: []certify.Descriptor{{MediaType: "application/vnd.oci.image.manifest.v1+json", Digest: "sha256:" + manDigest, Size: int64(len(man))}}})
 	return createMockTarball(t, map[string][]byte{
 		"oci-layout":                  []byte(`{"imageLayoutVersion":"1.0.0"}`),
 		"index.json":                  index,
@@ -114,14 +115,14 @@ func nestedOCITarball(t *testing.T, config, layer []byte) string {
 	t.Helper()
 	cfgDigest := sha256Hex(config)
 	layerDigest := sha256Hex(layer)
-	man, _ := json.Marshal(ociManifest{
-		Config: ociDescriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: "sha256:" + cfgDigest, Size: int64(len(config))},
-		Layers: []ociDescriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: "sha256:" + layerDigest, Size: int64(len(layer))}},
+	man, _ := json.Marshal(certify.Manifest{
+		Config: certify.Descriptor{MediaType: "application/vnd.oci.image.config.v1+json", Digest: "sha256:" + cfgDigest, Size: int64(len(config))},
+		Layers: []certify.Descriptor{{MediaType: "application/vnd.oci.image.layer.v1.tar+gzip", Digest: "sha256:" + layerDigest, Size: int64(len(layer))}},
 	})
 	manDigest := sha256Hex(man)
-	nested, _ := json.Marshal(ociIndex{Manifests: []ociDescriptor{{MediaType: "application/vnd.oci.image.manifest.v1+json", Digest: "sha256:" + manDigest, Size: int64(len(man))}}})
+	nested, _ := json.Marshal(certify.Index{Manifests: []certify.Descriptor{{MediaType: "application/vnd.oci.image.manifest.v1+json", Digest: "sha256:" + manDigest, Size: int64(len(man))}}})
 	nestedDigest := sha256Hex(nested)
-	index, _ := json.Marshal(ociIndex{Manifests: []ociDescriptor{{
+	index, _ := json.Marshal(certify.Index{Manifests: []certify.Descriptor{{
 		MediaType:   "application/vnd.oci.image.index.v1+json",
 		Digest:      "sha256:" + nestedDigest,
 		Size:        int64(len(nested)),
@@ -347,7 +348,7 @@ spec:
 
 func TestCertifyTarballParsingAndLayerErrorBranches(t *testing.T) {
 	tempDir := t.TempDir()
-	if _, err := loadImageTarball(filepath.Join(tempDir, "missing.tar"), tempDir); err == nil || !strings.Contains(err.Error(), "unable to open") {
+	if _, err := certify.LoadImageArchive(filepath.Join(tempDir, "missing.tar"), tempDir); err == nil || !strings.Contains(err.Error(), "unable to open") {
 		t.Fatalf("expected missing tarball error, got %v", err)
 	}
 
@@ -355,21 +356,21 @@ func TestCertifyTarballParsingAndLayerErrorBranches(t *testing.T) {
 	if err := os.WriteFile(badGzip, []byte("not-gzip"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadImageTarball(badGzip, tempDir); err == nil || !strings.Contains(err.Error(), "gzip") {
+	if _, err := certify.LoadImageArchive(badGzip, tempDir); err == nil || !strings.Contains(err.Error(), "gzip") {
 		t.Fatalf("expected gzip init error, got %v", err)
 	}
 
 	config := mockConfig(t, "10001")
 	layer := createMockLayerTar(t, []string{"app/main.js"})
 	tarball := nestedOCITarball(t, config, layer)
-	img, err := loadImageTarball(tarball, t.TempDir())
+	img, err := certify.LoadImageArchive(tarball, t.TempDir())
 	if err != nil {
 		t.Fatalf("load nested OCI: %v", err)
 	}
-	if img.format != "oci" || len(img.repoTags) != 1 || len(img.configRaw) == 0 || len(img.layerPaths) != 1 {
+	if img.Format != "oci" || len(img.RepoTags) != 1 || len(img.ConfigRaw) == 0 || len(img.LayerPaths) != 1 {
 		t.Fatalf("unexpected nested OCI resolution: %+v", img)
 	}
-	if blobPath(map[string]string{}, "not-a-digest") != "" || readBlob(map[string]string{}, "sha256:missing") != nil {
+	if certify.BlobPath(map[string]string{}, "not-a-digest") != "" || certify.ReadBlob(map[string]string{}, "sha256:missing") != nil {
 		t.Fatal("blob helpers should ignore malformed or missing digests")
 	}
 

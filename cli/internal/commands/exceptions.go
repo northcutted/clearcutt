@@ -95,7 +95,64 @@ func NewExceptionsCmd() *cobra.Command {
 	validateCmd.Flags().BoolVar(&exceptionsOpts.failOnExpired, "fail-on-expired-exceptions", true, "Fail validation if any exception is currently expired")
 	cmd.AddCommand(validateCmd)
 
+	initCmd := &cobra.Command{
+		Use:   "init [output-file]",
+		Short: "Initialize a boilerplate exceptions configuration YAML file",
+		Long:  `Creates a standard, pre-filled VulnerabilityExceptions template YAML file at the specified path (default: exceptions.yaml) with examples of false positive, accepted risk, and temporary triaged exceptions.`,
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := "exceptions.yaml"
+			if len(args) > 0 {
+				path = args[0]
+			}
+			return runExceptionsInit(path)
+		},
+	}
+	cmd.AddCommand(initCmd)
+
 	return cmd
+}
+
+func runExceptionsInit(path string) error {
+	template := `apiVersion: clearcutt.dev/v1
+kind: VulnerabilityExceptions
+metadata:
+  name: corporate-triage-policy
+spec:
+  exceptions:
+    - id: CVE-2024-12345
+      package: openssl
+      image: java25-distroless
+      release: v0.2.1
+      status: false_positive
+      reason: scanner_false_positive
+      owner: platform-security@acme.com
+      createdAt: 2026-06-03
+      expiresAt: 2026-12-03
+      references:
+        - https://github.com/northcutted/clearcutt/issues/123
+      notes: Upstream vulnerability scan misidentified the version mapping in the layered layout.
+
+    - id: CVE-2023-98765
+      package: glibc
+      image: "*"
+      release: "*"
+      status: accepted_risk
+      reason: vulnerable_code_not_executed
+      owner: security-officer@acme.com
+      createdAt: 2026-06-03
+      expiresAt: 2027-06-03
+      references:
+        - https://nvd.nist.gov/vuln/detail/CVE-2023-98765
+      notes: Wildcard mapping for base glibc finding. Analysis confirms the affected function is not compiled or used by any downstream language runtimes.
+`
+	if err := os.WriteFile(path, []byte(template), 0644); err != nil {
+		return fmt.Errorf("failed to write exceptions template: %w", err)
+	}
+	if !GlobalOpts.Quiet {
+		fmt.Fprintf(out, "Initialized corporate triage exceptions template at: %s\n", path)
+	}
+	return nil
 }
 
 func runExceptionsValidate(yamlPath string) error {

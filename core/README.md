@@ -23,7 +23,7 @@ Catalog verification moved from a Node script into the Go CLI. Run it from the
 repo root (the make target builds the CLI first):
 
 ```bash
-make site-verify-catalog   # builds the CLI, then runs: clearcutt verify-catalog
+make site-verify-catalog   # builds the CLI, then runs: clearcutt verify catalog
 ```
 
 Remediation scan planning and PR orchestration also live in the Go CLI now. The

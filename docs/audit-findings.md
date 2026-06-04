@@ -1,48 +1,47 @@
-# ClearCutt Audit Findings & Inventory
+# ClearCutt Claims Register
 
-This document maps all user-facing superlative, compliance, and metric claims identified across `site/` and `README.md` to their recommended action (Verifiable, Scoped, or Must-Delete/Downgrade). 
+This register keeps public claims conservative and verifiable. Use it when
+reviewing README, docs, site copy, examples, and generated catalog language.
 
----
+## Safe Core Claims
 
-## 1. Inventory of Claims
+| Claim family | Preferred wording | Evidence or boundary |
+| :--- | :--- | :--- |
+| Product identity | ClearCutt is a forkable platform kit for hardened base images. | The adopter runs the fork under their registry, workflows, catalog, and admission policies. |
+| Fleet ownership | Platform teams own and publish their base-image fleet as code. | `clearcutt.fleet.yaml`, Nix matrix, release workflows, catalog build. |
+| Evidence publishing | Signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | Catalog data and site telemetry must show missing channels instead of collapsing them into one trust badge. |
+| App onboarding | App teams can use published images, devcontainers, templates, and CLI gates without learning Nix. | Nix stays on the platform-authoring path unless an app team intentionally customizes the fleet. |
+| Governance gates | CI and admission can block images that miss evidence, runtime, lifecycle, or vulnerability policy. | `clearcutt certify`, `verify`, `conformance`, `policy`, and generated Kyverno/OPA bundles. |
+| Remediation | Scans and remediation tooling support reviewed, bounded updates. | Do not imply silent merge, deployment, or production mutation. |
+| Rebase | Compatible rebasable apps can move unchanged app layers onto patched bases under dual-control. | Requires ClearCutt labels, runtime compatibility, developer signature verification, and rebase-engine signing/attestation. |
+| BYO base overlays | Overlays are an adoption bridge for mandated bases. | They inherit the parent base shell, package manager, and CVE footprint; they are not equivalent to from-scratch distroless images. |
 
-| File Path | Line | Original Claim | Classification & Action | Proposed Replacement / Scoping |
-| :--- | :--- | :--- | :--- | :--- |
-| `site/src/pages/index.astro` | 123 | `"Zero Risk Supply Chain"` | **Must-Delete** (Violates Prime Directive) | `"Reduced Supply-Chain Attack Surface"` |
-| `site/src/pages/index.astro` | 126 | `"Eliminate software supply chain surprises. Our hermetic building prevents outside package injection, yielding standard runtimes with absolute reproducibility."` | **Scoped** | `"Reduce software supply chain surprises. Our hermetic Nix-based compilation prevents untracked package injection, yielding standard runtimes with verifiable reproducibility."` |
-| `site/src/pages/index.astro` | 35 | `"Hermetically Sealed."` (Hero) | **Scoped** (Seal has documented trade-off holes) | `"Hermetically Built."` |
-| `site/src/pages/about.astro` | 70 | `"Hermetically Sealed."` | **Scoped** | `"Hermetically Built."` |
-| `site/src/pages/index.astro` | 138 | `"ClearCutt Distroless images are STIG-Aligned out-of-the-box ... while all production runtimes support FIPS 140-3 capable cryptographic paths."` | **Scoped / Flagged** (Gated on FIPS/STIG verification) | Rework to scoped language unless backed: `"ClearCutt Distroless images reduce several STIG-relevant execution vectors by default ... while production runtimes can be customized to bind to FIPS-validated cryptographic modules."` |
-| `site/src/pages/index.astro` | 228 | `"STIG / FIPS"` badge and `"Distroless STIG, Prod FIPS"` subtitle | **Scoped / Flagged** | Link to specific verification evidence (e.g. structural tests) or downgrade/remove badge. |
-| `site/src/pages/about.astro` | 98-101 | `"STIG-Aligned ... Our distroless tier satisfies DISA STIG container requirements out-of-the-box..."` | **Scoped / Flagged** | Rework to reflect specific structural assertions. |
-| `site/src/pages/about.astro` | 107-110 | `"FIPS 140-3 Capable ... By leveraging Nix configurations, images link only to FIPS-validated cryptographic modules..."` | **Scoped / Flagged** | Check CMVP validated module cert or downgrade to scoped customization options. |
-| `site/src/pages/catalog.astro` | 137 | `"STIG-ALIGNED"` label on matrix cell | **Scoped / Flagged** | Downgrade or back with a checkable test suite. |
-| `site/src/pages/catalog.astro` | 138 | `"FIPS READY"` label on matrix cell | **Scoped / Flagged** | Downgrade or back with a validated module cert. |
-| `site/src/components/ImageHeader.astro` | 70 | `{image.tier.id === 'distroless' && <StatusPill kind="ok" label="STIG-Aligned" />}` | **Scoped / Flagged** | Rework or back with checks. |
-| `site/src/components/ImageHeader.astro` | 71 | `{image.tier.id !== 'dev' && <StatusPill kind="ok" label="FIPS 140-3 Capable" />}` | **Scoped / Flagged** | Rework or back with checks. |
-| `site/src/components/MatrixGrid.astro` | 304 | `"STIG-ALIGNED"` | **Scoped / Flagged** | Rework or back with checks. |
-| `site/src/components/MatrixGrid.astro` | 307 | `"FIPS READY"` | **Scoped / Flagged** | Rework or back with checks. |
-| `site/src/pages/index.astro` | 235 | `"Runtimes Managed"` (badge) | **Scoped** (implies hosted product) | `"Reference Runtimes"` or `"Blueprint Targets"` |
-| `site/src/pages/index.astro` | 207 | `"100% keyless OIDC signed"` | **Verifiable** (but must be backed by real dynamic data & timestamp) | Wire to catalog index generation timestamp and verify `evidenceCoverage.signatures === published`. |
-| `site/src/pages/index.astro` | 217 | `"SLSA Level 3 certified"` | **Verifiable** | Show verification source. |
-| `README.md` | 8 | `"...easily fork the blueprint to customize and compile your own enterprise-wide base image fleet."` | **Scoped** | Reframer "fleet" to "blueprint reference" to clarify single-maintainer reference status. |
+## Claims Requiring Caveats
 
----
+- **Hermetic or reproducible:** scope to Nix store closures and current build
+  inputs. Do not imply every downstream overlay remains bit-for-bit identical to
+  the from-scratch image.
+- **Distroless or zero-utility:** safe for the distroless tier when backed by
+  conformance/certification checks. Do not apply it to BYO base overlays.
+- **SLSA Build L3:** safe when referring to the SLSA provenance channel. Do not
+  call the whole product "SLSA certified."
+- **FIPS/STIG:** safe only as structural or customization language unless formal
+  validation artifacts are added.
+- **No rebuild:** use "without rebuilding the app artifact" or "rebase
+  compatible app layers"; avoid broad "zero-rebuild" claims.
 
-## 2. Infrastructure & Tooling Inventory
+## Avoid
 
-1. **Signing Workflows**:
-   - Located in `.github/workflows/release.yml`.
-   - Utilizes keyless OIDC signing via GitHub Actions OIDC token (`id-token: write`).
-   - Uses `sigstore/cosign-installer@v4.1.2` with `cosign-release: 'v3.0.6'` to sign multi-arch manifests and attach SBOMs (`--type spdxjson`) and custom test results (`--type custom`).
-2. **Build-Certify / Certify composite action**:
-   - Located in `.github/actions/certify-app/action.yml`.
-   - Currently hardcodes `https://github.com/northcutted/clearcutt/releases/download/...` to download the CLI utility.
-   - Can be parameterized using standard Actions context variable `${{ github.action_repository }}` to make it completely fork-safe.
-3. **Scripts & Conformance**:
-   - `clearcutt catalog gather` / `clearcutt catalog enrich` (Go CLI): Core catalog aggregators that write `site/src/data/catalog/index.json` and registry enrichment data.
-   - `clearcutt scan` (Go CLI, `cli/internal/commands/scan.go`): Invokes Grype to scan cached SBOMs and emits reports under `site/src/data/vulnerabilities`.
-   - `core/tests/verify.sh`: Local automated PR gate running Container Structure Tests, credential checks, binary hermeticity, and overlays checking.
-4. **Stats / Telemetry Sourcing**:
-   - Stats shown on `site/src/pages/index.astro` are loaded at build-time using `loadIndex()` from `site/src/lib/catalog.ts`, which reads `site/src/data/catalog/index.json`.
-   - Since `index.json` is generated directly from the release assets and live registry metadata by the Go catalog commands, these numbers are already dynamic, but lack a displayed generation timestamp.
+- "Zero risk", "guaranteed secure", "completely mitigates supply-chain attacks".
+- "Autonomous remediation" unless a reviewed, scheduled, closed-loop process
+  actually merges and deploys safely.
+- "Managed service", "hosted control plane", or "vendor feed" framing.
+- "Every app can be rebased" or "all CVEs are patched automatically".
+
+## Current Verification Hooks
+
+- CLI command tree and grouped help: `cd cli && go test ./...`.
+- Site copy and generated pages: `cd site && npm run typecheck && npm run build`.
+- Catalog trust-data consistency: `./clearcutt verify catalog --catalog site/src/data/catalog`.
+- Claim hygiene scans: search for `zero risk`, `autonomous`, `certified`,
+  `FIPS`, `STIG`, and broad `guarantee` language before publishing.

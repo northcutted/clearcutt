@@ -1,6 +1,6 @@
 # Declarative Nix Binary Cache via Cloudflare R2 & clearcutt.dev
 
-This document provides complete instructions for establishing a high-performance, **zero-egress-fee** custom Nix binary cache for ClearCutt Hardened Fleets using Cloudflare R2 and your domain `clearcutt.dev`.
+This document provides complete instructions for establishing a high-performance, **zero-egress-fee** custom Nix binary cache for ClearCutt using Cloudflare R2 and your domain `clearcutt.dev`.
 
 ---
 

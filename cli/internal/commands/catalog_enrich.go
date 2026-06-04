@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/sign"
 	"github.com/spf13/cobra"
@@ -82,7 +83,7 @@ func runCatalogEnrich() error {
 		fmt.Fprintf(errOut, "[enrich] %v; continuing with manifest metadata only\n", err)
 		cosign = nil
 	}
-	source := &githubReleaseSource{owner: owner, repo: repo, token: firstNonEmptyStr(os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_TOKEN")), client: nil}
+	source := &githubReleaseSource{owner: owner, repo: repo, token: catalogbuild.FirstNonEmptyStr(os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_TOKEN")), client: nil}
 	enricher := &registryCatalogEnricher{
 		owner:        owner,
 		repo:         repo,
@@ -98,9 +99,9 @@ func runCatalogEnrich() error {
 			return err
 		}
 		mustRefresh := refresh[tag]
-		for _, target := range gatherTargets(catalogEnrichOpts.targets) {
+		for _, target := range catalogbuild.Targets(catalogEnrichOpts.targets) {
 			outFile := filepath.Join(catalogEnrichOpts.outDir, tag, target+".json")
-			if !mustRefresh && fileExists(outFile) {
+			if !mustRefresh && catalogbuild.FileExists(outFile) {
 				cached++
 				continue
 			}
@@ -134,7 +135,7 @@ func catalogEnrichTags(owner, repo string) ([]string, error) {
 		}
 		return tags, nil
 	}
-	source := &githubReleaseSource{owner: owner, repo: repo, token: firstNonEmptyStr(os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_TOKEN")), client: nil}
+	source := &githubReleaseSource{owner: owner, repo: repo, token: catalogbuild.FirstNonEmptyStr(os.Getenv("GITHUB_TOKEN"), os.Getenv("GH_TOKEN")), client: nil}
 	releases, err := source.ListReleases(catalogEnrichOpts.limit)
 	if err != nil {
 		return nil, err
@@ -174,8 +175,8 @@ type registryCatalogEnricher struct {
 	github       *githubReleaseSource
 }
 
-func (e *registryCatalogEnricher) Enrich(tag, target string) (*gatherEnrichment, error) {
-	meta := gatherTargetMeta(target)
+func (e *registryCatalogEnricher) Enrich(tag, target string) (*catalogbuild.Enrichment, error) {
+	meta := catalogbuild.TargetMeta(target)
 	if meta == nil {
 		return nil, nil
 	}
@@ -189,7 +190,7 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*gatherEnrichment,
 			return nil, nil
 		}
 	}
-	result := &gatherEnrichment{Architectures: []gatherEnrichmentArch{}, Attestations: []gatherEnrichmentAttestation{}}
+	result := &catalogbuild.Enrichment{Architectures: []catalogbuild.EnrichmentArch{}, Attestations: []catalogbuild.EnrichmentAttestation{}}
 	if digest, err := res.ManifestDigest(); err == nil {
 		result.ManifestDigest = &digest
 	}
@@ -234,7 +235,7 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*gatherEnrichment,
 	}
 
 	githubAttestations := e.listGithubAttestations(result.ManifestDigest)
-	normalized := []gatherEnrichmentAttestation{}
+	normalized := []catalogbuild.EnrichmentAttestation{}
 	for _, att := range allAttestations {
 		if n := e.normalizeAttestation(att, "oci", nil); n != nil {
 			normalized = append(normalized, *n)
@@ -245,8 +246,8 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*gatherEnrichment,
 	return result, nil
 }
 
-func enrichmentArchitectures(res *oci.Resolved) ([]gatherEnrichmentArch, error) {
-	out := []gatherEnrichmentArch{}
+func enrichmentArchitectures(res *oci.Resolved) ([]catalogbuild.EnrichmentArch, error) {
+	out := []catalogbuild.EnrichmentArch{}
 	if res.IsIndex {
 		manifest, err := res.Index.IndexManifest()
 		if err != nil {
@@ -268,7 +269,7 @@ func enrichmentArchitectures(res *oci.Resolved) ([]gatherEnrichmentArch, error) 
 			if err != nil {
 				return nil, err
 			}
-			enr.Digest = gatherStr(desc.Digest.String())
+			enr.Digest = catalogbuild.Str(desc.Digest.String())
 			out = append(out, enr)
 		}
 		return out, nil
@@ -290,19 +291,19 @@ func enrichmentArchitectures(res *oci.Resolved) ([]gatherEnrichmentArch, error) 
 		return nil, err
 	}
 	if digest, err := res.Image.Digest(); err == nil {
-		enr.Digest = gatherStr(digest.String())
+		enr.Digest = catalogbuild.Str(digest.String())
 	}
 	return append(out, enr), nil
 }
 
-func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (gatherEnrichmentArch, error) {
+func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (catalogbuild.EnrichmentArch, error) {
 	cfg, err := img.ConfigFile()
 	if err != nil {
-		return gatherEnrichmentArch{}, err
+		return catalogbuild.EnrichmentArch{}, err
 	}
 	manifest, err := img.Manifest()
 	if err != nil {
-		return gatherEnrichmentArch{}, err
+		return catalogbuild.EnrichmentArch{}, err
 	}
 	layers := make([]json.RawMessage, 0, len(manifest.Layers))
 	var total int64
@@ -310,7 +311,7 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ga
 		total += layer.Size
 		var diffID *string
 		if i < len(cfg.RootFS.DiffIDs) {
-			diffID = gatherStr(cfg.RootFS.DiffIDs[i].String())
+			diffID = catalogbuild.Str(cfg.RootFS.DiffIDs[i].String())
 		}
 		raw, err := json.Marshal(struct {
 			Digest string  `json:"digest"`
@@ -318,7 +319,7 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ga
 			DiffID *string `json:"diffID"`
 		}{Digest: layer.Digest.String(), Size: layer.Size, DiffID: diffID})
 		if err != nil {
-			return gatherEnrichmentArch{}, err
+			return catalogbuild.EnrichmentArch{}, err
 		}
 		layers = append(layers, raw)
 	}
@@ -332,9 +333,9 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ga
 	}
 	labelRaw, err := json.Marshal(labels)
 	if err != nil {
-		return gatherEnrichmentArch{}, err
+		return catalogbuild.EnrichmentArch{}, err
 	}
-	return gatherEnrichmentArch{
+	return catalogbuild.EnrichmentArch{
 		Arch:   arch,
 		Size:   &size,
 		Layers: layers,
@@ -342,7 +343,7 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ga
 	}, nil
 }
 
-func (e *registryCatalogEnricher) verifySignature(ref string) *gatherSignature {
+func (e *registryCatalogEnricher) verifySignature(ref string) *catalogbuild.Signature {
 	if e.cosign == nil {
 		return nil
 	}
@@ -365,12 +366,12 @@ func (e *registryCatalogEnricher) verifySignature(ref string) *gatherSignature {
 	} else if v := numberAt(optional, "Bundle", "payload", "logIndex"); v != nil {
 		rekor = v
 	}
-	return &gatherSignature{
+	return &catalogbuild.Signature{
 		CosignBundlePresent: true,
 		RekorLogIndex:       rekor,
-		Certificate: &gatherCertificate{
+		Certificate: &catalogbuild.Certificate{
 			Subject:       stringPtrAt(optional, "Subject"),
-			Issuer:        firstNonEmptyPtrFromPtrs(stringPtrAt(optional, "Issuer"), gatherStr("https://token.actions.githubusercontent.com")),
+			Issuer:        firstNonEmptyPtrFromPtrs(stringPtrAt(optional, "Issuer"), catalogbuild.Str("https://token.actions.githubusercontent.com")),
 			RunInvocation: nil,
 		},
 	}
@@ -408,8 +409,8 @@ type cosignAttestation struct {
 func (a cosignAttestation) dedupeKey() string {
 	return strings.Join([]string{
 		a.PredicateType,
-		firstNonEmptyStr(subjectDigestFromPayload(a.Payload), ""),
-		firstNonEmptyStr(stringAt(a.Payload, "predicate", "Timestamp"), stringAt(a.Payload, "predicate", "createdOn")),
+		catalogbuild.FirstNonEmptyStr(subjectDigestFromPayload(a.Payload), ""),
+		catalogbuild.FirstNonEmptyStr(stringAt(a.Payload, "predicate", "Timestamp"), stringAt(a.Payload, "predicate", "createdOn")),
 	}, "|")
 }
 
@@ -423,7 +424,7 @@ func parseCosignAttestation(line []byte) (*cosignAttestation, error) {
 		return nil, fmt.Errorf("attestation has no payload")
 	}
 	return &cosignAttestation{
-		PredicateType: firstNonEmptyStr(stringAt(payload, "predicateType"), "unknown"),
+		PredicateType: catalogbuild.FirstNonEmptyStr(stringAt(payload, "predicateType"), "unknown"),
 		Payload:       payload,
 		Cert:          certificateFromBundle(bundle),
 		Bundle:        bundle,
@@ -465,21 +466,21 @@ func certificateFromBundle(bundle map[string]any) *x509.Certificate {
 	return cert
 }
 
-func (e *registryCatalogEnricher) normalizeAttestation(att cosignAttestation, source string, githubAPIURL *string) *gatherEnrichmentAttestation {
+func (e *registryCatalogEnricher) normalizeAttestation(att cosignAttestation, source string, githubAPIURL *string) *catalogbuild.EnrichmentAttestation {
 	if att.Payload == nil {
 		return nil
 	}
 	signer := certSubjectURI(att.Cert)
 	logIndex := transparencyLogIndex(att.Bundle)
-	return &gatherEnrichmentAttestation{
+	return &catalogbuild.EnrichmentAttestation{
 		Kind:                 attestationKind(att.Payload),
-		PredicateType:        firstNonEmptyStr(stringAt(att.Payload, "predicateType"), "unknown"),
-		SubjectName:          ptrIfNotEmpty(subjectNameFromPayload(att.Payload)),
-		SubjectDigest:        ptrIfNotEmpty(subjectDigestFromPayload(att.Payload)),
-		SignerIdentity:       ptrIfNotEmpty(signer),
-		Issuer:               ptrIfNotEmpty(firstNonEmptyStr(certIssuer(att.Cert), "https://token.actions.githubusercontent.com")),
-		RunURL:               ptrIfNotEmpty(stringAt(att.Payload, "predicate", "runDetails", "metadata", "invocationId")),
-		WorkflowURL:          ptrIfNotEmpty(attestationWorkflowURL(signer)),
+		PredicateType:        catalogbuild.FirstNonEmptyStr(stringAt(att.Payload, "predicateType"), "unknown"),
+		SubjectName:          catalogbuild.PtrIfNotEmpty(subjectNameFromPayload(att.Payload)),
+		SubjectDigest:        catalogbuild.PtrIfNotEmpty(subjectDigestFromPayload(att.Payload)),
+		SignerIdentity:       catalogbuild.PtrIfNotEmpty(signer),
+		Issuer:               catalogbuild.PtrIfNotEmpty(catalogbuild.FirstNonEmptyStr(certIssuer(att.Cert), "https://token.actions.githubusercontent.com")),
+		RunURL:               catalogbuild.PtrIfNotEmpty(stringAt(att.Payload, "predicate", "runDetails", "metadata", "invocationId")),
+		WorkflowURL:          catalogbuild.PtrIfNotEmpty(attestationWorkflowURL(signer)),
 		GithubAPIURL:         githubAPIURL,
 		TransparencyLogIndex: logIndex,
 		TransparencyURL:      transparencyURL(logIndex),
@@ -488,7 +489,7 @@ func (e *registryCatalogEnricher) normalizeAttestation(att cosignAttestation, so
 }
 
 func attestationKind(payload map[string]any) string {
-	predicateType := firstNonEmptyStr(stringAt(payload, "predicateType"), "unknown")
+	predicateType := catalogbuild.FirstNonEmptyStr(stringAt(payload, "predicateType"), "unknown")
 	switch {
 	case strings.Contains(predicateType, "spdx.dev/Document"):
 		return "sbom"
@@ -503,25 +504,25 @@ func attestationKind(payload map[string]any) string {
 	}
 }
 
-func provenanceFromPayload(payload map[string]any) *provenanceOut {
+func provenanceFromPayload(payload map[string]any) *catalogbuild.Provenance {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil
 	}
-	var stmt intotoStatement
+	var stmt catalogbuild.IntotoStatement
 	if err := json.Unmarshal(raw, &stmt); err != nil {
 		return nil
 	}
-	out := summarizeIntotoStatement(stmt)
+	out := catalogbuild.SummarizeIntotoStatement(stmt)
 	return &out
 }
 
-func extractCosignTestResults(payload map[string]any) *gatherTestResults {
+func extractCosignTestResults(payload map[string]any) *catalogbuild.TestResults {
 	data := stringAt(payload, "predicate", "Data")
 	if data == "" {
 		return nil
 	}
-	var tr gatherTestResults
+	var tr catalogbuild.TestResults
 	if err := json.Unmarshal([]byte(data), &tr); err != nil {
 		return nil
 	}
@@ -531,22 +532,22 @@ func extractCosignTestResults(payload map[string]any) *gatherTestResults {
 	return &tr
 }
 
-func (e *registryCatalogEnricher) signatureCertMetadata(atts []cosignAttestation) *gatherCertificate {
+func (e *registryCatalogEnricher) signatureCertMetadata(atts []cosignAttestation) *catalogbuild.Certificate {
 	for _, att := range atts {
 		subject := certSubjectURI(att.Cert)
 		if subject == "" || !strings.Contains(subject, fmt.Sprintf("github.com/%s/%s/.github/workflows/release.yml@", e.owner, e.repo)) {
 			continue
 		}
-		return &gatherCertificate{
+		return &catalogbuild.Certificate{
 			Subject:       &subject,
-			Issuer:        gatherStr(firstNonEmptyStr(certIssuer(att.Cert), "https://token.actions.githubusercontent.com")),
-			RunInvocation: ptrIfNotEmpty(stringAt(att.Payload, "predicate", "runDetails", "metadata", "invocationId")),
+			Issuer:        catalogbuild.Str(catalogbuild.FirstNonEmptyStr(certIssuer(att.Cert), "https://token.actions.githubusercontent.com")),
+			RunInvocation: catalogbuild.PtrIfNotEmpty(stringAt(att.Payload, "predicate", "runDetails", "metadata", "invocationId")),
 		}
 	}
 	return nil
 }
 
-func (e *registryCatalogEnricher) listGithubAttestations(subjectDigest *string) []gatherEnrichmentAttestation {
+func (e *registryCatalogEnricher) listGithubAttestations(subjectDigest *string) []catalogbuild.EnrichmentAttestation {
 	if subjectDigest == nil || *subjectDigest == "" || e.github == nil {
 		return nil
 	}
@@ -565,14 +566,14 @@ func (e *registryCatalogEnricher) listGithubAttestations(subjectDigest *string) 
 			continue
 		}
 		api := apiURL
-		out := []gatherEnrichmentAttestation{}
+		out := []catalogbuild.EnrichmentAttestation{}
 		for _, ghAtt := range parsed.Attestations {
 			payload := payloadFromBundle(ghAtt.Bundle)
 			if payload == nil {
 				continue
 			}
 			att := cosignAttestation{
-				PredicateType: firstNonEmptyStr(stringAt(payload, "predicateType"), "unknown"),
+				PredicateType: catalogbuild.FirstNonEmptyStr(stringAt(payload, "predicateType"), "unknown"),
 				Payload:       payload,
 				Cert:          certificateFromBundle(ghAtt.Bundle),
 				Bundle:        ghAtt.Bundle,
@@ -587,8 +588,8 @@ func (e *registryCatalogEnricher) listGithubAttestations(subjectDigest *string) 
 	return nil
 }
 
-func mergeEnrichmentAttestations(attestations []gatherEnrichmentAttestation) []gatherEnrichmentAttestation {
-	byKey := map[string]*gatherEnrichmentAttestation{}
+func mergeEnrichmentAttestations(attestations []catalogbuild.EnrichmentAttestation) []catalogbuild.EnrichmentAttestation {
+	byKey := map[string]*catalogbuild.EnrichmentAttestation{}
 	order := []string{}
 	for i := range attestations {
 		att := attestations[i]
@@ -608,7 +609,7 @@ func mergeEnrichmentAttestations(attestations []gatherEnrichmentAttestation) []g
 			continue
 		}
 		for _, source := range att.Sources {
-			if !stringSliceContains(existing.Sources, source) {
+			if !catalogbuild.StringSliceContains(existing.Sources, source) {
 				existing.Sources = append(existing.Sources, source)
 			}
 		}
@@ -625,7 +626,7 @@ func mergeEnrichmentAttestations(attestations []gatherEnrichmentAttestation) []g
 			existing.TransparencyURL = att.TransparencyURL
 		}
 	}
-	out := make([]gatherEnrichmentAttestation, 0, len(order))
+	out := make([]catalogbuild.EnrichmentAttestation, 0, len(order))
 	for _, key := range order {
 		out = append(out, *byKey[key])
 	}
@@ -722,7 +723,7 @@ func transparencyURL(logIndex *int64) *string {
 	if logIndex == nil {
 		return nil
 	}
-	return gatherStr(fmt.Sprintf("https://search.sigstore.dev/?logIndex=%d", *logIndex))
+	return catalogbuild.Str(fmt.Sprintf("https://search.sigstore.dev/?logIndex=%d", *logIndex))
 }
 
 func attestationWorkflowURL(signerIdentity string) string {
