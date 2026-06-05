@@ -1,0 +1,155 @@
+# Astro Site Generator
+
+`clearcutt catalog site ...` renders catalog artifacts as a portable Astro
+evidence portal. The site generator is separate from catalog data generation:
+catalog data lives under `public/catalog`, while the Astro project owns layout,
+search, routes, and customization.
+
+## Commands
+
+```bash
+clearcutt catalog site scaffold
+clearcutt catalog site build
+clearcutt catalog site preview
+clearcutt catalog site eject
+```
+
+Use the `catalog site` namespace because the site is a renderer for catalog
+data, not a general website generator.
+
+## Scaffold A Persistent Project
+
+```bash
+clearcutt catalog generate \
+  --config clearcutt.fleet.yaml \
+  --output ./dist/catalog
+
+clearcutt catalog site scaffold \
+  --catalog ./dist/catalog \
+  --output ./clearcutt-catalog-site
+
+cd clearcutt-catalog-site
+npm install
+npm run dev
+```
+
+The scaffold command copies the Astro template, writes or preserves
+`clearcutt.site.yaml`, writes a README when the template does not include one,
+copies catalog data into `public/catalog`, and preserves raw evidence
+directories.
+
+The Astro template is embedded in the `clearcutt` binary, so `scaffold`,
+`build`, `preview`, and `eject` work from any directory — no ClearCutt checkout
+required. When you run inside the repository, the live `site/` directory is used
+instead (and its `node_modules` is reused to speed up builds). Override the
+source explicitly with `--template <dir>`.
+
+> Maintainers: the embedded template mirrors `site/`. After changing `site/`,
+> run `go generate ./...` in `cli/` to refresh it; the `sitetemplate` drift test
+> fails in CI if it is stale.
+
+## Build Static HTML
+
+Build from an existing catalog directory:
+
+```bash
+clearcutt catalog site build \
+  --catalog ./dist/catalog \
+  --output ./dist/site \
+  --install \
+  --clean
+```
+
+Build and generate catalog data in one command from a ClearCutt fleet config:
+
+```bash
+clearcutt catalog site build \
+  --config clearcutt.fleet.yaml \
+  --output ./dist/site \
+  --install
+```
+
+Build and generate catalog data in one command from generic OCI inventory:
+
+```bash
+clearcutt catalog site build \
+  --images images.yaml \
+  --owner acme \
+  --repo base-images \
+  --registry-base ghcr.io/acme/base-images \
+  --output ./dist/site \
+  --install
+```
+
+`--config` and `--images` are mutually exclusive. `--catalog` can be used with
+either one to choose where the generated catalog data is written before the site
+build.
+
+## Preview Locally
+
+```bash
+clearcutt catalog site preview \
+  --catalog ./dist/catalog \
+  --install \
+  --host 127.0.0.1 \
+  --port 4321
+```
+
+If dependencies are missing and `--install` is not set, preview prints next
+steps instead of failing the catalog workflow.
+
+## Eject The Template
+
+```bash
+clearcutt catalog site eject \
+  --output ./astro-catalog-template
+```
+
+Use eject when you want to vendor and maintain the renderer separately from a
+specific catalog artifact. Eject does not copy generated catalog data.
+
+## Base Paths And Static Hosts
+
+For GitHub Pages or a nested static path, pass `--base-path`:
+
+```bash
+clearcutt catalog site build \
+  --catalog ./dist/catalog \
+  --output ./dist/site \
+  --base-path /clearcutt \
+  --install
+```
+
+The build command passes `BASE_PATH` to Astro and then copies `dist/` into the
+requested output directory. Use `--clean` when the output directory already has
+files.
+
+## Customization
+
+Use `--site-config` and `--overrides` to customize without forking ClearCutt:
+
+```bash
+clearcutt catalog site build \
+  --catalog ./dist/catalog \
+  --site-config ./clearcutt.site.yaml \
+  --overrides ./site-overrides \
+  --output ./dist/site \
+  --install
+```
+
+See [customization](customization.md) for supported config keys and override
+roots.
+
+## Deployment Shape
+
+The generated site is a normal static Astro site. Any host that can serve files
+from the output directory can publish it:
+
+- GitHub Pages
+- Cloudflare Pages
+- S3 plus CloudFront
+- Netlify
+- an internal static web server
+
+Keep `catalog/index.json`, `catalog/images/*.json`, `catalog/schemas/*.json`,
+and `catalog/raw/*` together with the generated HTML.

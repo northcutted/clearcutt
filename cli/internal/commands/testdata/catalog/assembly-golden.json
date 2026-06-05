@@ -1,5 +1,6 @@
 {
   "image": {
+    "schemaVersion": "clearcutt.catalog.image/v1",
     "id": "python3.13-slim",
     "language": {
       "id": "python",

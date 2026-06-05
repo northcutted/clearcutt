@@ -93,6 +93,7 @@ type Tier struct {
 }
 
 type ImageRecord struct {
+	SchemaVersion   string               `json:"schemaVersion,omitempty"`
 	ID              string               `json:"id"`
 	Language        Language             `json:"language"`
 	Tier            Tier                 `json:"tier"`
@@ -234,16 +235,17 @@ type gatherVulnSummary struct {
 }
 
 type Index struct {
-	GeneratedAt  string                   `json:"generatedAt"`
-	Owner        string                   `json:"owner"`
-	Repo         string                   `json:"repo"`
-	RepoURL      string                   `json:"repoUrl"`
-	RegistryBase string                   `json:"registryBase"`
-	LatestTag    string                   `json:"latestTag"`
-	Releases     []catalog.ReleaseSummary `json:"releases"`
-	Languages    []Language               `json:"languages"`
-	Tiers        []Tier                   `json:"tiers"`
-	Images       []ImageSummary           `json:"images"`
+	SchemaVersion string                   `json:"schemaVersion,omitempty"`
+	GeneratedAt   string                   `json:"generatedAt"`
+	Owner         string                   `json:"owner"`
+	Repo          string                   `json:"repo"`
+	RepoURL       string                   `json:"repoUrl"`
+	RegistryBase  string                   `json:"registryBase"`
+	LatestTag     string                   `json:"latestTag"`
+	Releases      []catalog.ReleaseSummary `json:"releases"`
+	Languages     []Language               `json:"languages"`
+	Tiers         []Tier                   `json:"tiers"`
+	Images        []ImageSummary           `json:"images"`
 }
 
 type Release struct {

@@ -63,16 +63,17 @@ func BuildIndex(owner, repo, registryBase, generatedAt string, releases []Releas
 		latestTag = latest.Tag
 	}
 	return Index{
-		GeneratedAt:  generatedAt,
-		Owner:        owner,
-		Repo:         repo,
-		RepoURL:      fmt.Sprintf("https://github.com/%s/%s", owner, repo),
-		RegistryBase: registryBase,
-		LatestTag:    latestTag,
-		Releases:     releaseSummaries,
-		Languages:    languageList(),
-		Tiers:        tierList(),
-		Images:       summaries,
+		SchemaVersion: catalog.CatalogIndexSchemaVersion,
+		GeneratedAt:   generatedAt,
+		Owner:         owner,
+		Repo:          repo,
+		RepoURL:       fmt.Sprintf("https://github.com/%s/%s", owner, repo),
+		RegistryBase:  registryBase,
+		LatestTag:     latestTag,
+		Releases:      releaseSummaries,
+		Languages:     languageList(),
+		Tiers:         tierList(),
+		Images:        summaries,
 	}
 }
 
@@ -128,6 +129,9 @@ func RebuildIndexFromExistingImages(owner, repo, registryBase, outDir, vulnDir, 
 		var img ImageRecord
 		if err := json.Unmarshal(data, &img); err != nil {
 			return false, err
+		}
+		if img.SchemaVersion == "" {
+			img.SchemaVersion = catalog.ImageRecordSchemaVersion
 		}
 		for i := range img.Releases {
 			lastRebuiltAt := FirstNonEmptyStr(img.Releases[i].LastRebuiltAt, img.Releases[i].PublishedAt)

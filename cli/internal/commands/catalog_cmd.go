@@ -12,11 +12,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/spf13/cobra"
 )
 
 type catalogGatherFlags struct {
+	config           string
+	imagesFile       string
 	limit            int
 	owner            string
 	repo             string
@@ -29,6 +33,7 @@ type catalogGatherFlags struct {
 	forceRefreshAll  bool
 	forceRefreshTags string
 	generatedAt      string
+	pretty           bool
 }
 
 var catalogGatherOpts catalogGatherFlags
@@ -38,9 +43,37 @@ func NewCatalogCmd() *cobra.Command {
 		Use:   "catalog",
 		Short: "Build and enrich the site catalog data",
 	}
+	cmd.AddCommand(newCatalogGenerateCmd())
 	cmd.AddCommand(newCatalogGatherCmd())
 	cmd.AddCommand(newCatalogEnrichCmd())
 	cmd.AddCommand(newCatalogBuildCmd())
+	cmd.AddCommand(newCatalogValidateCmd())
+	cmd.AddCommand(newCatalogSummarizeCmd())
+	cmd.AddCommand(newCatalogInspectCmd())
+	cmd.AddCommand(newCatalogDiffCmd())
+	cmd.AddCommand(newCatalogSiteCmd())
+	return cmd
+}
+
+func newCatalogGenerateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate portable catalog JSON from ClearCutt release evidence",
+		Long: `Generate the site-compatible catalog JSON used by ClearCutt discovery
+commands and Astro catalog pages. This first public generator path reuses the
+ClearCutt-native GitHub release evidence pipeline by default. Pass --images to
+build a minimal Nix-free catalog from a generic OCI image inventory; unavailable
+evidence channels are preserved as explicit missing-evidence states.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCatalogGenerate(cmd)
+		},
+	}
+	addCatalogGatherFlags(cmd)
+	cmd.Flags().StringVar(&catalogGatherOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
+	cmd.Flags().StringVar(&catalogGatherOpts.imagesFile, "images", "", "Generic OCI images.yaml inventory to convert into catalog data")
+	cmd.Flags().StringVar(&catalogGatherOpts.outDir, "output", "", "Catalog output directory")
+	cmd.Flags().BoolVar(&catalogGatherOpts.pretty, "pretty", true, "Write indented JSON output")
 	return cmd
 }
 
@@ -53,10 +86,15 @@ func newCatalogGatherCmd() *cobra.Command {
 			return runCatalogGather()
 		},
 	}
+	addCatalogGatherFlags(cmd)
+	return cmd
+}
+
+func addCatalogGatherFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&catalogGatherOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum non-draft releases to inspect")
-	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, or git remote)")
-	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, or git remote)")
-	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to ghcr.io/<owner>/<repo>)")
+	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, fleet config, or git remote)")
+	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, fleet config, or git remote)")
+	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
 	cmd.Flags().StringVar(&catalogGatherOpts.outDir, "out-dir", "", "Catalog output directory (defaults to --catalog)")
 	cmd.Flags().StringVar(&catalogGatherOpts.enrichmentDir, "enrichment-dir", envOr("ENRICHMENT_DIR", filepath.Join("site", "src", "data", "enrichment")), "Directory of registry enrichment JSON")
 	cmd.Flags().StringVar(&catalogGatherOpts.sbomCacheDir, "sbom-cache-dir", envOr("SBOM_CACHE_DIR", filepath.Join("site", "src", "data", "sboms")), "Directory to cache downloaded SBOM assets")
@@ -65,7 +103,140 @@ func newCatalogGatherCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&catalogGatherOpts.forceRefreshAll, "force-refresh-all", parseScanBool(os.Getenv("FORCE_REFRESH_ALL")), "Refresh every release asset instead of reusing the SBOM cache")
 	cmd.Flags().StringVar(&catalogGatherOpts.forceRefreshTags, "force-refresh-tags", os.Getenv("FORCE_REFRESH_TAGS"), "Comma-separated release tags to refresh")
 	cmd.Flags().StringVar(&catalogGatherOpts.generatedAt, "generated-at", "", "Override index generatedAt timestamp (tests/reproducibility)")
-	return cmd
+}
+
+func runCatalogGenerate(cmd *cobra.Command) error {
+	return runCatalogGenerateWithConfig(cmd.Flags().Changed("config"), cmd.Flags().Changed("limit"))
+}
+
+func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
+	if catalogGatherOpts.imagesFile != "" {
+		return runCatalogGenerateFromImages()
+	}
+	if catalogGatherOpts.config != "" {
+		cfg, err := fleet.Load(catalogGatherOpts.config)
+		if err != nil {
+			if explicitConfig || !os.IsNotExist(err) {
+				return err
+			}
+		} else {
+			if catalogGatherOpts.owner == "" {
+				catalogGatherOpts.owner = cfg.Registry.Owner
+			}
+			if catalogGatherOpts.repo == "" {
+				catalogGatherOpts.repo = cfg.Registry.Repository
+			}
+			if catalogGatherOpts.registryBase == "" {
+				catalogGatherOpts.registryBase = cfg.RegistryBase()
+			}
+			if catalogGatherOpts.targets == "" {
+				catalogGatherOpts.targets = fleetTargets(cfg)
+			}
+			if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
+				catalogGatherOpts.limit = cfg.Catalog.ReleaseLimit
+			}
+		}
+	}
+	if catalogGatherOpts.outDir != "" {
+		GlobalOpts.CatalogPath = catalogGatherOpts.outDir
+	}
+	if err := runCatalogGather(); err != nil {
+		return err
+	}
+	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
+	return finalizeGeneratedCatalog(outDir)
+}
+
+func finalizeGeneratedCatalog(outDir string) error {
+	if err := stampCatalogIndexMetadata(outDir); err != nil {
+		return err
+	}
+	if err := ensureRawEvidenceDirs(outDir); err != nil {
+		return err
+	}
+	if err := writeCatalogSummaryFile(outDir); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[generate] wrote summary.json\n")
+	if err := writeCatalogSchemaFiles(outDir); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[generate] wrote schemas/\n")
+	return nil
+}
+
+func ensureRawEvidenceDirs(outDir string) error {
+	for _, rel := range []string{
+		filepath.Join("raw", "sbom"),
+		filepath.Join("raw", "provenance"),
+		filepath.Join("raw", "scans"),
+		filepath.Join("raw", "test-results"),
+	} {
+		if err := os.MkdirAll(filepath.Join(outDir, rel), 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func stampCatalogIndexMetadata(outDir string) error {
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		return err
+	}
+	index.Generator = &catalog.CatalogGenerator{
+		Name:    "clearcutt",
+		Version: catalogbuild.FirstNonEmptyStr(Version, "dev"),
+		Commit:  "unknown",
+	}
+	index.Source = &catalog.CatalogSource{
+		Owner:        index.Owner,
+		Repo:         index.Repo,
+		RepoURL:      index.RepoURL,
+		RegistryBase: index.RegistryBase,
+	}
+	index.Summary = catalogIndexSummary(index)
+	return writeJSONFile(filepath.Join(outDir, "index.json"), index)
+}
+
+func catalogIndexSummary(index *catalog.CatalogIndex) *catalog.CatalogSummary {
+	if index == nil {
+		return nil
+	}
+	summary := &catalog.CatalogSummary{
+		ImageCount:   len(index.Images),
+		ReleaseCount: len(index.Releases),
+	}
+	for _, img := range index.Images {
+		if img.Signed {
+			summary.SignedCount++
+		}
+		if img.Provenance {
+			summary.ProvenanceCount++
+		}
+		if img.Passed {
+			summary.PassingCount++
+		}
+		if img.Evidence != nil {
+			if img.Evidence.SBOM {
+				summary.SBOMCount++
+			}
+			if img.Evidence.Vulnerabilities {
+				summary.ScanCount++
+			}
+		}
+	}
+	return summary
+}
+
+func fleetTargets(cfg fleet.Config) string {
+	targets := []string{}
+	for _, language := range cfg.Matrix.Languages {
+		for _, tier := range cfg.Matrix.Tiers {
+			targets = append(targets, language+"-"+tier)
+		}
+	}
+	return strings.Join(targets, ",")
 }
 
 func runCatalogGather() error {
@@ -98,11 +269,17 @@ func runCatalogGather() error {
 			return err
 		}
 		if ok {
+			if err := stampCatalogIndexMetadata(outDir); err != nil {
+				return err
+			}
 			fmt.Fprintln(out, "[gather] rebuilt index.json from existing image records")
 			return nil
 		}
 		empty := catalogbuild.BuildIndex(owner, repo, registryBase, generatedAt, nil, nil)
-		return writeJSONFile(filepath.Join(outDir, "index.json"), empty)
+		if err := writeJSONFile(filepath.Join(outDir, "index.json"), empty); err != nil {
+			return err
+		}
+		return stampCatalogIndexMetadata(outDir)
 	}
 
 	refreshSet := catalogbuild.RefreshTagSet(releases, catalogGatherOpts.forceRefreshAll, catalogGatherOpts.forceRefreshTags)
@@ -131,6 +308,9 @@ func runCatalogGather() error {
 	}
 	index := catalogbuild.BuildIndex(owner, repo, registryBase, generatedAt, releases, images)
 	if err := writeJSONFile(filepath.Join(outDir, "index.json"), index); err != nil {
+		return err
+	}
+	if err := stampCatalogIndexMetadata(outDir); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "[gather] wrote index.json with %d images\n", len(index.Images))
@@ -296,7 +476,15 @@ func writeJSONFile(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(value, "", "  ")
+	var (
+		data []byte
+		err  error
+	)
+	if catalogGatherOpts.pretty {
+		data, err = json.MarshalIndent(value, "", "  ")
+	} else {
+		data, err = json.Marshal(value)
+	}
 	if err != nil {
 		return err
 	}

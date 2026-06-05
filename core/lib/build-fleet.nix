@@ -2,7 +2,9 @@
 # Designed by: Eddie Northcutt
 # Paradigm: Declarative Nix Base Image Injection (Anti-Migration Tax)
 
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixpkgs> {}
+, platformMetadata ? import ./platform-metadata.nix
+}:
 
 let
   # Import centralized language and runtime registry
@@ -115,16 +117,19 @@ in
     ];
 
     allContents = baseContents ++ tierPkgs ++ langPkgs ++ extraPackages;
+    sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
+    vendor = platformMetadata.vendor or "ClearCutt";
+    authors = platformMetadata.authors or "ClearCutt maintainers";
 
     # Define standard OCI Annotations/Labels (compliant with opencontainers image-spec)
     ociLabels = {
       "org.opencontainers.image.title" = "clearcutt-${language}-${version}";
       "org.opencontainers.image.description" = "Hardened ClearCutt Base Image for ${language} (${version}) - Tier: ${tier}";
-      "org.opencontainers.image.url" = "https://github.com/northcutted/clearcutt";
-      "org.opencontainers.image.source" = "https://github.com/northcutted/clearcutt";
+      "org.opencontainers.image.url" = sourceURL;
+      "org.opencontainers.image.source" = sourceURL;
       "org.opencontainers.image.version" = version;
-      "org.opencontainers.image.vendor" = "Eddie Northcutt";
-      "org.opencontainers.image.authors" = "Eddie Northcutt";
+      "org.opencontainers.image.vendor" = vendor;
+      "org.opencontainers.image.authors" = authors;
       "org.opencontainers.image.licenses" = "Apache-2.0";
       "org.opencontainers.image.ref.name" = tier;
     };

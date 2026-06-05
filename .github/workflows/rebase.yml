@@ -1,0 +1,130 @@
+# ClearCutt platform rebase workflow.
+#
+# This workflow is the OIDC identity pinned by clearcutt.fleet.yaml under
+# rebase.workflowIdentity. It performs the privileged platform-side leg of the
+# app rebase flow: verify the developer signature, swap only compatible base
+# layers, sign the rebased image, and attach the rebase attestation.
+
+name: ClearCutt App Rebase
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Source app image reference to rebase, preferably digest-pinned"
+        required: true
+        type: string
+      candidate_base:
+        description: "Patched ClearCutt base reference or catalog id"
+        required: true
+        type: string
+      candidate_base_id:
+        description: "Candidate base catalog id, required when candidate_base is a raw ref"
+        required: true
+        type: string
+      candidate_base_version:
+        description: "Optional candidate base version stamped into rebased labels"
+        required: false
+        default: ""
+        type: string
+      tag:
+        description: "Target image reference for the rebased app"
+        required: true
+        type: string
+      developer_identity:
+        description: "Exact developer workflow identity regexp verified over the source image"
+        required: true
+        type: string
+      developer_issuer:
+        description: "OIDC issuer for the developer signature"
+        required: false
+        default: "https://token.actions.githubusercontent.com"
+        type: string
+      compat_policy:
+        description: "Optional compatibility policy id recorded in the predicate"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.image }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    name: Rebase, Sign, and Attest
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Authenticate to GHCR
+        env:
+          REGISTRY_USER: ${{ vars.CLEARCUTT_REBASE_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.CLEARCUTT_REBASE_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_PASSWORD" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Check base compatibility
+        env:
+          SOURCE_IMAGE: ${{ inputs.image }}
+          CANDIDATE_BASE: ${{ inputs.candidate_base }}
+          CANDIDATE_BASE_ID: ${{ inputs.candidate_base_id }}
+        run: |
+          set -euo pipefail
+          ./clearcutt app diff-base \
+            --image "$SOURCE_IMAGE" \
+            --candidate-base "$CANDIDATE_BASE" \
+            --candidate-base-id "$CANDIDATE_BASE_ID" \
+            --fail-on-incompatible
+
+      - name: Rebase, sign, and attest
+        env:
+          SOURCE_IMAGE: ${{ inputs.image }}
+          CANDIDATE_BASE: ${{ inputs.candidate_base }}
+          CANDIDATE_BASE_ID: ${{ inputs.candidate_base_id }}
+          CANDIDATE_BASE_VERSION: ${{ inputs.candidate_base_version }}
+          TARGET_TAG: ${{ inputs.tag }}
+          DEVELOPER_IDENTITY: ${{ inputs.developer_identity }}
+          DEVELOPER_ISSUER: ${{ inputs.developer_issuer }}
+          COMPAT_POLICY: ${{ inputs.compat_policy }}
+        run: |
+          set -euo pipefail
+          args=(
+            app rebase
+            --image "$SOURCE_IMAGE"
+            --candidate-base "$CANDIDATE_BASE"
+            --candidate-base-id "$CANDIDATE_BASE_ID"
+            --tag "$TARGET_TAG"
+            --dev-identity "$DEVELOPER_IDENTITY"
+            --dev-issuer "$DEVELOPER_ISSUER"
+            --sign
+            --attest
+          )
+          if [[ -n "$CANDIDATE_BASE_VERSION" ]]; then
+            args+=(--candidate-base-version "$CANDIDATE_BASE_VERSION")
+          fi
+          if [[ -n "$COMPAT_POLICY" ]]; then
+            args+=(--compat-policy "$COMPAT_POLICY")
+          fi
+          ./clearcutt "${args[@]}"

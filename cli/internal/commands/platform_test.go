@@ -108,6 +108,7 @@ func TestPlatformInitWritesStarterKitAndHonorsForce(t *testing.T) {
 	}
 	for _, rel := range []string{
 		"clearcutt.fleet.yaml",
+		"core/lib/platform-metadata.nix",
 		"docs/platform-kit.md",
 		"examples/clearcutt-template-java/Dockerfile",
 		"examples/clearcutt-template-node/Dockerfile",
@@ -125,6 +126,13 @@ func TestPlatformInitWritesStarterKitAndHonorsForce(t *testing.T) {
 	if !strings.Contains(string(doc), "ghcr.io/acme/platform") || !strings.Contains(string(doc), "SLSA Build L3 provenance") {
 		t.Fatalf("platform doc missing product copy:\n%s", doc)
 	}
+	metadata, err := os.ReadFile(filepath.Join(root, "core", "lib", "platform-metadata.nix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(metadata), `sourceURL = "https://github.com/acme/platform"`) {
+		t.Fatalf("platform metadata missing fork source URL:\n%s", metadata)
+	}
 	if _, err := runCLI(t, "platform", "init", "--output", root, "--owner", "acme", "--repo", "platform"); err == nil {
 		t.Fatal("expected second init without --force to reject existing files")
 	}
@@ -138,8 +146,10 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 	writeFleetConfig(t, root)
 	files := map[string]string{
 		".github/workflows/release.yml":                 "matrix export --source fleet\nslsa-github-generator\n",
+		".github/workflows/rebase.yml":                  "clearcutt app rebase\n",
 		".github/workflows/publish-pages.yml":           "clearcutt catalog build\n",
 		".github/actions/certify-app/action.yml":        "name: certify\n",
+		"core/lib/platform-metadata.nix":                "https://github.com/acme/platform\n",
 		"examples/clearcutt-template-java/Dockerfile":   "FROM scratch\n",
 		"examples/clearcutt-template-node/Dockerfile":   "FROM scratch\n",
 		"examples/clearcutt-template-python/Dockerfile": "FROM scratch\n",
@@ -173,7 +183,7 @@ func TestPlatformStatusFailsMissingRootAndRendersYAML(t *testing.T) {
 	if !errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("expected missing platform root to fail, got %v\n%s", err, stdout)
 	}
-	if !strings.Contains(stdout, "status: fail") || !strings.Contains(stdout, "fleet.config") || !strings.Contains(stdout, "release.workflow") {
+	if !strings.Contains(stdout, "status: fail") || !strings.Contains(stdout, "fleet.config") || !strings.Contains(stdout, "release.workflow") || !strings.Contains(stdout, "rebase.workflow") {
 		t.Fatalf("expected YAML failure report, got:\n%s", stdout)
 	}
 }

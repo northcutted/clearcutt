@@ -297,6 +297,10 @@ func (c Config) RepoPath() string {
 	return c.Registry.Owner + "/" + c.Registry.Repository
 }
 
+func (c Config) RepoURL() string {
+	return "https://github.com/" + c.RepoPath()
+}
+
 func (c Config) RegistryBase() string {
 	return strings.TrimSuffix(c.Registry.Host, "/") + "/" + c.RepoPath()
 }

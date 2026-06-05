@@ -24,7 +24,7 @@ gate, admit, and update against that fleet.
 | Moment | Manager-level value | Platform-engineering depth |
 | :--- | :--- | :--- |
 | **Own the fleet** | Base images become an owned platform capability instead of an external feed you hope stays aligned. | `clearcutt.fleet.yaml`, Nix runtime matrix, `clearcutt platform status`, fork-local GitHub OIDC identities |
-| **Publish evidence** | Every release has visible proof: signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | `clearcutt catalog build`, `release`, `matrix`, Sigstore keyless signing, SPDX attestations, SLSA Build L3 provenance |
+| **Publish evidence** | Every release has visible proof: signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | `clearcutt catalog build`, `clearcutt catalog generate`, `clearcutt catalog site`, Sigstore keyless signing, SPDX attestations, SLSA Build L3 provenance |
 | **Onboard apps** | App teams get a paved path without learning Nix or reverse-engineering base-image contracts. | `clearcutt list`, `inspect`, `dev`, `app template`, `app build`, devcontainers, stack examples |
 | **Gate delivery** | CI and admission can block images that miss your runtime, evidence, or vulnerability policy. | `clearcutt certify`, `verify`, `conformance`, `policy`, `certification-policy.yaml`, Kyverno / OPA bundles |
 | **Operate updates** | Security teams can triage CVEs, document exceptions, and move compatible app images onto patched bases under review. | `clearcutt scan`, `remediation`, `exceptions`, `vex`, `mirror`, `app diff-base`, `app rebase` |
@@ -42,10 +42,27 @@ ClearCutt is organized as a three-part monorepo:
 | :--- | :--- | :--- |
 | `core/` | Nix image factory, runtime overlays, release pipeline, vulnerability scanning, and image conformance tests. | `cd core && nix develop`, `make core-verify` |
 | `cli/` | Go governance CLI (`clearcutt`) and its tests. | `make cli-build`, `make cli-test` |
-| `site/` | Astro catalog site and generated catalog data. | `make site-dev`, `make site-build` |
+| `site/` | Astro catalog site and generated catalog data. | `make site-dev`, `make site-build`, `clearcutt catalog site build` |
 
 Shared contracts and consumer material remain at the root: `schemas/`, `docs/`,
 `examples/`, and `.github/`.
+
+### Fork Setup
+
+Start with [FORKING.md](FORKING.md) if you want to run ClearCutt as your own
+internal image platform. It covers GitHub Actions permissions, the `production`
+environment gate, Pages, fork-local OIDC identities, and the first release.
+
+### Catalog Generator Docs
+
+ClearCutt can now be used as a portable catalog and evidence-portal generator,
+not only as this repository's own base-image fleet:
+
+- [Catalog generator](docs/catalog-generator.md) covers `clearcutt catalog generate`, validation, summaries, inspection, and data-only CI.
+- [Astro site generator](docs/site-generator.md) covers `clearcutt catalog site scaffold/build/preview/eject`.
+- [Catalog schema](docs/catalog-schema.md) documents the versioned `index.json`, image records, schemas, and raw evidence directories.
+- [Generic OCI mode](docs/generic-oci-mode.md) covers `images.yaml` catalogs that do not require Nix or ClearCutt release workflows.
+- [Customization](docs/customization.md) covers `clearcutt.site.yaml`, feature flags, terminology, links, and `site-overrides/`.
 
 ---
 
@@ -152,7 +169,7 @@ make cli-build
 ```
 
 > [!NOTE]
-> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate it with `./clearcutt catalog build` (writes to `site/src/data/catalog`, the default `--catalog` path), or point `--catalog` at any catalog directory — e.g. the bundled fixture `cli/internal/testdata/catalog` for a quick offline demo:
+> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate portable data with `./clearcutt catalog generate --output site/src/data/catalog`, run the full release-evidence pipeline with `./clearcutt catalog build`, or point `--catalog` at any catalog directory — e.g. the bundled fixture `cli/internal/testdata/catalog` for a quick offline demo:
 > ```bash
 > ./clearcutt list --catalog cli/internal/testdata/catalog
 > ```

@@ -25,6 +25,9 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 	if loaded.RegistryBase() != "ghcr.io/acme/platform" {
 		t.Fatalf("RegistryBase() = %q", loaded.RegistryBase())
 	}
+	if loaded.RepoURL() != "https://github.com/acme/platform" {
+		t.Fatalf("RepoURL() = %q", loaded.RepoURL())
+	}
 	if loaded.Release.SLSABuilder == "" {
 		t.Fatalf("expected SLSA builder to be populated")
 	}
@@ -53,6 +56,9 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	cfg.applyDefaults()
 	if cfg.RepoPath() != "acme/platform" || cfg.RegistryBase() != "ghcr.io/acme/platform" {
 		t.Fatalf("unexpected registry identity: repo=%q base=%q", cfg.RepoPath(), cfg.RegistryBase())
+	}
+	if cfg.RepoURL() != "https://github.com/acme/platform" {
+		t.Fatalf("unexpected repo URL: %q", cfg.RepoURL())
 	}
 	if cfg.ImageName("Java21") != "ghcr.io/acme/platform/cc-java21" {
 		t.Fatalf("unexpected image name: %q", cfg.ImageName("Java21"))

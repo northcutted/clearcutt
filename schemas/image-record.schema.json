@@ -3,6 +3,7 @@
   "title": "ImageRecord",
   "type": "object",
   "required": [
+    "schemaVersion",
     "id",
     "language",
     "tier",
@@ -14,6 +15,7 @@
     "runtimeContract"
   ],
   "properties": {
+    "schemaVersion": { "type": "string", "const": "clearcutt.catalog.image/v1" },
     "id": { "type": "string" },
     "language": {
       "type": "object",
@@ -67,7 +69,7 @@
     },
     "ArchPayload": {
       "type": "object",
-      "required": ["arch", "os", "imageDigest", "imageSize", "layerCount", "layers", "labels", "sbom"],
+      "required": ["arch", "os", "layers", "labels", "sbom"],
       "properties": {
         "arch": { "type": "string", "enum": ["amd64", "arm64"] },
         "os": { "type": "string" },
@@ -238,10 +240,7 @@
         "tag",
         "publishedAt",
         "isLatest",
-        "manifestDigest",
         "architectures",
-        "signature",
-        "provenance",
         "attestations",
         "assetUrls",
         "lifecycle",
@@ -299,7 +298,7 @@
         },
         "assetUrls": {
           "type": "object",
-          "required": ["sbom", "provenance", "testResults", "digest"],
+          "required": ["sbom", "testResults"],
           "properties": {
             "sbom": {
               "type": "object",

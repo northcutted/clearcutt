@@ -1,0 +1,139 @@
+# Catalog Generator
+
+`clearcutt catalog generate` writes portable catalog artifacts that can be used
+by CI, policy checks, auditors, and the Astro evidence portal. It is the
+data-only path: it produces JSON and schemas, but it does not build HTML.
+
+Use `clearcutt catalog build` when you want the full ClearCutt release workflow
+pipeline: gather release evidence, enrich registry metadata, scan cached SBOMs,
+fold results back into the catalog, and run catalog verification. Use
+`clearcutt catalog generate` when you already have inputs and want a portable
+catalog directory.
+
+## ClearCutt Fleet Mode
+
+Fleet mode reads owner, repository, registry, release window, and target
+defaults from `clearcutt.fleet.yaml`, then uses ClearCutt release evidence,
+registry enrichment, SBOM cache data, and vulnerability scan JSON where
+available.
+
+```bash
+clearcutt catalog generate \
+  --config clearcutt.fleet.yaml \
+  --output ./dist/catalog
+```
+
+Useful flags:
+
+- `--owner` and `--repo` override source repository discovery.
+- `--registry-base` overrides the image registry namespace.
+- `--limit` bounds the number of non-draft releases to inspect.
+- `--targets` limits generation to a comma-separated image allowlist.
+- `--sbom-cache-dir`, `--enrichment-dir`, and `--vuln-dir` point at local
+  evidence inputs.
+- `--force-refresh-all` and `--force-refresh-tags` control release asset
+  refresh behavior.
+- `--generated-at` pins timestamps for reproducible tests.
+
+## Generic OCI Mode
+
+Generic OCI mode does not require Nix, ClearCutt release workflows, or a
+ClearCutt fork. It converts an explicit `images.yaml` inventory into catalog
+records and preserves unavailable evidence as missing-evidence states.
+
+```bash
+clearcutt catalog generate \
+  --images images.yaml \
+  --output ./dist/catalog \
+  --owner acme \
+  --repo base-images \
+  --registry-base ghcr.io/acme/base-images
+```
+
+See [generic OCI mode](generic-oci-mode.md) for the `images.yaml` shape and
+limitations.
+
+## Output Layout
+
+Generation writes a self-contained catalog directory:
+
+```text
+dist/catalog/
+  index.json
+  summary.json
+  images/
+    java21-distroless.json
+  raw/
+    sbom/
+    provenance/
+    scans/
+    test-results/
+  schemas/
+    catalog-index.v1.schema.json
+    image-record.v1.schema.json
+```
+
+The `raw/` subdirectories are intentionally present even when there are no raw
+artifacts yet. That keeps static-site publishing and downstream sync jobs
+stable.
+
+## Validate And Inspect
+
+Validate generated data before publishing it:
+
+```bash
+clearcutt --catalog ./dist/catalog catalog validate
+clearcutt --catalog ./dist/catalog catalog validate \
+  --schema-version clearcutt.catalog.index/v1
+clearcutt --catalog ./dist/catalog catalog validate \
+  --schema-version clearcutt.catalog.image/v1
+```
+
+Warnings are used for missing optional evidence. Turn them into failures when a
+pipeline requires complete evidence:
+
+```bash
+clearcutt --catalog ./dist/catalog catalog validate --warnings-as-errors
+```
+
+Summarize, inspect, or diff catalogs:
+
+```bash
+clearcutt --catalog ./dist/catalog --format json catalog summarize
+clearcutt --catalog ./dist/catalog catalog inspect java21-distroless
+clearcutt catalog diff --old ./previous/catalog --new ./dist/catalog
+```
+
+## Evidence Semantics
+
+Catalog records do not collapse trust into one boolean. Signatures, SLSA
+provenance, SBOMs, tests, vulnerability scans, lifecycle, runtime contracts, and
+per-architecture data are reported independently. A missing SBOM should remain a
+missing SBOM, not become a generic "not secure" or "secure" flag.
+
+That distinction matters for:
+
+- CI gates that require only specific evidence channels.
+- Security review workflows that need to see incomplete inputs.
+- Generated sites that degrade gracefully when generic OCI inputs do not have
+  ClearCutt release attestations.
+
+## Data-Only CI Example
+
+```yaml
+name: Catalog
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+      - run: go build -C cli -o ../clearcutt ./cmd/clearcutt
+      - run: ./clearcutt catalog generate --config clearcutt.fleet.yaml --output dist/catalog
+      - run: ./clearcutt --catalog dist/catalog catalog validate
+```

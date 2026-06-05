@@ -567,6 +567,7 @@ func BuildImageRecord(target string, releases []Release, refreshSet map[string]b
 		return nil, nil
 	}
 	return &ImageRecord{
+		SchemaVersion:   catalog.ImageRecordSchemaVersion,
 		ID:              target,
 		Language:        Language{ID: langInfo.ID, DisplayName: langInfo.Display, Version: langInfo.Version},
 		Tier:            Tier{ID: meta.Tier, Name: tierInfo.Name, Blurb: tierInfo.Blurb},

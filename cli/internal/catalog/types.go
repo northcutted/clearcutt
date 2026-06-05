@@ -4,18 +4,55 @@ import (
 	"encoding/json"
 )
 
+const (
+	// CatalogIndexSchemaVersion identifies the top-level catalog index shape.
+	CatalogIndexSchemaVersion = "clearcutt.catalog.index/v1"
+	// ImageRecordSchemaVersion identifies individual images/*.json record shape.
+	ImageRecordSchemaVersion = "clearcutt.catalog.image/v1"
+)
+
 // CatalogIndex represents the top-level index.json structure.
 type CatalogIndex struct {
-	GeneratedAt  string                `json:"generatedAt"`
-	Owner        string                `json:"owner"`
-	Repo         string                `json:"repo"`
-	RepoURL      string                `json:"repoUrl"`
-	RegistryBase string                `json:"registryBase"`
-	LatestTag    string                `json:"latestTag"`
-	Releases     []ReleaseSummary      `json:"releases"`
-	Languages    []LanguageInfo        `json:"languages"`
-	Tiers        []TierInfo            `json:"tiers"`
-	Images       []CatalogImageSummary `json:"images"`
+	SchemaVersion string                `json:"schemaVersion,omitempty"`
+	GeneratedAt   string                `json:"generatedAt"`
+	Generator     *CatalogGenerator     `json:"generator,omitempty"`
+	Source        *CatalogSource        `json:"source,omitempty"`
+	Summary       *CatalogSummary       `json:"summary,omitempty"`
+	Owner         string                `json:"owner"`
+	Repo          string                `json:"repo"`
+	RepoURL       string                `json:"repoUrl"`
+	RegistryBase  string                `json:"registryBase"`
+	LatestTag     string                `json:"latestTag"`
+	Releases      []ReleaseSummary      `json:"releases"`
+	Languages     []LanguageInfo        `json:"languages"`
+	Tiers         []TierInfo            `json:"tiers"`
+	Images        []CatalogImageSummary `json:"images"`
+}
+
+// CatalogGenerator describes the tool that produced a versioned catalog.
+type CatalogGenerator struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+}
+
+// CatalogSource describes the source repository and registry namespace.
+type CatalogSource struct {
+	Owner        string `json:"owner"`
+	Repo         string `json:"repo"`
+	RepoURL      string `json:"repoUrl"`
+	RegistryBase string `json:"registryBase"`
+}
+
+// CatalogSummary provides lightweight top-level evidence coverage counts.
+type CatalogSummary struct {
+	ImageCount      int `json:"imageCount"`
+	ReleaseCount    int `json:"releaseCount"`
+	SignedCount     int `json:"signedCount"`
+	ProvenanceCount int `json:"provenanceCount"`
+	SBOMCount       int `json:"sbomCount"`
+	ScanCount       int `json:"scanCount"`
+	PassingCount    int `json:"passingCount"`
 }
 
 // ReleaseSummary represents a release entry inside the index.
@@ -120,6 +157,7 @@ type RuntimeContract struct {
 
 // ImageRecord represents individual image records under images/*.json.
 type ImageRecord struct {
+	SchemaVersion   string          `json:"schemaVersion,omitempty"`
 	ID              string          `json:"id"`
 	Language        LanguageInfo    `json:"language"`
 	Tier            TierInfo        `json:"tier"`

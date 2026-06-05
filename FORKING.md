@@ -1,89 +1,117 @@
-# Forking ClearCutt: Downstream Base Image Feeds
+# Forking ClearCutt
 
-ClearCutt is a declarative container hardening blueprint. Downstream organization teams are expected to fork this repository to build, sign, and govern their own custom internal OCI base image feeds rather than utilizing our public catalog directly in production.
+ClearCutt is meant to be forked by a platform team that wants to own its base
+image feed, registry namespace, GitHub Actions OIDC identities, catalog site,
+and admission policy. The reference repository is a working blueprint, not a
+hosted control plane.
 
-This guide outlines how to customize the Nix builder closures, configure custom OCI registries, re-key OIDC signatures, and deploy a self-hosted catalog site.
+This is not a 15-minute app-template setup. The owner team needs enough Nix and
+GitHub Actions fluency to maintain the runtime matrix, review releases, and
+operate the trust chain. Application teams consuming the published images do not
+need Nix.
 
----
+## First-Run Checklist
 
-## 1. Customize Matrix Runtimes & Tiers
+1. Fork this repository into the organization that will own the image platform.
+2. Enable GitHub Actions for the fork.
+3. In **Settings -> Actions -> General**, set workflow permissions to **Read and
+   write permissions**. Enable pull-request creation if you plan to use the
+   remediation agent.
+4. Create a GitHub Environment named `production`. Add required reviewers if
+   releases and app rebases should be manually approved.
+5. In **Settings -> Pages**, select **GitHub Actions** as the Pages source.
+6. Build the CLI and rewrite the platform defaults for your fork:
 
-The source-of-truth configuration for all base image closures lives in the `core/` directory:
-
-1. **Overlay Definitions (`core/overlays/`)**:
-   - Each language runtime overlay is declared as a Nix derivation. Add custom configuration switches (e.g. security-patched OpenSSL bindings) directly in the relevant overlays directory.
-2. **Registry Mapping (`core/lib/registry.nix`)**:
-   - Maps language versions, target architectures, package closures, and compliance settings. Edit this mapping to declare custom target image slots or add your company-specific package variations.
-3. **Reproducibility Boundary**:
-   - *Bit-for-Bit Reproducibility:* Compiling purely from Nix store closures yields a byte-identical archive every time.
-   - *Layering Boundary:* Grafting Nix layers onto a non-Nix base OS (like Red Hat UBI or Ubuntu Pro) destroys this bit-for-bit guarantee due to non-deterministic base OS file timestamps.
-
----
-
-## 2. Reconfigure OCI Registries
-
-To publish base images under your own enterprise registry namespace:
-
-1. **Update GitHub Workflow Variables**:
-   - Open `.github/workflows/release.yml` and `.github/workflows/scheduled-scan.yml`.
-   - Update the OCI target registry variables:
-     ```yaml
-     env:
-       REGISTRY_BASE: ghcr.io/your-org/clearcutt
-     ```
-2. **Configure Authentication Secrets**:
-   - Ensure the repository has a token with write access to your OCI package registry (`packages: write`).
-
----
-
-## 3. Re-Key Sigstore OIDC Workflows
-
-ClearCutt uses keyless Sigstore signatures signed via GitHub Actions OIDC tokens. Downstream teams must update their verification anchors:
-
-1. **Verification Regex Update**:
-   - Signature checks rely on validating the certificate Subject Alternative Name (SAN). The SAN pins the exact workflow file URL at the ref that signed it.
-   - When forked, your OIDC verification subject will change. Update your cluster-side Kyverno admission policy and local scripts to match your forked workflow identity:
-     ```bash
-     # Expected identity SAN for your fork:
-     https://github.com/YOUR-ORG/clearcutt/.github/workflows/release.yml@refs/heads/main
-     ```
-2. **Kyverno Admission Gates**:
-   - Update the Kyverno ClusterPolicy definition inside `site/src/components/VerifyBlock.astro` to reflect your organization's OIDC SAN.
-
----
-
-## 4. Run Self-Hosted Catalog & OpenVEX Feeds
-
-ClearCutt includes a premium Astro-based catalog site that parses release metadata and serves as a worked-example of a live-refreshing image feed.
-
-### Compiling & Deploying the Site
-1. Install dependencies:
    ```bash
-   make site-install
+   make cli-build
+   ./clearcutt platform init --owner YOUR_ORG --repo YOUR_REPO --force
+   ./clearcutt platform status
    ```
-2. Build the site locally or in your CI/CD pipeline:
-   ```bash
-   make site-build
-   ```
-3. During static compilation, the pipeline runs the Go CLI to dynamically triage active CVE telemetry, producing OpenVEX JSON documents inside the public directory at `vex/<image-id>.json`.
-4. Publish the static output (`site/dist/`) to GitHub Pages, an S3 bucket, or your enterprise developer portal.
 
----
+7. Review `clearcutt.fleet.yaml` before the first release. At minimum, confirm:
 
-## 5. Parameterized Composite Actions
+   - `registry.owner` and `registry.repository`
+   - `site.basePath`
+   - `core/lib/platform-metadata.nix` source URL and vendor strings
+   - `release.workflowIdentity`
+   - `rebase.workflowIdentity`
+   - enabled languages, tiers, and systems
+   - admission and remediation policy settings
 
-Downstream applications can certify their security contracts by calling our composite certifier action. The action automatically resolves CLI binaries from your own forked release assets:
+8. Dispatch `.github/workflows/release.yml` to publish the first fleet release.
+9. Dispatch or wait for `.github/workflows/publish-pages.yml` to build the
+   catalog and deploy the evidence portal.
+10. Point app teams at the generated templates under `examples/clearcutt-template-*`.
 
-```yaml
-- name: Certify App Compliance
-  uses: YOUR-ORG/clearcutt/.github/actions/certify-app@v1
-  with:
-    image: ghcr.io/your-org/my-app:v1.0.0
-    policy: .github/clearcutt-policy.yaml
-    base: java25-distroless
-    certificate-identity-regexp: '^https://github\.com/YOUR-ORG/.*$'
+## What You Do Not Need To Rewire
+
+The current release workflow derives its matrix from `clearcutt.fleet.yaml` and
+publishes to `ghcr.io/${{ github.repository }}/...`. A normal GitHub fork does
+not need a custom registry secret for GHCR: the workflow uses `GITHUB_TOKEN`,
+`github.actor`, and `packages: write`.
+
+Do not edit a hardcoded `REGISTRY_BASE` in the release workflow. If the fork
+needs a different GHCR owner/repo path, update `clearcutt.fleet.yaml` and rerun
+`clearcutt platform status`.
+
+## Trust Anchors
+
+ClearCutt signs with GitHub Actions OIDC. Your fork must pin its own workflow
+identities in CI, catalog verification, and cluster admission policy:
+
+```text
+https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main
+https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/rebase.yml@refs/heads/main
 ```
 
----
+The release workflow signs the base-image fleet and publishes SBOM/provenance
+evidence. The rebase workflow performs the privileged app-update leg: it verifies
+the original developer signature, preserves app layers byte-for-byte, signs the
+rebased app image, and attaches the ClearCutt rebase attestation.
 
-By owning the fork, your platform engineering team retains full sovereign control over base runtime configurations, cryptographic signing keys, and admission policies.
+## Optional Secrets
+
+Most workflows use only `GITHUB_TOKEN`.
+
+Add `CLEARCUTT_REBASE_REGISTRY_TOKEN` only if the platform rebase workflow must
+push rebased app images outside packages writable by this repository's
+`GITHUB_TOKEN`. If that token should log in as a specific service account, set
+the repository variable `CLEARCUTT_REBASE_REGISTRY_USER`.
+
+Add `OPENROUTER_API_KEY` only if you intend to run
+`.github/workflows/cve-patch-agent.yml` for AI-assisted remediation PR drafting.
+
+Add `NIX_CACHE_SECRET_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
+`CLOUDFLARE_ACCOUNT_ID` only if you want the release workflow to publish signed
+Nix derivations to a Cloudflare R2 binary cache. Without those secrets, releases
+still build and publish images; the optional cache upload step is skipped.
+
+## Platform Customization Points
+
+- `clearcutt.fleet.yaml`: registry namespace, site base path, matrix, release
+  identity, rebase identity, admission defaults, and remediation limits.
+- `core/lib/platform-metadata.nix`: source URL, vendor, and author labels baked
+  into the OCI image config by the Nix image compiler.
+- `core/lib/registry.nix`: runtime slots, package closures, and tier mapping.
+- `core/overlays/`: patched or organization-specific runtime inputs.
+- `docs/` and `site/`: operator-facing docs and evidence portal copy.
+- `examples/clearcutt-template-*`: app-team starter workflows and policies.
+
+## Readiness Gate
+
+Before advertising the fork as an internal image platform, this command should
+pass in the fork:
+
+```bash
+./clearcutt platform status
+```
+
+Then prove one end-to-end release by verifying a published image against your
+fork's OIDC identity:
+
+```bash
+./clearcutt verify release-evidence \
+  --ref ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java25:distroless-vX.Y.Z \
+  --repo YOUR_ORG/YOUR_REPO \
+  --workflow-identity 'https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main'
+```
