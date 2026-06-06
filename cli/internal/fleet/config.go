@@ -3,6 +3,7 @@ package fleet
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -23,20 +24,21 @@ const (
 )
 
 type Config struct {
-	APIVersion  string            `json:"apiVersion"`
-	Kind        string            `json:"kind"`
-	Metadata    Metadata          `json:"metadata"`
-	Registry    Registry          `json:"registry"`
-	Branding    Branding          `json:"branding"`
-	Site        Site              `json:"site"`
-	Matrix      Matrix            `json:"matrix"`
-	Release     Release           `json:"release"`
-	Rebase      Rebase            `json:"rebase"`
-	Catalog     Catalog           `json:"catalog"`
-	Admission   Admission         `json:"admission"`
-	Remediation Remediation       `json:"remediation"`
-	Templates   Templates         `json:"templates"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	APIVersion   string            `json:"apiVersion"`
+	Kind         string            `json:"kind"`
+	Metadata     Metadata          `json:"metadata"`
+	Registry     Registry          `json:"registry"`
+	Branding     Branding          `json:"branding"`
+	Site         Site              `json:"site"`
+	Matrix       Matrix            `json:"matrix"`
+	Release      Release           `json:"release"`
+	Rebase       Rebase            `json:"rebase"`
+	Catalog      Catalog           `json:"catalog"`
+	Admission    Admission         `json:"admission"`
+	Remediation  Remediation       `json:"remediation"`
+	Templates    Templates         `json:"templates"`
+	RuntimeLines []RuntimeLine     `json:"runtimeLines,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
 }
 
 type Metadata struct {
@@ -140,6 +142,42 @@ type GitHubReleaseMatrix struct {
 
 type GitHubImageMatrix struct {
 	Include []GitHubImageCell `json:"include"`
+}
+
+// RuntimeLine is the public runtime identifier accepted in clearcutt.fleet.yaml.
+// Nix attributes remain an implementation detail behind these stable IDs.
+type RuntimeLine struct {
+	ID                 string   `json:"id"`
+	Language           string   `json:"language"`
+	Version            string   `json:"version"`
+	AppTemplateRuntime string   `json:"appTemplateRuntime,omitempty"`
+	Description        string   `json:"description"`
+	PackageCandidates  []string `json:"packageCandidates,omitempty"`
+	DevPackages        []string `json:"devPackages,omitempty"`
+	OmitInProduction   bool     `json:"omitInProduction,omitempty"`
+	Smoke              []string `json:"smoke,omitempty"`
+}
+
+var supportedRuntimeLines = []RuntimeLine{
+	{ID: "coreLTS", Language: "core", Version: "LTS", Description: "Core CA certificates, shell, and baseline utilities"},
+	{ID: "java21", Language: "java", Version: "21", AppTemplateRuntime: "java", Description: "Java 21 LTS runtime line"},
+	{ID: "java25", Language: "java", Version: "25", AppTemplateRuntime: "java", Description: "Java 25 runtime line"},
+	{ID: "node22", Language: "node", Version: "22", AppTemplateRuntime: "node", Description: "Node.js 22 runtime line"},
+	{ID: "node24", Language: "node", Version: "24", AppTemplateRuntime: "node", Description: "Node.js 24 runtime line"},
+	{ID: "python3.13", Language: "python", Version: "3.13", AppTemplateRuntime: "python", Description: "Python 3.13 runtime line"},
+	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 runtime line"},
+	{ID: "python3.15", Language: "python", Version: "3.15", AppTemplateRuntime: "python", Description: "Python 3.15 runtime line"},
+	{ID: "go1.25", Language: "go", Version: "1.25", AppTemplateRuntime: "go", Description: "Go 1.25 toolchain line"},
+	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 toolchain line"},
+	{ID: "dotnet8", Language: "dotnet", Version: "8", Description: ".NET 8 runtime line"},
+	{ID: "dotnet10", Language: "dotnet", Version: "10", Description: ".NET 10 runtime line"},
+	{ID: "rust1.95", Language: "rust", Version: "1.95", Description: "Rust 1.95 toolchain line"},
+	{ID: "cc15", Language: "cc", Version: "15", Description: "C/C++ GCC 15 toolchain line"},
+}
+
+var supportedLinuxSystems = map[string]struct{}{
+	"x86_64-linux":  {},
+	"aarch64-linux": {},
 }
 
 // DeriveProductName turns a repository slug into a human product name, e.g.
@@ -339,12 +377,50 @@ func (c Config) Validate() error {
 	if len(c.Matrix.Systems) == 0 || len(c.Matrix.Languages) == 0 || len(c.Matrix.Tiers) == 0 {
 		return fmt.Errorf("matrix.systems, matrix.languages, and matrix.tiers must not be empty")
 	}
+	seenSystems := map[string]struct{}{}
+	for _, system := range c.Matrix.Systems {
+		system = strings.TrimSpace(system)
+		if system == "" {
+			return fmt.Errorf("matrix.systems must not contain empty values")
+		}
+		if _, ok := supportedLinuxSystems[system]; !ok {
+			return fmt.Errorf("unsupported matrix system %q (supported: %s)", system, strings.Join(SupportedSystems(), ", "))
+		}
+		if _, exists := seenSystems[system]; exists {
+			return fmt.Errorf("duplicate matrix system %q", system)
+		}
+		seenSystems[system] = struct{}{}
+	}
+	runtimeLines, err := c.runtimeLineMap()
+	if err != nil {
+		return err
+	}
+	seenLanguages := map[string]struct{}{}
+	for _, language := range c.Matrix.Languages {
+		language = strings.TrimSpace(language)
+		if language == "" {
+			return fmt.Errorf("matrix.languages must not contain empty values")
+		}
+		if _, ok := runtimeLines[language]; !ok {
+			return fmt.Errorf("unsupported matrix language %q (supported: %s)", language, strings.Join(c.SupportedRuntimeLineIDs(), ", "))
+		}
+		if _, exists := seenLanguages[language]; exists {
+			return fmt.Errorf("duplicate matrix language %q", language)
+		}
+		seenLanguages[language] = struct{}{}
+	}
+	seenTiers := map[string]struct{}{}
 	for _, tier := range c.Matrix.Tiers {
+		tier = strings.TrimSpace(tier)
 		switch tier {
 		case "dev", "slim", "distroless":
 		default:
 			return fmt.Errorf("unsupported matrix tier %q", tier)
 		}
+		if _, exists := seenTiers[tier]; exists {
+			return fmt.Errorf("duplicate matrix tier %q", tier)
+		}
+		seenTiers[tier] = struct{}{}
 	}
 	if c.Catalog.ReleaseLimit < 1 {
 		return fmt.Errorf("catalog.releaseLimit must be greater than 0")
@@ -369,6 +445,116 @@ func (c Config) RegistryBase() string {
 
 func (c Config) ImageName(language string) string {
 	return c.RegistryBase() + "/" + c.Registry.ImagePrefix + "-" + strings.ToLower(language)
+}
+
+func SupportedSystems() []string {
+	systems := make([]string, 0, len(supportedLinuxSystems))
+	for system := range supportedLinuxSystems {
+		systems = append(systems, system)
+	}
+	sort.Strings(systems)
+	return systems
+}
+
+func SupportedRuntimeLines() []RuntimeLine {
+	return sortedRuntimeLines(supportedRuntimeLines)
+}
+
+func BuiltInRuntimeLines() []RuntimeLine {
+	return SupportedRuntimeLines()
+}
+
+func (c Config) SupportedRuntimeLines() []RuntimeLine {
+	lines := append([]RuntimeLine{}, supportedRuntimeLines...)
+	lines = append(lines, c.RuntimeLines...)
+	return sortedRuntimeLines(lines)
+}
+
+func sortedRuntimeLines(lines []RuntimeLine) []RuntimeLine {
+	lines = append([]RuntimeLine(nil), lines...)
+	sort.Slice(lines, func(i, j int) bool {
+		return lines[i].ID < lines[j].ID
+	})
+	return lines
+}
+
+func SupportedRuntimeLineIDs() []string {
+	lines := SupportedRuntimeLines()
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.ID)
+	}
+	return ids
+}
+
+func (c Config) SupportedRuntimeLineIDs() []string {
+	lines := c.SupportedRuntimeLines()
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.ID)
+	}
+	return ids
+}
+
+func RuntimeLineInfo(id string) (RuntimeLine, bool) {
+	id = strings.TrimSpace(id)
+	for _, line := range supportedRuntimeLines {
+		if line.ID == id {
+			return line, true
+		}
+	}
+	return RuntimeLine{}, false
+}
+
+func (c Config) RuntimeLineInfo(id string) (RuntimeLine, bool) {
+	id = strings.TrimSpace(id)
+	if line, ok := RuntimeLineInfo(id); ok {
+		return line, true
+	}
+	for _, line := range c.RuntimeLines {
+		if line.ID == id {
+			return line, true
+		}
+	}
+	return RuntimeLine{}, false
+}
+
+func (c Config) IsCustomRuntimeLine(id string) bool {
+	id = strings.TrimSpace(id)
+	for _, line := range c.RuntimeLines {
+		if line.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) runtimeLineMap() (map[string]RuntimeLine, error) {
+	lines := map[string]RuntimeLine{}
+	for _, line := range supportedRuntimeLines {
+		lines[line.ID] = line
+	}
+	seenCustom := map[string]struct{}{}
+	for _, line := range c.RuntimeLines {
+		line.ID = strings.TrimSpace(line.ID)
+		line.Language = strings.TrimSpace(line.Language)
+		line.Version = strings.TrimSpace(line.Version)
+		if line.ID == "" || line.Language == "" || line.Version == "" {
+			return nil, fmt.Errorf("runtimeLines entries require id, language, and version")
+		}
+		if _, builtin := RuntimeLineInfo(line.ID); builtin {
+			return nil, fmt.Errorf("runtimeLines entry %q conflicts with a built-in runtime line", line.ID)
+		}
+		if _, exists := seenCustom[line.ID]; exists {
+			return nil, fmt.Errorf("duplicate runtimeLines entry %q", line.ID)
+		}
+		if len(line.PackageCandidates) == 0 {
+			return nil, fmt.Errorf("runtimeLines entry %q requires at least one packageCandidates value", line.ID)
+		}
+		lines[line.ID] = line
+		seenCustom[line.ID] = struct{}{}
+	}
+	return lines, nil
 }
 
 func (c Config) GitHubReleaseMatrix() GitHubReleaseMatrix {

@@ -83,6 +83,144 @@ func TestMatrixExportFleetTableYAMLAndValidation(t *testing.T) {
 	}
 }
 
+func TestMatrixExplainRuntimeLine(t *testing.T) {
+	path := writeFleetConfig(t, t.TempDir())
+	stdout, err := runCLI(t, "--format", "json", "matrix", "explain", "java21", "--fleet-config", path)
+	if err != nil {
+		t.Fatalf("matrix explain failed: %v\n%s", err, stdout)
+	}
+	var got MatrixRuntimeExplanation
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("unmarshal matrix explanation: %v\n%s", err, stdout)
+	}
+	if got.ID != "java21" || got.Language != "java" || got.Version != "21" {
+		t.Fatalf("unexpected runtime explanation: %#v", got)
+	}
+	if !got.SelectedInFleet || got.AppTemplateRuntime != "java" {
+		t.Fatalf("expected java21 to be selected with a java app template: %#v", got)
+	}
+	if strings.Join(got.ImageIDs, ",") != "java21-dev,java21-slim,java21-distroless" {
+		t.Fatalf("unexpected image IDs: %#v", got.ImageIDs)
+	}
+
+	stdout, err = runCLI(t, "matrix", "explain", "ruby3.4", "--fleet-config", path)
+	if err == nil || !strings.Contains(err.Error(), "unsupported runtime line") {
+		t.Fatalf("expected unsupported runtime error, got %v\n%s", err, stdout)
+	}
+}
+
+func TestMatrixAddRemoveUpdatesFleetConfig(t *testing.T) {
+	root := t.TempDir()
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Matrix.Languages = []string{"java21"}
+	raw, err := fleet.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fleet config: %v", err)
+	}
+	path := filepath.Join(root, "clearcutt.fleet.yaml")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write fleet config: %v", err)
+	}
+
+	stdout, err := runCLI(t, "matrix", "add", "java25", "--fleet-config", path, "--tiers", "dev,slim", "--systems", "x86_64-linux")
+	if err != nil {
+		t.Fatalf("matrix add failed: %v\n%s", err, stdout)
+	}
+	loaded, err := fleet.Load(path)
+	if err != nil {
+		t.Fatalf("load updated config: %v", err)
+	}
+	if !containsString(loaded.Matrix.Languages, "java25") {
+		t.Fatalf("matrix add did not select java25: %#v", loaded.Matrix.Languages)
+	}
+
+	stdout, err = runCLI(t, "matrix", "remove", "java21", "--fleet-config", path)
+	if err != nil {
+		t.Fatalf("matrix remove failed: %v\n%s", err, stdout)
+	}
+	loaded, err = fleet.Load(path)
+	if err != nil {
+		t.Fatalf("load updated config: %v", err)
+	}
+	if containsString(loaded.Matrix.Languages, "java21") {
+		t.Fatalf("matrix remove did not remove java21: %#v", loaded.Matrix.Languages)
+	}
+}
+
+func TestRuntimeScaffoldValidateAndTemplateRuby(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	coreDir := filepath.Join(root, "core")
+
+	stdout, err := runCLI(t, "runtime", "scaffold", "ruby3.4", "--fleet-config", configPath, "--core-dir", coreDir)
+	if err != nil {
+		t.Fatalf("runtime scaffold failed: %v\n%s", err, stdout)
+	}
+	loaded, err := fleet.Load(configPath)
+	if err != nil {
+		t.Fatalf("load scaffolded config: %v", err)
+	}
+	ruby, ok := loaded.RuntimeLineInfo("ruby3.4")
+	if !ok {
+		t.Fatalf("ruby3.4 was not added to runtimeLines: %#v", loaded.RuntimeLines)
+	}
+	if ruby.Language != "ruby" || ruby.Version != "3.4" || ruby.AppTemplateRuntime != "ruby" {
+		t.Fatalf("unexpected ruby runtime line: %#v", ruby)
+	}
+	if !containsString(loaded.Matrix.Languages, "ruby3.4") {
+		t.Fatalf("ruby3.4 should be selected in matrix.languages: %#v", loaded.Matrix.Languages)
+	}
+	if !containsString(loaded.Templates.Runtimes, "ruby") {
+		t.Fatalf("ruby template runtime should be enabled: %#v", loaded.Templates.Runtimes)
+	}
+	extension, err := os.ReadFile(filepath.Join(coreDir, "lib", "runtime-extensions.nix"))
+	if err != nil {
+		t.Fatalf("read runtime extension: %v", err)
+	}
+	for _, needle := range []string{`ruby = {`, `"3.4" = {`, `overlayName = "clearcuttRuby34";`, `ruby_3_4`} {
+		if !strings.Contains(string(extension), needle) {
+			t.Fatalf("runtime extension missing %q:\n%s", needle, extension)
+		}
+	}
+
+	stdout, err = runCLI(t, "--format", "json", "runtime", "validate", "ruby3.4", "--fleet-config", configPath, "--core-dir", coreDir)
+	if err != nil {
+		t.Fatalf("runtime validate failed: %v\n%s", err, stdout)
+	}
+	var validation RuntimeValidation
+	if err := json.Unmarshal([]byte(stdout), &validation); err != nil {
+		t.Fatalf("unmarshal runtime validation: %v\n%s", err, stdout)
+	}
+	if validation.Status != "pass" {
+		t.Fatalf("runtime validation did not pass: %#v", validation)
+	}
+
+	stdout, err = runCLI(t, "--format", "json", "matrix", "explain", "ruby3.4", "--fleet-config", configPath)
+	if err != nil {
+		t.Fatalf("matrix explain ruby failed: %v\n%s", err, stdout)
+	}
+	var explanation MatrixRuntimeExplanation
+	if err := json.Unmarshal([]byte(stdout), &explanation); err != nil {
+		t.Fatalf("unmarshal ruby explanation: %v\n%s", err, stdout)
+	}
+	if !explanation.SelectedInFleet || explanation.AppTemplateRuntime != "ruby" {
+		t.Fatalf("ruby explanation should include custom selection/template: %#v", explanation)
+	}
+
+	outDir := filepath.Join(root, "ruby-template")
+	stdout, err = runCLI(t, "app", "template", "ruby", "--fleet-config", configPath, "--output", outDir, "--name", "ruby-template")
+	if err != nil {
+		t.Fatalf("ruby app template failed: %v\n%s", err, stdout)
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(outDir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read ruby Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), "ruby3.4") || !strings.Contains(string(dockerfile), "ruby -c app.rb") {
+		t.Fatalf("ruby Dockerfile did not use scaffolded runtime:\n%s", dockerfile)
+	}
+}
+
 func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFleetConfig(t, dir)

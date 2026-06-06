@@ -23,7 +23,7 @@ gate, admit, and update against that fleet.
 
 | Moment | Manager-level value | Platform-engineering depth |
 | :--- | :--- | :--- |
-| **Own the fleet** | Base images become an owned platform capability instead of an external feed you hope stays aligned. | `clearcutt.fleet.yaml`, Nix runtime matrix, `clearcutt platform status`, fork-local GitHub OIDC identities |
+| **Own the fleet** | Base images become an owned platform capability instead of an external feed you hope stays aligned. | `clearcutt.fleet.yaml`, `clearcutt matrix explain`, `clearcutt platform status`, fork-local GitHub OIDC identities |
 | **Publish evidence** | Every release has visible proof: signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | `clearcutt catalog build`, `clearcutt catalog generate`, `clearcutt catalog site`, Sigstore keyless signing, SPDX attestations, SLSA Build L3 provenance |
 | **Onboard apps** | App teams get a paved path without learning Nix or reverse-engineering base-image contracts. | `clearcutt list`, `inspect`, `dev`, `app template`, `app build`, devcontainers, stack examples |
 | **Gate delivery** | CI and admission can block images that miss your runtime, evidence, or vulnerability policy. | `clearcutt certify`, `verify`, `conformance`, `policy`, `certification-policy.yaml`, Kyverno / OPA bundles |
@@ -63,6 +63,7 @@ not only as this repository's own base-image fleet:
 - [Catalog schema](docs/catalog-schema.md) documents the versioned `index.json`, image records, schemas, and raw evidence directories.
 - [Generic OCI mode](docs/generic-oci-mode.md) covers `images.yaml` catalogs that do not require Nix or ClearCutt release workflows.
 - [Customization](docs/customization.md) covers `clearcutt.site.yaml`, feature flags, terminology, links, and `site-overrides/`.
+- [Extending ClearCutt](docs/extending-clearcutt.md) explains the extension ladder: app templates first, `clearcutt.fleet.yaml` next, and Nix runtime authoring only for backend changes.
 
 ---
 
@@ -141,24 +142,42 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 
 ## Quickstart & Local Development
 
-### 1. Enter the Gated Development Environment
-Ensure you have Nix installed. Build the CLI, then let it configure the
-fleet-specific Nix client settings from `clearcutt.fleet.yaml` and warm the core
-dev shell:
+### 1. Start Without Learning Nix
+Build or download the CLI, then use the app-team path first. It works through
+devcontainers, local container engines, generated templates, catalog data, and
+offline policy checks; Nix stays behind the platform build pipeline.
 ```bash
 make cli-build
+
+# See what a runtime line means before editing the fleet config.
+./clearcutt matrix explain java21
+
+# Generate a starter app with a Dockerfile, devcontainer, cert policy, and CI.
+./clearcutt app template java --output examples/my-java-service --name my-java-service
+
+# Commit a release-tag-pinned devcontainer, or launch with Docker/Podman.
+./clearcutt dev java21-distroless --devcontainer
+./clearcutt dev java21-distroless --container --engine docker
+```
+
+### 2. Configure The Fleet From YAML
+Fork owners edit `clearcutt.fleet.yaml` for runtimes, tiers, architectures,
+admission policy, catalog scan depth, remediation limits, branding, templates,
+and optional cache settings. The CLI validates those public runtime IDs before
+the Nix backend ever runs:
+```bash
+./clearcutt --format json matrix export --source fleet --github-actions --matrix release
+./clearcutt platform status
+```
+
+### 3. Build Or Publish The Fleet
+Only machines that compile or publish the base-image fleet need Nix. On those
+machines, let the CLI configure fork-specific Nix client settings from
+`clearcutt.fleet.yaml` and warm the core dev shell:
+```bash
 ./clearcutt platform setup-nix --core-dir core --write-user-config
 ```
-To open an interactive shell with the same tooling, run:
-```bash
-./clearcutt platform setup-nix --core-dir core -- bash -l
-```
-The shell is preloaded with the build and security binaries used by the fleet
-pipeline, including `patchelf`, `trivy`, `cosign`, and
-`container-structure-test`.
-
-### 2. Run the Gated Automated Test Suite
-ClearCutt implements a comprehensive gating test suite to verify dynamic dynamic linker safety, non-privileged boundaries, distroless shell absence, and credential brokerage leaks:
+To run the gated automated test suite through that configured backend:
 ```bash
 make core-verify
 ```
@@ -255,7 +274,24 @@ Runs local assertions against the current host or container environment complete
 ./clearcutt conformance run --expect-runtime java
 ```
 
-#### 6. `dev` (Pinned Local Development Environments)
+#### 6. `matrix add/remove` / `runtime scaffold` (Fleet Extension)
+Select known runtime lines in `clearcutt.fleet.yaml`, or scaffold a new custom runtime line with a generated backend extension:
+```bash
+# Known runtime line: config-only update
+./clearcutt matrix explain java25
+./clearcutt matrix add java25
+./clearcutt matrix remove python3.13
+
+# New runtime line: guided scaffold plus validation
+./clearcutt runtime scaffold ruby3.4
+./clearcutt runtime validate ruby3.4
+./clearcutt matrix explain ruby3.4
+./clearcutt app template ruby --output clearcutt-template-ruby --name my-ruby-app
+```
+
+`runtime scaffold` writes a `runtimeLines` entry to `clearcutt.fleet.yaml`, selects it in `matrix.languages`, regenerates `core/lib/runtime-extensions.nix`, and enables the matching app-template runtime when ClearCutt has one. Ruby is the reference scaffold path: by default it uses `ruby_3_4` with `ruby` as a fallback package candidate and emits `ruby3.4-dev`, `ruby3.4-slim`, and `ruby3.4-distroless` image IDs.
+
+#### 7. `dev` (Pinned Local Development Environments)
 Launch the dev-tier sibling for any ClearCutt runtime line. The command pins the release tag, writes VS Code/Codespaces devcontainer definitions, or opens the same environment through a local container engine or Nix:
 ```bash
 # Commit a release-tag-pinned devcontainer definition
@@ -267,11 +303,11 @@ Launch the dev-tier sibling for any ClearCutt runtime line. The command pins the
 # Run a non-interactive CI smoke inside the dev image
 ./clearcutt dev java21-distroless --container --command 'java -version'
 
-# Prefer the current Nix native runtime closure
+# Optional: use the Nix native dev shell when you already have Nix installed
 ./clearcutt dev java21-distroless --nix
 ```
 
-#### 7. `overlay generate` (Nix Overlay Scaffolder)
+#### 8. `overlay generate` (Corporate Base Overlay Scaffolder)
 Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCutt secure runtimes directly on top of corporate base OS layers (e.g., Red Hat UBI, Ubuntu Pro, Amazon Linux). Includes Makefile, smoke tests, Containerfile, and GHA workflows:
 ```bash
 # Scaffold workspace to graft Java 25 JRE onto RHEL UBI9
@@ -282,14 +318,14 @@ Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCu
   --output my-java25-overlay/
 ```
 
-#### 8. `exceptions validate` (Exceptions Schema Auditor)
+#### 9. `exceptions validate` (Exceptions Schema Auditor)
 Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
 ```bash
 # Audit exceptions configurations for syntax and expiration
 ./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
 ```
 
-#### 9. `mirror` / `mirror verify` (Secure OCI Layer Replication)
+#### 10. `mirror` / `mirror verify` (Secure OCI Layer Replication)
 Generates high-fidelity `skopeo` and `cosign` shell script templates to securely replicate multi-arch base layers into internal registries while preserving Sigstore OIDC signatures, attestations, and OCI referrers. Supports verification of replicated artifacts:
 ```bash
 # Generate replication script
@@ -299,7 +335,7 @@ Generates high-fidelity `skopeo` and `cosign` shell script templates to securely
 ./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
 ```
 
-#### 10. `app build` / `app diff-base` / `app rebase` / `app template` (Downstream Application Lifecycle)
+#### 11. `app build` / `app diff-base` / `app rebase` / `app template` (Downstream Application Lifecycle)
 Build, update, and scaffold downstream application images on ClearCutt bases without a Docker daemon. The rebase path swaps only base layers and preserves application layers byte-for-byte; it refuses runtime major/minor changes and requires a verified developer signature before emitting a signed "allowed" rebase attestation. The `template` command scaffolds starter projects.
 
 For language-specific examples across Core/static, Java, Node.js, Python, Go,

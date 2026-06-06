@@ -17,7 +17,7 @@ export const claims = {
   // The first two steps are the platform loop; the last three are the repeated
   // app delivery loop.
   lifecycle: [
-    { phase: "Own the fleet", outcome: "Platform teams fork the kit and turn base images into governed source, not a vendor dependency.", detail: "clearcutt.fleet.yaml · Nix matrix · platform status" },
+    { phase: "Own the fleet", outcome: "Platform teams fork the kit and turn base images into governed source, not a vendor dependency.", detail: "fleet config · matrix add · runtime scaffold" },
     { phase: "Publish evidence", outcome: "Release workflows produce signed images, SBOMs, provenance, scans, and a catalog that shows each channel independently.", detail: "catalog build · release evidence · SLSA + Sigstore" },
     { phase: "Onboard apps", outcome: "App teams get matching dev images, starter templates, and rebasable build paths without learning Nix.", detail: "list · inspect · dev · app template/build" },
     { phase: "Gate delivery", outcome: "CI and admission policies block images that miss your runtime, evidence, or vulnerability contract.", detail: "certify · verify · conformance · policy" },

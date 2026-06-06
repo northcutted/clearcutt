@@ -5,6 +5,11 @@ team's own registry, GitHub Actions OIDC identities, catalog site, and admission
 policies. The reference repository is a working blueprint, not a hosted control
 plane.
 
+For the extension model, see
+[`docs/extending-clearcutt.md`](extending-clearcutt.md): app teams use templates
+and devcontainers, fleet owners edit `clearcutt.fleet.yaml`, and Nix stays in
+the backend authoring path.
+
 ## Golden Path
 
 1. Fork the repository into the organization that will own the image platform.
@@ -12,17 +17,19 @@ plane.
    YOUR_REPO --force` to rewrite the fleet config, platform-kit doc, and app
    templates for your fork.
 3. Edit `clearcutt.fleet.yaml` for enabled runtimes, architectures, catalog scan
-   window, admission profile, and remediation limits. Confirm
-   `core/lib/platform-metadata.nix` points at the same GitHub repository so OCI
-   source labels are fork-local.
+   window, admission profile, remediation limits, branding, templates, and
+   optional cache settings. Use `clearcutt matrix explain java21` before adding
+   a runtime line; unsupported IDs fail at the config layer instead of later in
+   the Nix backend.
 4. In GitHub, enable Actions, grant workflow read/write permissions, create and
    protect the `production` environment, and configure Pages to deploy from
    GitHub Actions.
-5. Run `clearcutt platform setup-nix --core-dir core --write-user-config` on
-   any machine that will build the fleet. In CI the workflows call the same
-   command with `--github-env "$GITHUB_ENV"` so fork cache trust comes from
-   `clearcutt.fleet.yaml`, not workflow constants.
-6. Run `clearcutt platform status` to verify the kit is wired together.
+5. Run `clearcutt platform status` to verify the kit is wired together,
+   including fork-local metadata and supported fleet runtime lines.
+6. Run `clearcutt platform setup-nix --core-dir core --write-user-config` only
+   on machines that will build or publish the fleet. In CI the workflows call
+   the same command with `--github-env "$GITHUB_ENV"` so fork cache trust comes
+   from `clearcutt.fleet.yaml`, not workflow constants.
 7. Run the release workflow to publish the configured base-image fleet to GHCR.
    The workflow is a GitHub identity runner; the reusable mechanics live behind
    `clearcutt platform setup-nix`, `clearcutt fleet certify-target`,
@@ -63,11 +70,22 @@ plane.
 # Inspect the forkable platform surface.
 clearcutt platform status
 
-# Configure and warm the Nix client from clearcutt.fleet.yaml.
-clearcutt platform setup-nix --core-dir core --write-user-config
+# Explain a runtime line from the public fleet config contract.
+clearcutt matrix explain java21
+
+# Add or remove a built-in runtime line from the fleet config.
+clearcutt matrix add java25
+clearcutt matrix remove python3.13
+
+# Scaffold and validate a custom runtime line.
+clearcutt runtime scaffold ruby3.4
+clearcutt runtime validate ruby3.4
 
 # Emit the release matrix used by GitHub Actions.
 clearcutt --format json matrix export --source fleet --github-actions --matrix release
+
+# Configure and warm the Nix client on fleet-builder machines only.
+clearcutt platform setup-nix --core-dir core --write-user-config
 
 # Build and gate one single-architecture fleet target without publishing.
 clearcutt fleet certify-target --system x86_64-linux --language java25 --tier slim

@@ -137,5 +137,5 @@ Python, Go, .NET, Rust, and C/C++:
 ## 💡 Top 3 Tips for a Smooth Onboarding
 
 1.  **Direct Execution only:** The `distroless` tier has no shell, meaning Docker/OCI entries like `CMD "java -jar app.jar"` will fail because they attempt to evaluate via shell execution. **Always use JSON syntax** `ENTRYPOINT ["java", "-jar", "app.jar"]`.
-2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. Instead, declare it inside your customized `flake.nix` package list or build it in the `dev` stage.
+2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. App teams should build required artifacts in the `dev` stage; platform teams can add new fleet runtime machinery through the documented platform-authoring path.
 3.  **Local Conformance Auditing:** Run `clearcutt conformance run` *inside* a container (e.g. as its ENTRYPOINT, or `docker run --entrypoint clearcutt <image> conformance run`) to prove CA trust, zoneinfo, unprivileged execution, and `/tmp` writability offline. It audits the current environment, not a remote image; add `--expect-runtime java` (or `python`, `node`, …) to also assert the language interpreter is present.

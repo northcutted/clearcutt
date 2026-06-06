@@ -137,7 +137,8 @@ export default function TerminalSimulator({
         
         const renderLine = () => {
           if (lineIdx < targetOutput.length) {
-            setDisplayedOutput(prev => [...prev, targetOutput[lineIdx]]);
+            const nextLine = targetOutput[lineIdx];
+            setDisplayedOutput(prev => [...prev, nextLine]);
             lineIdx++;
             outputTimer.current = setTimeout(renderLine, idx === 2 ? 80 : 30); // Rebase output runs a bit slower to feel like a real action
           } else {
@@ -207,13 +208,14 @@ export default function TerminalSimulator({
         {/* Output lines */}
         <div className="space-y-1.5 font-mono text-[11px] text-ink-200">
           {displayedOutput.map((line, idx) => {
-            const isPass = line.includes('[✔ PASS]') || line.includes('Success!') || line.includes('✔ COMPATIBLE') || line.includes('✔ VERIFIED') || line.includes('Result: PASS');
-            const isWarning = line.includes('[rebase]') || line.includes('High     :');
+            const safeLine = line ?? '';
+            const isPass = safeLine.includes('[✔ PASS]') || safeLine.includes('Success!') || safeLine.includes('✔ COMPATIBLE') || safeLine.includes('✔ VERIFIED') || safeLine.includes('Result: PASS');
+            const isWarning = safeLine.includes('[rebase]') || safeLine.includes('High     :');
             const textColor = isPass ? 'text-emerald-400' : isWarning ? 'text-accent-soft' : 'text-ink-200';
             
             return (
               <div key={idx} className={`${textColor} whitespace-pre-wrap`}>
-                {line}
+                {safeLine}
               </div>
             );
           })}

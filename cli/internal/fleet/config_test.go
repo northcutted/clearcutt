@@ -87,6 +87,55 @@ func TestValidateRejectsUnsupportedTier(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnsupportedMatrixPublicInputs(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"unsupported system":   func(c *Config) { c.Matrix.Systems = []string{"x86_64-darwin"} },
+		"duplicate system":     func(c *Config) { c.Matrix.Systems = []string{"x86_64-linux", "x86_64-linux"} },
+		"unsupported language": func(c *Config) { c.Matrix.Languages = []string{"ruby3.4"} },
+		"duplicate language":   func(c *Config) { c.Matrix.Languages = []string{"java21", "java21"} },
+		"duplicate tier":       func(c *Config) { c.Matrix.Tiers = []string{"dev", "dev"} },
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
+}
+
+func TestSupportedRuntimeLinesExposePublicRuntimeIDs(t *testing.T) {
+	line, ok := RuntimeLineInfo("java21")
+	if !ok {
+		t.Fatal("java21 should be a supported runtime line")
+	}
+	if line.Language != "java" || line.Version != "21" || line.AppTemplateRuntime != "java" {
+		t.Fatalf("unexpected java21 runtime line: %#v", line)
+	}
+	if _, ok := RuntimeLineInfo("ruby3.4"); ok {
+		t.Fatal("ruby3.4 should not be a supported runtime line")
+	}
+	ids := SupportedRuntimeLineIDs()
+	if len(ids) == 0 || ids[0] != "cc15" {
+		t.Fatalf("supported runtime IDs should be sorted, got %#v", ids)
+	}
+
+	cfg := DefaultConfig("acme", "platform")
+	cfg.RuntimeLines = []RuntimeLine{{
+		ID:                "ruby3.4",
+		Language:          "ruby",
+		Version:           "3.4",
+		PackageCandidates: []string{"ruby_3_4"},
+	}}
+	cfg.Matrix.Languages = []string{"ruby3.4"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("custom runtime line should validate: %v", err)
+	}
+	custom, ok := cfg.RuntimeLineInfo("ruby3.4")
+	if !ok || custom.Language != "ruby" || custom.Version != "3.4" {
+		t.Fatalf("custom runtime line not exposed: %#v", custom)
+	}
+}
+
 func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	cfg := Config{
 		Registry: Registry{Host: "ghcr.io/", Owner: "acme", Repository: "platform", ImagePrefix: "cc"},
