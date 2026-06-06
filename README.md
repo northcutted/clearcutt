@@ -62,6 +62,7 @@ not only as this repository's own base-image fleet:
 - [Astro site generator](docs/site-generator.md) covers `clearcutt catalog site scaffold/build/preview/eject`.
 - [Catalog schema](docs/catalog-schema.md) documents the versioned `index.json`, image records, schemas, and raw evidence directories.
 - [Generic OCI mode](docs/generic-oci-mode.md) covers `images.yaml` catalogs that do not require Nix or ClearCutt release workflows.
+- [Service images](docs/service-images.md) covers first-class Postgres, Valkey, and oauth2-proxy service images through `clearcutt service`.
 - [Customization](docs/customization.md) covers `clearcutt.site.yaml`, feature flags, terminology, links, and `site-overrides/`.
 - [Extending ClearCutt](docs/extending-clearcutt.md) explains the extension ladder: app templates first, `clearcutt.fleet.yaml` next, and Nix runtime authoring only for backend changes.
 
@@ -138,6 +139,10 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 > [!NOTE]
 > **Compiled-language runtime tiers:** Rust and C/C++ produce statically-linkable binaries, so their `slim`/`distroless` tiers ship a minimal hardened base (CA certificates, plus a shell on `slim`) for you to drop your compiled artifact into — they intentionally omit the compiler toolchain, which lives only in the `dev` tier.
 
+ClearCutt also supports first-class `service` images for platform-owned
+application services. The initial templates are `postgres16`, `valkey8`, and
+`oauth2-proxy7`; they are cataloged as `kind: service`, not as runtime tiers.
+
 ---
 
 ## Quickstart & Local Development
@@ -180,6 +185,33 @@ machines, let the CLI configure fork-specific Nix client settings from
 To run the gated automated test suite through that configured backend:
 ```bash
 make core-verify
+```
+
+### 4. Add Platform Service Images
+Service images are for platform-owned application services such as Postgres,
+Valkey, and oauth2-proxy. Fleet owners add them through the CLI and
+`clearcutt.fleet.yaml`; the generated Nix service extension is an implementation
+detail.
+```bash
+# Scaffold the built-in MVP service templates.
+./clearcutt service scaffold postgres16 --template postgres --version 16
+./clearcutt service scaffold valkey8 --template valkey --version 8
+./clearcutt service scaffold oauth2-proxy7 --template oauth2-proxy --version 7
+
+# Validate the public fleet config and generated backend extension.
+./clearcutt service validate --all
+
+# Platform build machines can add Nix evaluation/build checks.
+./clearcutt service validate --all --nix --system x86_64-linux --core-dir core
+./clearcutt service build postgres16 --system x86_64-linux --core-dir core
+
+# After loading the image into Docker or Podman, run the configured service smoke.
+./clearcutt service smoke postgres16 --engine docker
+
+# Generate a mixed runtime + service catalog and build the catalog site.
+./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+./clearcutt --catalog dist/catalog catalog validate
+./clearcutt catalog site build --catalog dist/catalog --output dist/site --install
 ```
 
 ---

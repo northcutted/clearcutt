@@ -177,6 +177,80 @@ func TestCustomRuntimeLineValidationErrors(t *testing.T) {
 	}
 }
 
+func TestServiceTemplatesApplyDefaultsAndMatrices(t *testing.T) {
+	cfg := DefaultConfig("acme", "platform")
+	cfg.Matrix.Systems = []string{"x86_64-linux"}
+	cfg.Services = []ServiceImage{{
+		ID:       "postgres16",
+		Template: "postgres",
+		Version:  "16",
+	}}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("service config should validate: %v", err)
+	}
+	service, ok := cfg.ServiceInfo("postgres16")
+	if !ok {
+		t.Fatal("postgres16 should resolve")
+	}
+	if service.PackageCandidates[0] != "postgresql_16" {
+		t.Fatalf("unexpected package defaults: %#v", service.PackageCandidates)
+	}
+	if !service.Stateful || len(service.DataDirs) != 1 || service.DataDirs[0] != "/var/lib/postgresql/data" {
+		t.Fatalf("unexpected storage defaults: %#v", service)
+	}
+	if service.Ports[0].Port != 5432 || service.Ports[0].Protocol != "tcp" {
+		t.Fatalf("unexpected port defaults: %#v", service.Ports)
+	}
+	if cfg.ServiceImageName("Postgres16") != "ghcr.io/acme/platform/platform-postgres16" {
+		t.Fatalf("unexpected service image name: %q", cfg.ServiceImageName("Postgres16"))
+	}
+	if ids := cfg.ServiceIDs(); len(ids) != 1 || ids[0] != "postgres16" {
+		t.Fatalf("unexpected service IDs: %#v", ids)
+	}
+	if got := cfg.GitHubServiceReleaseMatrix().Include; len(got) != 1 || got[0].Service != "postgres16" || got[0].System != "x86_64-linux" {
+		t.Fatalf("unexpected service release matrix: %#v", got)
+	}
+	if got := cfg.GitHubServiceImageMatrix().Include; len(got) != 1 || got[0].Service != "postgres16" {
+		t.Fatalf("unexpected service image matrix: %#v", got)
+	}
+	if templates := BuiltInServiceTemplates(); len(templates) != 3 || templates[0].Template != "oauth2-proxy" {
+		t.Fatalf("built-in service templates should be sorted, got %#v", templates)
+	}
+}
+
+func TestServiceValidationErrors(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"missing fields": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "postgres16"}}
+		},
+		"unsupported template": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "postgres16", Template: "mysql", Version: "8", PackageCandidates: []string{"mysql80"}}}
+		},
+		"duplicate service": func(c *Config) {
+			c.Services = []ServiceImage{
+				{ID: "postgres16", Template: "postgres", Version: "16"},
+				{ID: "postgres16", Template: "postgres", Version: "16"},
+			}
+		},
+		"stateful missing data dirs": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "oauth2-proxy", Version: "7", PackageCandidates: []string{"oauth2-proxy"}, Stateful: true}}
+		},
+		"relative data dir": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "valkey", Version: "8", PackageCandidates: []string{"valkey"}, Stateful: true, DataDirs: []string{"data"}}}
+		},
+		"invalid port": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "oauth2-proxy", Version: "7", PackageCandidates: []string{"oauth2-proxy"}, Ports: []ServicePort{{Port: 70000}}}}
+		},
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
+}
+
 func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	cfg := Config{
 		Registry: Registry{Host: "ghcr.io/", Owner: "acme", Repository: "platform", ImagePrefix: "cc"},

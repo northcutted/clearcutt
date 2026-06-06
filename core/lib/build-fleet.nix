@@ -95,6 +95,71 @@ let
     else
       throw "Unsupported lifecycle tier: ${tier}";
 
+  # Injected file structures common to secure configurations
+  baseContents = [
+    passwdFile
+    groupFile
+    tmpDir
+    appDir
+    lib64Symlink
+  ];
+
+  commonEnv = [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
+    "HOME=/app"
+    "TMPDIR=/tmp"
+    "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+  ];
+
+  splitNixAttrPath = path:
+    pkgs.lib.filter (segment: segment != "") (pkgs.lib.splitString "." path);
+
+  getPkg = attrPath: pkgs.lib.attrByPath attrPath null pkgs;
+
+  resolvePackageCandidate = candidates: errorMessage:
+    let
+      resolved = builtins.filter (pkg: pkg != null) (
+        builtins.map (candidate: getPkg (splitNixAttrPath candidate)) candidates
+      );
+    in
+    if resolved == [] then throw errorMessage else builtins.head resolved;
+
+  entrypointPath = command:
+    if pkgs.lib.hasPrefix "/" command then command else "/bin/${command}";
+
+  portKey = port:
+    "${toString port.port}/${port.protocol or "tcp"}";
+
+  exposedPorts = ports:
+    pkgs.lib.listToAttrs (builtins.map (port: {
+      name = portKey port;
+      value = {};
+    }) ports);
+
+  mkdirDataDirs = dataDirs:
+    pkgs.lib.concatMapStringsSep "\n" (dir: ''
+      mkdir -p ".${dir}"
+      chown ${uid}:${gid} ".${dir}"
+      chmod 0755 ".${dir}"
+    '') dataDirs;
+
+  postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
+    set -euo pipefail
+    export PGDATA="''${PGDATA:-/var/lib/postgresql/data}"
+    mkdir -p "$PGDATA"
+    if [ ! -s "$PGDATA/PG_VERSION" ]; then
+      initdb -D "$PGDATA"
+    fi
+    exec postgres -D "$PGDATA" "$@"
+  '';
+
+  serviceTemplatePackages = service:
+    if service.template == "postgres" then
+      [ postgresEntrypoint pkgs.coreutils ]
+    else
+      [];
+
 in
 {
   # Core function to build the hardened image
@@ -112,15 +177,6 @@ in
   let
     langPkgs = registry.resolveForTier { inherit language version tier; };
     tierPkgs = resolveTierPackages { inherit tier; };
-    
-    # Injected file structures common to secure configurations
-    baseContents = [
-      passwdFile
-      groupFile
-      tmpDir
-      appDir
-      lib64Symlink
-    ];
 
     allContents = baseContents ++ tierPkgs ++ langPkgs ++ extraPackages;
     sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
@@ -144,13 +200,7 @@ in
     defaultConfig = {
       User = "${uid}:${gid}";
       WorkingDir = "/app";
-      Env = [
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
-        "HOME=/app"
-        "TMPDIR=/tmp"
-        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-      ];
+      Env = commonEnv;
       Labels = ociLabels;
     };
 
@@ -167,6 +217,78 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
+    '';
+    config = mergedConfig;
+  };
+
+  buildServiceImage = {
+    name,
+    tag ? "current",
+    service,
+    fromImage ? null,
+    maxLayers ? 100,
+    extraPackages ? [],
+    extraConfig ? {}
+  }:
+  let
+    servicePkg = resolvePackageCandidate (service.packageCandidates or [])
+      "No Nix package candidate is available for service ${service.id}";
+    servicePkgs = [ pkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
+    allContents = baseContents ++ servicePkgs;
+    sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
+    vendor = platformMetadata.vendor or "ClearCutt";
+    authors = platformMetadata.authors or "ClearCutt maintainers";
+    servicePorts = service.ports or [];
+    dataDirs = service.dataDirs or [];
+    serviceEnv = service.env or [];
+    serviceEntrypoint = builtins.map entrypointPath (service.entrypoint or []);
+    serviceCmd = service.cmd or [];
+
+    ociLabels = {
+      "org.opencontainers.image.title" = "${imagePrefix}-${service.id}";
+      "org.opencontainers.image.description" = service.description or "Hardened ${productName} service image for ${service.template}";
+      "org.opencontainers.image.url" = sourceURL;
+      "org.opencontainers.image.source" = sourceURL;
+      "org.opencontainers.image.version" = service.version;
+      "org.opencontainers.image.vendor" = vendor;
+      "org.opencontainers.image.authors" = authors;
+      "org.opencontainers.image.licenses" = "Apache-2.0";
+      "org.opencontainers.image.ref.name" = "service";
+      "dev.clearcutt.image.kind" = "service";
+      "dev.clearcutt.service.id" = service.id;
+      "dev.clearcutt.service.template" = service.template;
+      "dev.clearcutt.service.version" = service.version;
+    };
+
+    defaultConfig = {
+      User = "${uid}:${gid}";
+      WorkingDir = "/app";
+      Env = commonEnv ++ serviceEnv;
+      Labels = ociLabels;
+    }
+    // pkgs.lib.optionalAttrs (servicePorts != []) {
+      ExposedPorts = exposedPorts servicePorts;
+    }
+    // pkgs.lib.optionalAttrs (serviceEntrypoint != []) {
+      Entrypoint = serviceEntrypoint;
+    }
+    // pkgs.lib.optionalAttrs (serviceCmd != []) {
+      Cmd = serviceCmd;
+    };
+
+    mergedConfig = pkgs.lib.recursiveUpdate defaultConfig extraConfig;
+
+  in
+  pkgs.dockerTools.buildLayeredImage {
+    inherit name tag fromImage maxLayers;
+    contents = allContents;
+    extraCommands = ''
+      mkdir -p etc
+      rm -f etc/passwd etc/group
+      cp ${passwdFile}/etc/passwd etc/passwd
+      cp ${groupFile}/etc/group etc/group
+      chmod 0644 etc/passwd etc/group
+      ${mkdirDataDirs dataDirs}
     '';
     config = mergedConfig;
   };

@@ -10,7 +10,8 @@ const siteConfig = loadSiteConfig();
 
 const tierOrder: Array<'distroless' | 'slim' | 'dev'> = ['distroless', 'slim', 'dev'];
 
-const byId = new Map(index.images.map((img) => [img.id, img]));
+const runtimeImages = index.images.filter((img) => (img.kind ?? 'runtime') === 'runtime' && img.tier !== 'service');
+const byId = new Map(runtimeImages.map((img) => [img.id, img]));
 
 const LANGUAGE_ORDER = ['core', 'java', 'node', 'python', 'go', 'dotnet', 'rust', 'cc'];
 
@@ -41,7 +42,7 @@ function runtimeKeyFromImage(img: CatalogIndex['images'][number]): string {
 }
 
 const rowsByLanguage = new Map<string, { id: string; display: string; runtimeKeys: Map<string, string> }>();
-for (const img of index.images) {
+for (const img of runtimeImages) {
   const existing = rowsByLanguage.get(img.language);
   if (existing) {
     if (!existing.runtimeKeys.has(img.languageVersion)) {

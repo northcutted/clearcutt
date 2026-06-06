@@ -11,6 +11,10 @@ func fixtureCatalog() string {
 	return filepath.Join("..", "testdata", "catalog")
 }
 
+func mixedFixtureCatalog() string {
+	return filepath.Join("..", "testdata", "mixed-catalog")
+}
+
 // runCLI executes the full root command with the given args, capturing everything
 // written to the package output writers. It exercises real flag parsing, command
 // wiring, and the error model, and returns captured stdout plus the Execute error.

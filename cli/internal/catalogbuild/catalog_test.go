@@ -443,6 +443,124 @@ func TestBuildImageRecordMatchesAssemblyGolden(t *testing.T) {
 	compareCatalogGolden(t, filepath.Join("..", "commands", "testdata", "catalog", "assembly-golden.json"), gotRaw)
 }
 
+func TestBuildServiceImageRecordFoldsReleaseEvidence(t *testing.T) {
+	const target = "postgres16"
+	const tag = "v1.0.0"
+	const publishedAt = "2026-06-05T12:00:00Z"
+
+	temp := t.TempDir()
+	sbomDir := filepath.Join(temp, "sboms")
+	enrichmentDir := filepath.Join(temp, "enrichment")
+	writeTestFile(t, filepath.Join(enrichmentDir, tag, target+".json"), []byte(`{
+  "manifestDigest": "sha256:service-manifest",
+  "architectures": [
+    {
+      "arch": "amd64",
+      "digest": "sha256:service-amd64",
+      "size": 42,
+      "layers": [
+        { "digest": "sha256:service-layer", "size": 21, "diffID": null }
+      ],
+      "labels": {
+        "dev.clearcutt.image.kind": "service",
+        "dev.clearcutt.service.id": "postgres16"
+      }
+    }
+  ],
+  "signature": {
+    "cosignBundlePresent": true
+  },
+  "provenance": {
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "builder": { "id": "service-builder" },
+    "slsaLevel": 3
+  }
+}`))
+
+	spdxRaw, err := os.ReadFile(filepath.Join("..", "commands", "testdata", "catalog", "spdx-fixture.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intotoRaw, err := os.ReadFile(filepath.Join("..", "commands", "testdata", "catalog", "intoto-fixture.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &fakeCatalogReleaseSource{assets: map[string][]byte{
+		target + "-amd64.sbom.json":         spdxRaw,
+		target + "-amd64.test-results.json": []byte(`{"status":"passed","timestamp":"2026-06-05T12:05:00Z","assertions":[{"name":"Syft SBOM Generation","status":"passed"}]}`),
+		target + ".intoto.jsonl":            intotoRaw,
+		target + ".digest.json":             []byte(`{"digest":"sha256:service-release-manifest"}`),
+	}}
+	releases := []Release{{
+		Tag:         tag,
+		Name:        "v1.0.0",
+		PublishedAt: publishedAt,
+		Assets: []Asset{
+			{Name: target + "-amd64.sbom.json", URL: "https://example.invalid/" + target + "-amd64.sbom.json"},
+			{Name: target + "-amd64.test-results.json", URL: "https://example.invalid/" + target + "-amd64.test-results.json"},
+			{Name: target + ".intoto.jsonl", URL: "https://example.invalid/" + target + ".intoto.jsonl"},
+			{Name: target + ".digest.json", URL: "https://example.invalid/" + target + ".digest.json"},
+		},
+	}}
+	service := catalog.ServiceInfo{
+		Template:    "postgres",
+		Version:     "16",
+		Ports:       []catalog.ServicePortInfo{{Name: "postgres", Port: 5432, Protocol: "tcp"}},
+		Stateful:    true,
+		DataDirs:    []string{"/var/lib/postgresql/data"},
+		Smoke:       []string{"postgres --version"},
+		SmokeStatus: "configured",
+	}
+	lifecycle := Lifecycle{Status: "preview", Support: "current", ProductionAllowed: false}
+	runtimeContract := RuntimeContract{
+		User:                  "10001:10001",
+		WorkingDir:            "/app",
+		ShellPresent:          true,
+		PackageManagerPresent: false,
+		CACertificatesPresent: true,
+		TimezoneDataPresent:   false,
+		DefaultEntrypoint:     Str("/bin/clearcutt-postgres-entrypoint"),
+		ProductionTier:        false,
+	}
+
+	img, err := BuildServiceImageRecord(target, service, lifecycle, runtimeContract, releases, map[string]bool{tag: true}, BuildOptions{
+		RegistryBase:  "ghcr.io/acme/platform",
+		ImagePrefix:   "platform",
+		SBOMCacheDir:  sbomDir,
+		EnrichmentDir: enrichmentDir,
+		Source:        source,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img == nil {
+		t.Fatal("expected service image record")
+	}
+	if img.SchemaVersion != catalog.ImageRecordSchemaVersionV2 || img.Kind != "service" || img.ID != target {
+		t.Fatalf("unexpected service identity: %#v", img)
+	}
+	if img.ImageName != "platform-postgres16" || img.FullName != "ghcr.io/acme/platform/platform-postgres16" {
+		t.Fatalf("unexpected service image names: %s %s", img.ImageName, img.FullName)
+	}
+	if img.Service == nil || img.Service.Template != "postgres" || len(img.Service.Ports) != 1 || img.Service.Ports[0].Port != 5432 {
+		t.Fatalf("unexpected service metadata: %#v", img.Service)
+	}
+	latest := img.Releases[0]
+	if latest.Evidence.ArchCount != 1 || !latest.Evidence.SBOM || !latest.Evidence.Tests || !latest.Evidence.Signature || !latest.Evidence.Provenance {
+		t.Fatalf("unexpected service evidence: %#v", latest.Evidence)
+	}
+	if latest.Architectures[0].Labels == nil || !bytes.Contains(latest.Architectures[0].Labels, []byte(`"dev.clearcutt.image.kind"`)) {
+		t.Fatalf("expected service OCI labels in architecture payload: %s", latest.Architectures[0].Labels)
+	}
+	summary := SummarizeImageForIndex(*img)
+	if summary.Kind != "service" || summary.Service == nil || summary.LatestPackageCount == 0 || !summary.Signed || !summary.Provenance || !summary.Passed {
+		t.Fatalf("unexpected service summary: %#v", summary)
+	}
+	if _, err := os.Stat(filepath.Join(sbomDir, tag, target+"-amd64.sbom.json")); err != nil {
+		t.Fatalf("expected persisted service SBOM: %v", err)
+	}
+}
+
 func TestEnrichmentAttestationShapeOmitsReleaseAssetURL(t *testing.T) {
 	raw, err := json.Marshal(Enrichment{
 		Attestations: []EnrichmentAttestation{{

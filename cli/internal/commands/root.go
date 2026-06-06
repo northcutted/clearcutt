@@ -60,6 +60,7 @@ and manage hardened multi-architecture enterprise base images.`,
 	add("platform", NewPlatformCmd())
 	add("platform", NewFleetCmd())
 	add("platform", NewRuntimeCmd())
+	add("platform", NewServiceCmd())
 
 	// Build catalog data and publish release evidence.
 	add("catalog", NewCatalogCmd())

@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import MatrixGrid from '../components/MatrixGrid.astro';
+import ServiceGrid from '../components/ServiceGrid.astro';
 import Search from '../components/Search.astro';
 import { loadIndex } from '../lib/catalog';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
@@ -13,17 +14,19 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const siteConfig = loadSiteConfig();
 const devLabel = tierLabel(siteConfig, 'dev');
 const releaseTags = index?.releases.map((r) => r.tag) ?? [];
-const published = index ? index.images.filter((i) => i.latestTag === index.latestTag).length : 0;
-const lagging = index ? index.images.filter((i) => i.latestTag !== index.latestTag).length : 0;
+const runtimeImages = index ? index.images.filter((i) => (i.kind ?? 'runtime') === 'runtime' && i.tier !== 'service') : [];
+const serviceImages = index ? index.images.filter((i) => i.kind === 'service') : [];
+const published = index ? runtimeImages.filter((i) => i.latestTag === index.latestTag).length : 0;
+const lagging = index ? runtimeImages.filter((i) => i.latestTag !== index.latestTag).length : 0;
 // One slot per language-version × tier, read from the catalog index so it can't
 // drift from the flake matrix.
 const totalSlots = index ? index.languages.length * index.tiers.length : 0;
-const pending = index ? Math.max(0, totalSlots - index.images.length) : 0;
+const pending = index ? Math.max(0, totalSlots - runtimeImages.length) : 0;
 const evidenceCoverage = index
   ? {
-      signatures: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.signature ?? i.signed)).length,
-      provenance: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.provenance ?? i.provenance)).length,
-      scans: index.images.filter((i) => i.latestTag === index.latestTag && !!i.evidence?.vulnerabilities).length,
+      signatures: runtimeImages.filter((i) => i.latestTag === index.latestTag && (i.evidence?.signature ?? i.signed)).length,
+      provenance: runtimeImages.filter((i) => i.latestTag === index.latestTag && (i.evidence?.provenance ?? i.provenance)).length,
+      scans: runtimeImages.filter((i) => i.latestTag === index.latestTag && !!i.evidence?.vulnerabilities).length,
     }
   : null;
 ---
@@ -77,6 +80,11 @@ const evidenceCoverage = index
               </span>
             )}
             <span class="text-ink-300">of {totalSlots} target slots</span>
+            {serviceImages.length > 0 && (
+              <span class="text-ink-300">
+                services: <strong class="text-ink-100">{serviceImages.length}</strong>
+              </span>
+            )}
             {evidenceCoverage && (
               <span class="text-ink-300">
                 evidence: {evidenceCoverage.signatures}/{published} sig · {evidenceCoverage.provenance}/{published} slsa · {evidenceCoverage.scans}/{published} scans
@@ -164,6 +172,7 @@ const evidenceCoverage = index
           <div data-matrix-root data-view="all">
             <MatrixGrid index={index!} />
           </div>
+          <ServiceGrid index={index!} />
         </div>
         <script is:inline>
           (function () {

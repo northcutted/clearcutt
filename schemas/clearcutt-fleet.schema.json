@@ -266,6 +266,114 @@
         }
       }
     },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "template", "version"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template": {
+            "enum": ["postgres", "valkey", "oauth2-proxy"]
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "packageCandidates": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["port"],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "protocol": {
+                  "enum": ["tcp", "udp"]
+                }
+              }
+            }
+          },
+          "stateful": {
+            "type": "boolean"
+          },
+          "dataDirs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^/"
+            }
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "entrypoint": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "cmd": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "smoke": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "lifecycle": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": ["preview", "active", "deprecated", "experimental"]
+              },
+              "support": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          },
+          "productionAllowed": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
     "labels": {
       "type": "object",
       "additionalProperties": {

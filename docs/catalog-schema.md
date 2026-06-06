@@ -10,6 +10,12 @@ Current schema version identifiers:
 
 - `clearcutt.catalog.index/v1`
 - `clearcutt.catalog.image/v1`
+- `clearcutt.catalog.index/v2`
+- `clearcutt.catalog.image/v2`
+
+Runtime-only catalogs may remain on v1. Catalogs containing first-class service
+records emit v2 and add `kind` plus service metadata while preserving the
+runtime fields that older consumers use.
 
 Validate a generated catalog against a required schema version:
 
@@ -36,7 +42,9 @@ catalog/
     test-results/
   schemas/
     catalog-index.v1.schema.json
+    catalog-index.v2.schema.json
     image-record.v1.schema.json
+    image-record.v2.schema.json
 ```
 
 ## `index.json`
@@ -53,6 +61,7 @@ catalog/
 - language summaries
 - tier summaries
 - image summaries
+- `kind` on image summaries in v2: `runtime`, `service`, or `application`
 
 The index is optimized for listing, filtering, dashboards, and the catalog grid.
 It should not duplicate every package, layer, vulnerability, or attestation
@@ -73,6 +82,16 @@ policy tools:
 - test results
 - vulnerability findings
 - signatures, attestations, and provenance metadata when available
+
+For `kind: service` records, v2 also includes:
+
+- `service.template`
+- `service.version`
+- `service.ports`
+- `service.stateful`
+- `service.dataDirs`
+- `service.smoke`
+- `service.smokeStatus`
 
 ## `summary.json`
 

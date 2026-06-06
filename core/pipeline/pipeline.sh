@@ -134,9 +134,10 @@ certify_target() {
   local registry="$4"
   local repo="$5"
   local local_signing="$6"
+  local target_kind="${7:-runtime}"
 
   log_info "========================================================"
-  log_info "Processing matrix target: ${BLUE}$target${RESET} [Platform: ${BLUE}$system${RESET}]"
+  log_info "Processing ${target_kind} target: ${BLUE}$target${RESET} [Platform: ${BLUE}$system${RESET}]"
   log_info "========================================================"
 
   local tar_path="$OUTPUT_DIR/$target.tar.gz"
@@ -147,6 +148,10 @@ certify_target() {
   lang=$(echo "$target" | cut -d'-' -f1 | tr '[:upper:]' '[:lower:]')
   local tier
   tier=$(echo "$target" | cut -d'-' -f2)
+  if [[ "$target_kind" == "service" ]]; then
+    lang="$target"
+    tier="service"
+  fi
 
   # A. Nix Compilation Phase
   log_info "Compiling OCI layered image via Nix..."
@@ -198,7 +203,7 @@ certify_target() {
   if grype "sbom:$sbom_path" --fail-on high --only-fixed; then
     log_success "Security Gate: Grype SBOM scan passed with no fixable Critical/High CVEs."
   else
-    if [[ "$tier" == "dev" ]]; then
+    if [[ "$target_kind" == "runtime" && "$tier" == "dev" ]]; then
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
     else
       log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
@@ -216,6 +221,7 @@ certify_target() {
 {
   "system": "$system",
   "target": "$target",
+  "kind": "$target_kind",
   "language": "$lang",
   "tier": "$tier",
   "status": "passed",
@@ -274,6 +280,10 @@ EOF
     image_prefix="$(platform_image_prefix)"
     local image_repo="$registry/$repo/${image_prefix}-${lang}"
     local stage_tag="${image_repo}:_stage-${tier}-${arch_suffix}"
+    if [[ "$target_kind" == "service" ]]; then
+      image_repo="$registry/$repo/${image_prefix}-${target}"
+      stage_tag="${image_repo}:_stage-service-${arch_suffix}"
+    fi
 
     log_info "Publishing per-arch staging image to registry (OCI) -> $stage_tag"
 
@@ -323,6 +333,7 @@ main() {
   local run_patch=false
   local publish=false
   local local_signing=true
+  local target_kind="runtime"
   # Detect current system platform natively
   local current_system
   if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -365,6 +376,10 @@ main() {
         publish=true
         shift
         ;;
+      --kind)
+        target_kind="$2"
+        shift 2
+        ;;
       --skip-local-signing)
         local_signing=false
         shift
@@ -392,6 +407,15 @@ main() {
     run_patch_cycle
   fi
 
+  case "$target_kind" in
+    runtime|service)
+      ;;
+    *)
+      log_error "Unsupported target kind '$target_kind'. Expected runtime or service."
+      exit 1
+      ;;
+  esac
+
   if [ ${#target_list[@]} -eq 0 ]; then
     log_warn "No compile targets specified. Defaulting to: coreLTS-slim"
     target_list+=("coreLTS-slim")
@@ -400,7 +424,7 @@ main() {
   local failed=0
   for target in "${target_list[@]}"; do
     report_scm_status "pending" "Running compile and scan certification for $target"
-    if certify_target "$target" "$system" "$publish" "$registry" "$repo" "$local_signing"; then
+    if certify_target "$target" "$system" "$publish" "$registry" "$repo" "$local_signing" "$target_kind"; then
       report_scm_status "success" "Certified matrix target $target successfully"
     else
       log_error "Certification failed for target $target"

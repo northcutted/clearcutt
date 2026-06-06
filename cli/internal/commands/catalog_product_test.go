@@ -53,6 +53,26 @@ func TestCatalogValidateSummarizeAndInspectNamespace(t *testing.T) {
 	}
 }
 
+func TestMixedServiceCatalogFixtureValidatesAndInspectsStrictly(t *testing.T) {
+	validateOut, err := runCLI(t, "--catalog", mixedFixtureCatalog(), "catalog", "validate")
+	if err != nil {
+		t.Fatalf("mixed service catalog fixture should validate: %v\n%s", err, validateOut)
+	}
+	if !strings.Contains(validateOut, "[catalog-validate] ok: 2 image record(s)") {
+		t.Fatalf("expected successful validation, got:\n%s", validateOut)
+	}
+
+	inspectOut, err := runCLI(t, "--catalog", mixedFixtureCatalog(), "inspect", "postgres16", "--strict")
+	if err != nil {
+		t.Fatalf("strict service inspect failed: %v\n%s", err, inspectOut)
+	}
+	for _, want := range []string{"postgres16", "Ports:", "Supply Chain Evidence"} {
+		if !strings.Contains(inspectOut, want) {
+			t.Fatalf("expected service inspect output to contain %q, got:\n%s", want, inspectOut)
+		}
+	}
+}
+
 func TestCatalogDirectoryDiffReportsIndexLevelChanges(t *testing.T) {
 	oldDir := copyFixtureCatalog(t)
 	newDir := copyFixtureCatalog(t)
@@ -793,6 +813,280 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.ImageRecordSchemaVersion)
 	if err != nil {
 		t.Fatalf("generated catalog should satisfy image schema version: %v\n%s", err, validateOut)
+	}
+}
+
+func TestCatalogGenerateIncludeServicesEmitsV2ServiceRecords(t *testing.T) {
+	outDir := copyFixtureCatalog(t)
+	root := t.TempDir()
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Services = []fleet.ServiceImage{{
+		ID:       "postgres16",
+		Template: "postgres",
+		Version:  "16",
+	}}
+	raw, err := fleet.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fleet config: %v", err)
+	}
+	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
+		t.Fatalf("write fleet config: %v", err)
+	}
+
+	oldNewReleaseSource := newReleaseSource
+	t.Cleanup(func() { newReleaseSource = oldNewReleaseSource })
+	newReleaseSource = func(owner, repo, token string) catalogbuild.ReleaseSource {
+		return &fakeCatalogReleaseSource{}
+	}
+
+	stdout, err := runCLI(t,
+		"catalog", "generate",
+		"--config", configPath,
+		"--output", outDir,
+		"--vuln-dir", filepath.Join(t.TempDir(), "missing-vulns"),
+		"--generated-at", "2026-06-04T12:00:00Z",
+		"--include-services",
+	)
+	if err != nil {
+		t.Fatalf("catalog generate --include-services failed: %v\n%s", err, stdout)
+	}
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		t.Fatalf("load generated index: %v", err)
+	}
+	if index.SchemaVersion != catalog.CatalogIndexSchemaVersionV2 {
+		t.Fatalf("expected v2 index schema, got %q", index.SchemaVersion)
+	}
+	if index.Summary == nil || index.Summary.ImageCount != 2 {
+		t.Fatalf("expected runtime plus service summary, got %#v", index.Summary)
+	}
+	service, err := catalog.LoadImageRecord(outDir, "postgres16")
+	if err != nil {
+		t.Fatalf("load service record: %v", err)
+	}
+	if service.SchemaVersion != catalog.ImageRecordSchemaVersionV2 || service.Kind != "service" || service.Service == nil {
+		t.Fatalf("unexpected service record: %#v", service)
+	}
+	if service.Service.Template != "postgres" || service.Service.Ports[0].Port != 5432 || !service.Service.Stateful {
+		t.Fatalf("unexpected service metadata: %#v", service.Service)
+	}
+	validateOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate")
+	if err != nil {
+		t.Fatalf("mixed service catalog should validate with warnings only: %v\n%s", err, validateOut)
+	}
+	for _, schemaName := range []string{"catalog-index.v2.schema.json", "image-record.v2.schema.json"} {
+		if _, err := os.Stat(filepath.Join(outDir, "schemas", schemaName)); err != nil {
+			t.Fatalf("expected generated v2 schema %s: %v", schemaName, err)
+		}
+	}
+}
+
+func TestCatalogGenerateIncludeServicesFoldsServiceReleaseAssets(t *testing.T) {
+	const target = "postgres16"
+	const tag = "v1.0.0"
+	const publishedAt = "2026-06-05T12:00:00Z"
+
+	outDir := filepath.Join(t.TempDir(), "catalog")
+	sbomDir := filepath.Join(t.TempDir(), "sboms")
+	enrichmentDir := filepath.Join(t.TempDir(), "enrichment")
+	writeTestFile(t, filepath.Join(enrichmentDir, tag, target+".json"), []byte(`{
+  "manifestDigest": "sha256:service-manifest",
+  "architectures": [
+    {
+      "arch": "amd64",
+      "digest": "sha256:service-amd64",
+      "size": 42,
+      "layers": [],
+      "labels": {
+        "dev.clearcutt.image.kind": "service",
+        "dev.clearcutt.service.id": "postgres16"
+      }
+    }
+  ],
+  "signature": {
+    "cosignBundlePresent": true
+  },
+  "provenance": {
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "builder": { "id": "service-builder" },
+    "slsaLevel": 3
+  }
+}`))
+
+	spdxRaw, err := os.ReadFile(filepath.Join("testdata", "catalog", "spdx-fixture.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &fakeCatalogReleaseSource{
+		releases: []catalogbuild.Release{{
+			Tag:         tag,
+			Name:        "v1.0.0",
+			PublishedAt: publishedAt,
+			Assets: []catalogbuild.Asset{
+				{Name: target + "-amd64.sbom.json", URL: "https://example.invalid/" + target + "-amd64.sbom.json"},
+				{Name: target + "-amd64.test-results.json", URL: "https://example.invalid/" + target + "-amd64.test-results.json"},
+			},
+		}},
+		assets: map[string][]byte{
+			target + "-amd64.sbom.json":         spdxRaw,
+			target + "-amd64.test-results.json": []byte(`{"status":"passed","timestamp":"2026-06-05T12:05:00Z","assertions":[{"name":"Syft SBOM Generation","status":"passed"}]}`),
+		},
+	}
+	oldNewReleaseSource := newReleaseSource
+	t.Cleanup(func() { newReleaseSource = oldNewReleaseSource })
+	newReleaseSource = func(owner, repo, token string) catalogbuild.ReleaseSource {
+		return source
+	}
+
+	root := t.TempDir()
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Matrix.Languages = []string{"java21"}
+	cfg.Matrix.Tiers = []string{"distroless"}
+	cfg.Catalog.ReleaseLimit = 1
+	cfg.Services = []fleet.ServiceImage{{
+		ID:       target,
+		Template: "postgres",
+		Version:  "16",
+	}}
+	raw, err := fleet.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fleet config: %v", err)
+	}
+	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
+		t.Fatalf("write fleet config: %v", err)
+	}
+
+	stdout, err := runCLI(t,
+		"catalog", "generate",
+		"--config", configPath,
+		"--output", outDir,
+		"--sbom-cache-dir", sbomDir,
+		"--enrichment-dir", enrichmentDir,
+		"--vuln-dir", filepath.Join(t.TempDir(), "missing-vulns"),
+		"--generated-at", "2026-06-05T12:30:00Z",
+		"--include-services",
+	)
+	if err != nil {
+		t.Fatalf("catalog generate --include-services failed: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "[gather] wrote service postgres16 (1 releases)") {
+		t.Fatalf("expected service gather output, got:\n%s", stdout)
+	}
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		t.Fatalf("load generated index: %v", err)
+	}
+	if index.SchemaVersion != catalog.CatalogIndexSchemaVersionV2 || len(index.Images) != 1 {
+		t.Fatalf("expected service-only v2 index, got %#v", index)
+	}
+	serviceSummary := index.Images[0]
+	if serviceSummary.ID != target || serviceSummary.Kind != "service" || len(serviceSummary.Architectures) != 1 || serviceSummary.Architectures[0] != "amd64" {
+		t.Fatalf("unexpected service index summary: %#v", serviceSummary)
+	}
+	if serviceSummary.Evidence == nil || !serviceSummary.Evidence.SBOM || !serviceSummary.Evidence.Tests || !serviceSummary.Evidence.Signature || !serviceSummary.Evidence.Provenance {
+		t.Fatalf("expected complete service evidence summary: %#v", serviceSummary.Evidence)
+	}
+	record, err := catalog.LoadImageRecord(outDir, target)
+	if err != nil {
+		t.Fatalf("load service record: %v", err)
+	}
+	if len(record.Releases) != 1 || len(record.Releases[0].Architectures) != 1 {
+		t.Fatalf("expected service release architecture evidence, got %#v", record.Releases)
+	}
+	if record.Releases[0].Architectures[0].SBOM.PackageCount == 0 || record.Releases[0].Architectures[0].TestResults == nil {
+		t.Fatalf("expected service SBOM and test evidence, got %#v", record.Releases[0].Architectures[0])
+	}
+	if !contains(source.downloads, target+"-amd64.sbom.json") {
+		t.Fatalf("expected service SBOM download, got %v", source.downloads)
+	}
+	validateOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate")
+	if err != nil {
+		t.Fatalf("service evidence catalog should validate with warnings only: %v\n%s", err, validateOut)
+	}
+}
+
+func TestServiceCatalogMetadataOverlayAndSummaries(t *testing.T) {
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Registry.ImagePrefix = "platform"
+	service := fleet.ServiceImage{
+		ID:         "postgres16",
+		Template:   "postgres",
+		Version:    "16",
+		Ports:      []fleet.ServicePort{{Name: "postgres", Port: 5432, Protocol: "tcp"}},
+		Stateful:   true,
+		DataDirs:   []string{"/var/lib/postgresql/data"},
+		Entrypoint: []string{"clearcutt-postgres-entrypoint"},
+		Smoke:      []string{"postgres --version"},
+		Lifecycle:  fleet.ServiceLifecycle{Status: "preview", Support: "current"},
+	}
+	record := serviceCatalogRecord(cfg, service, "v1.0.0", "2026-06-05T20:00:00Z")
+	record.Releases[0].ManifestDigest = strPtr("sha256:service")
+	record.Releases[0].Signature = &catalog.SignatureInfo{CosignBundlePresent: true}
+	record.Releases[0].Provenance = &catalog.ProvenanceInfo{PredicateType: "https://slsa.dev/provenance/v1", Builder: catalog.BuilderInfo{ID: "builder"}, SlsaLevel: 3}
+	record.Releases[0].Architectures = []catalog.ArchPayload{{
+		Arch:        "amd64",
+		OS:          "linux",
+		SBOM:        catalog.SBOMInfo{PackageCount: 5},
+		TestResults: &catalog.TestResultsInfo{Status: "passed"},
+		Vulnerabilities: &catalog.VulnerabilitiesInfo{
+			ScannedAt: "2026-06-05T21:00:00Z",
+			Findings: []catalog.FindingInfo{
+				{ID: "CVE-1", Severity: "Critical", PackageName: "postgresql", PackageVersion: "16.9", Layer: "runtime", FixedIn: strPtr("16.10")},
+				{ID: "CVE-2", Severity: "High", PackageName: "openssl", PackageVersion: "3.5.0", Layer: "base"},
+				{ID: "CVE-3", Severity: "High", PackageName: "zlib", PackageVersion: "1.3.1", Layer: "runtime"},
+				{ID: "CVE-4", Severity: "Medium", PackageName: "icu", PackageVersion: "75", Layer: "runtime", FixedIn: strPtr("76")},
+				{ID: "CVE-5", Severity: "High", PackageName: "curl", PackageVersion: "8.8.0", Layer: "runtime", Remediation: &catalog.RemediationInfo{Reason: "custom_reason"}},
+			},
+		},
+	}}
+	record.Releases[0].Evidence = nil
+
+	overlaid := serviceCatalogRecordFromExisting(cfg, service, record)
+	if overlaid.SchemaVersion != catalog.ImageRecordSchemaVersionV2 || overlaid.Kind != "service" || overlaid.Service == nil {
+		t.Fatalf("unexpected service overlay: %#v", overlaid)
+	}
+	if overlaid.Releases[0].Evidence == nil || !overlaid.Releases[0].Evidence.Signature || !overlaid.Releases[0].Evidence.SBOM || !overlaid.Releases[0].Evidence.Tests {
+		t.Fatalf("expected recomputed service evidence, got %#v", overlaid.Releases[0].Evidence)
+	}
+
+	summary := serviceCatalogSummary(overlaid)
+	if summary.LatestManifestDigest == nil || *summary.LatestManifestDigest != "sha256:service" || summary.LatestPackageCount != 5 || !summary.Passed {
+		t.Fatalf("unexpected service summary basics: %#v", summary)
+	}
+	if summary.VulnSummary == nil || summary.VulnSummary.Critical != 1 || summary.VulnSummary.High != 3 || summary.VulnSummary.Medium != 1 {
+		t.Fatalf("unexpected service vulnerability summary: %#v", summary.VulnSummary)
+	}
+	remediation := summary.VulnSummary.Remediation
+	if remediation == nil || remediation.Eligible != 1 || remediation.BaseLayer != 1 || remediation.NoFixedVersion != 1 || remediation.OtherDeferred != 1 {
+		t.Fatalf("unexpected service remediation buckets: %#v", remediation)
+	}
+
+	if got := serviceInspectPorts(serviceCatalogInfo(service).Ports); got != "postgres:5432/tcp" {
+		t.Fatalf("unexpected service port label: %q", got)
+	}
+	if got := serviceInspectPorts([]catalog.ServicePortInfo{{Port: 4180}}); got != "4180/tcp" {
+		t.Fatalf("unexpected unnamed service port label: %q", got)
+	}
+	if got := serviceInspectPorts(nil); got != "none" {
+		t.Fatalf("unexpected empty service port label: %q", got)
+	}
+	if got := serviceDefaultEntrypoint(service); got != "/bin/clearcutt-postgres-entrypoint" {
+		t.Fatalf("unexpected generated service entrypoint: %q", got)
+	}
+	service.Entrypoint = []string{"/custom/entrypoint", "arg"}
+	if got := serviceDefaultEntrypoint(service); got != "/custom/entrypoint /bin/arg" {
+		t.Fatalf("unexpected mixed service entrypoint: %q", got)
+	}
+
+	oauth := fleet.ServiceImage{Template: "oauth2-proxy", Entrypoint: []string{"oauth2-proxy"}}
+	contract := serviceCatalogBuildRuntimeContract(oauth)
+	if contract.User != "10001:10001" || contract.ShellPresent || !contract.CACertificatesPresent || contract.DefaultEntrypoint == nil || *contract.DefaultEntrypoint != "/bin/oauth2-proxy" {
+		t.Fatalf("unexpected service build runtime contract: %#v", contract)
+	}
+	if serviceRemediationBucket("below_priority_threshold") != "belowPriorityThreshold" || serviceRemediationBucket("unknown") != "otherDeferred" {
+		t.Fatal("service remediation bucket branches drifted")
 	}
 }
 

@@ -35,6 +35,7 @@ type catalogGatherFlags struct {
 	forceRefreshTags string
 	generatedAt      string
 	pretty           bool
+	includeServices  bool
 }
 
 var catalogGatherOpts catalogGatherFlags
@@ -75,6 +76,7 @@ evidence channels are preserved as explicit missing-evidence states.`,
 	cmd.Flags().StringVar(&catalogGatherOpts.imagesFile, "images", "", "Generic OCI images.yaml inventory to convert into catalog data")
 	cmd.Flags().StringVar(&catalogGatherOpts.outDir, "output", "", "Catalog output directory")
 	cmd.Flags().BoolVar(&catalogGatherOpts.pretty, "pretty", true, "Write indented JSON output")
+	cmd.Flags().BoolVar(&catalogGatherOpts.includeServices, "include-services", false, "Include configured first-class service images from clearcutt.fleet.yaml")
 	return cmd
 }
 
@@ -125,6 +127,15 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 		return err
 	}
 	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
+	if catalogGatherOpts.includeServices {
+		cfg, err := fleet.Load(catalogGatherOpts.config)
+		if err != nil {
+			return fmt.Errorf("failed to load service fleet config: %w", err)
+		}
+		if err := appendServiceCatalogRecords(outDir, cfg); err != nil {
+			return err
+		}
+	}
 	return finalizeGeneratedCatalog(outDir)
 }
 
@@ -252,6 +263,382 @@ func fleetTargets(cfg fleet.Config) string {
 	return strings.Join(targets, ",")
 }
 
+func appendServiceCatalogRecords(outDir string, cfg fleet.Config) error {
+	if len(cfg.Services) == 0 {
+		return nil
+	}
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		return err
+	}
+	generatedAt := index.GeneratedAt
+	if generatedAt == "" {
+		generatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		index.GeneratedAt = generatedAt
+	}
+	latestTag := catalogbuild.FirstNonEmptyStr(index.LatestTag, "preview")
+	if index.LatestTag == "" {
+		index.LatestTag = latestTag
+	}
+
+	byID := map[string]int{}
+	for i, img := range index.Images {
+		byID[img.ID] = i
+	}
+	for _, service := range cfg.Services {
+		service, _ = cfg.ServiceInfo(service.ID)
+		record := serviceCatalogRecord(cfg, service, latestTag, generatedAt)
+		if existing, err := catalog.LoadImageRecord(outDir, service.ID); err == nil && len(existing.Releases) > 0 {
+			record = serviceCatalogRecordFromExisting(cfg, service, *existing)
+		}
+		if err := writeJSONFile(filepath.Join(outDir, "images", service.ID+".json"), record); err != nil {
+			return err
+		}
+		summary := serviceCatalogSummary(record)
+		if idx, ok := byID[summary.ID]; ok {
+			index.Images[idx] = summary
+		} else {
+			byID[summary.ID] = len(index.Images)
+			index.Images = append(index.Images, summary)
+		}
+		fmt.Fprintf(out, "[generate] wrote service %s\n", service.ID)
+	}
+	index.SchemaVersion = catalog.CatalogIndexSchemaVersionV2
+	return writeJSONFile(filepath.Join(outDir, "index.json"), index)
+}
+
+func serviceCatalogRecordFromExisting(cfg fleet.Config, service fleet.ServiceImage, existing catalog.ImageRecord) catalog.ImageRecord {
+	fallback := serviceCatalogRecord(cfg, service, "", "")
+	existing.SchemaVersion = catalog.ImageRecordSchemaVersionV2
+	existing.ID = service.ID
+	existing.Kind = "service"
+	existing.Language = fallback.Language
+	existing.Tier = fallback.Tier
+	existing.Registry = fallback.Registry
+	existing.ImageName = fallback.ImageName
+	existing.FullName = fallback.FullName
+	existing.Lifecycle = fallback.Lifecycle
+	existing.RuntimeContract = fallback.RuntimeContract
+	serviceInfo := serviceCatalogInfo(service)
+	existing.Service = &serviceInfo
+	for i := range existing.Releases {
+		existing.Releases[i].Lifecycle = fallback.Lifecycle
+		existing.Releases[i].RuntimeContract = fallback.RuntimeContract
+		if existing.Releases[i].Evidence == nil {
+			evidence := serviceEvidenceSummary(existing.Releases[i])
+			existing.Releases[i].Evidence = &evidence
+		}
+	}
+	return existing
+}
+
+func serviceCatalogRecord(cfg fleet.Config, service fleet.ServiceImage, latestTag, generatedAt string) catalog.ImageRecord {
+	lifecycle := serviceCatalogLifecycle(service)
+	runtimeContract := serviceCatalogRuntimeContract(service)
+	serviceInfo := serviceCatalogInfo(service)
+	imageName := cfg.Registry.ImagePrefix + "-" + strings.ToLower(service.ID)
+	fullName := strings.TrimRight(cfg.RegistryBase(), "/") + "/" + imageName
+	evidence := catalog.EvidenceSummary{}
+	return catalog.ImageRecord{
+		SchemaVersion:   catalog.ImageRecordSchemaVersionV2,
+		ID:              service.ID,
+		Kind:            "service",
+		Language:        catalog.LanguageInfo{ID: "service", DisplayName: "Service", Version: service.Version},
+		Tier:            catalog.TierInfo{ID: "service", Name: "Service", Blurb: "Platform-owned service image"},
+		Registry:        cfg.RegistryBase(),
+		ImageName:       imageName,
+		FullName:        fullName,
+		Lifecycle:       lifecycle,
+		RuntimeContract: runtimeContract,
+		Service:         &serviceInfo,
+		Releases: []catalog.ReleaseEntry{{
+			Tag:             latestTag,
+			PublishedAt:     generatedAt,
+			IsLatest:        true,
+			Architectures:   []catalog.ArchPayload{},
+			Attestations:    []catalog.AttestationEntry{},
+			AssetURLs:       catalog.AssetURLs{SBOM: map[string]string{}, TestResults: map[string]string{}},
+			Evidence:        &evidence,
+			Lifecycle:       lifecycle,
+			RuntimeContract: runtimeContract,
+			Exceptions:      catalog.ExceptionSummary{},
+		}},
+	}
+}
+
+func serviceCatalogSummary(record catalog.ImageRecord) catalog.CatalogImageSummary {
+	latest := record.Releases[0]
+	evidence := serviceEvidenceSummary(latest)
+	if latest.Evidence != nil {
+		evidence = *latest.Evidence
+	}
+	architectures := make([]string, 0, len(latest.Architectures))
+	totalPackages := 0
+	passed := len(latest.Architectures) > 0
+	for _, arch := range latest.Architectures {
+		architectures = append(architectures, arch.Arch)
+		totalPackages += arch.SBOM.PackageCount
+		if arch.TestResults == nil || arch.TestResults.Status != "passed" {
+			passed = false
+		}
+	}
+	avgPackageCount := 0
+	if len(latest.Architectures) > 0 {
+		avgPackageCount = (totalPackages + len(latest.Architectures)/2) / len(latest.Architectures)
+	}
+	return catalog.CatalogImageSummary{
+		ID:                   record.ID,
+		Kind:                 "service",
+		Language:             record.Language.ID,
+		LanguageDisplay:      record.Language.DisplayName,
+		LanguageVersion:      record.Language.Version,
+		Tier:                 record.Tier.ID,
+		LatestTag:            latest.Tag,
+		LatestManifestDigest: latest.ManifestDigest,
+		LatestPackageCount:   avgPackageCount,
+		Architectures:        architectures,
+		Signed:               evidence.Signature,
+		Provenance:           evidence.Provenance,
+		Evidence:             &evidence,
+		Passed:               passed,
+		VulnSummary:          serviceVulnSummary(latest),
+		Lifecycle:            record.Lifecycle,
+		RuntimeContract:      record.RuntimeContract,
+		Service:              record.Service,
+	}
+}
+
+func serviceVulnSummary(release catalog.ReleaseEntry) *catalog.VulnSummary {
+	distinct := map[string]catalog.FindingInfo{}
+	var scannedAt *string
+	for _, arch := range release.Architectures {
+		if arch.Vulnerabilities == nil {
+			continue
+		}
+		if arch.Vulnerabilities.ScannedAt != "" && (scannedAt == nil || arch.Vulnerabilities.ScannedAt > *scannedAt) {
+			value := arch.Vulnerabilities.ScannedAt
+			scannedAt = &value
+		}
+		for _, finding := range arch.Vulnerabilities.Findings {
+			key := finding.ID + "::" + finding.PackageName + "::" + finding.PackageVersion
+			if _, ok := distinct[key]; !ok {
+				distinct[key] = finding
+			}
+		}
+	}
+	if scannedAt == nil && len(distinct) == 0 {
+		return nil
+	}
+	remediation := catalog.RemediationCounts{}
+	summary := &catalog.VulnSummary{ScannedAt: scannedAt, Remediation: &remediation}
+	for _, finding := range distinct {
+		severity := strings.ToLower(finding.Severity)
+		switch severity {
+		case "critical":
+			summary.Critical++
+		case "high":
+			summary.High++
+		case "medium":
+			summary.Medium++
+		case "low":
+			summary.Low++
+		}
+		if severity == "critical" || severity == "high" {
+			switch serviceRemediationBucket(serviceRemediationReason(finding)) {
+			case "eligible":
+				summary.Remediation.Eligible++
+			case "baseLayer":
+				summary.Remediation.BaseLayer++
+			case "noFixedVersion":
+				summary.Remediation.NoFixedVersion++
+			case "belowPriorityThreshold":
+				summary.Remediation.BelowPriorityThreshold++
+			default:
+				summary.Remediation.OtherDeferred++
+			}
+		}
+	}
+	return summary
+}
+
+func serviceRemediationReason(finding catalog.FindingInfo) string {
+	if finding.Remediation != nil && finding.Remediation.Reason != "" {
+		return finding.Remediation.Reason
+	}
+	severity := strings.ToLower(catalogbuild.FirstNonEmptyStr(finding.Severity, "Unknown"))
+	layer := catalogbuild.FirstNonEmptyStr(finding.Layer, "base")
+	switch {
+	case layer != "runtime":
+		return "base_layer"
+	case severity != "critical" && severity != "high":
+		return "below_priority_threshold"
+	case finding.FixedIn == nil || *finding.FixedIn == "":
+		return "no_fixed_version"
+	default:
+		return "fix_available"
+	}
+}
+
+func serviceRemediationBucket(reason string) string {
+	switch reason {
+	case "fix_available":
+		return "eligible"
+	case "base_layer":
+		return "baseLayer"
+	case "no_fixed_version":
+		return "noFixedVersion"
+	case "below_priority_threshold":
+		return "belowPriorityThreshold"
+	default:
+		return "otherDeferred"
+	}
+}
+
+func serviceEvidenceSummary(release catalog.ReleaseEntry) catalog.EvidenceSummary {
+	archCount := len(release.Architectures)
+	var sbomArch, testArch, passedTestArch, vulnArch int
+	for _, arch := range release.Architectures {
+		if arch.SBOM.PackageCount > 0 {
+			sbomArch++
+		}
+		if arch.TestResults != nil {
+			testArch++
+			if arch.TestResults.Status == "passed" {
+				passedTestArch++
+			}
+		}
+		if arch.Vulnerabilities != nil {
+			vulnArch++
+		}
+	}
+	return catalog.EvidenceSummary{
+		Signature:              release.Signature != nil && release.Signature.CosignBundlePresent,
+		Provenance:             release.Provenance != nil,
+		SBOM:                   archCount > 0 && sbomArch == archCount,
+		Tests:                  archCount > 0 && testArch == archCount && passedTestArch == archCount,
+		Vulnerabilities:        archCount > 0 && vulnArch == archCount,
+		ArchCount:              archCount,
+		SBOMArchCount:          sbomArch,
+		TestArchCount:          testArch,
+		PassedTestArchCount:    passedTestArch,
+		VulnerabilityArchCount: vulnArch,
+	}
+}
+
+func serviceCatalogLifecycle(service fleet.ServiceImage) catalog.Lifecycle {
+	return catalog.Lifecycle{
+		Status:            catalogbuild.FirstNonEmptyStr(service.Lifecycle.Status, "preview"),
+		Support:           catalogbuild.FirstNonEmptyStr(service.Lifecycle.Support, "current"),
+		ProductionAllowed: service.ProductionAllowed,
+	}
+}
+
+func serviceCatalogBuildLifecycle(service fleet.ServiceImage) catalogbuild.Lifecycle {
+	lifecycle := serviceCatalogLifecycle(service)
+	return catalogbuild.Lifecycle{
+		Status:            lifecycle.Status,
+		Support:           lifecycle.Support,
+		ProductionAllowed: lifecycle.ProductionAllowed,
+		DeprecatedAt:      lifecycle.DeprecatedAt,
+		EOLAt:             lifecycle.EOLAt,
+		Reason:            lifecycle.Reason,
+	}
+}
+
+func serviceCatalogRuntimeContract(service fleet.ServiceImage) catalog.RuntimeContract {
+	user := "10001:10001"
+	workingDir := "/app"
+	shellPresent := service.Template == "postgres"
+	packageManagerPresent := false
+	caPresent := true
+	timezonePresent := false
+	productionTier := false
+	defaultEntrypoint := serviceDefaultEntrypoint(service)
+	return catalog.RuntimeContract{
+		User:                  &user,
+		WorkingDir:            &workingDir,
+		ShellPresent:          &shellPresent,
+		PackageManagerPresent: &packageManagerPresent,
+		CACertificatesPresent: &caPresent,
+		TimezoneDataPresent:   &timezonePresent,
+		DefaultEntrypoint:     catalogbuild.PtrIfNotEmpty(defaultEntrypoint),
+		ProductionTier:        productionTier,
+	}
+}
+
+func serviceCatalogBuildRuntimeContract(service fleet.ServiceImage) catalogbuild.RuntimeContract {
+	runtimeContract := serviceCatalogRuntimeContract(service)
+	out := catalogbuild.RuntimeContract{
+		ProductionTier: runtimeContract.ProductionTier,
+	}
+	if runtimeContract.User != nil {
+		out.User = *runtimeContract.User
+	}
+	if runtimeContract.WorkingDir != nil {
+		out.WorkingDir = *runtimeContract.WorkingDir
+	}
+	if runtimeContract.ShellPresent != nil {
+		out.ShellPresent = *runtimeContract.ShellPresent
+	}
+	if runtimeContract.PackageManagerPresent != nil {
+		out.PackageManagerPresent = *runtimeContract.PackageManagerPresent
+	}
+	if runtimeContract.CACertificatesPresent != nil {
+		out.CACertificatesPresent = *runtimeContract.CACertificatesPresent
+	}
+	if runtimeContract.TimezoneDataPresent != nil {
+		out.TimezoneDataPresent = *runtimeContract.TimezoneDataPresent
+	}
+	out.DefaultEntrypoint = runtimeContract.DefaultEntrypoint
+	return out
+}
+
+func serviceDefaultEntrypoint(service fleet.ServiceImage) string {
+	if len(service.Entrypoint) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(service.Entrypoint))
+	for _, entry := range service.Entrypoint {
+		if strings.HasPrefix(entry, "/") {
+			parts = append(parts, entry)
+			continue
+		}
+		parts = append(parts, "/bin/"+entry)
+	}
+	return strings.Join(parts, " ")
+}
+
+func serviceCatalogInfo(service fleet.ServiceImage) catalog.ServiceInfo {
+	return catalog.ServiceInfo{
+		Template:    service.Template,
+		Version:     service.Version,
+		Ports:       serviceCatalogPorts(service.Ports),
+		Stateful:    service.Stateful,
+		DataDirs:    append([]string(nil), service.DataDirs...),
+		Smoke:       append([]string(nil), service.Smoke...),
+		SmokeStatus: serviceSmokeStatus(service),
+	}
+}
+
+func serviceCatalogPorts(ports []fleet.ServicePort) []catalog.ServicePortInfo {
+	out := make([]catalog.ServicePortInfo, 0, len(ports))
+	for _, port := range ports {
+		out = append(out, catalog.ServicePortInfo{
+			Name:     port.Name,
+			Port:     port.Port,
+			Protocol: catalogbuild.FirstNonEmptyStr(port.Protocol, "tcp"),
+		})
+	}
+	return out
+}
+
+func serviceSmokeStatus(service fleet.ServiceImage) string {
+	if len(service.Smoke) == 0 {
+		return "missing"
+	}
+	return "configured"
+}
+
 func runCatalogGather() error {
 	owner, repo, err := detectCatalogRepo(catalogGatherOpts.owner, catalogGatherOpts.repo)
 	if err != nil {
@@ -319,6 +706,36 @@ func runCatalogGather() error {
 		}
 		images = append(images, *rec)
 		fmt.Fprintf(out, "[gather] wrote %s (%d releases)\n", target, len(rec.Releases))
+	}
+	if catalogGatherOpts.includeServices {
+		cfg, err := fleet.Load(catalogGatherOpts.config)
+		if err != nil {
+			return fmt.Errorf("failed to load service fleet config: %w", err)
+		}
+		for _, service := range cfg.Services {
+			service, _ = cfg.ServiceInfo(service.ID)
+			info := serviceCatalogInfo(service)
+			rec, err := catalogbuild.BuildServiceImageRecord(service.ID, info, serviceCatalogBuildLifecycle(service), serviceCatalogBuildRuntimeContract(service), releases, refreshSet, catalogbuild.BuildOptions{
+				RegistryBase:  registryBase,
+				ImagePrefix:   catalogGatherOpts.imagePrefix,
+				SBOMCacheDir:  catalogGatherOpts.sbomCacheDir,
+				EnrichmentDir: catalogGatherOpts.enrichmentDir,
+				VulnDir:       catalogGatherOpts.vulnDir,
+				Source:        source,
+			})
+			if err != nil {
+				fmt.Fprintf(errOut, "[gather] service %s: %v\n", service.ID, err)
+				continue
+			}
+			if rec == nil {
+				continue
+			}
+			if err := writeJSONFile(filepath.Join(imgDir, service.ID+".json"), rec); err != nil {
+				return err
+			}
+			images = append(images, *rec)
+			fmt.Fprintf(out, "[gather] wrote service %s (%d releases)\n", service.ID, len(rec.Releases))
+		}
 	}
 	index := catalogbuild.BuildIndex(owner, repo, registryBase, generatedAt, releases, images)
 	if err := writeJSONFile(filepath.Join(outDir, "index.json"), index); err != nil {

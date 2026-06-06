@@ -174,6 +174,10 @@ func runVerifyCatalog() error {
 			}
 		}
 
+		if summary.Kind == "service" && len(release.Architectures) == 0 {
+			continue
+		}
+
 		if !evidence.SBOM {
 			failFor(summary.ID, fmt.Sprintf("SBOM coverage incomplete (%d/%d archs)", evidence.SBOMArchCount, evidence.ArchCount))
 		}

@@ -131,29 +131,29 @@ func validateCatalogDirectory(catalogPath string) catalogValidationReport {
 }
 
 func validateIndexSchemaVersion(index *catalog.CatalogIndex, requested string, addError func(string, ...any)) {
-	if index.SchemaVersion != "" && index.SchemaVersion != catalog.CatalogIndexSchemaVersion {
+	if index.SchemaVersion != "" && index.SchemaVersion != catalog.CatalogIndexSchemaVersion && index.SchemaVersion != catalog.CatalogIndexSchemaVersionV2 {
 		addError("index.json: unsupported schemaVersion %q", index.SchemaVersion)
 	}
 	if requested == "" {
 		return
 	}
 	switch requested {
-	case catalog.CatalogIndexSchemaVersion:
+	case catalog.CatalogIndexSchemaVersion, catalog.CatalogIndexSchemaVersionV2:
 		if index.SchemaVersion != requested {
 			addError("index.json: schemaVersion %s does not match requested %q", schemaVersionLabel(index.SchemaVersion), requested)
 		}
-	case catalog.ImageRecordSchemaVersion:
+	case catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2:
 		// Checked against each image record as records are loaded.
 	default:
-		addError("unsupported schema version %q (known: %q, %q)", requested, catalog.CatalogIndexSchemaVersion, catalog.ImageRecordSchemaVersion)
+		addError("unsupported schema version %q (known: %q, %q, %q, %q)", requested, catalog.CatalogIndexSchemaVersion, catalog.CatalogIndexSchemaVersionV2, catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2)
 	}
 }
 
 func validateImageSchemaVersion(record *catalog.ImageRecord, requested string, addError func(string, ...any)) {
-	if record.SchemaVersion != "" && record.SchemaVersion != catalog.ImageRecordSchemaVersion {
+	if record.SchemaVersion != "" && record.SchemaVersion != catalog.ImageRecordSchemaVersion && record.SchemaVersion != catalog.ImageRecordSchemaVersionV2 {
 		addError("%s: unsupported schemaVersion %q", record.ID, record.SchemaVersion)
 	}
-	if requested != catalog.ImageRecordSchemaVersion {
+	if requested != catalog.ImageRecordSchemaVersion && requested != catalog.ImageRecordSchemaVersionV2 {
 		return
 	}
 	if record.SchemaVersion != requested {

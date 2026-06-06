@@ -24,6 +24,7 @@ const release = image.releases[0];
 const ownerRepo = `${index.owner}/${index.repo}`;
 const sbomUrls = release.assetUrls.sbom || {};
 const features = loadSiteConfig().site.features;
+const isService = image.kind === 'service';
 const metadataTabs = [
   ...(features.ociLabels ? [{ id: 'labels', label: 'OCI Labels' }] : []),
   ...(features.versionHistory ? [{ id: 'versions', label: 'Version History' }] : []),
@@ -31,7 +32,7 @@ const metadataTabs = [
 const metadataDefaultTab = metadataTabs[0]?.id;
 const showDeepDive = features.sbomTable || features.layerExplorer || metadataTabs.length > 0;
 ---
-<Base title={`${image.imageName}:${image.tier.id}`}>
+<Base title={`${image.imageName}:${isService ? (image.service?.template ?? 'service') : image.tier.id}`}>
   <div class="space-y-12" data-pagefind-body>
     <span class="hidden" data-pagefind-meta={`image:${image.id}`}></span>
     <ImageHeader image={image} selectedTag={release.tag} />
