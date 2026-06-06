@@ -100,18 +100,38 @@ print(f"{service}: OCI config contract passed")
 PY
 
 if ((${#data_dirs[@]} > 0)); then
-  layer_listing="$tmp_dir/layers.txt"
-  : > "$layer_listing"
-  while IFS= read -r -d '' layer; do
-    tar -tf "$layer" >> "$layer_listing"
-  done < <(find "$tmp_dir" -name layer.tar -print0)
-  for dir in "${data_dirs[@]}"; do
-    rel="${dir#/}"
-    if ! grep -Eq "^${rel}/?$" "$layer_listing"; then
-      echo "$service: expected writable data directory $dir in image layers" >&2
-      exit 1
-    fi
-  done
+  python3 - "$service" "$tmp_dir" "${data_dirs[@]}" <<'PY'
+import os
+import sys
+import tarfile
+
+service = sys.argv[1]
+root = sys.argv[2]
+expected = [d.lstrip("/").rstrip("/") for d in sys.argv[3:]]
+found = {}
+
+for dirpath, _, files in os.walk(root):
+    if "layer.tar" not in files:
+        continue
+    layer_path = os.path.join(dirpath, "layer.tar")
+    with tarfile.open(layer_path) as layer:
+        for member in layer:
+            name = member.name.lstrip("/")
+            while name.startswith("./"):
+                name = name[2:]
+            name = name.rstrip("/")
+            if member.isdir() and name in expected:
+                found[name] = member.mode
+
+for rel in expected:
+    mode = found.get(rel)
+    if mode is None:
+        raise SystemExit(f"{service}: expected writable data directory /{rel} in image layers")
+    if mode & 0o222 == 0:
+        raise SystemExit(f"{service}: expected writable data directory /{rel}, got mode {mode:o}")
+
+print(f"{service}: writable data directory contract passed")
+PY
 fi
 
 image_tar="$tmp_dir/image.tar"
