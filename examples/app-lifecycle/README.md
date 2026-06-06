@@ -8,7 +8,7 @@ That guide covers:
 - Core/static utility images on `coreLTS-*`,
 - Java 21 and 25,
 - Node.js 22 and 24,
-- Python 3.13 and 3.14,
+- Python 3.14,
 - Go 1.25 and 1.26,
 - .NET 8 and 10,
 - Rust 1.95,

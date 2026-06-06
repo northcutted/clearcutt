@@ -115,8 +115,8 @@ public final class App {
 		spec.Files["src/server.js"] = `console.log("ClearCutt Node template ready");
 `
 	case "python":
-		spec.RuntimeLine = "python3.13"
-		spec.BaseID = "python3.13-distroless"
+		spec.RuntimeLine = "python3.14"
+		spec.BaseID = "python3.14-distroless"
 		spec.Entrypoint = `["python","/workspace/app/main.py"]`
 		spec.Files["requirements.txt"] = ""
 		spec.Files["app/main.py"] = `print("ClearCutt Python template ready")

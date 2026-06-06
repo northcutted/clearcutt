@@ -177,8 +177,8 @@ case "$STACK" in
     BASE_ID_V2="node22-distroless"
     ;;
   python)
-    BASE_ID_V1="python3.13-slim"
-    BASE_ID_V2="python3.13-distroless"
+    BASE_ID_V1="python3.14-slim"
+    BASE_ID_V2="python3.14-distroless"
     ;;
   go)
     BASE_ID_V1="go1.25-slim"
@@ -470,8 +470,8 @@ case "$STACK" in
     fi
     ;;
   python)
-    if [[ "$RUN_OUT_V1" == *"Hello from Python E2E! Version: 3.13"* ]]; then
-      log_success "Source application successfully verified running under Python 3.13."
+    if [[ "$RUN_OUT_V1" == *"Hello from Python E2E! Version: 3.14"* ]]; then
+      log_success "Source application successfully verified running under Python 3.14."
     else
       log_error "Incorrect Python version reported in source execution!"
       exit 1
@@ -660,8 +660,8 @@ else
       fi
       ;;
     python)
-      if [[ "$RUN_OUT_V2" == *"Hello from Python E2E! Version: 3.13"* ]]; then
-        log_success "Rebased application successfully verified running under Python 3.13!"
+      if [[ "$RUN_OUT_V2" == *"Hello from Python E2E! Version: 3.14"* ]]; then
+        log_success "Rebased application successfully verified running under Python 3.14!"
       else
         log_error "Incorrect Python version reported in rebased execution!"
         exit 1
@@ -781,7 +781,7 @@ case "$STACK" in
     COVERAGE_NOTES="Successfully verified Node.js application packaging on Node 22 Slim base image. Validated execution limits, performed live base layer swap to Node 22 Distroless, and successfully verified live ESM script execution under the Node 22 interpreter. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   python)
-    COVERAGE_NOTES="Successfully verified Python application packaging on Python 3.13 Slim base image. Validated execution parameters, performed live base layer swap to Python 3.13 Distroless, and successfully verified script execution under Python 3.13 interpreter inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified Python application packaging on Python 3.14 Slim base image. Validated execution parameters, performed live base layer swap to Python 3.14 Distroless, and successfully verified script execution under Python 3.14 interpreter inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   go)
     COVERAGE_NOTES="Successfully verified compiled Go static application packaging on Go 1.25 Slim base image. Swapped base layers cleanly to Go 1.25 Distroless, and verified executable static binary launching natively. Note: Static binaries retain build-time compiler runtimes; base rebase guarantees secure underlying system libraries and CA certificate layers."

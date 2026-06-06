@@ -40,7 +40,7 @@ Supported base families:
 | Core/static | `coreLTS-dev`, `coreLTS-slim`, `coreLTS-distroless` |
 | Java | `java21-*`, `java25-*` |
 | Node.js | `node22-*`, `node24-*` |
-| Python | `python3.13-*`, `python3.14-*` |
+| Python | `python3.14-*` |
 | Go | `go1.25-*`, `go1.26-*` |
 | .NET | `dotnet8-*`, `dotnet10-*` |
 | Rust | `rust1.95-*` |
@@ -155,7 +155,7 @@ clearcutt app build \
 If the application depends on native addons or runtime files that cannot be
 bundled into one artifact, use a Containerfile and certify the finished image.
 
-### Python 3.13 or Python 3.14
+### Python 3.14
 
 Package the application as a zipapp, PEX, or shiv artifact.
 
@@ -165,8 +165,8 @@ pex . \
   -m payments_api.main \
   -o dist/payments-api.pyz
 
-export BASE_ID="python3.13-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.13:distroless-v0.2.2"
+export BASE_ID="python3.14-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.14:distroless-v0.2.2"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -175,9 +175,6 @@ clearcutt app build \
   --entrypoint '["python","/workspace/payments-api.pyz"]' \
   --image "$APP_IMAGE"
 ```
-
-For Python 3.14, switch the base id and patched base to `python3.14-distroless`
-and `clearcutt-python3.14`.
 
 ### Go 1.25 or Go 1.26
 
