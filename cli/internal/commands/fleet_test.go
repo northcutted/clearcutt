@@ -2,10 +2,12 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/northcutted/clearcutt/internal/fleet"
 )
@@ -297,6 +299,66 @@ func TestFleetAggregateDigestsWritesGithubOutput(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(ghRaw), "matrix=[") || !strings.Contains(string(ghRaw), `"digest":"sha256:222"`) {
 		t.Fatalf("unexpected github output: %s", ghRaw)
+	}
+}
+
+func TestUploadReleaseAssetsRetriesIndividualAssetUploads(t *testing.T) {
+	outputDir := t.TempDir()
+	for _, name := range []string{"alpha.sbom.json", "beta.test-results.json", "ignored.txt"} {
+		if err := os.WriteFile(filepath.Join(outputDir, name), []byte(`{}`), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	var calls []externalCommand
+	failures := 0
+	oldRun := runExternalCommand
+	oldSleep := releaseAssetUploadSleep
+	oldAttempts := releaseAssetUploadMaxAttempts
+	oldRetryDelay := releaseAssetUploadRetryDelay
+	oldThrottle := releaseAssetUploadThrottle
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		if strings.Contains(strings.Join(c.Args, " "), "alpha.sbom.json") && failures == 0 {
+			failures++
+			return errors.New("HTTP 403: You have exceeded a secondary rate limit")
+		}
+		return nil
+	}
+	var sleeps []time.Duration
+	releaseAssetUploadSleep = func(d time.Duration) {
+		sleeps = append(sleeps, d)
+	}
+	releaseAssetUploadMaxAttempts = 3
+	releaseAssetUploadRetryDelay = 10 * time.Second
+	releaseAssetUploadThrottle = 2 * time.Second
+	t.Cleanup(func() {
+		runExternalCommand = oldRun
+		releaseAssetUploadSleep = oldSleep
+		releaseAssetUploadMaxAttempts = oldAttempts
+		releaseAssetUploadRetryDelay = oldRetryDelay
+		releaseAssetUploadThrottle = oldThrottle
+	})
+
+	if err := uploadReleaseAssets("v1.2.3", outputDir); err != nil {
+		t.Fatalf("uploadReleaseAssets error: %v", err)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected retry plus second asset upload, got %#v", calls)
+	}
+	for _, call := range calls {
+		if call.Name != "gh" || len(call.Args) != 5 || call.Args[0] != "release" || call.Args[1] != "upload" || call.Args[2] != "v1.2.3" || call.Args[4] != "--clobber" {
+			t.Fatalf("unexpected upload command: %#v", call)
+		}
+		if strings.Contains(call.Args[3], "ignored.txt") {
+			t.Fatalf("uploaded non-release asset: %#v", calls)
+		}
+	}
+	if !strings.Contains(calls[0].Args[3], "alpha.sbom.json") || !strings.Contains(calls[1].Args[3], "alpha.sbom.json") || !strings.Contains(calls[2].Args[3], "beta.test-results.json") {
+		t.Fatalf("expected per-asset retry order, got %#v", calls)
+	}
+	if len(sleeps) != 2 || sleeps[0] != 10*time.Second || sleeps[1] != 2*time.Second {
+		t.Fatalf("expected retry and throttle sleeps, got %#v", sleeps)
 	}
 }
 

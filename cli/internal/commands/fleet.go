@@ -39,9 +39,13 @@ type externalCommand struct {
 }
 
 var (
-	fleetOpts             fleetFlags
-	runExternalCommand    = runExternalCommandDefault
-	captureExternalOutput = captureExternalCommandDefault
+	fleetOpts                     fleetFlags
+	runExternalCommand            = runExternalCommandDefault
+	captureExternalOutput         = captureExternalCommandDefault
+	releaseAssetUploadMaxAttempts = 5
+	releaseAssetUploadRetryDelay  = 30 * time.Second
+	releaseAssetUploadThrottle    = time.Second
+	releaseAssetUploadSleep       = time.Sleep
 )
 
 func NewFleetCmd() *cobra.Command {
@@ -759,9 +763,37 @@ func uploadReleaseAssets(tag, dir string) error {
 		fmt.Fprintln(out, "[fleet] no non-empty release assets found")
 		return nil
 	}
-	args := append([]string{"release", "upload", tag}, files...)
-	args = append(args, "--clobber")
-	return runExternalCommand(externalCommand{Name: "gh", Args: args})
+	for i, file := range files {
+		fmt.Fprintf(out, "[fleet] uploading release asset %d/%d: %s\n", i+1, len(files), filepath.Base(file))
+		if err := uploadReleaseAssetWithRetry(tag, file); err != nil {
+			return err
+		}
+		if i < len(files)-1 && releaseAssetUploadThrottle > 0 {
+			releaseAssetUploadSleep(releaseAssetUploadThrottle)
+		}
+	}
+	return nil
+}
+
+func uploadReleaseAssetWithRetry(tag, file string) error {
+	var lastErr error
+	for attempt := 1; attempt <= releaseAssetUploadMaxAttempts; attempt++ {
+		args := []string{"release", "upload", tag, file, "--clobber"}
+		if err := runExternalCommand(externalCommand{Name: "gh", Args: args}); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt == releaseAssetUploadMaxAttempts {
+			break
+		}
+		delay := releaseAssetUploadRetryDelay * time.Duration(attempt)
+		fmt.Fprintf(errOut, "[fleet] release asset upload failed for %s (attempt %d/%d): %v; retrying in %s\n", filepath.Base(file), attempt, releaseAssetUploadMaxAttempts, lastErr, delay)
+		if delay > 0 {
+			releaseAssetUploadSleep(delay)
+		}
+	}
+	return fmt.Errorf("upload release asset %s: %w", filepath.Base(file), lastErr)
 }
 
 func isReleaseAsset(name string) bool {
