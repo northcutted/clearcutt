@@ -200,11 +200,16 @@ certify_target() {
 
   # C. Security Vulnerability Gating via Syft + Grype
   log_info "Executing vulnerability gate: Running Grype scanner directly against compiled SPDX SBOM..."
+  local grype_assertion_status="passed"
   if grype "sbom:$sbom_path" --fail-on high --only-fixed; then
     log_success "Security Gate: Grype SBOM scan passed with no fixable Critical/High CVEs."
   else
     if [[ "$target_kind" == "runtime" && "$tier" == "dev" ]]; then
+      grype_assertion_status="warning"
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
+    elif [[ "$target_kind" == "service" ]] && { [[ "${CLEARCUTT_SERVICE_PRODUCTION_ALLOWED:-false}" != "true" ]] || [[ "${CLEARCUTT_SERVICE_LIFECYCLE_STATUS:-preview}" != "active" ]]; }; then
+      grype_assertion_status="warning"
+      log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in preview/non-production service target. Continuing, but recording the gate as a warning..."
     else
       log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
       rm -f "$uncompressed_tar" 2>/dev/null || true
@@ -237,7 +242,7 @@ certify_target() {
     },
     {
       "name": "Grype Vulnerability Gating",
-      "status": "passed"
+      "status": "$grype_assertion_status"
     }
   ]
 }

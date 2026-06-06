@@ -17,6 +17,10 @@ expanded into a generated Nix service extension, built through
 New service entries default to `lifecycle.status: preview` and
 `productionAllowed: false`. Promote them only after the service template,
 release evidence, and operational policy are ready for your environment.
+Preview or otherwise non-production service images still run SBOM and Grype
+scans, but fixable high/critical findings are recorded as warning evidence
+instead of failing the build. Active services with `productionAllowed: true`
+continue to fail the vulnerability gate.
 
 ## Add The MVP Services
 
@@ -46,6 +50,11 @@ clearcutt service smoke postgres16 --engine docker
 certification path as runtime images, but passes `--kind service` to the core
 pipeline. `service smoke` runs the configured smoke commands against the local
 service image using Docker or Podman.
+
+Stateful service templates create their declared data directories as writable
+paths for the rootless runtime user. Production deployments should mount volumes
+over those paths, for example `/var/lib/postgresql/data` or `/data`, instead of
+depending on the image layer for durable storage.
 
 ## Catalog And Site
 

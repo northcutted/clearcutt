@@ -137,6 +137,15 @@ func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
 			t.Fatalf("service build args missing %q in %q", want, joined)
 		}
 	}
+	joinedEnv := strings.Join(call.Env, "\n")
+	for _, want := range []string{
+		"CLEARCUTT_SERVICE_LIFECYCLE_STATUS=preview",
+		"CLEARCUTT_SERVICE_PRODUCTION_ALLOWED=false",
+	} {
+		if !strings.Contains(joinedEnv, want) {
+			t.Fatalf("service build env missing %q in %q", want, joinedEnv)
+		}
+	}
 
 	outputDir := filepath.Join(coreDir, "build-outputs")
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {

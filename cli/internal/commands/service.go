@@ -536,6 +536,8 @@ func runServiceTarget(id string, publish bool) error {
 		Dir:  serviceOpts.coreDir,
 		Env: []string{
 			"CLEARCUTT_IMAGE_PREFIX=" + cfg.Registry.ImagePrefix,
+			"CLEARCUTT_SERVICE_LIFECYCLE_STATUS=" + firstNonEmptyString(service.Lifecycle.Status, "preview"),
+			"CLEARCUTT_SERVICE_PRODUCTION_ALLOWED=" + strconv.FormatBool(service.ProductionAllowed),
 			"GITHUB_REF_NAME=" + strings.TrimSpace(serviceOpts.versionTag),
 		},
 	}); err != nil {

@@ -191,7 +191,10 @@ make core-verify
 Service images are for platform-owned application services such as Postgres,
 Valkey, and oauth2-proxy. Fleet owners add them through the CLI and
 `clearcutt.fleet.yaml`; the generated Nix service extension is an implementation
-detail.
+detail. New services start as preview, non-production images: SBOM and Grype
+scans still run, but fixable high/critical CVEs are reported as warning
+evidence until the service is promoted to active lifecycle status with
+`productionAllowed: true`.
 ```bash
 # Scaffold the built-in MVP service templates.
 ./clearcutt service scaffold postgres16 --template postgres --version 16
