@@ -255,11 +255,15 @@ func runFleetPublishCache() error {
 		}
 	}
 
-	secretPath := filepath.Join(fleetOpts.coreDir, "secret-key.pem")
+	secretDir, err := os.MkdirTemp("", "clearcutt-nix-cache-key-")
+	if err != nil {
+		return fmt.Errorf("create Nix cache signing key temp dir: %w", err)
+	}
+	defer os.RemoveAll(secretDir)
+	secretPath := filepath.Join(secretDir, "secret-key.pem")
 	if err := os.WriteFile(secretPath, []byte(os.Getenv("NIX_CACHE_SECRET_KEY")+"\n"), 0o600); err != nil {
 		return fmt.Errorf("write Nix cache signing key: %w", err)
 	}
-	defer os.Remove(secretPath)
 
 	installable := fmt.Sprintf(`.#packages.%s."%s"`, fleetOpts.system, fleetTarget(fleetOpts.language, fleetOpts.tier))
 	pathInfoArgs := append([]string{

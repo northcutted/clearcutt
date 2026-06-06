@@ -117,6 +117,92 @@ func TestFleetCertifyTargetDoesNotPublish(t *testing.T) {
 	}
 }
 
+func TestFleetPublishCacheUsesAbsoluteSigningKeyPath(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
+		Registry: fleet.Registry{Host: "registry.example.com", Owner: "acme", Repository: "base-images", ImagePrefix: "acme-base"},
+		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"slim"}},
+		Release: fleet.Release{NixCache: fleet.NixCache{
+			Bucket:             "acme-nix-cache",
+			PublicBaseURL:      "https://nix-cache.acme.example",
+			SigningKeyName:     "acme-cache-1",
+			PublicKey:          "abc123",
+			CloudflareZoneName: "acme.example",
+		}},
+	})
+	coreDir := filepath.Join(root, "core")
+	if err := os.MkdirAll(coreDir, 0o755); err != nil {
+		t.Fatalf("mkdir core: %v", err)
+	}
+	t.Setenv("NIX_CACHE_SECRET_KEY", "secret-key-material")
+	t.Setenv("AWS_ACCESS_KEY_ID", "access")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "account")
+
+	var calls []externalCommand
+	oldRun := runExternalCommand
+	oldCapture := captureExternalOutput
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		return nil
+	}
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		calls = append(calls, c)
+		switch c.Name {
+		case "nix":
+			return "/nix/store/abc123-coreLTS-slim\n", nil
+		case "aws", "curl":
+			return "Sig: acme-cache-1:signed\n", nil
+		default:
+			t.Fatalf("unexpected capture command: %#v", c)
+			return "", nil
+		}
+	}
+	t.Cleanup(func() {
+		runExternalCommand = oldRun
+		captureExternalOutput = oldCapture
+	})
+
+	if _, err := runCLI(t,
+		"fleet", "publish-cache",
+		"--fleet-config", cfgPath,
+		"--core-dir", coreDir,
+		"--system", "x86_64-linux",
+		"--language", "coreLTS",
+		"--tier", "slim",
+	); err != nil {
+		t.Fatalf("publish-cache error: %v", err)
+	}
+	allArgs := flattenCalls(calls)
+	if strings.Contains(allArgs, "secret-key=core/secret-key.pem") || strings.Contains(allArgs, "--key-file core/secret-key.pem") {
+		t.Fatalf("publish-cache used repo-relative signing key path:\n%s", allArgs)
+	}
+
+	var signKeyFile, cacheStore string
+	for _, call := range calls {
+		if call.Name == "nix" && len(call.Args) >= 5 && strings.Join(call.Args[:3], " ") == "store sign --recursive" {
+			for i, arg := range call.Args {
+				if arg == "--key-file" && i+1 < len(call.Args) {
+					signKeyFile = call.Args[i+1]
+				}
+			}
+		}
+		if call.Name == "nix" && len(call.Args) > 0 && call.Args[0] == "copy" {
+			for i, arg := range call.Args {
+				if arg == "--to" && i+1 < len(call.Args) {
+					cacheStore = call.Args[i+1]
+				}
+			}
+		}
+	}
+	if signKeyFile == "" || !filepath.IsAbs(signKeyFile) {
+		t.Fatalf("sign command should use absolute key path, got %q in:\n%s", signKeyFile, allArgs)
+	}
+	if cacheStore == "" || !strings.Contains(cacheStore, "secret-key="+signKeyFile) {
+		t.Fatalf("copy cache store should use the same absolute key path %q, got %q", signKeyFile, cacheStore)
+	}
+}
+
 func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
