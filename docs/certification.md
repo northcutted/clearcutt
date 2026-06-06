@@ -17,7 +17,7 @@ spec:
   base:
     allowedImages:
       - java25-distroless
-      - python3.14-slim
+      - python3.15-slim
     requireDigestPinned: true
     requireKnownBase: true
   supplyChain:

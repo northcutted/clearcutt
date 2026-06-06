@@ -1,4 +1,4 @@
-IMAGE_NAME ?= acme/python314-demo:latest
+IMAGE_NAME ?= acme/python315-demo:latest
 
 .PHONY: build test certify scan
 
@@ -12,7 +12,7 @@ certify:
 	docker save $(IMAGE_NAME) -o image.tar
 	clearcutt certify image.tar \
 	  --policy policy.yaml \
-	  --base python3.14-slim
+	  --base python3.15-slim
 	rm -f image.tar
 
 scan:

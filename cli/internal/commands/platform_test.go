@@ -198,7 +198,7 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 	writeFleetConfig(t, root)
 	files := map[string]string{
 		".github/workflows/release.yml":                 "matrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nslsa-github-generator\n",
-		".github/workflows/pr-gate.yml":                 "clearcutt platform setup-nix\nclearcutt fleet certify-target\n",
+		".github/workflows/pr-gate.yml":                 "matrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet certify-target\n",
 		".github/workflows/rebase.yml":                  "clearcutt app rebase\n",
 		".github/workflows/publish-pages.yml":           "clearcutt catalog build\n",
 		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",

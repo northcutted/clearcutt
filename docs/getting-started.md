@@ -42,10 +42,10 @@ COPY --from=builder /app/build/libs/app.jar app.jar
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-### Example B: Python 3.14 (Virtual Environment) Multi-Stage Build
+### Example B: Python 3.15 (Virtual Environment) Multi-Stage Build
 ```dockerfile
 # 1. Builder Stage (using the dev tier to build wheels)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.14:dev-latest AS builder
+FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.15:dev-latest AS builder
 WORKDIR /app
 COPY requirements.txt .
 # Compile dependencies into a clean, isolated virtualenv
@@ -53,7 +53,7 @@ RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # 2. Runtime Stage (using the slim tier to run python)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.14:slim-latest
+FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.15:slim-latest
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY . .

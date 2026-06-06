@@ -75,7 +75,7 @@ func resolveBaseReference(baseArg, explicitVersion string) (ref, baseID, baseVer
 var runtimeLineRe = regexp.MustCompile(`^([a-zA-Z]+)([0-9][0-9.]*)$`)
 
 // parseRuntimeLine extracts the runtime family and major/minor version from a base
-// id like "java21-distroless" -> ("java", 21, 0) or "python3.14-slim" -> ("python", 3, 14).
+// id like "java21-distroless" -> ("java", 21, 0) or "python3.15-slim" -> ("python", 3, 15).
 func parseRuntimeLine(id string) (runtime string, major, minor int, ok bool) {
 	core := id
 	if i := strings.LastIndex(id, "-"); i > 0 {

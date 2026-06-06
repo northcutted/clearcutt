@@ -31,7 +31,7 @@ const imageNameFor = (id: string) => {
   }
 };
 const java25ImageName = imageNameFor('java25-distroless');
-const python314ImageName = imageNameFor('python3.14-slim');
+const python315ImageName = imageNameFor('python3.15-slim');
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const siteConfig = loadSiteConfig();
 const tierLabels = {
@@ -76,7 +76,7 @@ const tierLabels = {
 
       <Tabs name="matrix-templates" tabs={[
         { id: 'java', label: 'Java 25 (Gradle/Maven)' },
-        { id: 'python', label: 'Python 3.14 (Venv)' },
+        { id: 'python', label: 'Python 3.15 (Venv)' },
       ]}>
         <div data-panel-id="java" data-panel-active="true" class="space-y-3">
           <p class="text-xs text-ink-300">
@@ -88,7 +88,7 @@ const tierLabels = {
           <p class="text-xs text-ink-300">
             Uses virtual environment isolation inside the runtime container, discarding developer compilers and header files:
           </p>
-          <CopyBlock language="dockerfile" code={`# 1. Builder Stage\nFROM ${registryBase}/${python314ImageName}:dev-latest AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN python -m venv /opt/venv && \\\n    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt\n\n# 2. Runtime Stage (lean diagnostic slim runtime)\nFROM ${registryBase}/${python314ImageName}:slim-latest\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY . .\nENV PATH="/opt/venv/bin:$PATH"\n\nENTRYPOINT ["python", "main.py"]`} />
+          <CopyBlock language="dockerfile" code={`# 1. Builder Stage\nFROM ${registryBase}/${python315ImageName}:dev-latest AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN python -m venv /opt/venv && \\\n    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt\n\n# 2. Runtime Stage (lean diagnostic slim runtime)\nFROM ${registryBase}/${python315ImageName}:slim-latest\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY . .\nENV PATH="/opt/venv/bin:$PATH"\n\nENTRYPOINT ["python", "main.py"]`} />
         </div>
       </Tabs>
     </section>

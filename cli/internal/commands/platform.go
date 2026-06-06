@@ -237,6 +237,7 @@ func runPlatformStatus() error {
 	checkFileNotContains(root, "core/flake.nix", "nix-cache.clearcutt.dev", "nix.flake", "core flake does not hardcode the upstream Nix cache", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt fleet certify-target", "pr.certify", "PR gate delegates fleet target certification to the CLI", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt platform setup-nix", "pr.nix", "PR gate delegates fork-specific Nix setup to the CLI", add)
+	checkFileContains(root, ".github/workflows/pr-gate.yml", "matrix export --source fleet", "pr.matrix", "PR gate derives its matrix from clearcutt.fleet.yaml", add)
 	checkFileContains(root, ".github/workflows/rebase.yml", "app rebase", "rebase.workflow", "rebase workflow exists for the configured platform OIDC identity", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "clearcutt catalog build", "catalog.workflow", "catalog workflow uses the canonical catalog build command", add)
 	checkPath(root, ".github/actions/certify-app/action.yml", "certify.action", "composite certify action is available for app teams", add)

@@ -2,7 +2,7 @@
 # ClearCutt Python FastAPI smoke verification script
 set -euo pipefail
 
-IMAGE_NAME="${1:-acme/python314-demo:latest}"
+IMAGE_NAME="${1:-acme/python315-demo:latest}"
 
 echo "[clearcutt] Launching runtime compliance checks on $IMAGE_NAME..."
 

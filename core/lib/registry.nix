@@ -88,6 +88,11 @@ rec {
           raw = [ (getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version") ];
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
+        "3.15" = {
+          overlayName = "clearcuttPython315";
+          raw = [ (getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version") ];
+          devExtra = let py = getPkg [ [ "python315" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
+        };
       };
     };
 

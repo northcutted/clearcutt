@@ -8,7 +8,7 @@ on:
   pull_request:
     branches:
       - main
-    # Skip the 78-cell matrix for PRs that can't affect build output.
+    # Skip the fleet matrix for PRs that can't affect build output.
     paths-ignore:
       - 'docs/**'
       - 'site/**'
@@ -28,37 +28,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  fleet-matrix:
+    name: Resolve Fleet Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      release_matrix: ${{ steps.matrix.outputs.release_matrix }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Export fleet matrix
+        id: matrix
+        run: |
+          set -euo pipefail
+          RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
+          echo "release_matrix=${RELEASE_MATRIX}" >> "$GITHUB_OUTPUT"
+
   validate-matrix:
     name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
+    needs: [fleet-matrix]
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        system: [
-          "x86_64-linux",
-          "aarch64-linux"
-        ]
-        language: [
-          "coreLTS",
-          "java21",
-          "java25",
-          "node22",
-          "node24",
-          "python3.13",
-          "python3.14",
-          "go1.25",
-          "go1.26",
-          "dotnet8",
-          "dotnet10",
-          "rust1.95",
-          "cc15"
-        ]
-        tier: [
-          "dev",
-          "slim",
-          "distroless"
-        ]
+      matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
 
     steps:
       - name: Checkout Repository

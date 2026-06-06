@@ -36,7 +36,7 @@ func NewOverlayCmd() *cobra.Command {
 		},
 	}
 
-	generateCmd.Flags().StringVar(&overlayOpts.runtime, "runtime", "", "Target ClearCutt runtime (e.g. java25 or python3.14)")
+	generateCmd.Flags().StringVar(&overlayOpts.runtime, "runtime", "", "Target ClearCutt runtime (e.g. java25 or python3.15)")
 	generateCmd.Flags().StringVar(&overlayOpts.tier, "tier", "distroless", "Target ClearCutt runtime tier (distroless or slim)")
 	generateCmd.Flags().StringVar(&overlayOpts.base, "base", "", "Required mandated enterprise base image (e.g. registry.access.redhat.com/ubi9/ubi-minimal@sha256:...)")
 	generateCmd.Flags().StringVar(&overlayOpts.runtimeRef, "runtime-ref", "", "Required ClearCutt source runtime image reference (e.g. ghcr.io/northcutted/clearcutt/clearcutt-java25@sha256:...)")

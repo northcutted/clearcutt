@@ -5,8 +5,8 @@ metadata:
 spec:
   base:
     allowedImages:
-      - python3.14-slim
-      - python3.14-distroless
+      - python3.15-slim
+      - python3.15-distroless
     requireDigestPinned: true
     requireKnownBase: true
   supplyChain:

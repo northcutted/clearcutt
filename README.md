@@ -127,7 +127,7 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 | :--- | :--- | :--- | :--- | :--- |
 | **Java** | `21`, `25` (LTS) | JDK + Compiler | JRE | Minimal JRE (No JShell) |
 | **Node.js** | `22`, `24` (LTS) | Node + NPM + Yarn | Node Runtime | Pure Node Binary |
-| **Python** | `3.14` (Pre-release) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
+| **Python** | `3.15` (Pre-release) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
 | **Go** | `1.25`, `1.26` (Pre-release) | Full Go Toolchain | Go Runtime | Binary Execution Layer |
 | **.NET** | `8.0`, `10.0` | Full .NET SDK | ASP.NET Runtime | Hardened ASP.NET Layer |
 | **Rust** | `1.95` | rustc + Cargo + Clippy + rustfmt | Static-binary base | Static-binary base |
@@ -374,7 +374,7 @@ spec:
   base:
     allowedImages:
       - "java25-distroless"
-      - "python3.14-slim"
+      - "python3.15-slim"
     requireDigestPinned: true
     requireKnownBase: true
   supplyChain:
@@ -482,7 +482,7 @@ For container runtimes, the project provides a hardened Compose blueprint enforc
 # examples/oci-deployment/docker-compose.yml
 services:
   secure-app:
-    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.14:distroless
+    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.15:distroless
     read_only: true               # Locks container root (Nix store is immutable)
     security_opt:
       - no-new-privileges:true    # Prevents runtime privilege escalation

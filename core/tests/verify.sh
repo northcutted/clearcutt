@@ -536,7 +536,7 @@ test_cve_remediation_gates() {
   local smoke_targets=(
     "core LTS slim coreLTS-slim"
     "java 21 slim java21-slim"
-    "python 3.14 slim python3.14-slim"
+    "python 3.15 slim python3.15-slim"
     "rust 1.95 slim rust1.95-slim"
     "cc 15 distroless cc15-distroless"
   )

@@ -26,7 +26,7 @@ matrix:
     - java25
     - node22
     - node24
-    - python3.14
+    - python3.15
     - go1.25
     - go1.26
     - dotnet8

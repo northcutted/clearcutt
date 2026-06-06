@@ -21,7 +21,7 @@ Because `/nix/store` paths are immutable and dynamically linked to their own iso
 
 ```
 +-------------------------------------------------------+
-| Nix Store Layer: nodejs-24 / openjdk-21 / python-3.14  | <-- ClearCutt Hardened Closure
+| Nix Store Layer: nodejs-24 / openjdk-21 / python-3.15  | <-- ClearCutt Hardened Closure
 +-------------------------------------------------------+
 | Mandated Enterprise OS Base: RedHat UBI / AL2023      | <-- Statically Pinned OS Layers
 +-------------------------------------------------------+
@@ -157,21 +157,21 @@ The standard choice for AWS native services like Amazon ECS, EKS, and AWS Fargat
       };
     in pkgs.dockerTools.buildLayeredImage {
       name = "clearcutt-al2023-python";
-      tag = "v3.14-slim";
+      tag = "v3.15-slim";
 
       fromImage = al2023Base;
 
       contents = [
-        pkgs.python314
+        pkgs.python315
         pkgs.cacert
       ];
 
       config = {
-        Cmd = [ "${pkgs.python314}/bin/python" "/app/main.py" ];
+        Cmd = [ "${pkgs.python315}/bin/python" "/app/main.py" ];
         WorkingDir = "/app";
         User = "10001:10001";
         Env = [
-          "PATH=${pkgs.python314}/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          "PATH=${pkgs.python315}/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           "HOME=/app"
           "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
         ];

@@ -111,8 +111,8 @@ clearcutt app build \\
   },
   {
     title: 'Python',
-    versions: '3.14',
-    bases: 'python3.14-*',
+    versions: '3.15',
+    bases: 'python3.15-*',
     artifact: 'PEX, shiv, or zipapp',
     note: 'Package app and dependencies into one runnable file.',
     code: `python -m pip install --upgrade build pex
@@ -120,8 +120,8 @@ pex . \\
   -m payments_api.main \\
   -o dist/payments-api.pyz
 
-export BASE_ID="python3.14-distroless"
-export PATCHED_BASE="${baseRef('python3.14-distroless')}"
+export BASE_ID="python3.15-distroless"
+export PATCHED_BASE="${baseRef('python3.15-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
