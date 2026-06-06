@@ -134,6 +134,47 @@ func TestSupportedRuntimeLinesExposePublicRuntimeIDs(t *testing.T) {
 	if !ok || custom.Language != "ruby" || custom.Version != "3.4" {
 		t.Fatalf("custom runtime line not exposed: %#v", custom)
 	}
+	if !cfg.IsCustomRuntimeLine("ruby3.4") || cfg.IsCustomRuntimeLine("java21") {
+		t.Fatalf("custom runtime helper misclassified runtime lines")
+	}
+	if builtins := BuiltInRuntimeLines(); len(builtins) == 0 || builtins[0].ID != "cc15" {
+		t.Fatalf("built-in runtime lines should be sorted, got %#v", builtins)
+	}
+	if systems := SupportedSystems(); len(systems) != 2 || systems[0] != "aarch64-linux" || systems[1] != "x86_64-linux" {
+		t.Fatalf("supported systems should be sorted, got %#v", systems)
+	}
+}
+
+func TestCustomRuntimeLineValidationErrors(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"missing fields": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "ruby3.4"}}
+		},
+		"built-in conflict": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "java21", Language: "java", Version: "21", PackageCandidates: []string{"jdk21"}}}
+		},
+		"duplicate custom": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{
+				{ID: "ruby3.4", Language: "ruby", Version: "3.4", PackageCandidates: []string{"ruby_3_4"}},
+				{ID: "ruby3.4", Language: "ruby", Version: "3.4", PackageCandidates: []string{"ruby_3_4"}},
+			}
+		},
+		"missing packages": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "ruby3.4", Language: "ruby", Version: "3.4"}}
+		},
+		"empty system": func(c *Config) {
+			c.Matrix.Systems = []string{""}
+		},
+		"empty language": func(c *Config) {
+			c.Matrix.Languages = []string{""}
+		},
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
 }
 
 func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
