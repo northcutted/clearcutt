@@ -57,6 +57,25 @@
         }
       }
     },
+    "branding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productName", "vendor", "authors"],
+      "properties": {
+        "productName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vendor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authors": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "site": {
       "type": "object",
       "additionalProperties": false,
@@ -120,6 +139,32 @@
         "slsaBuilder": {
           "type": "string",
           "minLength": 1
+        },
+        "nixCache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bucket": {
+              "type": "string",
+              "minLength": 1
+            },
+            "publicBaseUrl": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signingKeyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "publicKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cloudflareZoneName": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },

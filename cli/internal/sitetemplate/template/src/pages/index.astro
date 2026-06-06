@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import { loadIndex } from '../lib/catalog';
+import { loadImage, loadIndex } from '../lib/catalog';
 import { claims } from '../lib/claims';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
 import TerminalSimulator from '../components/TerminalSimulator';
@@ -23,6 +23,29 @@ const evidenceCoverage = index
     }
   : null;
 const terminalRegistryBase = index?.registryBase ?? 'ghcr.io/northcutted/clearcutt';
+const imageRuntime = (id: string) => id.split('-')[0].toLowerCase();
+const fallbackImagePrefix = (() => {
+  const first = index?.images[0];
+  if (!first) return 'clearcutt';
+  try {
+    const record = loadImage(first.id);
+    const suffix = `-${imageRuntime(first.id)}`;
+    return record.imageName.toLowerCase().endsWith(suffix)
+      ? record.imageName.slice(0, -suffix.length)
+      : 'clearcutt';
+  } catch {
+    return 'clearcutt';
+  }
+})();
+const imageNameFor = (id: string) => {
+  try {
+    return loadImage(id).imageName;
+  } catch {
+    return `${fallbackImagePrefix}-${imageRuntime(id)}`;
+  }
+};
+const terminalJava25ImageName = imageNameFor('java25-distroless');
+const terminalJava21ImageName = imageNameFor('java21-distroless');
 ---
 <Base title="Home">
   <section class="pb-16 pt-4 space-y-12">
@@ -129,7 +152,12 @@ const terminalRegistryBase = index?.registryBase ?? 'ghcr.io/northcutted/clearcu
           The panel is an <strong class="text-ink-200">illustrative</strong> walk-through of real command shapes — scripted sample output, not a live run. Verify any image yourself from the <a href={`${base}about?tab=audit`} class="text-accent-soft underline hover:text-accent">audit guide</a>.
         </p>
       </div>
-      <TerminalSimulator registryBase={terminalRegistryBase} client:load />
+      <TerminalSimulator
+        registryBase={terminalRegistryBase}
+        java25ImageName={terminalJava25ImageName}
+        java21ImageName={terminalJava21ImageName}
+        client:load
+      />
     </div>
 
     <!-- Perspective / Target Switcher Dashboard Section -->

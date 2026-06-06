@@ -4,6 +4,8 @@
 {
   repoPath = "northcutted/clearcutt";
   sourceURL = "https://github.com/northcutted/clearcutt";
+  productName = "ClearCutt";
+  imagePrefix = "clearcutt";
   vendor = "ClearCutt";
   authors = "ClearCutt maintainers";
 }

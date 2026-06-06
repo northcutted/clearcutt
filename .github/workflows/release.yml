@@ -130,8 +130,10 @@ jobs:
           set -euo pipefail
           RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
           IMAGE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix image | jq -c .)
-          echo "release_matrix=${RELEASE_MATRIX}" >> "$GITHUB_OUTPUT"
-          echo "image_matrix=${IMAGE_MATRIX}" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_matrix=${RELEASE_MATRIX}"
+            echo "image_matrix=${IMAGE_MATRIX}"
+          } >> "$GITHUB_OUTPUT"
 
   publish-matrix:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
@@ -148,6 +150,21 @@ jobs:
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
@@ -169,132 +186,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Unified Gating and Release Pipeline
-        working-directory: core
+      - name: Publish Single-Arch Fleet Target
         env:
           GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
         run: |
-          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
+          ./clearcutt fleet publish-target \
             --system "${{ matrix.system }}" \
-            --publish \
+            --language "${{ matrix.language }}" \
+            --tier "${{ matrix.tier }}" \
             --version-tag "v${{ needs.check-version.outputs.version }}" \
-            "${{ matrix.language }}-${{ matrix.tier }}"
+            --core-dir core
 
-      - name: Copy Certified Derivations to Cloudflare R2 Cache
-        working-directory: core
+      - name: Publish Optional Nix Binary Cache
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ZONE_NAME: clearcutt.dev
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           NIX_CACHE_SECRET_KEY: ${{ secrets.NIX_CACHE_SECRET_KEY }}
         run: |
-          set -euo pipefail
-          if [[ -z "${NIX_CACHE_SECRET_KEY:-}" || -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" || -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
-            echo "::notice::Skipping optional R2 Nix binary-cache publish; configure NIX_CACHE_SECRET_KEY, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and CLOUDFLARE_ACCOUNT_ID to enable it."
-            exit 0
-          fi
-
-          printf '%s\n' "$NIX_CACHE_SECRET_KEY" > secret-key.pem
-          chmod 600 secret-key.pem
-          trap 'rm -f secret-key.pem' EXIT
-
-          INSTALLABLE='.#packages.${{ matrix.system }}."${{ matrix.language }}-${{ matrix.tier }}"'
-          OUT_PATH=$(nix path-info --accept-flake-config "$INSTALLABLE")
-          CACHE_STORE="s3://clearcutt-nix-cache?region=auto&endpoint=https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com&secret-key=$PWD/secret-key.pem"
-
-          STORE_HASH="${OUT_PATH#/nix/store/}"
-          STORE_HASH="${STORE_HASH%%-*}"
-          NARINFO_URL="https://nix-cache.clearcutt.dev/${STORE_HASH}.narinfo"
-          NARINFO_KEY="${STORE_HASH}.narinfo"
-          R2_ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
-
-          nix store sign --recursive --key-file secret-key.pem "$OUT_PATH"
-
-          # Some existing cache entries were uploaded before signing was wired
-          # correctly. `nix copy` treats an existing narinfo as present and logs
-          # "copying 0 paths...", so remove stale metadata first and force Nix
-          # to publish a fresh signed narinfo.
-          aws --endpoint-url "$R2_ENDPOINT" s3 rm "s3://clearcutt-nix-cache/${NARINFO_KEY}" || true
-
-          nix copy --accept-flake-config --refresh \
-            --option narinfo-cache-positive-ttl 0 \
-            --option narinfo-cache-negative-ttl 0 \
-            --to "$CACHE_STORE" "$OUT_PATH"
-
-          ORIGIN_NARINFO=""
-          for _ in {1..12}; do
-            ORIGIN_NARINFO=$(aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://clearcutt-nix-cache/${NARINFO_KEY}" - 2>/dev/null || true)
-            if grep -q '^Sig: clearcutt-cache-1:' <<< "$ORIGIN_NARINFO"; then
-              echo "Verified signed R2 origin narinfo: s3://clearcutt-nix-cache/${NARINFO_KEY}"
-              break
-            fi
-            sleep 5
-          done
-
-          if ! grep -q '^Sig: clearcutt-cache-1:' <<< "$ORIGIN_NARINFO"; then
-            echo "::error::Uploaded R2 origin narinfo is missing the clearcutt-cache-1 signature: s3://clearcutt-nix-cache/${NARINFO_KEY}"
-            printf '%s\n' "$ORIGIN_NARINFO"
-            exit 1
-          fi
-
-          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-            ZONE_ID="${CLOUDFLARE_ZONE_ID:-}"
-            if [[ -z "$ZONE_ID" ]]; then
-              ZONE_RESPONSE=$(
-                curl -fsSL \
-                  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                  "https://api.cloudflare.com/client/v4/zones?name=${CLOUDFLARE_ZONE_NAME}" || true
-              )
-              if [[ -n "$ZONE_RESPONSE" ]]; then
-                ZONE_ID=$(python3 -c 'import json,sys; data=json.load(sys.stdin); zones=data.get("result") or []; print(zones[0].get("id","") if zones else "")' <<< "$ZONE_RESPONSE" || true)
-              fi
-            fi
-
-            if [[ -n "$ZONE_ID" ]]; then
-              if ! curl -fsSL -X POST \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/purge_cache" \
-                --data "{\"files\":[\"${NARINFO_URL}\"]}" >/dev/null; then
-                echo "::warning::Cloudflare purge request failed for ${NARINFO_URL}; R2 origin is signed."
-              fi
-            else
-              echo "::warning::Cloudflare zone ${CLOUDFLARE_ZONE_NAME} was not found; R2 origin is signed."
-            fi
-          else
-            echo "::warning::CLOUDFLARE_API_TOKEN is not set; R2 origin is signed, but public edge cache may be stale."
-          fi
-
-          for _ in {1..12}; do
-            EDGE_NARINFO=$(curl -fsSL -H "Cache-Control: no-cache" "$NARINFO_URL" || true)
-            if grep -q '^Sig: clearcutt-cache-1:' <<< "$EDGE_NARINFO"; then
-              echo "Verified signed public cache narinfo: $NARINFO_URL"
-              exit 0
-            fi
-            sleep 5
-          done
-
-          echo "::warning::R2 origin narinfo is signed, but Cloudflare edge still served stale metadata: $NARINFO_URL"
-
-      - name: Stage arch-suffixed release assets
-        working-directory: core
-        env:
-          MATRIX_SYSTEM: ${{ matrix.system }}
-        run: |
-          set -euo pipefail
-          ARCH_SUFFIX="amd64"
-          if [[ "$MATRIX_SYSTEM" == *"aarch64"* ]] || [[ "$MATRIX_SYSTEM" == *"arm64"* ]]; then
-            ARCH_SUFFIX="arm64"
-          fi
-          cp "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" \
-             "build-outputs/${{ matrix.language }}-${{ matrix.tier }}-${ARCH_SUFFIX}.sbom.json"
-          cp "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" \
-             "build-outputs/${{ matrix.language }}-${{ matrix.tier }}-${ARCH_SUFFIX}.test-results.json"
+          ./clearcutt fleet publish-cache \
+            --system "${{ matrix.system }}" \
+            --language "${{ matrix.language }}" \
+            --tier "${{ matrix.tier }}" \
+            --core-dir core
 
       - name: Upload SBOM Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -414,6 +330,23 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.image_matrix) }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -442,47 +375,6 @@ jobs:
             | sudo tar -xz -C /usr/local/bin crane
           crane version
 
-      - name: Create and Push Multi-Arch OCI Index
-        run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
-
-          ROLLING="${IMAGE}:${{ matrix.tier }}"
-          VERSIONED="${IMAGE}:v${{ needs.check-version.outputs.version }}-${{ matrix.tier }}"
-          STAGE_AMD64="${IMAGE}:_stage-${{ matrix.tier }}-amd64"
-          STAGE_ARM64="${IMAGE}:_stage-${{ matrix.tier }}-arm64"
-
-          # Assemble an OCI image index directly in the final per-language repo
-          # from the per-arch staging tags (pushed as OCI by pipeline.sh). crane
-          # index append builds from an OCI empty base, so the result is a true
-          # application/vnd.oci.image.index.v1+json that cosign v3 can sign. No
-          # bootstrap package, no cosign-copy promotion: the production tags ARE
-          # the build output. The _stage-* tags stay (rolling) so the index's
-          # child manifests remain referenced; they carry no signatures.
-          echo "Creating multi-arch OCI index for rolling tag: ${ROLLING}"
-          crane index append -t "${ROLLING}" -m "${STAGE_AMD64}" -m "${STAGE_ARM64}"
-
-          echo "Creating multi-arch OCI index for versioned tag: ${VERSIONED}"
-          crane index append -t "${VERSIONED}" -m "${STAGE_AMD64}" -m "${STAGE_ARM64}"
-
-      - name: Sign Multi-Arch Manifests
-        run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
-
-          # The subject is now a native OCI image index, so cosign v3's default
-          # new bundle format applies: it consolidates the signature (and the
-          # attestations below) into a single sha256-<digest> referrers-index tag
-          # per digest rather than the legacy separate .sig/.att/.sbom tags. GHCR
-          # has no OCI 1.1 Referrers API, so this lands as that one fallback tag
-          # in THIS repo (required so `cosign verify <image>` can find it). Do
-          # NOT pass --registry-referrers-mode: on v3 it only controls *fetching*
-          # and is not a valid flag on `cosign attest`.
-          cosign sign --yes "${IMAGE}:${{ matrix.tier }}"
-          cosign sign --yes "${IMAGE}:v${{ needs.check-version.outputs.version }}-${{ matrix.tier }}"
-
       - name: Download amd64 SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -494,19 +386,6 @@ jobs:
         with:
           name: attestation-sbom-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/aarch64/
-
-      - name: Attest Multi-Arch SBOMs
-        run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
-
-          # Default new bundle format (subject is an OCI image index). Folds into
-          # the same sha256-<digest> referrers-index tag as the signature above.
-          # Both arch SBOMs are attested so `cosign verify-attestation` works for
-          # either platform.
-          cosign attest --yes --type spdxjson --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${ROLLING}"
-          cosign attest --yes --type spdxjson --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.sbom.json" "${ROLLING}"
 
       - name: Download amd64 Test Results
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -520,43 +399,14 @@ jobs:
           name: attestation-test-results-aarch64-linux-${{ matrix.language }}-${{ matrix.tier }}
           path: build-outputs/aarch64/
 
-      - name: Attest Multi-Arch Test Results
-        run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
-
-          # Default new bundle format, same as the SBOM attestations above.
-          cosign attest --yes --type custom --predicate "build-outputs/x86_64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${ROLLING}"
-          cosign attest --yes --type custom --predicate "build-outputs/aarch64/${{ matrix.language }}-${{ matrix.tier }}.test-results.json" "${ROLLING}"
-
-      - name: Resolve Multi-Arch Digest
+      - name: Assemble, Sign, Attest, and Resolve Multi-Arch Target
         id: resolve-digest
         run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}"
-          ROLLING="${IMAGE}:${{ matrix.tier }}"
-
-          IMAGE_DIGEST=$(crane digest "${ROLLING}")
-          echo "Multi-Arch manifest digest resolved: ${IMAGE_DIGEST}"
-          echo "digest=${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
-          # Expose the lowercased image name so the attestation `uses:` steps
-          # below (which can't run `tr`) attach to the correct subject. coreLTS
-          # in particular must become clearcutt-corelts.
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-
-          mkdir -p build-outputs/digests
-          cat <<EOF > "build-outputs/digests/${{ matrix.language }}-${{ matrix.tier }}.digest.json"
-          {
-            "image": "${IMAGE}",
-            "digest": "${IMAGE_DIGEST}",
-            "language": "${{ matrix.language }}",
-            "tier": "${{ matrix.tier }}",
-            "rollingTag": "${{ matrix.tier }}",
-            "versionedTag": "v${{ needs.check-version.outputs.version }}-${{ matrix.tier }}"
-          }
-          EOF
+          ./clearcutt fleet assemble-target \
+            --language "${{ matrix.language }}" \
+            --tier "${{ matrix.tier }}" \
+            --version-tag "v${{ needs.check-version.outputs.version }}" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
@@ -590,11 +440,28 @@ jobs:
 
   aggregate-digests:
     name: Aggregate Target Digests
-    needs: assemble-multiarch
+    needs: [check-version, assemble-multiarch]
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.compile.outputs.matrix }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
       - name: Download all digest files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -605,15 +472,9 @@ jobs:
       - name: Compile Digest Matrix
         id: compile
         run: |
-          python3 -c '
-          import os, json
-          digests = []
-          for f in os.listdir("build-outputs"):
-              if f.endswith(".digest.json"):
-                  with open(os.path.join("build-outputs", f)) as j:
-                      digests.append(json.load(j))
-          print(f"matrix={json.dumps(digests)}")
-          ' >> "$GITHUB_OUTPUT"
+          ./clearcutt --format json fleet aggregate-digests \
+            --build-outputs build-outputs \
+            --github-output "$GITHUB_OUTPUT"
 
   provenance:
     name: Generate SLSA L3 Provenance
@@ -696,10 +557,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ./clearcutt verify release-evidence \
+          ./clearcutt fleet verify-target \
             --ref "${{ matrix.target.image }}:${{ matrix.target.versionedTag }}" \
             --digest "${{ matrix.target.digest }}" \
-            --repo "${{ github.repository }}" \
             --workflow-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}" \
             --source-ref "${{ github.ref }}" \
             --source-branch "${{ github.ref_name }}"
@@ -709,11 +569,29 @@ jobs:
     needs: [check-version, provenance, verify-release-evidence, release-gate, fleet-matrix]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.image_matrix) }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
@@ -733,25 +611,10 @@ jobs:
       # provenance into a downloadable release asset for offline verification.
       - name: Download and Export SLSA Provenance
         run: |
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          NORM_LANG=$(echo "${{ matrix.language }}" | tr '[:upper:]' '[:lower:]')
-          ROLLING="ghcr.io/${REPO_PATH}/clearcutt-${NORM_LANG}:${{ matrix.tier }}"
-
-          mkdir -p build-outputs/
-          echo "Downloading SLSA L3 provenance for ${ROLLING}..."
-
-          cosign download attestation --predicate-type "https://slsa.dev/provenance/v1" "${ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" || true
-
-          if [ ! -s "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" ]; then
-            echo "SLSA v1 provenance not found or empty. Trying v0.2 fallback..."
-            cosign download attestation --predicate-type "https://slsa.dev/provenance/v0.2" "${ROLLING}" > "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" || true
-          fi
-
-          if [ -s "build-outputs/${{ matrix.language }}-${{ matrix.tier }}.intoto.jsonl" ]; then
-            echo "SLSA L3 provenance attestation successfully downloaded."
-          else
-            echo "WARNING: SLSA L3 provenance attestation could not be downloaded or was empty."
-          fi
+          ./clearcutt fleet export-provenance \
+            --language "${{ matrix.language }}" \
+            --tier "${{ matrix.tier }}" \
+            --build-outputs build-outputs
 
       - name: Upload SLSA Provenance Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -762,13 +625,25 @@ jobs:
 
   finalize-release:
     name: Finalize GitHub Release Assets
-    needs: [check-version, publish-matrix, provenance, verify-release-evidence, export-provenance, release-gate, build-cli]
+    needs: [check-version, publish-matrix, provenance, verify-release-evidence, export-provenance, release-gate, build-cli, fleet-matrix]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: v${{ needs.check-version.outputs.version }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
 
       - name: Download all release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -777,151 +652,15 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
-      - name: Create Release if not exists
+      - name: Finalize GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="v${{ needs.check-version.outputs.version }}"
-          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            echo "Release $TAG_NAME does not exist. Creating it now..."
-            gh release create "$TAG_NAME" \
-              --title "Release $TAG_NAME" \
-              --generate-notes \
-              --target "main"
-          else
-            echo "Release $TAG_NAME already exists."
-          fi
-
-      - name: Upload Certified Assets to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Gathering SBOMs, test-results, SLSA Provenance, and CLI assets for upload..."
-          files=()
-          while IFS= read -r -d '' file; do
-            files+=("$file")
-          done < <(find build-outputs/ -maxdepth 1 -type f \( -name "*.sbom.json" -o -name "*.test-results.json" -o -name "*.intoto.jsonl" -o -name "clearcutt-*" -o -name "*.sig" -o -name "SHA256SUMS.txt" \) -size +0 -print0)
-          
-          if [ ${#files[@]} -gt 0 ]; then
-            echo "Uploading ${#files[@]} verified assets to release: v${{ needs.check-version.outputs.version }}..."
-            gh release upload "v${{ needs.check-version.outputs.version }}" "${files[@]}" --clobber
-            echo "Release assets successfully attached."
-          else
-            echo "No non-empty verified assets found to upload."
-          fi
-
-      - name: Finalize Release Notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG_NAME="v${{ needs.check-version.outputs.version }}"
-          REPO_PATH=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          
-          RAW_CHANGELOG=$(gh release view "$TAG_NAME" --json body --jq '.body' | grep -v 'This draft release represents' | grep -v 'To release these assets:' | grep -v "Simply click 'Publish Release'")
-
-          read -r -d '' FINAL_NOTES <<EOF || true
-          # 🚀 ClearCutt Hardened Fleet Release $TAG_NAME
-
-          This release has been **cryptographically verified** with **no fixable Critical/High CVEs in gated production tiers at release time** and **SLSA Build L3 provenance verified by the configured release workflow** across our multi-architecture fleet (supporting both \`amd64\` and \`arm64\` natively).
-
-          The public catalog may still show newly disclosed, unfixed, dev-tier, or base-layer findings after release because the site rescans published SBOMs against the latest Grype database.
-
-          All OCI layered manifests have been keylessly signed via Sigstore OIDC, and full SPDX SBOM audits are attached as release assets.
-
-          ---
-
-          ## 🐳 OCI Container Registry Directory
-          Images are published to GHCR. You can pull the multi-architecture manifests directly:
-
-          | Language Target | Distroless Tier (Shell-Less Hardened) | Slim Tier (Runtime-Only Hardened) | Dev Tier (Full Compiler/Tools) |
-          |---|---|---|---|
-          | **Bash / LTS Core** | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-corelts:dev\` |
-          | **Node 22** | \`ghcr.io/${REPO_PATH}/clearcutt-node22:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-node22:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-node22:dev\` |
-          | **Node 24** | \`ghcr.io/${REPO_PATH}/clearcutt-node24:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-node24:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-node24:dev\` |
-          | **Python 3.13** | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.13:dev\` |
-          | **Python 3.14** | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-python3.14:dev\` |
-          | **Go 1.25** | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.25:dev\` |
-          | **Go 1.26** | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-go1.26:dev\` |
-          | **Java 21** | \`ghcr.io/${REPO_PATH}/clearcutt-java21:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-java21:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-java21:dev\` |
-          | **Java 25** | \`ghcr.io/${REPO_PATH}/clearcutt-java25:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-java25:dev\` |
-          | **.NET 8** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet8:dev\` |
-          | **.NET 10** | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-dotnet10:dev\` |
-          | **Rust 1.95** | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-rust1.95:dev\` |
-          | **C/C++ 15** | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:distroless\` | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:slim\` | \`ghcr.io/${REPO_PATH}/clearcutt-cc15:dev\` |
-
-          > [!NOTE]
-          > All image tiers are also published under versioned tags matching this release: \`ghcr.io/${REPO_PATH}/clearcutt-<language>:${TAG_NAME}-<tier>\`.
-
-          ---
-
-          ## ❄️ Declarative Nix Flake Integration
-          Downstream development projects can consume these exact secure runtime runtimes natively in their Nix flakes:
-
-          \`\`\`nix
-          # Add this repository to your flake inputs:
-          inputs.clearcutt.url = "github:${REPO_PATH}/${TAG_NAME}";
-
-          # In your outputs, use the overlays or raw runtime packages:
-          outputs = { self, nixpkgs, clearcutt, ... }: {
-            devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
-              buildInputs = [
-                # Access secure, identical overlays
-                clearcutt.packages.x86_64-linux.java21-dev
-              ];
-            };
-          };
-          \`\`\`
-
-          ---
-
-          $RAW_CHANGELOG
-          EOF
-
-          gh release edit "$TAG_NAME" --notes "$FINAL_NOTES"
-          echo "Release notes published to GitHub Releases."
-
-      - name: Archive Release Notes to docs/releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG_NAME="v${{ needs.check-version.outputs.version }}"
-          NOTES_PATH="docs/releases/${TAG_NAME}.md"
-
-          # Read the body back from the just-published release so the archive
-          # mirrors exactly what users see (no chance of drift from the
-          # FINAL_NOTES variable above).
-          BODY=$(gh release view "$TAG_NAME" --json body --jq '.body')
-
-          # The surrounding job is checked out on the version tag (detached
-          # HEAD). Re-clone main into a temp worktree so the archive commit
-          # has main's tip as its parent — not the tag — and can't overwrite
-          # anything that landed on main during the release.
-          WORKTREE=$(mktemp -d)
-          git clone --depth 1 --branch main \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" \
-            "$WORKTREE"
-
-          mkdir -p "$WORKTREE/docs/releases"
-          printf '%s\n' "$BODY" > "$WORKTREE/$NOTES_PATH"
-
-          cd "$WORKTREE"
-          if git diff --quiet -- "$NOTES_PATH"; then
-            echo "No changes — release notes file already matches published body."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$NOTES_PATH"
-          git commit -m "chore: archive release notes for $TAG_NAME [skip ci]"
-
-          # Branch protection may block direct pushes to main. The GitHub
-          # Release itself is the authoritative copy — the docs/ archive is
-          # a convenience mirror — so swallow the failure rather than break
-          # the release.
-          git push origin main || \
-            echo "WARNING: Direct commit to main blocked by branch protection. Release notes are still live at the GitHub Release page."
+          ./clearcutt fleet finalize-release \
+            --version-tag "v${{ needs.check-version.outputs.version }}" \
+            --build-outputs build-outputs \
+            --archive-release-notes
 
   deploy-site:
     name: Deploy Catalog Site

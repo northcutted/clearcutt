@@ -2,12 +2,36 @@
 import Base from '../layouts/Base.astro';
 import CopyBlock from '../components/CopyBlock.astro';
 import Tabs from '../components/Tabs.astro';
-import { loadIndex } from '../lib/catalog';
+import { loadImage, loadIndex } from '../lib/catalog';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
 
 let index;
 try { index = loadIndex(); } catch { index = null; }
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
+const registryBase = index?.registryBase ?? `ghcr.io/${ownerRepo.toLowerCase()}`;
+const imageRuntime = (id: string) => id.split('-')[0].toLowerCase();
+const fallbackImagePrefix = (() => {
+  const first = index?.images[0];
+  if (!first) return 'clearcutt';
+  try {
+    const record = loadImage(first.id);
+    const suffix = `-${imageRuntime(first.id)}`;
+    return record.imageName.toLowerCase().endsWith(suffix)
+      ? record.imageName.slice(0, -suffix.length)
+      : 'clearcutt';
+  } catch {
+    return 'clearcutt';
+  }
+})();
+const imageNameFor = (id: string) => {
+  try {
+    return loadImage(id).imageName;
+  } catch {
+    return `${fallbackImagePrefix}-${imageRuntime(id)}`;
+  }
+};
+const java25ImageName = imageNameFor('java25-distroless');
+const python314ImageName = imageNameFor('python3.14-slim');
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const siteConfig = loadSiteConfig();
 const tierLabels = {
@@ -58,13 +82,13 @@ const tierLabels = {
           <p class="text-xs text-ink-300">
             Hardens JRE execution by removing JShell, package managers, and executing purely within the rootless unprivileged boundary:
           </p>
-          <CopyBlock language="dockerfile" code={`# 1. Compiler Stage\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java25:dev-latest AS builder\nWORKDIR /app\nCOPY . .\nRUN ./gradlew bootJar --no-daemon\n\n# 2. Execution Stage (hardened distroless runtime)\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java25:distroless-latest\nWORKDIR /app\nCOPY --from=builder /app/build/libs/app.jar app.jar\n\n# Enforces unprivileged execution natively. Execute JRE directly.\nENTRYPOINT ["java", "-jar", "app.jar"]`} />
+          <CopyBlock language="dockerfile" code={`# 1. Compiler Stage\nFROM ${registryBase}/${java25ImageName}:dev-latest AS builder\nWORKDIR /app\nCOPY . .\nRUN ./gradlew bootJar --no-daemon\n\n# 2. Execution Stage (hardened distroless runtime)\nFROM ${registryBase}/${java25ImageName}:distroless-latest\nWORKDIR /app\nCOPY --from=builder /app/build/libs/app.jar app.jar\n\n# Enforces unprivileged execution natively. Execute JRE directly.\nENTRYPOINT ["java", "-jar", "app.jar"]`} />
         </div>
         <div data-panel-id="python" data-panel-active="false" class="space-y-3">
           <p class="text-xs text-ink-300">
             Uses virtual environment isolation inside the runtime container, discarding developer compilers and header files:
           </p>
-          <CopyBlock language="dockerfile" code={`# 1. Builder Stage\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-python3.14:dev-latest AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN python -m venv /opt/venv && \\\n    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt\n\n# 2. Runtime Stage (lean diagnostic slim runtime)\nFROM ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-python3.14:slim-latest\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY . .\nENV PATH="/opt/venv/bin:$PATH"\n\nENTRYPOINT ["python", "main.py"]`} />
+          <CopyBlock language="dockerfile" code={`# 1. Builder Stage\nFROM ${registryBase}/${python314ImageName}:dev-latest AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN python -m venv /opt/venv && \\\n    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt\n\n# 2. Runtime Stage (lean diagnostic slim runtime)\nFROM ${registryBase}/${python314ImageName}:slim-latest\nWORKDIR /app\nCOPY --from=builder /opt/venv /opt/venv\nCOPY . .\nENV PATH="/opt/venv/bin:$PATH"\n\nENTRYPOINT ["python", "main.py"]`} />
         </div>
       </Tabs>
     </section>

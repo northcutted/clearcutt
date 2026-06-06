@@ -39,6 +39,25 @@ log_error() {
   echo -e "${RED}[ClearCutt Pipeline] ✘ $1${RESET}" >&2
 }
 
+platform_image_prefix() {
+  if [[ -n "${CLEARCUTT_IMAGE_PREFIX:-}" ]]; then
+    printf '%s\n' "$CLEARCUTT_IMAGE_PREFIX"
+    return 0
+  fi
+
+  local metadata="$WORKSPACE_DIR/lib/platform-metadata.nix"
+  if [[ -f "$metadata" ]]; then
+    local parsed
+    parsed="$(sed -n 's/^[[:space:]]*imagePrefix[[:space:]]*=[[:space:]]*"\([^"]\+\)";.*/\1/p' "$metadata" | head -n 1)"
+    if [[ -n "$parsed" ]]; then
+      printf '%s\n' "$parsed"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "clearcutt"
+}
+
 # ----------------------------------------------------
 # 1. SCM Status Containment (SCM-Specific calls isolated here)
 # ----------------------------------------------------
@@ -251,7 +270,9 @@ EOF
     #
     # The _stage-* tags are rolling (overwritten every serialized release), so
     # exactly 2 per tier exist at any time rather than accumulating per version.
-    local image_repo="$registry/$repo/clearcutt-${lang}"
+    local image_prefix
+    image_prefix="$(platform_image_prefix)"
+    local image_repo="$registry/$repo/${image_prefix}-${lang}"
     local stage_tag="${image_repo}:_stage-${tier}-${arch_suffix}"
 
     log_info "Publishing per-arch staging image to registry (OCI) -> $stage_tag"

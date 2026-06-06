@@ -2,11 +2,15 @@
 # Brand Owner & Principal Architect: Eddie Northcutt
 # Paradigm: Declarative overlay and development shells for host platforms
 
-{ self, pkgs }:
+{ self, pkgs, platformMetadata ? import ./platform-metadata.nix }:
 
 let
   # Import centralized language and runtime registry
   registry = import ./registry.nix { inherit pkgs; };
+
+  # Fork-configurable product identity (see clearcutt.fleet.yaml -> branding).
+  productName = platformMetadata.productName or "ClearCutt";
+  imagePrefix = platformMetadata.imagePrefix or "clearcutt";
 
   # Dynamic Overlay Generation
   # Iterates through languages and versions in the registry to construct the overlay attributes
@@ -45,7 +49,7 @@ in
   # Downstream Development Shell Builder
   # Automatically wraps a host development shell with ClearCutt's transient enterprise credentials broker
   mkHardenedShell = {
-    name ? "clearcutt-hardened-shell",
+    name ? "${imagePrefix}-hardened-shell",
     language,
     version,
     extraBuildInputs ? [],
@@ -65,7 +69,7 @@ in
 
     shellHook = ''
       echo -e "\033[1;35m====================================================\033[0m"
-      echo -e "\033[1;35m     ClearCutt Nix Native Hardened Development Shell \033[0m"
+      echo -e "\033[1;35m     ${productName} Nix Native Hardened Development Shell \033[0m"
       echo -e "\033[1;35m====================================================\033[0m"
       echo -e "Host System: \033[32m${pkgs.system}\033[0m"
       echo -e "Hardened Target: \033[32m${language}-${version}\033[0m"

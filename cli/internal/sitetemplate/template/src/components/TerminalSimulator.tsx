@@ -8,11 +8,13 @@ type CommandOption = {
 
 type Props = {
   registryBase?: string;
+  java25ImageName?: string;
+  java21ImageName?: string;
 };
 
-function commandOptions(registryBase: string): CommandOption[] {
-  const java25 = `${registryBase}/clearcutt-java25`;
-  const java21 = `${registryBase}/clearcutt-java21`;
+function commandOptions(registryBase: string, java25ImageName: string, java21ImageName: string): CommandOption[] {
+  const java25 = `${registryBase}/${java25ImageName}`;
+  const java21 = `${registryBase}/${java21ImageName}`;
 
   return [
     {
@@ -93,8 +95,12 @@ function commandOptions(registryBase: string): CommandOption[] {
   ];
 }
 
-export default function TerminalSimulator({ registryBase = 'ghcr.io/northcutted/clearcutt' }: Props) {
-  const commands = commandOptions(registryBase);
+export default function TerminalSimulator({
+  registryBase = 'ghcr.io/northcutted/clearcutt',
+  java25ImageName = 'clearcutt-java25',
+  java21ImageName = 'clearcutt-java21',
+}: Props) {
+  const commands = commandOptions(registryBase, java25ImageName, java21ImageName);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [displayedCommand, setDisplayedCommand] = useState('');
   const [displayedOutput, setDisplayedOutput] = useState<string[]>([]);

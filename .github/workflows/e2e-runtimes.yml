@@ -54,8 +54,16 @@ jobs:
           cache-dependency-path: 'cli/go.sum'
           cache: true
 
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7

@@ -40,7 +40,7 @@ ClearCutt is organized as a three-part monorepo:
 
 | Workspace | Purpose | Common commands |
 | :--- | :--- | :--- |
-| `core/` | Nix image factory, runtime overlays, release pipeline, vulnerability scanning, and image conformance tests. | `cd core && nix develop`, `make core-verify` |
+| `core/` | Nix image factory, runtime overlays, release pipeline, vulnerability scanning, and image conformance tests. | `./clearcutt platform setup-nix --core-dir core`, `make core-verify` |
 | `cli/` | Go governance CLI (`clearcutt`) and its tests. | `make cli-build`, `make cli-test` |
 | `site/` | Astro catalog site and generated catalog data. | `make site-dev`, `make site-build`, `clearcutt catalog site build` |
 
@@ -142,12 +142,20 @@ ClearCutt maintains and continuously gates a wide matrix of modern target langua
 ## Quickstart & Local Development
 
 ### 1. Enter the Gated Development Environment
-Ensure you have Nix installed with flakes enabled. Enter the secure workspace shell:
+Ensure you have Nix installed. Build the CLI, then let it configure the
+fleet-specific Nix client settings from `clearcutt.fleet.yaml` and warm the core
+dev shell:
 ```bash
-cd core
-nix develop --extra-experimental-features "nix-command flakes"
+make cli-build
+./clearcutt platform setup-nix --core-dir core --write-user-config
 ```
-This drops you into a workspace shell preloaded with all necessary build and security binaries (including `patchelf`, `trivy`, `cosign`, and `container-structure-test`).
+To open an interactive shell with the same tooling, run:
+```bash
+./clearcutt platform setup-nix --core-dir core -- bash -l
+```
+The shell is preloaded with the build and security binaries used by the fleet
+pipeline, including `patchelf`, `trivy`, `cosign`, and
+`container-structure-test`.
 
 ### 2. Run the Gated Automated Test Suite
 ClearCutt implements a comprehensive gating test suite to verify dynamic dynamic linker safety, non-privileged boundaries, distroless shell absence, and credential brokerage leaks:

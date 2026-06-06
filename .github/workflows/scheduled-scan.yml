@@ -122,6 +122,9 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
+
       # Persist /nix/store between runs. Without this every cold runner has to
       # re-fetch the unpatched base closure from R2 even when nothing in the
       # flake.lock changed.

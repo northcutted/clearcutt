@@ -128,6 +128,8 @@ func runFleetMatrixExport() error {
 
 	export := struct {
 		RegistryBase string            `json:"registryBase"`
+		Registry     fleet.Registry    `json:"registry"`
+		Branding     fleet.Branding    `json:"branding"`
 		Systems      []string          `json:"systems"`
 		Languages    []string          `json:"languages"`
 		Tiers        []string          `json:"tiers"`
@@ -135,6 +137,8 @@ func runFleetMatrixExport() error {
 		Remediation  fleet.Remediation `json:"remediation"`
 	}{
 		RegistryBase: cfg.RegistryBase(),
+		Registry:     cfg.Registry,
+		Branding:     cfg.Branding,
 		Systems:      cfg.Matrix.Systems,
 		Languages:    cfg.Matrix.Languages,
 		Tiers:        cfg.Matrix.Tiers,

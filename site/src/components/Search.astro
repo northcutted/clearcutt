@@ -121,7 +121,9 @@ const pagefindPath = `${base}pagefind/pagefind.js`;
 
         // Build title & breadcrumb
         const titleText = data.meta.title || 'Untitled Image';
-        const cleanTitle = titleText.replace(' · ClearCutt Catalog', '');
+        // Base.astro builds page titles as "<page> · <site title>"; strip the
+        // site-title suffix generically so this works for any fork's brand.
+        const cleanTitle = titleText.split(' · ')[0];
 
         // Extract snippet excerpt
         const excerptHtml = data.excerpt || '';

@@ -2,11 +2,35 @@
 import Base from '../layouts/Base.astro';
 import CopyBlock from '../components/CopyBlock.astro';
 import Tabs from '../components/Tabs.astro';
-import { loadIndex } from '../lib/catalog';
+import { loadImage, loadIndex } from '../lib/catalog';
 
 let index;
 try { index = loadIndex(); } catch { index = null; }
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
+const registryBase = index?.registryBase ?? `ghcr.io/${ownerRepo.toLowerCase()}`;
+const imageRuntime = (id: string) => id.split('-')[0].toLowerCase();
+const fallbackImagePrefix = (() => {
+  const first = index?.images[0];
+  if (!first) return 'clearcutt';
+  try {
+    const record = loadImage(first.id);
+    const suffix = `-${imageRuntime(first.id)}`;
+    return record.imageName.toLowerCase().endsWith(suffix)
+      ? record.imageName.slice(0, -suffix.length)
+      : 'clearcutt';
+  } catch {
+    return 'clearcutt';
+  }
+})();
+const imageNameFor = (id: string) => {
+  try {
+    return loadImage(id).imageName;
+  } catch {
+    return `${fallbackImagePrefix}-${imageRuntime(id)}`;
+  }
+};
+const java25ImageName = imageNameFor('java25-distroless');
+const java21ImageName = imageNameFor('java21-distroless');
 const latestTag = index?.latestTag ?? 'v0.6.2';
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 ---
@@ -95,7 +119,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
             Enforces software supply chain compliance checks. Gates on signatures, SBOMs, SLSA level requirements, smoke test status, active support lifecycles, and maximum vulnerability counts. Can verify images, local catalog indexes, or published OCI release evidence.
           </p>
-          <CopyBlock language="shell" code={`# Enforce full gate limits locally on a catalog image\nclearcutt verify image java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --exceptions exceptions.yaml\n\n# Verify published OCI release evidence against Cosign + SLSA\nclearcutt verify release-evidence \\\n  --ref ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java25:distroless-v0.6.2 \\\n  --repo ${ownerRepo} \\\n  --workflow-identity "https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main"\n\n# Verify the local catalog structure and database schema compliance\nclearcutt verify catalog`} />
+          <CopyBlock language="shell" code={`# Enforce full gate limits locally on a catalog image\nclearcutt verify image java25-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --exceptions exceptions.yaml\n\n# Verify published OCI release evidence against Cosign + SLSA\nclearcutt verify release-evidence \\\n  --ref ${registryBase}/${java25ImageName}:distroless-v0.6.2 \\\n  --repo ${ownerRepo} \\\n  --workflow-identity "https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main"\n\n# Verify the local catalog structure and database schema compliance\nclearcutt verify catalog`} />
         </div>
 
         <!-- certify -->
@@ -119,7 +143,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
             Builds precompiled artifacts directly into OCI images, compares candidate bases, and rebases patched base layers under byte-preserved application layers with cosign signature and attestation gates. Also scaffolds app-team starters.
           </p>
-          <CopyBlock language="shell" code={`# Scaffold an app-team starter project using ClearCutt\nclearcutt app template java --output clearcutt-template-java --name my-java-app\n\n# Build a rebasable app image\nclearcutt app build \\\n  --base java21-distroless \\\n  --artifact target/app.jar \\\n  --dest /workspace/app.jar \\\n  --entrypoint '["java","-jar","/workspace/app.jar"]' \\\n  --image ghcr.io/acme/payments-api:1.0.0\n\n# Rebase after the base is patched\nclearcutt app rebase \\\n  --image ghcr.io/acme/payments-api:1.0.0 \\\n  --candidate-base ghcr.io/${ownerRepo.toLowerCase()}/clearcutt-java21:distroless-v0.2.2 \\\n  --candidate-base-id java21-distroless \\\n  --tag ghcr.io/acme/payments-api:1.0.0-rebased \\\n  --dev-identity "$DEV_SIGNER" \\\n  --sign \\\n  --attest`} />
+          <CopyBlock language="shell" code={`# Scaffold an app-team starter project using ClearCutt\nclearcutt app template java --output clearcutt-template-java --name my-java-app\n\n# Build a rebasable app image\nclearcutt app build \\\n  --base java21-distroless \\\n  --artifact target/app.jar \\\n  --dest /workspace/app.jar \\\n  --entrypoint '["java","-jar","/workspace/app.jar"]' \\\n  --image ghcr.io/acme/payments-api:1.0.0\n\n# Rebase after the base is patched\nclearcutt app rebase \\\n  --image ghcr.io/acme/payments-api:1.0.0 \\\n  --candidate-base ${registryBase}/${java21ImageName}:distroless-v0.2.2 \\\n  --candidate-base-id java21-distroless \\\n  --tag ghcr.io/acme/payments-api:1.0.0-rebased \\\n  --dev-identity "$DEV_SIGNER" \\\n  --sign \\\n  --attest`} />
           <a href={`${base}app-lifecycle`} class="inline-flex text-xs font-semibold uppercase tracking-wider text-accent-soft hover:text-accent transition">
             All stack examples
           </a>

@@ -1,13 +1,36 @@
 ---
 import Base from '../layouts/Base.astro';
 import CopyBlock from '../components/CopyBlock.astro';
-import { loadIndex } from '../lib/catalog';
+import { loadImage, loadIndex } from '../lib/catalog';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
 
 let index;
 try { index = loadIndex(); } catch { index = null; }
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
 const imageNamespace = ownerRepo.toLowerCase();
+const registryBase = index?.registryBase ?? `ghcr.io/${imageNamespace}`;
+const imageRuntime = (id: string) => id.split('-')[0].toLowerCase();
+const fallbackImagePrefix = (() => {
+  const first = index?.images[0];
+  if (!first) return 'clearcutt';
+  try {
+    const record = loadImage(first.id);
+    const suffix = `-${imageRuntime(first.id)}`;
+    return record.imageName.toLowerCase().endsWith(suffix)
+      ? record.imageName.slice(0, -suffix.length)
+      : 'clearcutt';
+  } catch {
+    return 'clearcutt';
+  }
+})();
+const imageNameFor = (id: string) => {
+  try {
+    return loadImage(id).imageName;
+  } catch {
+    return `${fallbackImagePrefix}-${imageRuntime(id)}`;
+  }
+};
+const baseRef = (id: string) => `${registryBase}/${imageNameFor(id)}:distroless-v0.2.2`;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const devLabel = tierLabel(loadSiteConfig(), 'dev');
 
@@ -53,7 +76,7 @@ const stacks = [
 cp target/payments-api-*-all.jar target/app.jar
 
 export BASE_ID="java21-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-java21:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('java21-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -77,7 +100,7 @@ npx esbuild src/server.ts \\
   --outfile=dist/server.mjs
 
 export BASE_ID="node22-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-node22:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('node22-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -98,7 +121,7 @@ pex . \\
   -o dist/payments-api.pyz
 
 export BASE_ID="python3.13-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-python3.13:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('python3.13-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -118,7 +141,7 @@ clearcutt app build \\
   -o dist/payments-api ./cmd/payments-api
 
 export BASE_ID="go1.25-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-go1.25:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('go1.25-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -146,7 +169,7 @@ mkdir -p dist
 cp out/Payments.Api dist/payments-api
 
 export BASE_ID="dotnet8-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-dotnet8:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('dotnet8-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -168,7 +191,7 @@ mkdir -p dist
 cp target/x86_64-unknown-linux-musl/release/payments-api dist/payments-api
 
 export BASE_ID="rust1.95-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-rust1.95:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('rust1.95-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -190,7 +213,7 @@ clearcutt app build \\
 cmake --build build --target payments-api
 
 export BASE_ID="cc15-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-cc15:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('cc15-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -210,7 +233,7 @@ clearcutt app build \\
   -o dist/worker src/worker.c
 
 export BASE_ID="coreLTS-distroless"
-export PATCHED_BASE="ghcr.io/${imageNamespace}/clearcutt-corelts:distroless-v0.2.2"
+export PATCHED_BASE="${baseRef('coreLTS-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\

@@ -24,14 +24,16 @@ const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcut
         <h2 class="heading text-lg text-ink-50">Configure</h2>
         <p class="text-sm text-ink-200">
           <code>clearcutt.fleet.yaml</code> is the single source of truth for registry owner,
-          matrix targets, site settings, admission defaults, scan windows, and remediation caps.
+          matrix targets, Nix cache trust, site settings, admission defaults, scan windows,
+          and remediation caps.
         </p>
       </section>
       <section class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
         <h2 class="heading text-lg text-ink-50">Publish</h2>
         <p class="text-sm text-ink-200">
-          GitHub Actions builds the configured matrix, signs images, attaches SBOMs, verifies
-          SLSA Build L3 provenance, and deploys catalog evidence to Pages.
+          GitHub Actions provides OIDC identity and artifact transport while the CLI
+          configures Nix, builds, publishes, assembles, signs, attests, verifies,
+          and finalizes the configured image fleet.
         </p>
       </section>
       <section class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-2">
@@ -50,6 +52,18 @@ cd clearcutt
 
 # Check that the forkable platform kit is wired together
 clearcutt platform status
+
+# Configure and warm the fleet Nix client from clearcutt.fleet.yaml
+clearcutt platform setup-nix --core-dir core --write-user-config
+
+# Inspect the matrix GitHub Actions will run
+clearcutt --format json matrix export --source fleet --github-actions --matrix release
+
+# Release workflow dogfoods these config-driven operators
+clearcutt platform setup-nix --core-dir core --skip-warm
+clearcutt fleet certify-target --system x86_64-linux --language java25 --tier slim
+clearcutt fleet publish-target --system x86_64-linux --language java25 --tier slim --version-tag v1.2.3
+clearcutt fleet assemble-target --language java25 --tier slim --version-tag v1.2.3
 
 # Generate an app-team starter
 clearcutt app template java --output examples/payments-api

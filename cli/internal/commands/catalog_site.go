@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/sitetemplate"
 	"github.com/northcutted/clearcutt/internal/sitetemplate/rules"
 	"github.com/spf13/cobra"
@@ -619,7 +621,99 @@ func writeSiteConfig(outputDir, source string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.WriteFile(target, []byte(defaultSiteConfigYAML), 0o644)
+	return os.WriteFile(target, []byte(deriveSiteConfigYAML()), 0o644)
+}
+
+// deriveSiteConfigYAML builds a fork-branded clearcutt.site.yaml from the same
+// inputs the rest of the pipeline uses: the fleet config when building from one,
+// otherwise the identity recorded in the generated catalog index. The produced
+// site therefore carries the fork's identity with no hardcoded upstream brand.
+func deriveSiteConfigYAML() string {
+	var title, description, sourceRepo, registry string
+	if catalogSiteOpts.config != "" {
+		if cfg, err := fleet.Load(catalogSiteOpts.config); err == nil {
+			title = cfg.Branding.ProductName + " Catalog"
+			description = cfg.Site.Description
+			sourceRepo = cfg.RepoURL()
+			registry = "https://" + cfg.RegistryBase()
+		}
+	}
+	if title == "" {
+		if repo, repoURL, registryBase, ok := catalogIndexIdentity(catalogSiteOpts.catalogPath); ok {
+			title = fleet.DeriveProductName(repo) + " Catalog"
+			sourceRepo = repoURL
+			if registryBase != "" {
+				registry = "https://" + registryBase
+			}
+		}
+	}
+	if title == "" {
+		title = "Base Image Catalog"
+	}
+	if description == "" {
+		description = "Static evidence portal generated from signed base-image catalog data"
+	}
+	return renderSiteConfigYAML(title, description, sourceRepo, registry)
+}
+
+// catalogIndexIdentity reads repo/repoUrl/registryBase from a catalog index.json
+// so the site can self-brand when scaffolding from catalog data alone, with no
+// fleet config available.
+func catalogIndexIdentity(catalogPath string) (repo, repoURL, registryBase string, ok bool) {
+	if catalogPath == "" {
+		return "", "", "", false
+	}
+	raw, err := os.ReadFile(filepath.Join(catalogPath, "index.json"))
+	if err != nil {
+		return "", "", "", false
+	}
+	var idx struct {
+		Repo         string `json:"repo"`
+		RepoURL      string `json:"repoUrl"`
+		RegistryBase string `json:"registryBase"`
+	}
+	if err := json.Unmarshal(raw, &idx); err != nil {
+		return "", "", "", false
+	}
+	return idx.Repo, idx.RepoURL, idx.RegistryBase, idx.Repo != ""
+}
+
+func renderSiteConfigYAML(title, description, sourceRepo, registry string) string {
+	return fmt.Sprintf(`site:
+  title: %q
+  description: %q
+  logo: ""
+
+  theme:
+    mode: "dark"
+    accent: "#7c3aed"
+
+  navigation:
+    showMarketingHome: true
+    showGettingStarted: true
+    showCliDocs: true
+    showAuditGuide: true
+
+  features:
+    sbomTable: true
+    vulnerabilityTable: true
+    layerExplorer: true
+    provenance: true
+    ociLabels: true
+    versionHistory: true
+    kyvernoPolicies: false
+
+  terminology:
+    distroless: "Distroless"
+    slim: "Slim"
+    dev: "Dev"
+
+  links:
+    sourceRepo: %q
+    registry: %q
+    support: ""
+    docs: ""
+`, title, description, sourceRepo, registry)
 }
 
 func writeSiteReadme(outputDir string) error {
@@ -821,42 +915,6 @@ func splitPath(path string) []string {
 	}
 	return parts
 }
-
-const defaultSiteConfigYAML = `site:
-  title: "ClearCutt Base Image Catalog"
-  description: "Static evidence portal generated from ClearCutt catalog data"
-  logo: ""
-
-  theme:
-    mode: "dark"
-    accent: "#7c3aed"
-
-  navigation:
-    showMarketingHome: true
-    showGettingStarted: true
-    showCliDocs: true
-    showAuditGuide: true
-
-  features:
-    sbomTable: true
-    vulnerabilityTable: true
-    layerExplorer: true
-    provenance: true
-    ociLabels: true
-    versionHistory: true
-    kyvernoPolicies: false
-
-  terminology:
-    distroless: "Distroless"
-    slim: "Slim"
-    dev: "Dev"
-
-  links:
-    sourceRepo: ""
-    registry: ""
-    support: ""
-    docs: ""
-`
 
 const defaultCatalogSiteReadme = `# ClearCutt Catalog Site
 

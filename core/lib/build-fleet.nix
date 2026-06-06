@@ -16,10 +16,16 @@ let
   username = "appuser";
   groupname = "appuser";
 
+  # Fork-configurable product identity, supplied via platform-metadata.nix
+  # (written by `clearcutt platform init` from clearcutt.fleet.yaml). Defaults
+  # keep the upstream brand when no fork metadata is present.
+  productName = platformMetadata.productName or "ClearCutt";
+  imagePrefix = platformMetadata.imagePrefix or "clearcutt";
+
   # Define static rootless account structures
   passwdContents = ''
     root:x:0:0:root:/root:/bin/sh
-    ${username}:x:${uid}:${gid}:ClearCutt Secure App User:/app:/sbin/nologin
+    ${username}:x:${uid}:${gid}:${productName} Secure App User:/app:/sbin/nologin
   '';
 
   groupContents = ''
@@ -123,8 +129,8 @@ in
 
     # Define standard OCI Annotations/Labels (compliant with opencontainers image-spec)
     ociLabels = {
-      "org.opencontainers.image.title" = "clearcutt-${language}-${version}";
-      "org.opencontainers.image.description" = "Hardened ClearCutt Base Image for ${language} (${version}) - Tier: ${tier}";
+      "org.opencontainers.image.title" = "${imagePrefix}-${language}-${version}";
+      "org.opencontainers.image.description" = "Hardened ${productName} Base Image for ${language} (${version}) - Tier: ${tier}";
       "org.opencontainers.image.url" = sourceURL;
       "org.opencontainers.image.source" = sourceURL;
       "org.opencontainers.image.version" = version;

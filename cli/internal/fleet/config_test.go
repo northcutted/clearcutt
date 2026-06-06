@@ -6,6 +6,46 @@ import (
 	"testing"
 )
 
+func TestDeriveProductName(t *testing.T) {
+	cases := map[string]string{
+		"base-images": "Base Images",
+		"clearcutt":   "Clearcutt",
+		"acme_fleet":  "Acme Fleet",
+		"":            "",
+	}
+	for repo, want := range cases {
+		if got := DeriveProductName(repo); got != want {
+			t.Errorf("DeriveProductName(%q) = %q, want %q", repo, got, want)
+		}
+	}
+}
+
+func TestBrandingDefaultsDeriveFromForkIdentity(t *testing.T) {
+	// A fork that sets only owner/repo gets branding derived from its identity,
+	// never the upstream ClearCutt brand.
+	cfg := Config{Registry: Registry{Owner: "acme", Repository: "base-images"}}
+	cfg.applyDefaults()
+	if cfg.Branding.ProductName != "Base Images" {
+		t.Errorf("ProductName = %q, want %q", cfg.Branding.ProductName, "Base Images")
+	}
+	if cfg.Branding.Vendor != "acme" {
+		t.Errorf("Vendor = %q, want %q", cfg.Branding.Vendor, "acme")
+	}
+	if cfg.Branding.Authors != "Base Images maintainers" {
+		t.Errorf("Authors = %q, want %q", cfg.Branding.Authors, "Base Images maintainers")
+	}
+
+	// Explicit branding is preserved verbatim.
+	explicit := Config{
+		Registry: Registry{Owner: "acme", Repository: "base-images"},
+		Branding: Branding{ProductName: "Acme Hardened Images", Vendor: "Acme Inc", Authors: "Acme Platform"},
+	}
+	explicit.applyDefaults()
+	if explicit.Branding.ProductName != "Acme Hardened Images" || explicit.Branding.Authors != "Acme Platform" {
+		t.Errorf("explicit branding not preserved: %#v", explicit.Branding)
+	}
+}
+
 func TestDefaultConfigRoundTrip(t *testing.T) {
 	cfg := DefaultConfig("acme", "platform")
 	raw, err := Marshal(cfg)
@@ -30,6 +70,9 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 	}
 	if loaded.Release.SLSABuilder == "" {
 		t.Fatalf("expected SLSA builder to be populated")
+	}
+	if loaded.Release.NixCache.Bucket != "" || loaded.Release.NixCache.PublicBaseURL != "" || loaded.Release.NixCache.SigningKeyName != "" || loaded.Release.NixCache.PublicKey != "" {
+		t.Fatalf("new fork defaults should not inherit an upstream Nix cache: %#v", loaded.Release.NixCache)
 	}
 	if got := len(loaded.GitHubReleaseMatrix().Include); got != len(loaded.Matrix.Systems)*len(loaded.Matrix.Languages)*len(loaded.Matrix.Tiers) {
 		t.Fatalf("release matrix size = %d", got)

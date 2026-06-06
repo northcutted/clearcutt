@@ -5,11 +5,6 @@
 {
   description = "ClearCutt Hardened Base Image Fleets - Declarative, CVE-aware Nix Store Layers";
 
-  nixConfig = {
-    extra-substituters = [ "https://nix-cache.clearcutt.dev" ];
-    extra-trusted-public-keys = [ "clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=" ];
-  };
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     utils.url = "github:numtide/flake-utils";
@@ -46,6 +41,11 @@
         # Import our custom image compiler
         compiler = import ./lib/build-fleet.nix { inherit pkgs; };
 
+        # Fork-configurable output identity generated from clearcutt.fleet.yaml.
+        platformMetadata = import ./lib/platform-metadata.nix;
+        imagePrefix = platformMetadata.imagePrefix or "clearcutt";
+        productName = platformMetadata.productName or "ClearCutt";
+
         # Helper to generate standard package name attributes
         mkPackageName = lang: ver: tier: "${lang}${ver}-${tier}";
 
@@ -70,7 +70,7 @@
                 {
                   name = attrName;
                   value = compiler.buildFleetImage {
-                    name = "clearcutt-${lang}-${ver}";
+                    name = "${imagePrefix}-${lang}-${ver}";
                     tag = tier;
                     language = lang;
                     version = ver;
@@ -124,7 +124,7 @@
         # (devTargetShells) for the local inner loop.
         devShells = {
           default = hostPkgs.mkShell {
-          name = "clearcutt-dev-shell";
+          name = "${imagePrefix}-dev-shell";
 
           # System tools required for local builds, scanning, and inspection
           buildInputs = [
@@ -141,7 +141,7 @@
 
           shellHook = ''
             echo -e "\033[1;36m====================================================\033[0m"
-            echo -e "\033[1;36m           ClearCutt Hardened Fleets Dev Shell      \033[0m"
+            echo -e "\033[1;36m           ${productName} Hardened Fleets Dev Shell      \033[0m"
             echo -e "\033[1;36m====================================================\033[0m"
             echo -e "Target Architectures: \033[32mx86_64-linux\033[0m, \033[32maarch64-linux\033[0m"
             echo -e "Status: \033[32mActive\033[0m"

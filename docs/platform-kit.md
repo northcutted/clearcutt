@@ -18,14 +18,23 @@ plane.
 4. In GitHub, enable Actions, grant workflow read/write permissions, create and
    protect the `production` environment, and configure Pages to deploy from
    GitHub Actions.
-5. Run `clearcutt platform status` to verify the kit is wired together.
-6. Run the release workflow to publish the configured base-image fleet to GHCR.
-7. Let the catalog workflow run `clearcutt catalog build` for the full
+5. Run `clearcutt platform setup-nix --core-dir core --write-user-config` on
+   any machine that will build the fleet. In CI the workflows call the same
+   command with `--github-env "$GITHUB_ENV"` so fork cache trust comes from
+   `clearcutt.fleet.yaml`, not workflow constants.
+6. Run `clearcutt platform status` to verify the kit is wired together.
+7. Run the release workflow to publish the configured base-image fleet to GHCR.
+   The workflow is a GitHub identity runner; the reusable mechanics live behind
+   `clearcutt platform setup-nix`, `clearcutt fleet certify-target`,
+   `clearcutt fleet publish-target`, `clearcutt fleet assemble-target`,
+   `clearcutt fleet verify-target`, `clearcutt fleet export-provenance`, and
+   `clearcutt fleet finalize-release`.
+8. Let the catalog workflow run `clearcutt catalog build` for the full
    release-evidence pipeline, or `clearcutt catalog generate` when you only
    need portable catalog artifacts. Deploy the generated site to GitHub Pages or
    another static host.
-8. Give application teams the templates under `examples/clearcutt-template-*`.
-9. Enforce signatures, SBOMs, SLSA Build L3 provenance, and optional rebase
+9. Give application teams the templates under `examples/clearcutt-template-*`.
+10. Enforce signatures, SBOMs, SLSA Build L3 provenance, and optional rebase
    attestations in CI and Kubernetes admission policy.
 
 ## Trust Story
@@ -54,8 +63,23 @@ plane.
 # Inspect the forkable platform surface.
 clearcutt platform status
 
+# Configure and warm the Nix client from clearcutt.fleet.yaml.
+clearcutt platform setup-nix --core-dir core --write-user-config
+
 # Emit the release matrix used by GitHub Actions.
 clearcutt --format json matrix export --source fleet --github-actions --matrix release
+
+# Build and gate one single-architecture fleet target without publishing.
+clearcutt fleet certify-target --system x86_64-linux --language java25 --tier slim
+
+# Build and publish one single-architecture fleet target.
+clearcutt fleet publish-target --system x86_64-linux --language java25 --tier slim --version-tag v1.2.3
+
+# Assemble, sign, attest, and write the digest manifest for one multi-arch image.
+clearcutt fleet assemble-target --language java25 --tier slim --version-tag v1.2.3
+
+# Verify one released target against the fork-configured release identity.
+clearcutt fleet verify-target --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_PREFIX-java25:v1.2.3-slim
 
 # Generate an app-team starter.
 clearcutt app template java --output examples/my-java-service

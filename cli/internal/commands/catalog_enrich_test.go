@@ -364,6 +364,30 @@ func TestRegistryCatalogEnricherPullsRegistryEvidenceAndMergesAttestations(t *te
 	}
 }
 
+func TestRegistryCatalogEnricherUsesConfiguredImagePrefix(t *testing.T) {
+	client, host := commandTestRegistry(t)
+	img := commandTestImage(t, 707)
+	digest, err := client.PushImage(host+"/platform-java21:v1.0.0-slim", img)
+	if err != nil {
+		t.Fatalf("push image: %v", err)
+	}
+
+	enricher := &registryCatalogEnricher{
+		owner:        "acme",
+		repo:         "platform",
+		registryBase: host,
+		imagePrefix:  "platform",
+		oci:          client,
+	}
+	enrichment, err := enricher.Enrich("v1.0.0", "java21-slim")
+	if err != nil {
+		t.Fatalf("enrich failed: %v", err)
+	}
+	if enrichment == nil || enrichment.ManifestDigest == nil || *enrichment.ManifestDigest != digest {
+		t.Fatalf("expected enrichment from configured image prefix, got %#v", enrichment)
+	}
+}
+
 func TestCatalogEnrichmentEdgeHelpers(t *testing.T) {
 	rawPayload := map[string]any{
 		"predicateType": "https://example.invalid/custom",

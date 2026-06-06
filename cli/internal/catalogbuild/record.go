@@ -346,7 +346,11 @@ func BuildImageRecord(target string, releases []Release, refreshSet map[string]b
 	}
 	langInfo := gatherLanguages[meta.LangKey]
 	tierInfo := gatherTiers[meta.Tier]
-	imageName := "clearcutt-" + strings.ToLower(meta.LangKey)
+	imagePrefix := opts.ImagePrefix
+	if imagePrefix == "" {
+		imagePrefix = "clearcutt"
+	}
+	imageName := imagePrefix + "-" + strings.ToLower(meta.LangKey)
 	fullName := strings.TrimRight(opts.RegistryBase, "/") + "/" + imageName
 	releaseEntries := []gatherReleaseEntry{}
 	isLatestSet := false

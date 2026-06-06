@@ -10,11 +10,24 @@ import (
 
 const DefaultConfigPath = "clearcutt.fleet.yaml"
 
+// ReferenceOwner and ReferenceRepo identify the upstream ClearCutt project. They
+// are the default fleet identity and the source identity that
+// "clearcutt platform init" rewrites when localizing a fork's generated files
+// and consumer example manifests.
+const (
+	ReferenceOwner = "northcutted"
+	ReferenceRepo  = "clearcutt"
+	// ReferenceProductName is the upstream product brand that platform init
+	// rewrites to the fork's branding.productName in consumer example manifests.
+	ReferenceProductName = "ClearCutt"
+)
+
 type Config struct {
 	APIVersion  string            `json:"apiVersion"`
 	Kind        string            `json:"kind"`
 	Metadata    Metadata          `json:"metadata"`
 	Registry    Registry          `json:"registry"`
+	Branding    Branding          `json:"branding"`
 	Site        Site              `json:"site"`
 	Matrix      Matrix            `json:"matrix"`
 	Release     Release           `json:"release"`
@@ -37,6 +50,18 @@ type Registry struct {
 	ImagePrefix string `json:"imagePrefix"`
 }
 
+// Branding holds the human-facing product identity that the pipeline stamps
+// onto its outputs: OCI image labels (vendor/authors/description), the in-image
+// /etc/passwd account label, the catalog/site title, and generated docs. These
+// are inputs — a fork sets them once and every produced artifact carries the
+// fork's identity, never "ClearCutt". The CLI name and the clearcutt.dev schema
+// dialect are deliberately NOT branding; they are the tool/format contract.
+type Branding struct {
+	ProductName string `json:"productName"`
+	Vendor      string `json:"vendor"`
+	Authors     string `json:"authors"`
+}
+
 type Site struct {
 	Title       string `json:"title"`
 	Pages       bool   `json:"pages"`
@@ -51,9 +76,18 @@ type Matrix struct {
 }
 
 type Release struct {
-	SourceBranch     string `json:"sourceBranch"`
-	WorkflowIdentity string `json:"workflowIdentity"`
-	SLSABuilder      string `json:"slsaBuilder"`
+	SourceBranch     string   `json:"sourceBranch"`
+	WorkflowIdentity string   `json:"workflowIdentity"`
+	SLSABuilder      string   `json:"slsaBuilder"`
+	NixCache         NixCache `json:"nixCache,omitempty"`
+}
+
+type NixCache struct {
+	Bucket             string `json:"bucket,omitempty"`
+	PublicBaseURL      string `json:"publicBaseUrl,omitempty"`
+	SigningKeyName     string `json:"signingKeyName,omitempty"`
+	PublicKey          string `json:"publicKey,omitempty"`
+	CloudflareZoneName string `json:"cloudflareZoneName,omitempty"`
 }
 
 type Rebase struct {
@@ -108,10 +142,31 @@ type GitHubImageMatrix struct {
 	Include []GitHubImageCell `json:"include"`
 }
 
+// DeriveProductName turns a repository slug into a human product name, e.g.
+// "base-images" -> "Base Images". It is the default product identity for a fork
+// that does not set branding.productName explicitly.
+func DeriveProductName(repo string) string {
+	words := strings.FieldsFunc(repo, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.' || r == '/' || r == ' '
+	})
+	for i, w := range words {
+		if w == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	name := strings.Join(words, " ")
+	if name == "" {
+		return repo
+	}
+	return name
+}
+
 func DefaultConfig(owner, repo string) Config {
-	owner = firstNonEmpty(owner, "northcutted")
-	repo = firstNonEmpty(repo, "clearcutt")
+	owner = firstNonEmpty(owner, ReferenceOwner)
+	repo = firstNonEmpty(repo, ReferenceRepo)
 	repoPath := owner + "/" + repo
+	productName := DeriveProductName(repo)
 	return Config{
 		APIVersion: "clearcutt.dev/v1",
 		Kind:       "FleetConfig",
@@ -122,7 +177,12 @@ func DefaultConfig(owner, repo string) Config {
 			Host:        "ghcr.io",
 			Owner:       owner,
 			Repository:  repo,
-			ImagePrefix: "clearcutt",
+			ImagePrefix: strings.ToLower(repo),
+		},
+		Branding: Branding{
+			ProductName: productName,
+			Vendor:      owner,
+			Authors:     productName + " maintainers",
 		},
 		Site: Site{
 			Title:       "ClearCutt Hardened Image Fleet",
@@ -228,6 +288,9 @@ func (c *Config) applyDefaults() {
 	c.Registry.Owner = firstNonEmpty(c.Registry.Owner, def.Registry.Owner)
 	c.Registry.Repository = firstNonEmpty(c.Registry.Repository, def.Registry.Repository)
 	c.Registry.ImagePrefix = firstNonEmpty(c.Registry.ImagePrefix, def.Registry.ImagePrefix)
+	c.Branding.ProductName = firstNonEmpty(c.Branding.ProductName, def.Branding.ProductName)
+	c.Branding.Vendor = firstNonEmpty(c.Branding.Vendor, def.Branding.Vendor)
+	c.Branding.Authors = firstNonEmpty(c.Branding.Authors, c.Branding.ProductName+" maintainers")
 	c.Site.Title = firstNonEmpty(c.Site.Title, def.Site.Title)
 	c.Site.BasePath = firstNonEmpty(c.Site.BasePath, def.Site.BasePath)
 	c.Site.Description = firstNonEmpty(c.Site.Description, def.Site.Description)

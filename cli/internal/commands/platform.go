@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ generation, and approved remediation into one operator-facing product surface.`,
 	statusCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
 	statusCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root to inspect")
 
-	cmd.AddCommand(initCmd, statusCmd)
+	cmd.AddCommand(initCmd, statusCmd, NewPlatformSetupNixCmd())
 	return cmd
 }
 
@@ -77,10 +78,10 @@ func runPlatformInit() error {
 	owner := platformOpts.owner
 	repo := platformOpts.repo
 	if owner == "" {
-		owner = "northcutted"
+		owner = fleet.ReferenceOwner
 	}
 	if repo == "" {
-		repo = "clearcutt"
+		repo = fleet.ReferenceRepo
 	}
 	cfg := fleet.DefaultConfig(owner, repo)
 	raw, err := fleet.Marshal(cfg)
@@ -114,7 +115,84 @@ func runPlatformInit() error {
 			fmt.Fprintf(out, "wrote %s\n", path)
 		}
 	}
+
+	localized, err := localizeConsumerExamples(root, cfg)
+	if err != nil {
+		return err
+	}
+	for _, path := range localized {
+		fmt.Fprintf(out, "localized %s\n", path)
+	}
 	return nil
+}
+
+// localizeConsumerExamples rewrites the upstream ClearCutt identity inside the
+// consumer-facing example manifests (Kubernetes, OpenShift, Compose, the
+// base-image overlay, and framework samples) so a fork does not ship deployment
+// manifests that pull upstream images, admission policy that trusts the upstream
+// signing identity, or copy that shows the upstream brand. It localizes four
+// things, all sourced from the fleet config:
+//
+//	registry namespace, GitHub OIDC identity, image-name prefix (so admission
+//	globs match the fork's actual images), and the product brand word.
+//
+// Placeholder app-team identities such as ghcr.io/acme/* and the clearcutt.dev
+// schema/predicate dialect (no hyphen) are intentionally left untouched. Files
+// are edited in place so comments and local customization survive; unchanged
+// files are skipped, which makes this a no-op in the upstream repository itself.
+func localizeConsumerExamples(root string, cfg fleet.Config) ([]string, error) {
+	ref := fleet.DefaultConfig(fleet.ReferenceOwner, fleet.ReferenceRepo)
+	if ref.RegistryBase() == cfg.RegistryBase() &&
+		ref.RepoPath() == cfg.RepoPath() &&
+		ref.Registry.ImagePrefix == cfg.Registry.ImagePrefix &&
+		fleet.ReferenceProductName == cfg.Branding.ProductName {
+		return nil, nil
+	}
+	// Order matters: replace the registry base (host + path) before the bare repo
+	// path, and use a trailing hyphen on the image prefix so "clearcutt-" image
+	// names/globs are localized without touching the "clearcutt.dev" dialect.
+	replacer := strings.NewReplacer(
+		ref.RegistryBase(), cfg.RegistryBase(),
+		ref.RepoPath(), cfg.RepoPath(),
+		ref.Registry.ImagePrefix+"-", cfg.Registry.ImagePrefix+"-",
+		fleet.ReferenceProductName, cfg.Branding.ProductName,
+	)
+	var written []string
+	walkErr := filepath.WalkDir(filepath.Join(root, "examples"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Size() > 2<<20 {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		updated := replacer.Replace(string(raw))
+		if updated == string(raw) {
+			return nil
+		}
+		if err := os.WriteFile(path, []byte(updated), info.Mode().Perm()); err != nil {
+			return err
+		}
+		written = append(written, path)
+		return nil
+	})
+	if walkErr != nil {
+		return written, walkErr
+	}
+	return written, nil
 }
 
 func runPlatformStatus() error {
@@ -144,10 +222,21 @@ func runPlatformStatus() error {
 			add("remediation.mode", "fail", "remediation mode must be approved-pr")
 		}
 		checkFileContains(root, "core/lib/platform-metadata.nix", cfg.RepoURL(), "fleet.metadata", "Nix image labels use the fork-local GitHub source URL", add)
+		if strings.EqualFold(cfg.Admission.Engine, "kyverno") {
+			checkFileContains(root, "examples/k8s-deployment/kyverno-policy.yaml", cfg.RegistryBase(), "admission.identity", "admission policy pins the fork image namespace and signing identity", add)
+		}
 	}
 
 	checkFileContains(root, ".github/workflows/release.yml", "matrix export --source fleet", "release.workflow", "release workflow derives its matrix from clearcutt.fleet.yaml", add)
+	checkFileContains(root, ".github/workflows/release.yml", "clearcutt platform setup-nix", "release.nix", "release workflow delegates fork-specific Nix setup to the CLI", add)
+	checkFileContains(root, ".github/workflows/release.yml", "clearcutt fleet publish-target", "release.publish", "release workflow delegates single-arch fleet publication to the CLI", add)
+	checkFileContains(root, ".github/workflows/release.yml", "clearcutt fleet assemble-target", "release.assemble", "release workflow delegates multi-arch assembly, signing, and OCI attestations to the CLI", add)
+	checkFileContains(root, ".github/workflows/release.yml", "clearcutt fleet finalize-release", "release.finalize", "release workflow delegates release assets and notes to the CLI", add)
 	checkFileContains(root, ".github/workflows/release.yml", "slsa-github-generator", "release.slsa", "release workflow keeps SLSA Build L3 generator provenance", add)
+	checkFileContains(root, ".github/actions/setup-nix/action.yml", "clearcutt platform setup-nix applies fork-specific fleet cache config", "nix.install", "Nix installer action is generic and leaves fork-specific setup to the CLI", add)
+	checkFileNotContains(root, "core/flake.nix", "nix-cache.clearcutt.dev", "nix.flake", "core flake does not hardcode the upstream Nix cache", add)
+	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt fleet certify-target", "pr.certify", "PR gate delegates fleet target certification to the CLI", add)
+	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt platform setup-nix", "pr.nix", "PR gate delegates fork-specific Nix setup to the CLI", add)
 	checkFileContains(root, ".github/workflows/rebase.yml", "app rebase", "rebase.workflow", "rebase workflow exists for the configured platform OIDC identity", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "clearcutt catalog build", "catalog.workflow", "catalog workflow uses the canonical catalog build command", add)
 	checkPath(root, ".github/actions/certify-app/action.yml", "certify.action", "composite certify action is available for app teams", add)
@@ -207,6 +296,19 @@ func checkFileContains(root, rel, needle, id, msg string, add func(string, strin
 	add(id, "fail", fmt.Sprintf("%s does not contain %q", rel, needle))
 }
 
+func checkFileNotContains(root, rel, needle, id, msg string, add func(string, string, string)) {
+	raw, err := os.ReadFile(filepath.Join(root, rel))
+	if err != nil {
+		add(id, "fail", rel+" is missing")
+		return
+	}
+	if strings.Contains(string(raw), needle) {
+		add(id, "fail", fmt.Sprintf("%s still contains %q", rel, needle))
+		return
+	}
+	add(id, "pass", msg)
+}
+
 func joinRoot(root, path string) string {
 	if filepath.IsAbs(path) {
 		return path
@@ -221,10 +323,12 @@ func platformMetadataNix(cfg fleet.Config) string {
 {
   repoPath = "%s";
   sourceURL = "%s";
+  productName = "%s";
+  imagePrefix = "%s";
   vendor = "%s";
   authors = "%s";
 }
-`, nixString(cfg.RepoPath()), nixString(cfg.RepoURL()), nixString(cfg.Registry.Owner), nixString(cfg.Registry.Owner+" platform team"))
+`, nixString(cfg.RepoPath()), nixString(cfg.RepoURL()), nixString(cfg.Branding.ProductName), nixString(cfg.Registry.ImagePrefix), nixString(cfg.Branding.Vendor), nixString(cfg.Branding.Authors))
 }
 
 func nixString(value string) string {
@@ -244,10 +348,11 @@ policies, and remediation review loop.
 1. Review and edit %[1]s.
 2. Create and protect the GitHub Environment named production, then enable GitHub Pages from Actions.
 3. Run clearcutt platform status before the first release.
-4. Run the release workflow to publish the configured fleet to %[2]s.
-5. Let the catalog workflow run %[3]d-release ingestion with vulnerability scan depth %[4]s.
-6. Give app teams the templates under %[5]s.
-7. Enforce signatures, SBOMs, SLSA Build L3 provenance, and rebase attestations at CI and admission.
+4. Run clearcutt platform setup-nix on any machine or runner that will build the fleet. It reads %[1]s, writes optional nix.conf/GitHub NIX_CONFIG state, and warms or runs the core dev shell.
+5. Run the release workflow to publish the configured fleet to %[2]s. The workflow is a GitHub identity runner; clearcutt platform setup-nix owns fork-specific Nix client setup, and clearcutt fleet certify-target, publish-target, assemble-target, verify-target, export-provenance, and finalize-release own the reusable release mechanics.
+6. Let the catalog workflow run %[3]d-release ingestion with vulnerability scan depth %[4]s.
+7. Give app teams the templates under %[5]s.
+8. Enforce signatures, SBOMs, SLSA Build L3 provenance, and rebase attestations at CI and admission.
 
 ## Trust Story
 

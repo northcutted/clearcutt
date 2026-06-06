@@ -25,6 +25,7 @@ type catalogGatherFlags struct {
 	owner            string
 	repo             string
 	registryBase     string
+	imagePrefix      string
 	outDir           string
 	enrichmentDir    string
 	sbomCacheDir     string
@@ -95,6 +96,7 @@ func addCatalogGatherFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
+	cmd.Flags().StringVar(&catalogGatherOpts.imagePrefix, "image-prefix", "", "Image name prefix for catalog records (defaults to fleet config registry.imagePrefix or \"clearcutt\")")
 	cmd.Flags().StringVar(&catalogGatherOpts.outDir, "out-dir", "", "Catalog output directory (defaults to --catalog)")
 	cmd.Flags().StringVar(&catalogGatherOpts.enrichmentDir, "enrichment-dir", envOr("ENRICHMENT_DIR", filepath.Join("site", "src", "data", "enrichment")), "Directory of registry enrichment JSON")
 	cmd.Flags().StringVar(&catalogGatherOpts.sbomCacheDir, "sbom-cache-dir", envOr("SBOM_CACHE_DIR", filepath.Join("site", "src", "data", "sboms")), "Directory to cache downloaded SBOM assets")
@@ -113,29 +115,8 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 	if catalogGatherOpts.imagesFile != "" {
 		return runCatalogGenerateFromImages()
 	}
-	if catalogGatherOpts.config != "" {
-		cfg, err := fleet.Load(catalogGatherOpts.config)
-		if err != nil {
-			if explicitConfig || !os.IsNotExist(err) {
-				return err
-			}
-		} else {
-			if catalogGatherOpts.owner == "" {
-				catalogGatherOpts.owner = cfg.Registry.Owner
-			}
-			if catalogGatherOpts.repo == "" {
-				catalogGatherOpts.repo = cfg.Registry.Repository
-			}
-			if catalogGatherOpts.registryBase == "" {
-				catalogGatherOpts.registryBase = cfg.RegistryBase()
-			}
-			if catalogGatherOpts.targets == "" {
-				catalogGatherOpts.targets = fleetTargets(cfg)
-			}
-			if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
-				catalogGatherOpts.limit = cfg.Catalog.ReleaseLimit
-			}
-		}
+	if err := applyCatalogGatherFleetConfig(catalogGatherOpts.config, explicitConfig, limitChanged); err != nil {
+		return err
 	}
 	if catalogGatherOpts.outDir != "" {
 		GlobalOpts.CatalogPath = catalogGatherOpts.outDir
@@ -145,6 +126,38 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 	}
 	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
 	return finalizeGeneratedCatalog(outDir)
+}
+
+func applyCatalogGatherFleetConfig(configPath string, explicitConfig, limitChanged bool) error {
+	if configPath == "" {
+		return nil
+	}
+	cfg, err := fleet.Load(configPath)
+	if err != nil {
+		if explicitConfig || !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if catalogGatherOpts.owner == "" {
+		catalogGatherOpts.owner = cfg.Registry.Owner
+	}
+	if catalogGatherOpts.repo == "" {
+		catalogGatherOpts.repo = cfg.Registry.Repository
+	}
+	if catalogGatherOpts.registryBase == "" {
+		catalogGatherOpts.registryBase = cfg.RegistryBase()
+	}
+	if catalogGatherOpts.imagePrefix == "" {
+		catalogGatherOpts.imagePrefix = cfg.Registry.ImagePrefix
+	}
+	if catalogGatherOpts.targets == "" {
+		catalogGatherOpts.targets = fleetTargets(cfg)
+	}
+	if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
+		catalogGatherOpts.limit = cfg.Catalog.ReleaseLimit
+	}
+	return nil
 }
 
 func finalizeGeneratedCatalog(outDir string) error {
@@ -288,6 +301,7 @@ func runCatalogGather() error {
 	for _, target := range targets {
 		rec, err := catalogbuild.BuildImageRecord(target, releases, refreshSet, catalogbuild.BuildOptions{
 			RegistryBase:  registryBase,
+			ImagePrefix:   catalogGatherOpts.imagePrefix,
 			SBOMCacheDir:  catalogGatherOpts.sbomCacheDir,
 			EnrichmentDir: catalogGatherOpts.enrichmentDir,
 			VulnDir:       catalogGatherOpts.vulnDir,

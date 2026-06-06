@@ -14,17 +14,20 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/sign"
 	"github.com/spf13/cobra"
 )
 
 type catalogEnrichFlags struct {
+	config           string
 	limit            int
 	tags             string
 	owner            string
 	repo             string
 	registryBase     string
+	imagePrefix      string
 	outDir           string
 	targets          string
 	forceRefreshAll  bool
@@ -42,14 +45,16 @@ func newCatalogEnrichCmd() *cobra.Command {
 		Short: "Enrich catalog records from GHCR manifests and Sigstore evidence",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCatalogEnrich()
+			return runCatalogEnrichWithConfig(cmd.Flags().Changed("config"), cmd.Flags().Changed("limit"))
 		},
 	}
+	cmd.Flags().StringVar(&catalogEnrichOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
 	cmd.Flags().IntVar(&catalogEnrichOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum releases to inspect for tags")
 	cmd.Flags().StringVar(&catalogEnrichOpts.tags, "tags", os.Getenv("GATHER_TAGS"), "Comma-separated release tags to enrich")
 	cmd.Flags().StringVar(&catalogEnrichOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner")
 	cmd.Flags().StringVar(&catalogEnrichOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository")
-	cmd.Flags().StringVar(&catalogEnrichOpts.registryBase, "registry-base", "", "Registry namespace (defaults to ghcr.io/<owner>/<repo>)")
+	cmd.Flags().StringVar(&catalogEnrichOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
+	cmd.Flags().StringVar(&catalogEnrichOpts.imagePrefix, "image-prefix", "", "Image name prefix for registry enrichment (defaults to fleet config registry.imagePrefix or \"clearcutt\")")
 	cmd.Flags().StringVar(&catalogEnrichOpts.outDir, "out-dir", envOr("ENRICHMENT_DIR", filepath.Join("site", "src", "data", "enrichment")), "Enrichment output directory")
 	cmd.Flags().StringVar(&catalogEnrichOpts.targets, "targets", os.Getenv("CATALOG_TARGETS"), "Comma-separated target allowlist")
 	cmd.Flags().BoolVar(&catalogEnrichOpts.forceRefreshAll, "force-refresh-all", parseScanBool(os.Getenv("FORCE_REFRESH_ALL")), "Refresh every tag even when cached")
@@ -61,6 +66,13 @@ func newCatalogEnrichCmd() *cobra.Command {
 }
 
 func runCatalogEnrich() error {
+	return runCatalogEnrichWithConfig(false, false)
+}
+
+func runCatalogEnrichWithConfig(explicitConfig, limitChanged bool) error {
+	if err := applyCatalogEnrichFleetConfig(explicitConfig, limitChanged); err != nil {
+		return err
+	}
 	owner, repo, err := detectCatalogRepo(catalogEnrichOpts.owner, catalogEnrichOpts.repo)
 	if err != nil {
 		return err
@@ -88,6 +100,7 @@ func runCatalogEnrich() error {
 		owner:        owner,
 		repo:         repo,
 		registryBase: registryBase,
+		imagePrefix:  catalogEnrichOpts.imagePrefix,
 		oci:          oci.NewClient(),
 		cosign:       cosign,
 		github:       source,
@@ -121,6 +134,38 @@ func runCatalogEnrich() error {
 		}
 	}
 	fmt.Fprintf(out, "[enrich] done fetched=%d cached=%d\n", fetched, cached)
+	return nil
+}
+
+func applyCatalogEnrichFleetConfig(explicitConfig, limitChanged bool) error {
+	if catalogEnrichOpts.config == "" {
+		return nil
+	}
+	cfg, err := fleet.Load(catalogEnrichOpts.config)
+	if err != nil {
+		if explicitConfig || !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if catalogEnrichOpts.owner == "" {
+		catalogEnrichOpts.owner = cfg.Registry.Owner
+	}
+	if catalogEnrichOpts.repo == "" {
+		catalogEnrichOpts.repo = cfg.Registry.Repository
+	}
+	if catalogEnrichOpts.registryBase == "" {
+		catalogEnrichOpts.registryBase = cfg.RegistryBase()
+	}
+	if catalogEnrichOpts.imagePrefix == "" {
+		catalogEnrichOpts.imagePrefix = cfg.Registry.ImagePrefix
+	}
+	if catalogEnrichOpts.targets == "" {
+		catalogEnrichOpts.targets = fleetTargets(cfg)
+	}
+	if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
+		catalogEnrichOpts.limit = cfg.Catalog.ReleaseLimit
+	}
 	return nil
 }
 
@@ -170,6 +215,7 @@ type registryCatalogEnricher struct {
 	owner        string
 	repo         string
 	registryBase string
+	imagePrefix  string
 	oci          *oci.Client
 	cosign       *sign.Cosign
 	github       *githubReleaseSource
@@ -180,7 +226,8 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*catalogbuild.Enri
 	if meta == nil {
 		return nil, nil
 	}
-	baseImage := strings.TrimRight(e.registryBase, "/") + "/clearcutt-" + strings.ToLower(meta.LangKey)
+	imagePrefix := catalogbuild.FirstNonEmptyStr(e.imagePrefix, "clearcutt")
+	baseImage := strings.TrimRight(e.registryBase, "/") + "/" + imagePrefix + "-" + strings.ToLower(meta.LangKey)
 	versionedRef := fmt.Sprintf("%s:%s-%s", baseImage, tag, meta.Tier)
 	rollingRef := fmt.Sprintf("%s:%s", baseImage, meta.Tier)
 	res, err := e.oci.Pull(versionedRef)

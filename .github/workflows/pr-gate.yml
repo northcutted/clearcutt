@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: read
-  statuses: write # Allows pipeline.sh to report pass/fail status back to the SCM
+  statuses: write # Allows the ClearCutt build gate to report pass/fail status back to the SCM
 
 # Cancel superseded PR runs — the latest push is the only one anyone cares about.
 concurrency:
@@ -67,6 +67,21 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
+
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
@@ -79,12 +94,12 @@ jobs:
       # Build, generate SBOM, and scan with Syft + Grype locally.
       # Omit --publish to prevent any registry copy or keyless OIDC signing.
       - name: Run Build and Security Gate
-        working-directory: core
         run: |
-          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./pipeline/pipeline.sh \
+          ./clearcutt fleet certify-target \
             --system "${{ matrix.system }}" \
-            --skip-local-signing \
-            "${{ matrix.language }}-${{ matrix.tier }}"
+            --language "${{ matrix.language }}" \
+            --tier "${{ matrix.tier }}" \
+            --core-dir core
 
       # Upload the validated SBOM JSON as an artifact for audit checking
       - name: Upload Local SBOM Artifact
@@ -105,6 +120,21 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
+          cache: true
+
+      - name: Build ClearCutt CLI
+        run: |
+          cd cli
+          go build -o ../clearcutt ./cmd/clearcutt
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
+
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
@@ -116,9 +146,7 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Execute Gating Suite
-        working-directory: core
-        run: |
-          nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
+        run: ./clearcutt platform setup-nix --core-dir core -- ./tests/verify.sh
 
   go-ci:
     name: Go Lint, Build, Test & Drift Guard

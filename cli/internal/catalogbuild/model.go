@@ -270,6 +270,7 @@ type ReleaseSource interface {
 
 type BuildOptions struct {
 	RegistryBase  string
+	ImagePrefix   string
 	SBOMCacheDir  string
 	EnrichmentDir string
 	VulnDir       string
