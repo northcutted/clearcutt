@@ -157,7 +157,12 @@ let
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       initdb -D "$PGDATA"
     fi
-    postgres -D "$PGDATA" -h 127.0.0.1 -k /tmp "$@" &
+    postgres -D "$PGDATA" \
+      -h 127.0.0.1 \
+      -k /tmp \
+      -c log_destination=stderr \
+      -c logging_collector=off \
+      "$@" &
     postgres_pid="$!"
     stop_postgres() {
       kill -TERM "$postgres_pid" >/dev/null 2>&1 || true
