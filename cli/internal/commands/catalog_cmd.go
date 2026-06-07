@@ -263,6 +263,28 @@ func fleetTargets(cfg fleet.Config) string {
 	return strings.Join(targets, ",")
 }
 
+func appendFleetServiceTargets(targets string, cfg fleet.Config) string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, target := range strings.Split(targets, ",") {
+		target = strings.TrimSpace(target)
+		if target == "" || seen[target] {
+			continue
+		}
+		seen[target] = true
+		out = append(out, target)
+	}
+	for _, service := range cfg.Services {
+		id := strings.TrimSpace(service.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return strings.Join(out, ",")
+}
+
 func appendServiceCatalogRecords(outDir string, cfg fleet.Config) error {
 	if len(cfg.Services) == 0 {
 		return nil

@@ -72,6 +72,7 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 	catalogEnrichOpts.targets = catalogGatherOpts.targets
 	catalogEnrichOpts.forceRefreshAll = catalogBuildOpts.forceRefreshAll
 	catalogEnrichOpts.forceRefreshTags = os.Getenv("FORCE_REFRESH_TAGS")
+	catalogEnrichOpts.includeServices = catalogBuildOpts.includeServices
 	if err := runCatalogEnrichWithConfig(explicitConfig, limitChanged); err != nil {
 		return err
 	}

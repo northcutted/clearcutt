@@ -388,6 +388,44 @@ func TestRegistryCatalogEnricherUsesConfiguredImagePrefix(t *testing.T) {
 	}
 }
 
+func TestRegistryCatalogEnricherPullsServiceEvidence(t *testing.T) {
+	client, host := commandTestRegistry(t)
+	img := commandTestImage(t, 808)
+	digest, err := client.PushImage(host+"/clearcutt-postgres16:v1.0.0-service", img)
+	if err != nil {
+		t.Fatalf("push service image: %v", err)
+	}
+	verifyJSON := []byte(`[{"optional":{"Bundle":{"payload":{"logIndex":"700"}},"Subject":"https://github.com/acme/clearcutt/.github/workflows/release.yml@refs/heads/main"}}]`)
+	cosignPath := writeFakeCosign(t, verifyJSON, []byte{})
+	cosign := sign.New(cosignPath, `^https://github\.com/acme/clearcutt/`, "https://token.actions.githubusercontent.com", out, errOut)
+	enricher := &registryCatalogEnricher{
+		owner:        "acme",
+		repo:         "clearcutt",
+		registryBase: host,
+		oci:          client,
+		cosign:       cosign,
+	}
+
+	refs := enricher.catalogRefs("v1.0.0", "postgres16")
+	if len(refs) != 1 || !strings.HasSuffix(refs[0], "/clearcutt-postgres16:v1.0.0-service") {
+		t.Fatalf("unexpected service refs: %#v", refs)
+	}
+	targets := catalogbuild.Targets("java21-slim,postgres16")
+	if len(targets) != 2 || targets[0] != "java21-slim" || targets[1] != "postgres16" {
+		t.Fatalf("custom service target should survive target filtering: %#v", targets)
+	}
+	enrichment, err := enricher.Enrich("v1.0.0", "postgres16")
+	if err != nil {
+		t.Fatalf("service enrich failed: %v", err)
+	}
+	if enrichment == nil || enrichment.ManifestDigest == nil || *enrichment.ManifestDigest != digest {
+		t.Fatalf("expected service enrichment digest, got %#v", enrichment)
+	}
+	if enrichment.Signature == nil || enrichment.Signature.RekorLogIndex == nil || *enrichment.Signature.RekorLogIndex != 700 {
+		t.Fatalf("expected service signature evidence, got %#v", enrichment.Signature)
+	}
+}
+
 func TestCatalogEnrichmentEdgeHelpers(t *testing.T) {
 	rawPayload := map[string]any{
 		"predicateType": "https://example.invalid/custom",
