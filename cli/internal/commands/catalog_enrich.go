@@ -35,6 +35,7 @@ type catalogEnrichFlags struct {
 	cosignPath       string
 	identity         string
 	issuer           string
+	includeServices  bool
 }
 
 var catalogEnrichOpts catalogEnrichFlags
@@ -62,6 +63,7 @@ func newCatalogEnrichCmd() *cobra.Command {
 	cmd.Flags().StringVar(&catalogEnrichOpts.cosignPath, "cosign-path", envOr("COSIGN_PATH", "cosign"), "Path to cosign binary")
 	cmd.Flags().StringVar(&catalogEnrichOpts.identity, "certificate-identity-regexp", "", "Cosign certificate identity regexp")
 	cmd.Flags().StringVar(&catalogEnrichOpts.issuer, "certificate-oidc-issuer", envOr("COSIGN_OIDC_ISSUER", "https://token.actions.githubusercontent.com"), "Cosign certificate OIDC issuer")
+	cmd.Flags().BoolVar(&catalogEnrichOpts.includeServices, "include-services", false, "Also enrich configured first-class service images")
 	return cmd
 }
 
@@ -163,6 +165,9 @@ func applyCatalogEnrichFleetConfig(explicitConfig, limitChanged bool) error {
 	if catalogEnrichOpts.targets == "" {
 		catalogEnrichOpts.targets = fleetTargets(cfg)
 	}
+	if catalogEnrichOpts.includeServices {
+		catalogEnrichOpts.targets = appendFleetServiceTargets(catalogEnrichOpts.targets, cfg)
+	}
 	if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
 		catalogEnrichOpts.limit = cfg.Catalog.ReleaseLimit
 	}
@@ -222,20 +227,20 @@ type registryCatalogEnricher struct {
 }
 
 func (e *registryCatalogEnricher) Enrich(tag, target string) (*catalogbuild.Enrichment, error) {
-	meta := catalogbuild.TargetMeta(target)
-	if meta == nil {
+	refs := e.catalogRefs(tag, target)
+	if len(refs) == 0 || e.oci == nil {
 		return nil, nil
 	}
-	imagePrefix := catalogbuild.FirstNonEmptyStr(e.imagePrefix, "clearcutt")
-	baseImage := strings.TrimRight(e.registryBase, "/") + "/" + imagePrefix + "-" + strings.ToLower(meta.LangKey)
-	versionedRef := fmt.Sprintf("%s:%s-%s", baseImage, tag, meta.Tier)
-	rollingRef := fmt.Sprintf("%s:%s", baseImage, meta.Tier)
-	res, err := e.oci.Pull(versionedRef)
-	if err != nil {
-		res, err = e.oci.Pull(rollingRef)
-		if err != nil {
-			return nil, nil
+	var res *oci.Resolved
+	for _, ref := range refs {
+		pulled, err := e.oci.Pull(ref)
+		if err == nil {
+			res = pulled
+			break
 		}
+	}
+	if res == nil {
+		return nil, nil
 	}
 	result := &catalogbuild.Enrichment{Architectures: []catalogbuild.EnrichmentArch{}, Attestations: []catalogbuild.EnrichmentAttestation{}}
 	if digest, err := res.ManifestDigest(); err == nil {
@@ -249,7 +254,7 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*catalogbuild.Enri
 
 	allAttestations := []cosignAttestation{}
 	seen := map[string]bool{}
-	for _, ref := range []string{versionedRef, rollingRef} {
+	for _, ref := range refs {
 		if e.cosign != nil && result.Signature == nil {
 			result.Signature = e.verifySignature(ref)
 		}
@@ -291,6 +296,25 @@ func (e *registryCatalogEnricher) Enrich(tag, target string) (*catalogbuild.Enri
 	normalized = append(normalized, githubAttestations...)
 	result.Attestations = mergeEnrichmentAttestations(normalized)
 	return result, nil
+}
+
+func (e *registryCatalogEnricher) catalogRefs(tag, target string) []string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil
+	}
+	imagePrefix := catalogbuild.FirstNonEmptyStr(e.imagePrefix, "clearcutt")
+	if meta := catalogbuild.TargetMeta(target); meta != nil {
+		baseImage := strings.TrimRight(e.registryBase, "/") + "/" + imagePrefix + "-" + strings.ToLower(meta.LangKey)
+		return []string{
+			fmt.Sprintf("%s:%s-%s", baseImage, tag, meta.Tier),
+			fmt.Sprintf("%s:%s", baseImage, meta.Tier),
+		}
+	}
+	baseImage := strings.TrimRight(e.registryBase, "/") + "/" + imagePrefix + "-" + strings.ToLower(target)
+	return []string{
+		fmt.Sprintf("%s:%s-service", baseImage, tag),
+	}
 }
 
 func enrichmentArchitectures(res *oci.Resolved) ([]catalogbuild.EnrichmentArch, error) {

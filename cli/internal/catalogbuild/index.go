@@ -13,21 +13,31 @@ import (
 
 func Targets(filter string) []string {
 	allowed := map[string]bool{}
+	order := []string{}
 	if filter != "" {
 		for _, target := range strings.Split(filter, ",") {
 			target = strings.TrimSpace(target)
 			if target != "" {
 				allowed[target] = true
+				order = append(order, target)
 			}
 		}
 	}
 	targets := []string{}
+	seen := map[string]bool{}
 	for _, langKey := range gatherLanguageOrder {
 		for _, tier := range gatherTierOrder {
 			target := langKey + "-" + tier
 			if len(allowed) == 0 || allowed[target] {
 				targets = append(targets, target)
+				seen[target] = true
 			}
+		}
+	}
+	for _, target := range order {
+		if !seen[target] {
+			targets = append(targets, target)
+			seen[target] = true
 		}
 	}
 	return targets

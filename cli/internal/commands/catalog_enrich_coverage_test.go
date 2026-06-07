@@ -31,6 +31,7 @@ func TestCatalogEnrichFleetConfigAndTagBranches(t *testing.T) {
 	cfg := fleet.DefaultConfig("acme", "platform")
 	cfg.Catalog.ReleaseLimit = 7
 	cfg.Matrix.Languages = []string{"java21", "node24"}
+	cfg.Services = []fleet.ServiceImage{{ID: "postgres16", Template: "postgres", Version: "16"}}
 	raw, err := fleet.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
@@ -40,7 +41,7 @@ func TestCatalogEnrichFleetConfigAndTagBranches(t *testing.T) {
 		t.Fatalf("write fleet config: %v", err)
 	}
 
-	catalogEnrichOpts = catalogEnrichFlags{config: configPath}
+	catalogEnrichOpts = catalogEnrichFlags{config: configPath, includeServices: true}
 	if err := applyCatalogEnrichFleetConfig(false, false); err != nil {
 		t.Fatalf("apply enrich fleet defaults: %v", err)
 	}
@@ -50,6 +51,7 @@ func TestCatalogEnrichFleetConfigAndTagBranches(t *testing.T) {
 		catalogEnrichOpts.imagePrefix != "platform" ||
 		!strings.Contains(catalogEnrichOpts.targets, "java21-dev") ||
 		!strings.Contains(catalogEnrichOpts.targets, "node24-distroless") ||
+		!strings.Contains(catalogEnrichOpts.targets, "postgres16") ||
 		catalogEnrichOpts.limit != 7 {
 		t.Fatalf("fleet defaults were not applied: %#v", catalogEnrichOpts)
 	}
