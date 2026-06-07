@@ -157,10 +157,28 @@ let
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       initdb -D "$PGDATA"
     fi
-    exec postgres -D "$PGDATA" \
-      -c listen_addresses=127.0.0.1 \
-      -c unix_socket_directories=/tmp \
-      "$@"
+    log_file="''${POSTGRES_LOG_FILE:-/tmp/postgres.log}"
+    postgres_options="-h 127.0.0.1 -k /tmp $*"
+    if ! pg_ctl -D "$PGDATA" -o "$postgres_options" -l "$log_file" -w start; then
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    tail -n +1 -f "$log_file" &
+    tail_pid="$!"
+    stop_postgres() {
+      pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1 || true
+      kill "$tail_pid" >/dev/null 2>&1 || true
+      wait "$tail_pid" 2>/dev/null || true
+      exit 0
+    }
+    trap stop_postgres INT TERM
+    while pg_ctl -D "$PGDATA" status >/dev/null 2>&1; do
+      sleep 1
+    done
+    kill "$tail_pid" >/dev/null 2>&1 || true
+    wait "$tail_pid" 2>/dev/null || true
+    cat "$log_file" >&2 || true
+    exit 1
   '';
 
   serviceTemplatePackages = service:
