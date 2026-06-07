@@ -28,7 +28,7 @@ clearcutt service validate --all --nix --system x86_64-linux --core-dir core
 # Build one single-arch service image locally.
 clearcutt service build postgres16 --system x86_64-linux --core-dir core
 
-# After loading the image into Docker or Podman, run command and functional smoke.
+# After loading the image into Docker or Podman, run the template smoke checks.
 clearcutt service smoke postgres16 --engine docker
 ```
 
@@ -42,7 +42,7 @@ The CLI updates:
 
 | Template | Default package | Port | Storage | Smoke |
 | :--- | :--- | :--- | :--- | :--- |
-| `postgres` | `postgresql_16` | `5432/tcp` | `/var/lib/postgresql/data` | version checks plus detached-container `pg_isready` functional smoke |
+| `postgres` | `postgresql_16` | `5432/tcp` | `/var/lib/postgresql/data` | version checks for `postgres`, `initdb`, and `pg_isready`; functional startup remains deployment-config dependent |
 | `valkey` | `valkey` | `6379/tcp` | `/data` | version checks plus detached-container `valkey-cli PING` functional smoke |
 | `oauth2-proxy` | `oauth2-proxy` | `4180/tcp` | stateless | version check only; meaningful server probes require provider config |
 
@@ -51,9 +51,10 @@ for the rootless runtime user. Production deployments should mount volumes over
 those paths, for example `/var/lib/postgresql/data` or `/data`, instead of
 depending on image layers for durable storage.
 
-Use `clearcutt service smoke --command-only` when you want the old lightweight
-version-command smoke behavior or when a custom service needs external
-configuration before it can start.
+Use `clearcutt service smoke --command-only` when you want only the configured
+command-smoke checks or when a custom service needs external configuration
+before it can start. Built-in functional probes currently run for templates
+that can start without deployment-specific configuration, such as Valkey.
 
 ## Preview And Production Policy
 
