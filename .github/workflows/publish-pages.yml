@@ -210,10 +210,6 @@ jobs:
           BASE_PATH: ${{ steps.pages_base.outputs.base }}
         run: npm run build
 
-      - name: Build Pagefind search index
-        working-directory: site
-        run: npx pagefind --site dist
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:

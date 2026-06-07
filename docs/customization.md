@@ -48,7 +48,7 @@ site:
 
   home:
     title: "Acme Base Image Catalog"
-    description: "Choose an approved base image and inspect the evidence behind it."
+    description: "Containerize applications with approved runtime images and inspect the evidence behind them."
     showNotice: true
     noticeTitle: "Internal use"
     noticeBody: "Use this catalog with Acme admission policies and release runbooks."
@@ -59,11 +59,12 @@ site:
     personas:
       - id: "application"
         label: "Application engineers"
-        summary: "Pick a runtime base, build an app image, and validate it before release."
+        summary: "Pick a runtime image, build an app container, and validate it before release."
         steps:
           - title: "Choose a runtime and tier"
             description: "Use the catalog matrix to find the right language version and production tier."
             href: "catalog"
+            ctaLabel: "Choose an image"
 ```
 
 Pass it to scaffold, build, preview, or eject:
@@ -89,7 +90,8 @@ editing Astro components:
 - `quickLinks[]` renders the "Start Here" links.
 - `personas[]` renders role-specific workflow sections. Each persona has an
   `id`, `label`, `summary`, and ordered `steps[]`. A step can link to a route
-  with `href` or show a copyable command with `command`.
+  with `href`, customize its link text with `ctaLabel`, or show a copyable
+  command with `command`.
 
 Use relative `href` values such as `catalog`, `getting-started`, or
 `about?tab=audit` for built-in routes. Absolute `https://` links open as

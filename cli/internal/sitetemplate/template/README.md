@@ -50,7 +50,7 @@ Edit `clearcutt.site.yaml` to customize branding and behavior:
 - `site.features` toggles SBOMs, vulnerabilities, layers, provenance, OCI labels, release history, and Kyverno policy examples.
 - `site.terminology` renames tier labels such as distroless, slim, and dev.
 - `site.links` adds source repository, registry, support, and docs links.
-- `site.home` customizes homepage title, notice, quick links, and persona workflow sections.
+- `site.home` customizes homepage title, notice, quick links, persona workflow sections, and per-step CTA labels.
 
 Use `--site-config ./clearcutt.site.yaml` when scaffolding, building, or
 previewing to copy an external config into the generated project.

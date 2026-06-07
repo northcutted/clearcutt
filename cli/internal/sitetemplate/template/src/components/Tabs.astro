@@ -65,8 +65,12 @@ function getTabIcon(id: string) {
         <button
           type="button"
           role="tab"
+          id={`${name}-tab-${t.id}`}
           data-tab-id={t.id}
           data-tab-active={t.id === active ? 'true' : 'false'}
+          aria-selected={t.id === active ? 'true' : 'false'}
+          aria-controls={`${name}-panel-${t.id}`}
+          tabindex={t.id === active ? 0 : -1}
           class="rounded-lg px-3.5 py-1.5 text-[11px] font-bold font-sans tracking-wider uppercase text-ink-300 transition-all duration-200 cursor-pointer data-[tab-active=true]:bg-accent/15 data-[tab-active=true]:text-accent-soft data-[tab-active=true]:shadow-sm data-[tab-active=true]:shadow-accent/5 hover:text-ink-50 focus:outline-none flex items-center gap-2"
         >
           {(() => {
@@ -116,16 +120,46 @@ function getTabIcon(id: string) {
   document.querySelectorAll<HTMLElement>('[data-tabs]').forEach((root) => {
     const buttons = root.querySelectorAll<HTMLButtonElement>('[data-tab-id]');
     const panels = root.querySelectorAll<HTMLElement>('[data-panel-id]');
-    const activate = (id: string) => {
-      buttons.forEach((b) => (b.dataset.tabActive = b.dataset.tabId === id ? 'true' : 'false'));
+    const tabsetName = root.dataset.tabs;
+    panels.forEach((p) => {
+      const id = p.dataset.panelId;
+      if (!id || !tabsetName) return;
+      p.setAttribute('role', 'tabpanel');
+      p.id = `${tabsetName}-panel-${id}`;
+      p.setAttribute('aria-labelledby', `${tabsetName}-tab-${id}`);
+    });
+    const activate = (id: string, focus = false) => {
+      buttons.forEach((b) => {
+        const match = b.dataset.tabId === id;
+        b.dataset.tabActive = match ? 'true' : 'false';
+        b.setAttribute('aria-selected', match ? 'true' : 'false');
+        b.tabIndex = match ? 0 : -1;
+        if (focus && match) b.focus();
+      });
       panels.forEach((p) => {
         const match = p.dataset.panelId === id;
         p.dataset.panelActive = match ? 'true' : 'false';
+        p.setAttribute('aria-hidden', match ? 'false' : 'true');
       });
     };
     // Set initial visibility based on data-tab-active on buttons.
     const initial = Array.from(buttons).find((b) => b.dataset.tabActive === 'true')?.dataset.tabId;
     if (initial) activate(initial);
-    buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.dataset.tabId!)));
+    buttons.forEach((btn, index) => {
+      btn.addEventListener('click', () => activate(btn.dataset.tabId!));
+      btn.addEventListener('keydown', (event) => {
+        const key = event.key;
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return;
+        event.preventDefault();
+        const last = buttons.length - 1;
+        let next = index;
+        if (key === 'ArrowLeft') next = index === 0 ? last : index - 1;
+        if (key === 'ArrowRight') next = index === last ? 0 : index + 1;
+        if (key === 'Home') next = 0;
+        if (key === 'End') next = last;
+        const nextId = buttons[next]?.dataset.tabId;
+        if (nextId) activate(nextId, true);
+      });
+    });
   });
 </script>

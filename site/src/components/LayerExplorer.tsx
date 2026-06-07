@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
-import type { ArchPayload } from '../lib/catalog-schema';
+import { useEffect, useMemo, useState } from 'react';
+import type { ArchPayload, PackageEntry } from '../lib/catalog-schema';
+import { useImageRelease } from '../lib/use-image-release';
 
 type Props = { 
-  architectures: ArchPayload[];
+  architectures?: ArchPayload[];
+  dataUrl?: string;
+  releaseTag?: string;
   fullName?: string;
   imageName?: string;
   tierId?: string;
@@ -28,6 +31,27 @@ function licenseBreakdownFor(pkgs: any[]): [string, number][] {
     counts[lic] = (counts[lic] || 0) + 1;
   });
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+}
+
+type VulnerabilityFinding = NonNullable<NonNullable<ArchPayload['vulnerabilities']>['findings']>[number];
+type LayerPayload = ArchPayload['layers'][number];
+
+function layerKeys(layer: LayerPayload | undefined): string[] {
+  if (!layer) return [];
+  return layer.diffID && layer.diffID !== layer.digest ? [layer.digest, layer.diffID] : [layer.digest];
+}
+
+function collectLayerValues<T>(map: Map<string, T[]>, layer: LayerPayload | undefined): T[] {
+  const seen = new Set<T>();
+  const out: T[] = [];
+  for (const key of layerKeys(layer)) {
+    for (const value of map.get(key) ?? []) {
+      if (seen.has(value)) continue;
+      seen.add(value);
+      out.push(value);
+    }
+  }
+  return out;
 }
 
 type LayerClassification = {
@@ -121,9 +145,22 @@ function classifyLayer(layerPkgs: any[]): LayerClassification {
   };
 }
 
-export default function LayerExplorer({ architectures, fullName, imageName, tierId, imageTag }: Props) {
-  const archs = architectures.filter((a) => a.layers && a.layers.length > 0);
-  const [arch, setArch] = useState(archs[0]?.arch ?? architectures[0]?.arch ?? 'amd64');
+export default function LayerExplorer({
+  architectures: initialArchitectures,
+  dataUrl,
+  releaseTag,
+  fullName,
+  imageName,
+  tierId,
+  imageTag,
+}: Props) {
+  const { architectures, loading, error } = useImageRelease({
+    dataUrl,
+    releaseTag,
+    initialArchitectures,
+  });
+  const archs = useMemo(() => architectures.filter((a) => a.layers && a.layers.length > 0), [architectures]);
+  const [arch, setArch] = useState('amd64');
   const current = architectures.find((a) => a.arch === arch) ?? architectures[0];
   const layers = current?.layers ?? [];
   const totalSize = useMemo(() => layers.reduce((s, l) => s + (l.size || 0), 0), [layers]);
@@ -136,24 +173,93 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
   const sel = layers[selected];
 
   const packages = current?.sbom?.packages ?? [];
+  const findings = current?.vulnerabilities?.findings ?? [];
+  useEffect(() => {
+    if (architectures.length === 0) return;
+    const preferred = archs[0]?.arch ?? architectures[0]?.arch;
+    const selectedHasLayerData = archs.some((candidate) => candidate.arch === arch);
+    const selectedExists = architectures.some((candidate) => candidate.arch === arch);
+    if (preferred && (!selectedExists || (archs.length > 0 && !selectedHasLayerData))) {
+      setArch(preferred);
+      setSelected(0);
+    }
+  }, [architectures, archs, arch]);
+
+  const packagesByLayer = useMemo(() => {
+    const map = new Map<string, PackageEntry[]>();
+    for (const pkg of packages) {
+      if (!pkg.layerDigest) continue;
+      const rows = map.get(pkg.layerDigest) ?? [];
+      rows.push(pkg);
+      map.set(pkg.layerDigest, rows);
+    }
+    return map;
+  }, [packages]);
+
+  const vulnsByLayer = useMemo(() => {
+    const packageLayerKeys = new Map<string, Set<string>>();
+    for (const pkg of packages) {
+      if (!pkg.layerDigest) continue;
+      const packageKey = `${pkg.name}@${pkg.version}`;
+      const keys = packageLayerKeys.get(packageKey) ?? new Set<string>();
+      keys.add(pkg.layerDigest);
+      packageLayerKeys.set(packageKey, keys);
+    }
+
+    const map = new Map<string, VulnerabilityFinding[]>();
+    for (const finding of findings) {
+      const keys = packageLayerKeys.get(`${finding.packageName}@${finding.packageVersion}`);
+      if (!keys) continue;
+      for (const key of keys) {
+        const rows = map.get(key) ?? [];
+        rows.push(finding);
+        map.set(key, rows);
+      }
+    }
+    return map;
+  }, [packages, findings]);
+
+  const licenseBreakdownByLayer = useMemo(() => {
+    const map = new Map<string, [string, number][]>();
+    for (const [key, layerPackages] of packagesByLayer) {
+      map.set(key, licenseBreakdownFor(layerPackages));
+    }
+    return map;
+  }, [packagesByLayer]);
+
   const packagesInLayer = useMemo(() => {
-    if (!sel) return [];
-    return packages.filter((p: any) => 
-      p.layerDigest === sel.digest || (sel.diffID && p.layerDigest === sel.diffID)
-    );
-  }, [sel, packages]);
+    return collectLayerValues(packagesByLayer, sel);
+  }, [sel, packagesByLayer]);
 
   const vulnsInLayer = useMemo(() => {
-    if (!sel || !current?.vulnerabilities?.findings) return [];
-    const pkgsSet = new Set(packagesInLayer.map((p) => `${p.name}@${p.version}`));
-    return current.vulnerabilities.findings.filter((f: any) =>
-      pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
-    );
-  }, [sel, current, packagesInLayer]);
+    return collectLayerValues(vulnsByLayer, sel);
+  }, [sel, vulnsByLayer]);
 
   const licenseBreakdown = useMemo(() => {
-    return licenseBreakdownFor(packagesInLayer);
-  }, [packagesInLayer]);
+    const seen = new Map<string, number>();
+    for (const key of layerKeys(sel)) {
+      for (const [license, count] of licenseBreakdownByLayer.get(key) ?? []) {
+        seen.set(license, (seen.get(license) ?? 0) + count);
+      }
+    }
+    return Array.from(seen.entries()).sort((a, b) => b[1] - a[1]);
+  }, [sel, licenseBreakdownByLayer]);
+
+  if (loading) {
+    return (
+      <section className="surface-soft px-5 py-6 text-sm text-ink-300">
+        Loading layer data...
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="surface-soft px-5 py-6 text-sm text-warn">
+        {error}
+      </section>
+    );
+  }
 
   if (architectures.length === 0) return null;
   if (archs.length === 0) {
@@ -203,6 +309,7 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                   setArch(a.arch);
                   setSelected(0);
                 }}
+                aria-pressed={a.arch === arch}
                 className={`rounded-md px-3 py-1 font-mono text-xs transition ${
                   a.arch === arch ? 'bg-accent/15 text-accent-soft' : 'text-ink-200 hover:text-ink-50'
                 }`}
@@ -234,14 +341,17 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
               const sizeVal = layerItem.size || 0;
               const pct = totalSize > 0 ? Math.max(1, Math.round((sizeVal / totalSize) * 100)) : 0;
 
-              // Packages & CVEs in this layer
-              const layerPkgs = packages.filter((p: any) => 
-                p.layerDigest === layerItem.digest || (layerItem.diffID && p.layerDigest === layerItem.diffID)
-              );
-              const pkgsSet = new Set(layerPkgs.map((p) => `${p.name}@${p.version}`));
-              const layerVulns = (current?.vulnerabilities?.findings ?? []).filter((f: any) =>
-                pkgsSet.has(`${f.packageName}@${f.packageVersion}`)
-              );
+              const layerPkgs = collectLayerValues(packagesByLayer, layerItem);
+              const layerVulns = collectLayerValues(vulnsByLayer, layerItem);
+              const layerLicenses = (() => {
+                const counts = new Map<string, number>();
+                for (const key of layerKeys(layerItem)) {
+                  for (const [license, count] of licenseBreakdownByLayer.get(key) ?? []) {
+                    counts.set(license, (counts.get(license) ?? 0) + count);
+                  }
+                }
+                return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+              })();
 
                // Plate design themes - color-coded by package classification
               const cls = classifyLayer(layerPkgs);
@@ -260,6 +370,7 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                   key={layerItem.digest + ':cohesive:' + i}
                   type="button"
                   onClick={() => setSelected(i)}
+                  aria-pressed={isSel}
                   className={`w-full rounded-xl border p-3.5 text-left transition-all duration-200 cursor-pointer flex flex-col gap-2.5 relative overflow-hidden ${bgColor} ${borderColor} ${glow}`}
                 >
                   {/* Layer top bar: Index, Size, Classification Badge */}
@@ -319,10 +430,10 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                   <div className="flex items-center justify-between text-[10px] text-ink-300 font-mono mt-0.5 border-t border-ink-800/40 pt-2 shrink-0">
                     <div className="flex items-center gap-2.5">
                       <span>{layerPkgs.length} packages</span>
-                      {layerPkgs.length > 0 && licenseBreakdownFor(layerPkgs).length > 0 && (
+                      {layerPkgs.length > 0 && layerLicenses.length > 0 && (
                         <>
                           <span className="text-ink-500">•</span>
-                          <span className="text-ink-400">{licenseBreakdownFor(layerPkgs)[0][0]}</span>
+                          <span className="text-ink-400">{layerLicenses[0][0]}</span>
                         </>
                       )}
                     </div>
@@ -352,10 +463,12 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
           {sel ? (
             <div className="space-y-4 flex-1 flex flex-col">
               {/* Tab Switcher */}
-              <div className="flex border-b border-ink-700/60 text-xs shrink-0">
+              <div className="flex border-b border-ink-700/60 text-xs shrink-0" role="tablist" aria-label="Layer detail sections">
                 <button
                   type="button"
+                  role="tab"
                   onClick={() => setDetailTab('details')}
+                  aria-selected={detailTab === 'details'}
                   className={`flex-1 py-2 text-center font-medium transition border-b-2 ${
                     detailTab === 'details'
                       ? 'border-accent text-accent-soft'
@@ -366,7 +479,9 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                 </button>
                 <button
                   type="button"
+                  role="tab"
                   onClick={() => setDetailTab('packages')}
+                  aria-selected={detailTab === 'packages'}
                   className={`flex-1 py-2 text-center font-medium transition border-b-2 ${
                     detailTab === 'packages'
                       ? 'border-accent text-accent-soft'
@@ -377,7 +492,9 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                 </button>
                 <button
                   type="button"
+                  role="tab"
                   onClick={() => setDetailTab('vulnerabilities')}
+                  aria-selected={detailTab === 'vulnerabilities'}
                   className={`flex-1 py-2 text-center font-medium transition border-b-2 ${
                     detailTab === 'vulnerabilities'
                       ? 'border-accent text-accent-soft'
@@ -441,6 +558,7 @@ export default function LayerExplorer({ architectures, fullName, imageName, tier
                               key={t}
                               type="button"
                               onClick={() => setPullTool(t)}
+                              aria-pressed={pullTool === t}
                               className={`px-1.5 py-0.5 rounded border transition ${
                                 pullTool === t 
                                   ? 'bg-accent/15 text-accent-soft border-accent/40' 

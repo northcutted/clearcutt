@@ -36,6 +36,13 @@ const hrefFor = (href = '') => {
   return `${base}${value.replace(/^\/+/, '')}`;
 };
 const isExternal = (href = '') => /^(https?:|mailto:|tel:)/.test(href.trim());
+const personaStyles = [
+  { eyebrow: 'Fleet operations', accent: 'border-accent/50 bg-accent/10 text-accent-soft' },
+  { eyebrow: 'App delivery', accent: 'border-link/40 bg-link/10 text-link' },
+  { eyebrow: 'Evidence review', accent: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },
+  { eyebrow: 'Workflow', accent: 'border-ink-600 bg-ink-800 text-ink-200' },
+];
+const personaMeta = (position: number) => personaStyles[position % personaStyles.length] ?? personaStyles[3];
 
 const catalogStats = index
   ? [
@@ -66,18 +73,18 @@ const catalogStats = index
 ---
 <Base title="Home">
   <section class="space-y-10 pb-12" data-pagefind-body>
-    <header class="grid gap-6 border-b border-ink-800/50 pb-8 lg:grid-cols-[1fr_22rem] lg:items-end">
-      <div class="max-w-3xl space-y-4">
+    <header class="grid min-w-0 gap-6 border-b border-ink-800/50 pb-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
+      <div class="min-w-0 max-w-3xl space-y-4">
         <h1 class="heading text-3xl font-bold sm:text-4xl">{home.title}</h1>
         <p class="text-base leading-relaxed text-ink-200">{home.description}</p>
         <div class="flex flex-wrap gap-3 pt-1">
           <a href={`${base}catalog`} class="chip-accent">Open catalog</a>
-          <a href={`${base}getting-started`} class="chip">Application guide</a>
+          <a href={`${base}getting-started`} class="chip">Containerize your app</a>
           <a href={`${base}about?tab=audit`} class="chip">Audit guide</a>
         </div>
       </div>
 
-      <div class="surface-soft space-y-3 rounded-lg border border-ink-800/60 px-4 py-3 text-xs text-ink-200">
+      <div class="surface-soft min-w-0 space-y-3 rounded-lg border border-ink-800/60 px-4 py-3 text-xs text-ink-200">
         {index ? (
           <>
             <div class="flex items-center justify-between gap-3">
@@ -85,17 +92,17 @@ const catalogStats = index
               <span class="font-mono text-ink-300">{index.latestTag}</span>
             </div>
             <dl class="space-y-2">
-              <div class="flex justify-between gap-3">
+              <div class="flex min-w-0 justify-between gap-3">
                 <dt class="text-ink-300">Generated</dt>
-                <dd class="text-right font-mono text-ink-100">{generatedAt}</dd>
+                <dd class="min-w-0 break-words text-right font-mono text-ink-100">{generatedAt}</dd>
               </div>
-              <div class="flex justify-between gap-3">
+              <div class="flex min-w-0 justify-between gap-3">
                 <dt class="text-ink-300">Registry</dt>
-                <dd class="text-right font-mono text-ink-100">{index.registryBase}</dd>
+                <dd class="min-w-0 break-all text-right font-mono text-ink-100">{index.registryBase}</dd>
               </div>
-              <div class="flex justify-between gap-3">
+              <div class="flex min-w-0 justify-between gap-3">
                 <dt class="text-ink-300">Source</dt>
-                <dd class="text-right font-mono text-ink-100">{index.owner}/{index.repo}</dd>
+                <dd class="min-w-0 break-all text-right font-mono text-ink-100">{index.owner}/{index.repo}</dd>
               </div>
             </dl>
           </>
@@ -115,13 +122,98 @@ const catalogStats = index
       </aside>
     )}
 
+    {home.quickLinks.length > 0 && (
+      <section class="space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="heading text-xl text-ink-50">Start Here</h2>
+            <p class="mt-1 text-sm text-ink-300">Pick the next action instead of reading the site in order.</p>
+          </div>
+          <span class="chip">{home.quickLinks.length} paths</span>
+        </div>
+        <div class="grid gap-3 lg:grid-cols-4">
+          {home.quickLinks.map((link, i) => (
+            <a
+              href={hrefFor(link.href)}
+              target={isExternal(link.href) ? '_blank' : undefined}
+              rel={isExternal(link.href) ? 'noreferrer' : undefined}
+              class="group flex min-w-0 gap-3 rounded-lg border border-ink-800/60 bg-ink-900/30 p-4 no-underline transition hover:border-accent/40 hover:bg-ink-900/55"
+            >
+              <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-ink-700/70 bg-ink-950/55 font-mono text-[11px] font-semibold text-accent-soft">
+                {i + 1}
+              </span>
+              <span class="min-w-0">
+                <span class="block text-sm font-semibold text-ink-50 group-hover:text-accent-soft">{link.label}</span>
+                {link.description && <span class="mt-1 block text-xs leading-relaxed text-ink-300">{link.description}</span>}
+              </span>
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+
+    {home.personas.length > 0 && (
+      <section class="space-y-5">
+        <div>
+          <h2 class="heading text-xl text-ink-50">Workflows By Role</h2>
+          <p class="mt-1 text-sm text-ink-300">
+            Each path points to existing catalog pages and commands, so the generated site stays useful after branding changes.
+          </p>
+        </div>
+        <div class="grid min-w-0 gap-4 lg:grid-cols-3">
+          {home.personas.map((persona, personaIndex) => {
+            const meta = personaMeta(personaIndex);
+            return (
+            <section id={`persona-${persona.id}`} class="min-w-0 overflow-hidden rounded-xl border border-ink-800/60 bg-ink-900/35">
+              <header class="space-y-3 border-b border-ink-800/60 bg-ink-950/25 p-5">
+                <span class={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${meta.accent}`}>
+                  {meta.eyebrow}
+                </span>
+                <h3 class="text-base font-semibold text-ink-50">{persona.label}</h3>
+                <p class="text-sm leading-relaxed text-ink-300">{persona.summary}</p>
+              </header>
+              <ol class="divide-y divide-ink-800/55 px-5">
+                {persona.steps.map((step, i) => (
+                  <li class="py-4">
+                    <div class="flex min-w-0 gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 font-mono text-[11px] font-semibold text-accent-soft">
+                        {i + 1}
+                      </span>
+                      <div class="min-w-0 space-y-2">
+                        <h4 class="text-sm font-semibold text-ink-50">{step.title}</h4>
+                        <p class="text-xs leading-relaxed text-ink-300">{step.description}</p>
+                        {step.href && (
+                          <a
+                            href={hrefFor(step.href)}
+                            target={isExternal(step.href) ? '_blank' : undefined}
+                            rel={isExternal(step.href) ? 'noreferrer' : undefined}
+                            class="inline-flex text-xs font-semibold text-accent-soft hover:text-accent"
+                          >
+                            {step.ctaLabel ?? 'Open'}
+                          </a>
+                        )}
+                        {step.command && (
+                          <pre class="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-md border border-ink-800 bg-ink-950/70 p-3 text-[11px] leading-relaxed text-ink-100 [overflow-wrap:anywhere]"><code class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{step.command}</code></pre>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+            );
+          })}
+        </div>
+      </section>
+    )}
+
     {index ? (
       <section class="space-y-4">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 class="heading text-xl text-ink-50">Current State</h2>
             <p class="mt-1 text-sm text-ink-300">
-              Factual catalog counts only; inspect image detail pages before using a base in production.
+              Factual catalog counts only; inspect image detail pages before containerizing an app for production.
             </p>
           </div>
           <a href={`${base}catalog`} class="text-sm font-semibold text-accent-soft hover:text-accent">View matrix</a>
@@ -142,76 +234,8 @@ const catalogStats = index
         <p class="mt-2 text-sm text-ink-300">
           This template renders once generated catalog artifacts are copied under <code>public/catalog</code>.
         </p>
-        <pre class="mt-4 overflow-x-auto rounded-md border border-ink-800 bg-ink-950/70 p-4 text-xs text-ink-100"><code>clearcutt catalog generate --config clearcutt.fleet.yaml --output ./dist/catalog
+        <pre class="mt-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md border border-ink-800 bg-ink-950/70 p-4 text-xs text-ink-100 [overflow-wrap:anywhere]"><code class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">clearcutt catalog generate --config clearcutt.fleet.yaml --output ./dist/catalog
 clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install</code></pre>
-      </section>
-    )}
-
-    {home.quickLinks.length > 0 && (
-      <section class="space-y-4">
-        <h2 class="heading text-xl text-ink-50">Start Here</h2>
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {home.quickLinks.map((link) => (
-            <a
-              href={hrefFor(link.href)}
-              target={isExternal(link.href) ? '_blank' : undefined}
-              rel={isExternal(link.href) ? 'noreferrer' : undefined}
-              class="surface-soft block rounded-lg border border-ink-800/60 p-4 no-underline transition hover:border-accent/40"
-            >
-              <span class="text-sm font-semibold text-ink-50">{link.label}</span>
-              {link.description && <span class="mt-2 block text-xs leading-relaxed text-ink-300">{link.description}</span>}
-            </a>
-          ))}
-        </div>
-      </section>
-    )}
-
-    {home.personas.length > 0 && (
-      <section class="space-y-5">
-        <div>
-          <h2 class="heading text-xl text-ink-50">Workflows By Role</h2>
-          <p class="mt-1 text-sm text-ink-300">
-            Each path points to existing catalog pages and commands, so the generated site stays useful after branding changes.
-          </p>
-        </div>
-        <div class="grid gap-4 lg:grid-cols-3">
-          {home.personas.map((persona) => (
-            <section id={`persona-${persona.id}`} class="surface-soft rounded-lg border border-ink-800/60 p-5">
-              <header class="space-y-2 border-b border-ink-800/50 pb-4">
-                <h3 class="text-base font-semibold text-ink-50">{persona.label}</h3>
-                <p class="text-sm leading-relaxed text-ink-300">{persona.summary}</p>
-              </header>
-              <ol class="divide-y divide-ink-800/50">
-                {persona.steps.map((step, i) => (
-                  <li class="py-4">
-                    <div class="flex gap-3">
-                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 font-mono text-[11px] font-semibold text-accent-soft">
-                        {i + 1}
-                      </span>
-                      <div class="min-w-0 space-y-2">
-                        <h4 class="text-sm font-semibold text-ink-50">{step.title}</h4>
-                        <p class="text-xs leading-relaxed text-ink-300">{step.description}</p>
-                        {step.href && (
-                          <a
-                            href={hrefFor(step.href)}
-                            target={isExternal(step.href) ? '_blank' : undefined}
-                            rel={isExternal(step.href) ? 'noreferrer' : undefined}
-                            class="inline-flex text-xs font-semibold text-accent-soft hover:text-accent"
-                          >
-                            Open step
-                          </a>
-                        )}
-                        {step.command && (
-                          <pre class="overflow-x-auto rounded-md border border-ink-800 bg-ink-950/70 p-3 text-[11px] text-ink-100"><code>{step.command}</code></pre>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ))}
-        </div>
       </section>
     )}
 
