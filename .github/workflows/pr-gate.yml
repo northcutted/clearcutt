@@ -55,9 +55,11 @@ jobs:
           RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
           SERVICE_RELEASE_MATRIX=$(./clearcutt --format json service matrix --github-actions --matrix release | jq -c .)
           SERVICE_IMAGE_MATRIX=$(./clearcutt --format json service matrix --github-actions --matrix image | jq -c .)
-          echo "release_matrix=${RELEASE_MATRIX}" >> "$GITHUB_OUTPUT"
-          echo "service_release_matrix=${SERVICE_RELEASE_MATRIX}" >> "$GITHUB_OUTPUT"
-          echo "service_image_matrix=${SERVICE_IMAGE_MATRIX}" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_matrix=${RELEASE_MATRIX}"
+            echo "service_release_matrix=${SERVICE_RELEASE_MATRIX}"
+            echo "service_image_matrix=${SERVICE_IMAGE_MATRIX}"
+          } >> "$GITHUB_OUTPUT"
 
   validate-matrix:
     name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
@@ -252,6 +254,9 @@ jobs:
 
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
+
+      - name: Validate Remediation Overlay Governance
+        run: ./clearcutt remediation validate-overlays --overlay-dir core/overlays/cve
 
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7

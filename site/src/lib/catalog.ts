@@ -26,7 +26,7 @@ function publicBlurb(blurb: string): string {
 function displayAssertionName(name: string): string {
   switch (name) {
     case 'Grype Vulnerability Gating':
-      return 'Vulnerability gate';
+      return 'Vulnerability check';
     case 'Syft SBOM Generation':
       return 'SBOM generation';
     default:

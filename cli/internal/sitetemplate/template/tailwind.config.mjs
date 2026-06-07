@@ -41,7 +41,7 @@ export default {
         danger: 'rgb(var(--danger) / <alpha-value>)',
       },
       fontFamily: {
-        heading: ['"Rubik"', 'system-ui', 'sans-serif'],
+        heading: ['"Assistant"', 'system-ui', 'sans-serif'],
         sans: ['"Assistant"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },

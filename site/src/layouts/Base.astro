@@ -74,7 +74,7 @@ const footerLinks = [
     <meta name="theme-color" content="#1e1e2e" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Rubik:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" />
   </head>
   <body class="font-sans">
     <header class="sticky top-0 z-30 border-b border-ink-800/80 bg-ink-950/85 backdrop-blur">
@@ -97,13 +97,12 @@ const footerLinks = [
           </div>
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
-          {nav.showMarketingHome && <a href={base} class="text-ink-200 hover:text-ink-50 transition">Home</a>}
-          {nav.showGettingStarted && <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Getting Started</a>}
-          <a href={`${base}platform-kit`} class="text-ink-200 hover:text-ink-50 transition">Platform Kit</a>
+          {nav.showHome && <a href={base} class="text-ink-200 hover:text-ink-50 transition">Home</a>}
           <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
-          <a href={`${base}app-lifecycle`} class="text-ink-200 hover:text-ink-50 transition">App Lifecycle</a>
-          {nav.showCliDocs && <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI Tools</a>}
-          {nav.showAuditGuide && <a href={`${base}about`} class="text-ink-200 hover:text-ink-50 transition">About &amp; Audit</a>}
+          {nav.showGettingStarted && <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Containerize your app</a>}
+          {nav.showAuditGuide && <a href={`${base}about?tab=audit`} class="text-ink-200 hover:text-ink-50 transition">Verify evidence</a>}
+          {nav.showOperatorDocs && <a href={`${base}platform-kit`} class="text-ink-200 hover:text-ink-50 transition">Operate fleet</a>}
+          {nav.showCliDocs && <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI</a>}
           <a href={`${base}limitations`} class="text-ink-200 hover:text-ink-50 transition">Limitations</a>
           {siteLinks.docs && <a href={siteLinks.docs} class="text-ink-200 hover:text-ink-50 transition" target="_blank" rel="noreferrer">Docs</a>}
           {siteLinks.support && <a href={siteLinks.support} class="text-ink-200 hover:text-ink-50 transition" target="_blank" rel="noreferrer">Support</a>}

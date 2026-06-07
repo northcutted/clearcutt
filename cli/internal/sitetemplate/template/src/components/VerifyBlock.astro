@@ -255,11 +255,11 @@ spec:
                 <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Admission Action</label>
                 <span class="text-[11px] text-ink-300">Set cluster behavior on signature check failure</span>
               </div>
-              <div class="flex items-center gap-1 bg-ink-950 rounded-lg p-0.5 border border-ink-700/40 text-xs shrink-0 select-none">
-                <button type="button" data-action-btn="Enforce" data-active="true" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
+              <div class="flex items-center gap-1 bg-ink-950 rounded-lg p-0.5 border border-ink-700/40 text-xs shrink-0 select-none" role="group" aria-label="Admission action">
+                <button type="button" data-action-btn="Enforce" data-active="true" aria-pressed="true" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
                   Enforce
                 </button>
-                <button type="button" data-action-btn="Audit" data-active="false" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
+                <button type="button" data-action-btn="Audit" data-active="false" aria-pressed="false" class="px-3 py-1 rounded transition text-ink-300 data-[active=true]:bg-accent/15 data-[active=true]:text-accent-soft data-[active=true]:font-semibold focus:outline-none">
                   Audit
                 </button>
               </div>
@@ -270,7 +270,7 @@ spec:
                 <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Require SBOM Verification</label>
                 <span class="text-[11px] text-ink-300">Block pods if they lack a cryptographically signed SPDX SBOM</span>
               </div>
-              <button type="button" data-sbom-toggle data-active="true" class="w-10 h-6 rounded-full p-1 bg-ink-950 border border-ink-700/40 transition-colors duration-200 relative focus:outline-none data-[active=true]:bg-accent/20 data-[active=true]:border-accent/40 shrink-0">
+              <button type="button" data-sbom-toggle data-active="true" role="switch" aria-checked="true" aria-label="Require SBOM verification" class="w-10 h-6 rounded-full p-1 bg-ink-950 border border-ink-700/40 transition-colors duration-200 relative focus:outline-none data-[active=true]:bg-accent/20 data-[active=true]:border-accent/40 shrink-0">
                 <span class="w-3.5 h-3.5 rounded-full bg-ink-400 block transition-all duration-200 transform data-[active=true]:translate-x-4 data-[active=true]:bg-accent-soft" data-sbom-dot data-active="true" />
               </button>
             </div>
@@ -353,7 +353,9 @@ spec:
         const val = btn.getAttribute('data-action-btn');
         currentAction = val;
         actionBtns.forEach(b => {
-          b.setAttribute('data-active', b.getAttribute('data-action-btn') === val ? 'true' : 'false');
+          const isActive = b.getAttribute('data-action-btn') === val;
+          b.setAttribute('data-active', isActive ? 'true' : 'false');
+          b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
         renderYaml();
       });
@@ -362,6 +364,7 @@ spec:
     sbomToggle.addEventListener('click', () => {
       requireSbom = !requireSbom;
       sbomToggle.setAttribute('data-active', requireSbom ? 'true' : 'false');
+      sbomToggle.setAttribute('aria-checked', requireSbom ? 'true' : 'false');
       sbomDot.setAttribute('data-active', requireSbom ? 'true' : 'false');
       renderYaml();
     });

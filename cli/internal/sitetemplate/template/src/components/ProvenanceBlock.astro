@@ -470,27 +470,27 @@ const gatingArchs = architectures.map((a) => a.arch);
           )}
         </div>
 
-        {/* CARD 3: Supply Chain Gating & Assertions */}
+        {/* CARD 3: Supply Chain test assertions */}
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
           <div class="space-y-3">
             <header class="flex items-center justify-between border-b border-ink-800/50 pb-2.5">
-              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Compilation &amp; Gates</h3>
+              <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Compilation &amp; Tests</h3>
               {gatingRows.length > 0 && !gatingRows.some(r => gatingArchs.some(a => r.statuses[a] === 'failed')) ? (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
                   <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  GATES PASSED
+                  TESTS PASSED
                 </span>
               ) : (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger/10 text-danger border border-danger/25">
                   <span class="w-1.5 h-1.5 rounded-full bg-danger" />
-                  GATE FAILURE
+                  TEST FAILED
                 </span>
               )}
             </header>
 
             {gatingRows.length === 0 ? (
               <p class="text-xs text-ink-300 leading-relaxed pt-2">
-                No policy predicates or compile verifications are attached. Gating compiles ensures binaries satisfy policy assertions prior to release.
+                No policy predicates or compile verifications are attached. Compile and test predicates record whether binaries satisfied release assertions before publication.
               </p>
             ) : (
               <div class="divide-y divide-ink-800/30">

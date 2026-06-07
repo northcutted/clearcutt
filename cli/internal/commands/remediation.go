@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -34,16 +35,22 @@ type remediationFlags struct {
 	includeDevOnly bool
 	limit          int
 	out            string
+	policyJSON     string
 }
 
 var remediationOpts remediationFlags
 
 type RemediationPlan struct {
-	GeneratedAt string                 `json:"generatedAt"`
-	SourceDir   string                 `json:"sourceDir"`
-	Campaigns   []RemediationCampaign  `json:"campaigns"`
-	Deferred    []RemediationDeferred  `json:"deferred"`
-	Summary     RemediationPlanSummary `json:"summary"`
+	GeneratedAt string                       `json:"generatedAt"`
+	SourceDir   string                       `json:"sourceDir"`
+	Policy      fleet.RemediationPolicy      `json:"policy"`
+	ScanSource  RemediationScanSource        `json:"scanSource"`
+	Campaigns   []RemediationCampaign        `json:"campaigns"`
+	Clusters    []RemediationCluster         `json:"clusters"`
+	Deferred    []RemediationDeferred        `json:"deferred"`
+	TopDeferred []RemediationDeferredSummary `json:"topDeferred"`
+	Metrics     RemediationMetrics           `json:"metrics"`
+	Summary     RemediationPlanSummary       `json:"summary"`
 }
 
 type RemediationPlanSummary struct {
@@ -58,26 +65,97 @@ type RemediationPlanSummary struct {
 }
 
 type RemediationCampaign struct {
-	Package               string              `json:"package"`
-	CVE                   string              `json:"cve"`
-	InstalledVersion      string              `json:"installedVersion"`
-	FixedVersion          string              `json:"fixedVersion"`
-	FixState              string              `json:"fixState"`
-	Severity              string              `json:"severity"`
-	Layer                 string              `json:"layer"`
-	CVSSScore             *float64            `json:"cvssScore,omitempty"`
-	CVSSVector            *string             `json:"cvssVector,omitempty"`
-	EPSSScore             *float64            `json:"epssScore,omitempty"`
-	EPSSPercentile        *float64            `json:"epssPercentile,omitempty"`
-	RiskScore             *float64            `json:"riskScore,omitempty"`
-	DataSource            *string             `json:"dataSource,omitempty"`
-	Namespace             *string             `json:"namespace,omitempty"`
-	Description           *string             `json:"description,omitempty"`
-	RecommendedRoute      string              `json:"recommendedRoute"`
-	AffectedTargets       []RemediationTarget `json:"affectedTargets"`
-	ProductionTargetCount int                 `json:"productionTargetCount"`
-	TargetCount           int                 `json:"targetCount"`
-	Score                 float64             `json:"score"`
+	Package               string                       `json:"package"`
+	CVE                   string                       `json:"cve"`
+	PrimaryCVE            string                       `json:"primaryCve"`
+	CVEs                  []string                     `json:"cves"`
+	InstalledVersion      string                       `json:"installedVersion"`
+	FixedVersion          string                       `json:"fixedVersion"`
+	FixState              string                       `json:"fixState"`
+	Severity              string                       `json:"severity"`
+	Layer                 string                       `json:"layer"`
+	CVSSScore             *float64                     `json:"cvssScore,omitempty"`
+	CVSSVector            *string                      `json:"cvssVector,omitempty"`
+	EPSSScore             *float64                     `json:"epssScore,omitempty"`
+	EPSSPercentile        *float64                     `json:"epssPercentile,omitempty"`
+	RiskScore             *float64                     `json:"riskScore,omitempty"`
+	DataSource            *string                      `json:"dataSource,omitempty"`
+	Namespace             *string                      `json:"namespace,omitempty"`
+	Description           *string                      `json:"description,omitempty"`
+	RecommendedRoute      string                       `json:"recommendedRoute"`
+	RiskFactors           RemediationRiskFactors       `json:"riskFactors"`
+	PolicyDecision        RemediationPolicyDecision    `json:"policyDecision"`
+	ExpectedRemoved       []RemediationExpectedFinding `json:"expectedRemoved"`
+	AffectedTargets       []RemediationTarget          `json:"affectedTargets"`
+	ProductionTargetCount int                          `json:"productionTargetCount"`
+	TargetCount           int                          `json:"targetCount"`
+	Score                 float64                      `json:"score"`
+}
+
+type RemediationScanSource struct {
+	Directory         string  `json:"directory"`
+	FileCount         int     `json:"fileCount"`
+	Scanner           *string `json:"scanner,omitempty"`
+	DBBuiltAt         *string `json:"dbBuiltAt,omitempty"`
+	ScannedAt         *string `json:"scannedAt,omitempty"`
+	KEVStatus         string  `json:"kevStatus"`
+	KEVCatalogVersion *string `json:"kevCatalogVersion,omitempty"`
+}
+
+type RemediationRiskFactors struct {
+	Severity              string   `json:"severity"`
+	CVSSScore             *float64 `json:"cvssScore,omitempty"`
+	EPSSScore             *float64 `json:"epssScore,omitempty"`
+	EPSSPercentile        *float64 `json:"epssPercentile,omitempty"`
+	RiskScore             *float64 `json:"riskScore,omitempty"`
+	KnownExploited        bool     `json:"knownExploited"`
+	FixedVersionAvailable bool     `json:"fixedVersionAvailable"`
+	ProductionTargetCount int      `json:"productionTargetCount"`
+	TargetCount           int      `json:"targetCount"`
+}
+
+type RemediationPolicyDecision struct {
+	Selected bool   `json:"selected"`
+	Reason   string `json:"reason"`
+	Summary  string `json:"summary"`
+}
+
+type RemediationExpectedFinding struct {
+	CVE              string `json:"cve"`
+	Package          string `json:"package"`
+	InstalledVersion string `json:"installedVersion"`
+}
+
+type RemediationCluster struct {
+	Package               string   `json:"package"`
+	InstalledVersion      string   `json:"installedVersion"`
+	FixedVersion          string   `json:"fixedVersion"`
+	PrimaryCVE            string   `json:"primaryCve"`
+	CVEs                  []string `json:"cves"`
+	TargetCount           int      `json:"targetCount"`
+	ProductionTargetCount int      `json:"productionTargetCount"`
+	KnownExploited        bool     `json:"knownExploited"`
+	Score                 float64  `json:"score"`
+}
+
+type RemediationDeferredSummary struct {
+	Reason          string `json:"reason"`
+	Package         string `json:"package"`
+	CVE             string `json:"cve"`
+	Target          string `json:"target"`
+	Tier            string `json:"tier"`
+	Count           int    `json:"count"`
+	ProductionCount int    `json:"productionCount"`
+}
+
+type RemediationMetrics struct {
+	SelectedCampaigns          int     `json:"selectedCampaigns"`
+	CandidateCampaigns         int     `json:"candidateCampaigns"`
+	DeferredFindings           int     `json:"deferredFindings"`
+	ProductionDeferredFindings int     `json:"productionDeferredFindings"`
+	AutomationCoverage         float64 `json:"automationCoverage"`
+	KnownExploitedCampaigns    int     `json:"knownExploitedCampaigns"`
+	RootCauseClusterCount      int     `json:"rootCauseClusterCount"`
 }
 
 type RemediationTarget struct {
@@ -101,12 +179,17 @@ type RemediationDeferred struct {
 }
 
 type remediationScanFile struct {
-	Findings []catalog.FindingInfo `json:"findings"`
+	ScannedAt         string                 `json:"scannedAt"`
+	Scanner           string                 `json:"scanner"`
+	DBBuiltAt         *string                `json:"dbBuiltAt"`
+	KEVStatus         string                 `json:"kevStatus"`
+	KEVCatalogVersion *string                `json:"kevCatalogVersion"`
+	CountsBySeverity  catalog.SeverityCounts `json:"countsBySeverity"`
+	Findings          []catalog.FindingInfo  `json:"findings"`
 }
 
 type campaignKey struct {
 	Package          string
-	CVE              string
 	InstalledVersion string
 	FixedVersion     string
 }
@@ -131,8 +214,11 @@ func NewRemediationCmd() *cobra.Command {
 	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", false, "Include dev-tier-only campaigns")
 	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", 0, "Maximum campaigns to emit")
 	planCmd.Flags().StringVar(&remediationOpts.out, "out", "", "Write the plan JSON to this path (in addition to stdout output)")
+	planCmd.Flags().StringVar(&remediationOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 
 	cmd.AddCommand(planCmd)
+	cmd.AddCommand(NewRemediationReportCmd())
+	cmd.AddCommand(NewRemediationValidateOverlaysCmd())
 	cmd.AddCommand(NewRemediationRunCmd())
 	cmd.AddCommand(NewRemediationOpenPRCmd())
 	return cmd
@@ -143,7 +229,8 @@ func runRemediationPlan() error {
 	if err != nil {
 		return err
 	}
-	plan, err := buildRemediationPlan(vulnDir, remediationOpts.limit, remediationOpts.includeDevOnly)
+	policy := remediationPolicyFromJSON(remediationOpts.policyJSON)
+	plan, err := buildRemediationPlanWithPolicy(vulnDir, remediationOpts.limit, remediationOpts.includeDevOnly, policy)
 	if err != nil {
 		return err
 	}
@@ -251,7 +338,12 @@ func describeRemediationVulnRoot(root string) string {
 }
 
 func buildRemediationPlan(vulnDir string, limit int, includeDevOnly bool) (*RemediationPlan, error) {
-	campaigns, deferred, err := normalizeRemediationCampaigns(vulnDir)
+	return buildRemediationPlanWithPolicy(vulnDir, limit, includeDevOnly, fleet.DefaultRemediationPolicy())
+}
+
+func buildRemediationPlanWithPolicy(vulnDir string, limit int, includeDevOnly bool, policy fleet.RemediationPolicy) (*RemediationPlan, error) {
+	policy = fleet.EffectiveRemediationPolicy(policy)
+	campaigns, deferred, scanSource, err := normalizeRemediationCampaigns(vulnDir, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +360,7 @@ func buildRemediationPlan(vulnDir string, limit int, includeDevOnly bool) (*Reme
 	productionDeferredReasonCounts := map[string]int{}
 	for _, item := range deferred {
 		deferredReasonCounts[item.Reason]++
-		if productionRemediationTiers[item.Tier] {
+		if productionTier(policy, item.Tier) {
 			productionDeferredReasonCounts[item.Reason]++
 		}
 	}
@@ -287,17 +379,47 @@ func buildRemediationPlan(vulnDir string, limit int, includeDevOnly bool) (*Reme
 	}
 
 	productionCampaignCount := 0
+	knownExploitedCampaignCount := 0
 	for _, campaign := range campaigns {
 		if campaign.ProductionTargetCount > 0 {
 			productionCampaignCount++
 		}
+		if campaign.RiskFactors.KnownExploited {
+			knownExploitedCampaignCount++
+		}
+	}
+
+	clusters := remediationClusters(campaigns)
+	productionDeferred := 0
+	for _, item := range deferred {
+		if productionTier(policy, item.Tier) {
+			productionDeferred++
+		}
+	}
+	coverageDenominator := candidateCampaignCount + len(deferred)
+	automationCoverage := 0.0
+	if coverageDenominator > 0 {
+		automationCoverage = roundRemediationScore(float64(len(campaigns)) / float64(coverageDenominator))
 	}
 
 	return &RemediationPlan{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		SourceDir:   vulnDir,
+		Policy:      policy,
+		ScanSource:  scanSource,
 		Campaigns:   campaigns,
+		Clusters:    clusters,
 		Deferred:    deferred,
+		TopDeferred: topDeferredSummaries(deferred, policy, 10),
+		Metrics: RemediationMetrics{
+			SelectedCampaigns:          len(campaigns),
+			CandidateCampaigns:         candidateCampaignCount,
+			DeferredFindings:           len(deferred),
+			ProductionDeferredFindings: productionDeferred,
+			AutomationCoverage:         automationCoverage,
+			KnownExploitedCampaigns:    knownExploitedCampaignCount,
+			RootCauseClusterCount:      len(clusters),
+		},
 		Summary: RemediationPlanSummary{
 			CampaignCount:                  len(campaigns),
 			CandidateCampaignCount:         candidateCampaignCount,
@@ -311,15 +433,16 @@ func buildRemediationPlan(vulnDir string, limit int, includeDevOnly bool) (*Reme
 	}, nil
 }
 
-func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []RemediationDeferred, error) {
+func normalizeRemediationCampaigns(vulnDir string, policy fleet.RemediationPolicy) ([]RemediationCampaign, []RemediationDeferred, RemediationScanSource, error) {
 	files, err := filepath.Glob(filepath.Join(vulnDir, "*.json"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list vulnerability scan files: %w", err)
+		return nil, nil, RemediationScanSource{}, fmt.Errorf("failed to list vulnerability scan files: %w", err)
 	}
 	sort.Strings(files)
 
 	campaigns := map[campaignKey]*RemediationCampaign{}
 	deferred := []RemediationDeferred{}
+	scanSource := RemediationScanSource{Directory: vulnDir, KEVStatus: "unavailable"}
 	for _, filePath := range files {
 		target, ok := splitRemediationTargetFile(filePath)
 		if !ok {
@@ -327,12 +450,14 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 		}
 		raw, err := os.ReadFile(filePath)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read vulnerability scan file %s: %w", filePath, err)
+			return nil, nil, scanSource, fmt.Errorf("failed to read vulnerability scan file %s: %w", filePath, err)
 		}
 		var scan remediationScanFile
 		if err := json.Unmarshal(raw, &scan); err != nil {
-			return nil, nil, fmt.Errorf("failed to parse vulnerability scan file %s: %w", filePath, err)
+			return nil, nil, scanSource, fmt.Errorf("failed to parse vulnerability scan file %s: %w", filePath, err)
 		}
+		mergeScanSource(&scanSource, scan)
+		scanSource.FileCount++
 
 		for _, finding := range scan.Findings {
 			if finding.PackageName == "" || finding.ID == "" {
@@ -342,11 +467,11 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 			fix := fixedVersionString(finding.FixedIn)
 			reason := ""
 			switch {
-			case finding.Layer != "runtime":
+			case policyBool(policy.RequireRuntimeLayer) && finding.Layer != "runtime":
 				reason = "base_layer"
-			case severityKey != "critical" && severityKey != "high":
+			case !severityMeetsThreshold(severityKey, policy.MinimumSeverity):
 				reason = "below_priority_threshold"
-			case fix == "":
+			case policyBool(policy.RequireFixedVersion) && fix == "":
 				reason = "no_fixed_version"
 			}
 
@@ -367,7 +492,6 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 
 			key := campaignKey{
 				Package:          finding.PackageName,
-				CVE:              finding.ID,
 				InstalledVersion: finding.PackageVersion,
 				FixedVersion:     fix,
 			}
@@ -376,6 +500,8 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 				campaign = &RemediationCampaign{
 					Package:          finding.PackageName,
 					CVE:              finding.ID,
+					PrimaryCVE:       finding.ID,
+					CVEs:             []string{},
 					InstalledVersion: finding.PackageVersion,
 					FixedVersion:     fix,
 					FixState:         finding.FixState,
@@ -390,11 +516,35 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 					Namespace:        finding.Namespace,
 					Description:      finding.Description,
 					RecommendedRoute: "version_bump",
-					AffectedTargets:  []RemediationTarget{},
+					RiskFactors:      remediationRiskFactors(finding, fix, 0, 0),
+					PolicyDecision: RemediationPolicyDecision{
+						Selected: true,
+						Reason:   "eligible",
+						Summary:  "Finding matches the configured automated remediation policy.",
+					},
+					ExpectedRemoved: []RemediationExpectedFinding{},
+					AffectedTargets: []RemediationTarget{},
 				}
 				campaigns[key] = campaign
 			}
-			campaign.AffectedTargets = append(campaign.AffectedTargets, target)
+			addCampaignCVE(campaign, finding.ID)
+			addExpectedRemoved(campaign, finding)
+			if campaign.CVSSScore == nil && finding.CvssScore != nil {
+				campaign.CVSSScore = finding.CvssScore
+			}
+			if campaign.EPSSScore == nil && finding.EpssScore != nil {
+				campaign.EPSSScore = finding.EpssScore
+			}
+			if campaign.EPSSPercentile == nil && finding.EpssPercentile != nil {
+				campaign.EPSSPercentile = finding.EpssPercentile
+			}
+			if campaign.RiskScore == nil && finding.RiskScore != nil {
+				campaign.RiskScore = finding.RiskScore
+			}
+			if finding.KEV != nil && finding.KEV.KnownExploited {
+				campaign.RiskFactors.KnownExploited = true
+			}
+			addAffectedTarget(campaign, target)
 		}
 	}
 
@@ -403,8 +553,8 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 		sort.Slice(campaign.AffectedTargets, func(i, j int) bool {
 			left := campaign.AffectedTargets[i]
 			right := campaign.AffectedTargets[j]
-			if productionRemediationTiers[left.Tier] != productionRemediationTiers[right.Tier] {
-				return productionRemediationTiers[left.Tier]
+			if productionTier(policy, left.Tier) != productionTier(policy, right.Tier) {
+				return productionTier(policy, left.Tier)
 			}
 			if left.Target != right.Target {
 				return left.Target < right.Target
@@ -413,10 +563,11 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 		})
 		campaign.TargetCount = len(campaign.AffectedTargets)
 		for _, target := range campaign.AffectedTargets {
-			if productionRemediationTiers[target.Tier] {
+			if productionTier(policy, target.Tier) {
 				campaign.ProductionTargetCount++
 			}
 		}
+		campaign.RiskFactors = remediationRiskFactorsFromCampaign(*campaign)
 		campaign.Score = roundRemediationScore(remediationFindingScore(*campaign))
 		normalized = append(normalized, *campaign)
 	}
@@ -439,7 +590,7 @@ func normalizeRemediationCampaigns(vulnDir string) ([]RemediationCampaign, []Rem
 		return left.InstalledVersion < right.InstalledVersion
 	})
 
-	return normalized, deferred, nil
+	return normalized, deferred, scanSource, nil
 }
 
 func splitRemediationTargetFile(path string) (RemediationTarget, bool) {
@@ -491,6 +642,12 @@ func remediationFindingScore(campaign RemediationCampaign) float64 {
 	if campaign.EPSSScore != nil {
 		score += *campaign.EPSSScore * 100
 	}
+	if campaign.EPSSPercentile != nil && *campaign.EPSSPercentile >= 0.90 {
+		score += 100
+	}
+	if campaign.RiskFactors.KnownExploited {
+		score += 500
+	}
 	return score
 }
 
@@ -536,6 +693,212 @@ func compareVersionLike(left, right string) int {
 		}
 	}
 	return strings.Compare(left, right)
+}
+
+func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" {
+		return fleet.DefaultRemediationPolicy()
+	}
+	var policy fleet.RemediationPolicy
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+		return fleet.DefaultRemediationPolicy()
+	}
+	return fleet.EffectiveRemediationPolicy(policy)
+}
+
+func policyBool(value *bool) bool {
+	return value != nil && *value
+}
+
+func productionTier(policy fleet.RemediationPolicy, tier string) bool {
+	policy = fleet.EffectiveRemediationPolicy(policy)
+	for _, item := range policy.ProductionTiers {
+		if item == tier {
+			return true
+		}
+	}
+	return false
+}
+
+func severityMeetsThreshold(severity, threshold string) bool {
+	order := map[string]int{
+		"critical":   5,
+		"high":       4,
+		"medium":     3,
+		"low":        2,
+		"negligible": 1,
+		"unknown":    0,
+	}
+	sev := order[strings.ToLower(severity)]
+	min, ok := order[strings.ToLower(threshold)]
+	if !ok {
+		min = order["high"]
+	}
+	return sev >= min
+}
+
+func mergeScanSource(source *RemediationScanSource, scan remediationScanFile) {
+	if source.Scanner == nil && scan.Scanner != "" {
+		source.Scanner = &scan.Scanner
+	}
+	if source.DBBuiltAt == nil && scan.DBBuiltAt != nil {
+		source.DBBuiltAt = scan.DBBuiltAt
+	}
+	if source.ScannedAt == nil && scan.ScannedAt != "" {
+		source.ScannedAt = &scan.ScannedAt
+	}
+	if scan.KEVStatus != "" {
+		if source.KEVStatus == "" || source.KEVStatus == "unavailable" || scan.KEVStatus == "available" {
+			source.KEVStatus = scan.KEVStatus
+		}
+	}
+	if source.KEVCatalogVersion == nil && scan.KEVCatalogVersion != nil {
+		source.KEVCatalogVersion = scan.KEVCatalogVersion
+	}
+}
+
+func addCampaignCVE(campaign *RemediationCampaign, cve string) {
+	for _, existing := range campaign.CVEs {
+		if existing == cve {
+			return
+		}
+	}
+	campaign.CVEs = append(campaign.CVEs, cve)
+	sort.Strings(campaign.CVEs)
+	if campaign.PrimaryCVE == "" || cve < campaign.PrimaryCVE {
+		campaign.PrimaryCVE = cve
+		campaign.CVE = cve
+	}
+}
+
+func addExpectedRemoved(campaign *RemediationCampaign, finding catalog.FindingInfo) {
+	item := RemediationExpectedFinding{
+		CVE:              finding.ID,
+		Package:          finding.PackageName,
+		InstalledVersion: finding.PackageVersion,
+	}
+	for _, existing := range campaign.ExpectedRemoved {
+		if existing == item {
+			return
+		}
+	}
+	campaign.ExpectedRemoved = append(campaign.ExpectedRemoved, item)
+	sort.Slice(campaign.ExpectedRemoved, func(i, j int) bool {
+		left := campaign.ExpectedRemoved[i]
+		right := campaign.ExpectedRemoved[j]
+		if left.CVE != right.CVE {
+			return left.CVE < right.CVE
+		}
+		if left.Package != right.Package {
+			return left.Package < right.Package
+		}
+		return left.InstalledVersion < right.InstalledVersion
+	})
+}
+
+func addAffectedTarget(campaign *RemediationCampaign, target RemediationTarget) {
+	for _, existing := range campaign.AffectedTargets {
+		if existing.Target == target.Target && existing.Arch == target.Arch {
+			return
+		}
+	}
+	campaign.AffectedTargets = append(campaign.AffectedTargets, target)
+}
+
+func remediationRiskFactors(finding catalog.FindingInfo, fixedVersion string, productionTargets, targets int) RemediationRiskFactors {
+	return RemediationRiskFactors{
+		Severity:              finding.Severity,
+		CVSSScore:             finding.CvssScore,
+		EPSSScore:             finding.EpssScore,
+		EPSSPercentile:        finding.EpssPercentile,
+		RiskScore:             finding.RiskScore,
+		KnownExploited:        finding.KEV != nil && finding.KEV.KnownExploited,
+		FixedVersionAvailable: fixedVersion != "",
+		ProductionTargetCount: productionTargets,
+		TargetCount:           targets,
+	}
+}
+
+func remediationRiskFactorsFromCampaign(campaign RemediationCampaign) RemediationRiskFactors {
+	return RemediationRiskFactors{
+		Severity:              campaign.Severity,
+		CVSSScore:             campaign.CVSSScore,
+		EPSSScore:             campaign.EPSSScore,
+		EPSSPercentile:        campaign.EPSSPercentile,
+		RiskScore:             campaign.RiskScore,
+		KnownExploited:        campaign.RiskFactors.KnownExploited,
+		FixedVersionAvailable: campaign.FixedVersion != "",
+		ProductionTargetCount: campaign.ProductionTargetCount,
+		TargetCount:           campaign.TargetCount,
+	}
+}
+
+func remediationClusters(campaigns []RemediationCampaign) []RemediationCluster {
+	clusters := make([]RemediationCluster, 0, len(campaigns))
+	for _, campaign := range campaigns {
+		clusters = append(clusters, RemediationCluster{
+			Package:               campaign.Package,
+			InstalledVersion:      campaign.InstalledVersion,
+			FixedVersion:          campaign.FixedVersion,
+			PrimaryCVE:            campaign.PrimaryCVE,
+			CVEs:                  append([]string(nil), campaign.CVEs...),
+			TargetCount:           campaign.TargetCount,
+			ProductionTargetCount: campaign.ProductionTargetCount,
+			KnownExploited:        campaign.RiskFactors.KnownExploited,
+			Score:                 campaign.Score,
+		})
+	}
+	return clusters
+}
+
+func topDeferredSummaries(deferred []RemediationDeferred, policy fleet.RemediationPolicy, limit int) []RemediationDeferredSummary {
+	type key struct {
+		reason, pkg, cve, target, tier string
+	}
+	grouped := map[key]*RemediationDeferredSummary{}
+	for _, item := range deferred {
+		k := key{reason: item.Reason, pkg: item.Package, cve: item.CVE, target: item.Target, tier: item.Tier}
+		summary := grouped[k]
+		if summary == nil {
+			summary = &RemediationDeferredSummary{
+				Reason:  item.Reason,
+				Package: item.Package,
+				CVE:     item.CVE,
+				Target:  item.Target,
+				Tier:    item.Tier,
+			}
+			grouped[k] = summary
+		}
+		summary.Count++
+		if productionTier(policy, item.Tier) {
+			summary.ProductionCount++
+		}
+	}
+	out := make([]RemediationDeferredSummary, 0, len(grouped))
+	for _, summary := range grouped {
+		out = append(out, *summary)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := out[i]
+		right := out[j]
+		if left.ProductionCount != right.ProductionCount {
+			return left.ProductionCount > right.ProductionCount
+		}
+		if left.Count != right.Count {
+			return left.Count > right.Count
+		}
+		if left.Reason != right.Reason {
+			return left.Reason < right.Reason
+		}
+		if left.Package != right.Package {
+			return left.Package < right.Package
+		}
+		return left.CVE < right.CVE
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 func printRemediationPlanTable(plan *RemediationPlan) error {

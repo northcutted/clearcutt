@@ -39,6 +39,11 @@ The scaffold command copies the Astro template, writes or preserves
 copies catalog data into `public/catalog`, and preserves raw evidence
 directories.
 
+The default homepage is a practical catalog navigator: current catalog status,
+start-here links, and role-specific workflow sections for platform,
+application, and security/audit engineers. Customize that surface through
+`site.home` in `clearcutt.site.yaml` before reaching for page overrides.
+
 The Astro template is embedded in the `clearcutt` binary, so `scaffold`,
 `build`, `preview`, and `eject` work from any directory — no ClearCutt checkout
 required. When you run inside the repository, the live `site/` directory is used

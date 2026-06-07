@@ -18,8 +18,10 @@ const SiteConfigInput = z
           .optional(),
         navigation: z
           .object({
+            showHome: z.boolean().optional(),
             showMarketingHome: z.boolean().optional(),
             showGettingStarted: z.boolean().optional(),
+            showOperatorDocs: z.boolean().optional(),
             showCliDocs: z.boolean().optional(),
             showAuditGuide: z.boolean().optional(),
           })
@@ -50,12 +52,117 @@ const SiteConfigInput = z
             docs: z.string().optional(),
           })
           .optional(),
+        home: z
+          .object({
+            title: z.string().optional(),
+            description: z.string().optional(),
+            showNotice: z.boolean().optional(),
+            noticeTitle: z.string().optional(),
+            noticeBody: z.string().optional(),
+            quickLinks: z
+              .array(
+                z.object({
+                  label: z.string(),
+                  href: z.string(),
+                  description: z.string().optional(),
+                }),
+              )
+              .optional(),
+            personas: z
+              .array(
+                z.object({
+                  id: z.string(),
+                  label: z.string(),
+                  summary: z.string(),
+                  steps: z.array(
+                    z.object({
+                      title: z.string(),
+                      description: z.string(),
+                      href: z.string().optional(),
+                      command: z.string().optional(),
+                      ctaLabel: z.string().optional(),
+                    }),
+                  ),
+                }),
+              )
+              .optional(),
+          })
+          .optional(),
       })
       .optional(),
   })
   .optional();
 
-export const defaultSiteConfig = {
+type HomeQuickLink = {
+  label: string;
+  href: string;
+  description?: string;
+};
+
+type HomeStep = {
+  title: string;
+  description: string;
+  href?: string;
+  command?: string;
+  ctaLabel?: string;
+};
+
+type HomePersona = {
+  id: string;
+  label: string;
+  summary: string;
+  steps: HomeStep[];
+};
+
+export type SiteConfig = {
+  site: {
+    title: string;
+    description: string;
+    logo: string;
+    theme: {
+      mode: 'system' | 'light' | 'dark';
+      accent: string;
+    };
+    navigation: {
+      showHome: boolean;
+      showGettingStarted: boolean;
+      showOperatorDocs: boolean;
+      showCliDocs: boolean;
+      showAuditGuide: boolean;
+    };
+    features: {
+      sbomTable: boolean;
+      vulnerabilityTable: boolean;
+      layerExplorer: boolean;
+      provenance: boolean;
+      ociLabels: boolean;
+      versionHistory: boolean;
+      kyvernoPolicies: boolean;
+    };
+    terminology: {
+      distroless: string;
+      slim: string;
+      dev: string;
+    };
+    links: {
+      sourceRepo: string;
+      registry: string;
+      support: string;
+      docs: string;
+    };
+    home: {
+      title: string;
+      description: string;
+      showNotice: boolean;
+      noticeTitle: string;
+      noticeBody: string;
+      quickLinks: HomeQuickLink[];
+      personas: HomePersona[];
+    };
+  };
+};
+
+export const defaultSiteConfig: SiteConfig = {
   site: {
     title: 'ClearCutt Catalog',
     description:
@@ -66,8 +173,9 @@ export const defaultSiteConfig = {
       accent: '#7c3aed',
     },
     navigation: {
-      showMarketingHome: true,
+      showHome: true,
       showGettingStarted: true,
+      showOperatorDocs: true,
       showCliDocs: true,
       showAuditGuide: true,
     },
@@ -91,10 +199,115 @@ export const defaultSiteConfig = {
       support: '',
       docs: '',
     },
+    home: {
+      title: 'Base Image Catalog',
+      description:
+        'Use this catalog to containerize applications with approved runtime images, inspect evidence, and find the next step for your role.',
+      showNotice: true,
+      noticeTitle: 'Before you use this catalog',
+      noticeBody:
+        'The catalog is a static view of generated image metadata and evidence. Treat missing signatures, provenance, SBOMs, or scans as explicit gaps instead of inferring trust from another channel.',
+      quickLinks: [
+        {
+          label: 'Containerize your app',
+          href: 'getting-started',
+          description: 'Copy a multi-stage container example and local validation commands.',
+        },
+        {
+          label: 'Browse images',
+          href: 'catalog',
+          description: 'Filter runtimes, tiers, services, release status, and CVE gates.',
+        },
+        {
+          label: 'Audit evidence',
+          href: 'about?tab=audit',
+          description: 'Verify signatures, provenance, SBOMs, and workflow identity.',
+        },
+        {
+          label: 'Know limits',
+          href: 'limitations',
+          description: 'Review what the catalog proves and what your team still owns.',
+        },
+      ],
+      personas: [
+        {
+          id: 'platform',
+          label: 'Platform engineers',
+          summary: 'Publish, govern, and maintain the approved image fleet.',
+          steps: [
+            {
+              title: 'Check catalog coverage',
+              description: 'Confirm latest images, pending matrix slots, services, and evidence counts.',
+              href: 'catalog',
+              ctaLabel: 'Open matrix',
+            },
+            {
+              title: 'Fork and configure the fleet',
+              description: 'Review the platform kit commands, fleet config contract, and generated site workflow.',
+              href: 'platform-kit',
+              ctaLabel: 'Open platform kit',
+            },
+            {
+              title: 'Publish refreshed catalog data',
+              description: 'Generate catalog data and build the static site artifact for your own registry.',
+              command: 'clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install',
+            },
+          ],
+        },
+        {
+          id: 'application',
+          label: 'Application engineers',
+          summary: 'Pick a runtime image, build an app container, and validate it before release.',
+          steps: [
+            {
+              title: 'Choose a runtime and tier',
+              description: 'Use the catalog matrix to find the right language version and production tier.',
+              href: 'catalog',
+              ctaLabel: 'Choose an image',
+            },
+            {
+              title: 'Copy the build pattern',
+              description: 'Start with a dev-to-runtime multi-stage example that does not require Nix locally.',
+              href: 'getting-started',
+              ctaLabel: 'Copy app pattern',
+            },
+            {
+              title: 'Plan rebase and certification',
+              description: 'Use app lifecycle examples for app build, diff-base, certify, and rebase workflows.',
+              href: 'app-lifecycle',
+              ctaLabel: 'Open lifecycle',
+            },
+          ],
+        },
+        {
+          id: 'audit',
+          label: 'Security and audit engineers',
+          summary: 'Review evidence channels, vulnerability state, and threat-model boundaries.',
+          steps: [
+            {
+              title: 'Verify supply-chain evidence',
+              description: 'Run the audit guide checks for keyless signatures, SLSA provenance, and SBOMs.',
+              href: 'about?tab=audit',
+              ctaLabel: 'Verify evidence',
+            },
+            {
+              title: 'Inspect vulnerabilities',
+              description: 'Use image detail pages to review active findings, fix state, OpenVEX notes, and exceptions.',
+              href: 'catalog',
+              ctaLabel: 'Inspect findings',
+            },
+            {
+              title: 'Read the boundaries',
+              description: 'Confirm what shell-free, provenance, and remediation claims do and do not prove.',
+              href: 'limitations',
+              ctaLabel: 'Read limits',
+            },
+          ],
+        },
+      ],
+    },
   },
 };
-
-export type SiteConfig = typeof defaultSiteConfig;
 
 let cachedConfig: SiteConfig | null = null;
 
@@ -124,6 +337,13 @@ export function tierLabel(config: SiteConfig, id: string): string {
 
 function mergeSiteConfig(input: z.infer<typeof SiteConfigInput>): SiteConfig {
   const site = input?.site ?? {};
+  const navigation = {
+    ...defaultSiteConfig.site.navigation,
+    ...site.navigation,
+  };
+  if (site.navigation?.showHome === undefined && site.navigation?.showMarketingHome !== undefined) {
+    navigation.showHome = site.navigation.showMarketingHome;
+  }
   return {
     site: {
       ...defaultSiteConfig.site,
@@ -132,10 +352,7 @@ function mergeSiteConfig(input: z.infer<typeof SiteConfigInput>): SiteConfig {
         ...defaultSiteConfig.site.theme,
         ...site.theme,
       },
-      navigation: {
-        ...defaultSiteConfig.site.navigation,
-        ...site.navigation,
-      },
+      navigation,
       features: {
         ...defaultSiteConfig.site.features,
         ...site.features,
@@ -147,6 +364,12 @@ function mergeSiteConfig(input: z.infer<typeof SiteConfigInput>): SiteConfig {
       links: {
         ...defaultSiteConfig.site.links,
         ...site.links,
+      },
+      home: {
+        ...defaultSiteConfig.site.home,
+        ...site.home,
+        quickLinks: site.home?.quickLinks ?? defaultSiteConfig.site.home.quickLinks,
+        personas: site.home?.personas ?? defaultSiteConfig.site.home.personas,
       },
     },
   };

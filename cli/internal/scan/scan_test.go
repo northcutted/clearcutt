@@ -40,6 +40,59 @@ func TestNormalizeGrypeMatchesFixtureOutput(t *testing.T) {
 	}
 }
 
+func TestParseKEVCatalogAndNormalizeAnnotatesKnownExploited(t *testing.T) {
+	rawKEV := []byte(`{
+  "catalogVersion": "2026.06.07",
+  "dateReleased": "2026-06-07T00:00:00Z",
+  "count": 1,
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2026-6100",
+      "vendorProject": "Python",
+      "product": "CPython",
+      "vulnerabilityName": "CPython test advisory",
+      "dateAdded": "2026-06-07",
+      "requiredAction": "Apply updates",
+      "dueDate": "2026-06-21",
+      "knownRansomwareCampaignUse": "Unknown"
+    }
+  ]
+}`)
+	kevCatalog, err := ParseKEVCatalog(rawKEV)
+	if err != nil {
+		t.Fatalf("parse KEV catalog: %v", err)
+	}
+	version := kevCatalog.CatalogVersion
+	epss := 0.72
+	percentile := 0.94
+	report := NormalizeGrypeWithOptions(
+		GrypeResult{Matches: []grypeMatch{{
+			Vulnerability: grypeVuln{
+				ID:       "CVE-2026-6100",
+				Severity: "High",
+				Fix:      grypeFix{State: "fixed", Versions: []string{"3.13.14"}},
+				Epss:     []grypeEpss{{Epss: &epss, Percentile: &percentile}},
+			},
+			Artifact: grypeArtifact{Name: "python", Version: "3.13.13"},
+		}}},
+		"2026-06-07T00:00:00Z",
+		"grype-test",
+		nil,
+		TargetMetadata("python3.13-slim"),
+		NormalizeOptions{KEVCatalog: kevCatalog, KEVStatus: "available", KEVCatalogVersion: &version},
+	)
+
+	if report.KEVStatus != "available" || report.KEVCatalogVersion == nil || *report.KEVCatalogVersion != "2026.06.07" {
+		t.Fatalf("unexpected KEV scan metadata: status=%q version=%v", report.KEVStatus, report.KEVCatalogVersion)
+	}
+	if len(report.Findings) != 1 || report.Findings[0].KEV == nil || !report.Findings[0].KEV.KnownExploited {
+		t.Fatalf("expected known-exploited finding annotation, got %+v", report.Findings)
+	}
+	if report.Findings[0].KEV.VendorProject == nil || *report.Findings[0].KEV.VendorProject != "Python" {
+		t.Fatalf("unexpected KEV vendor metadata: %+v", report.Findings[0].KEV)
+	}
+}
+
 func TestScanClassificationBranchMatrix(t *testing.T) {
 	languages := map[string]string{
 		"core":   "Core",

@@ -39,11 +39,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install Grype
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
-          grype version
-
       # Cache the per-release enrichment + SBOM downloads to keep hourly scans fast and optimized.
       - name: Restore catalog data cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -81,7 +76,27 @@ jobs:
             echo "max_findings=$(jq -r '.remediation.maxFindingsPerRun' <<< "$FLEET")"
             echo "max_failures=$(jq -r '.remediation.maxPatchFailuresPerRun' <<< "$FLEET")"
             echo "include_dev_only=$(jq -r '.remediation.includeDevOnly' <<< "$FLEET")"
+            echo "policy=$(jq -c '.remediation.policy // {}' <<< "$FLEET")"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
+
+      - name: Refresh CISA KEV cache
+        run: |
+          set -euo pipefail
+          mkdir -p core/build-outputs/security-intel
+          KEV_FILE="core/build-outputs/security-intel/known_exploited_vulnerabilities.json"
+          KEV_STATUS="core/build-outputs/security-intel/kev-status.json"
+          if curl -fsSL "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" -o "$KEV_FILE"; then
+            jq '{status:"available", catalogVersion, dateReleased, count}' "$KEV_FILE" > "$KEV_STATUS"
+          else
+            rm -f "$KEV_FILE"
+            printf '%s\n' '{"status":"unavailable"}' > "$KEV_STATUS"
+          fi
 
       - name: Gather release assets → catalog JSON
         env:
@@ -96,12 +111,18 @@ jobs:
           SCAN_MODE: remediation
           SCAN_TAG_DEPTH: ${{ steps.fleet.outputs.scan_depth }}
           CLEARCUTT_BIN: ${{ github.workspace }}/clearcutt
-        run: ./core/scripts/scheduled-scan.sh
+          KEV_FILE: ${{ github.workspace }}/core/build-outputs/security-intel/known_exploited_vulnerabilities.json
+        run: |
+          nix develop ./core \
+            --extra-experimental-features "nix-command flakes" \
+            --accept-flake-config \
+            --command ./core/scripts/scheduled-scan.sh
 
       - name: Generate approved remediation plan
         env:
           VULN_ROOT: site/src/data/vulnerabilities
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
+          REMEDIATION_POLICY_JSON: ${{ steps.fleet.outputs.policy }}
         run: |
           set -euo pipefail
           INCLUDE_ARGS=()
@@ -111,6 +132,7 @@ jobs:
           ./clearcutt --format json remediation plan \
             --vuln-root "$VULN_ROOT" \
             --limit "${{ steps.fleet.outputs.max_findings }}" \
+            --policy-json "$REMEDIATION_POLICY_JSON" \
             --out core/build-outputs/remediation-plan.json \
             "${INCLUDE_ARGS[@]}"
 
@@ -118,12 +140,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-
-      - name: Configure ClearCutt Nix Environment
-        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
       # Persist /nix/store between runs. Without this every cold runner has to
       # re-fetch the unpatched base closure from R2 even when nothing in the
@@ -153,6 +169,7 @@ jobs:
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
           VULN_ROOT: ../site/src/data/vulnerabilities
           MAX_PATCH_FAILURES_PER_RUN: ${{ steps.fleet.outputs.max_failures }}
+          REMEDIATION_POLICY_JSON: ${{ steps.fleet.outputs.policy }}
         working-directory: core
         run: |
           INCLUDE_ARGS=()
@@ -164,7 +181,19 @@ jobs:
             --limit "$MAX_FINDINGS_PER_RUN" \
             --max-failures "$MAX_PATCH_FAILURES_PER_RUN" \
             --plan-out build-outputs/remediation-plan.json \
+            --policy-json "$REMEDIATION_POLICY_JSON" \
             "${INCLUDE_ARGS[@]}"
+
+      - name: Generate remediation report
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f core/build-outputs/remediation-plan.json ]]; then
+            ./clearcutt remediation report \
+              --plan core/build-outputs/remediation-plan.json \
+              --summary-dir core/build-outputs \
+              --out core/build-outputs/remediation-report.json
+          fi
 
       - name: Upload Scanned Vulnerabilities
         if: always()
@@ -179,5 +208,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: remediation-plan
-          path: core/build-outputs/remediation-plan.json
+          path: |
+            core/build-outputs/remediation-plan.json
+            core/build-outputs/remediation-report.json
+            core/build-outputs/remediation-summary-*.json
+            core/build-outputs/security-intel/
           retention-days: 7

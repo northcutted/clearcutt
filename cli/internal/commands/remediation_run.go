@@ -25,6 +25,7 @@ type remediationRunFlags struct {
 	agentScript    string
 	baseBranch     string
 	skipPR         bool
+	policyJSON     string
 }
 
 type remediationOpenPRFlags struct {
@@ -61,6 +62,7 @@ the CI orchestration, branch detection, and PR creation live here.`,
 	cmd.Flags().StringVar(&remediationRunOpts.planOut, "plan-out", "", "Write the generated plan JSON to this path")
 	cmd.Flags().StringVar(&remediationRunOpts.agentScript, "agent-script", envOr("CVE_DRAFT_AGENT", "./scripts/cve-draft-agent.py"), "Drafting agent path, relative to --core-dir unless absolute")
 	cmd.Flags().StringVar(&remediationRunOpts.baseBranch, "base-branch", envOr("REMEDIATION_BASE_BRANCH", "main"), "Base branch for draft PRs and checkout reset")
+	cmd.Flags().StringVar(&remediationRunOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 	cmd.Flags().BoolVar(&remediationRunOpts.skipPR, "skip-pr", false, "Run the drafting agent but do not push or open pull requests")
 	return cmd
 }
@@ -111,7 +113,8 @@ func runRemediationRun() error {
 	if err != nil {
 		return err
 	}
-	plan, err := buildRemediationPlan(vulnDir, remediationRunOpts.limit, remediationRunOpts.includeDevOnly)
+	policy := remediationPolicyFromJSON(remediationRunOpts.policyJSON)
+	plan, err := buildRemediationPlanWithPolicy(vulnDir, remediationRunOpts.limit, remediationRunOpts.includeDevOnly, policy)
 	if err != nil {
 		return err
 	}
@@ -406,6 +409,9 @@ func remediationSummarySection(summaryPath string) (string, error) {
 	}
 
 	recipe := mapValue(data, "recipe")
+	policyDecision := firstMapValue(data, "policy_decision", "policyDecision")
+	riskFactors := firstMapValue(data, "risk_factors", "riskFactors")
+	expectedRemoved := firstSliceValue(data, "expected_removed", "expectedRemoved")
 	validation := sliceValue(data, "validation")
 	affected := sliceValue(data, "affected_targets")
 
@@ -417,6 +423,15 @@ func remediationSummarySection(summaryPath string) (string, error) {
 	}
 	if fixed := stringValue(data, "fixed_version"); fixed != "" {
 		b.WriteString(fmt.Sprintf("- **Expected fixed version:** %s\n", codeQuote(fixed)))
+	}
+	if reason := stringValue(policyDecision, "reason"); reason != "" {
+		b.WriteString(fmt.Sprintf("- **Policy decision:** %s\n", codeQuote(reason)))
+	}
+	if known := boolValue(riskFactors, "knownExploited"); known {
+		b.WriteString("- **Known exploited:** `true`\n")
+	}
+	if epss := numberStringValue(riskFactors, "epssPercentile"); epss != "" {
+		b.WriteString(fmt.Sprintf("- **EPSS percentile:** %s\n", codeQuote(epss)))
 	}
 	b.WriteString(fmt.Sprintf("- **Affected target fanout:** %s\n", codeQuote(fmt.Sprintf("%d", len(affected)))))
 	prodCount := 0
@@ -441,6 +456,19 @@ func remediationSummarySection(summaryPath string) (string, error) {
 			extra = fmt.Sprintf(" (+%d more)", len(affected)-8)
 		}
 		b.WriteString(fmt.Sprintf("- **Affected targets:** %s\n", codeQuote(strings.Join(labels, ", ")+extra)))
+	}
+	if len(expectedRemoved) > 0 {
+		pairs := []string{}
+		for _, item := range expectedRemoved {
+			pair := firstNonEmpty(stringValue(item, "cve"), stringValue(item, "id"))
+			pkg := firstNonEmpty(stringValue(item, "package"), stringValue(item, "packageName"))
+			if pair != "" || pkg != "" {
+				pairs = append(pairs, pair+"/"+pkg)
+			}
+		}
+		if len(pairs) > 0 {
+			b.WriteString(fmt.Sprintf("- **Expected removed findings:** %s\n", codeQuote(strings.Join(pairs, ", "))))
+		}
 	}
 
 	b.WriteString("\n### Before/after validation\n")
@@ -570,6 +598,15 @@ func mapValue(data map[string]any, key string) map[string]any {
 	return value
 }
 
+func firstMapValue(data map[string]any, keys ...string) map[string]any {
+	for _, key := range keys {
+		if value := mapValue(data, key); len(value) > 0 {
+			return value
+		}
+	}
+	return map[string]any{}
+}
+
 func sliceValue(data map[string]any, key string) []map[string]any {
 	raw, _ := data[key].([]any)
 	out := make([]map[string]any, 0, len(raw))
@@ -581,7 +618,32 @@ func sliceValue(data map[string]any, key string) []map[string]any {
 	return out
 }
 
+func firstSliceValue(data map[string]any, keys ...string) []map[string]any {
+	for _, key := range keys {
+		if value := sliceValue(data, key); len(value) > 0 {
+			return value
+		}
+	}
+	return nil
+}
+
 func stringValue(data map[string]any, key string) string {
 	value, _ := data[key].(string)
 	return value
+}
+
+func boolValue(data map[string]any, key string) bool {
+	value, _ := data[key].(bool)
+	return value
+}
+
+func numberStringValue(data map[string]any, key string) string {
+	switch value := data[key].(type) {
+	case float64:
+		return fmt.Sprintf("%.3f", value)
+	case int:
+		return fmt.Sprintf("%d", value)
+	default:
+		return ""
+	}
 }

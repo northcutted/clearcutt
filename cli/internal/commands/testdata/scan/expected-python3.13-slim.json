@@ -2,6 +2,8 @@
   "scannedAt": "2026-05-31T00:00:00.000Z",
   "scanner": "grype-0.0.0-test",
   "dbBuiltAt": "2026-05-28T00:00:00Z",
+  "kevStatus": "unavailable",
+  "kevCatalogVersion": null,
   "countsBySeverity": {
     "critical": 2,
     "high": 2,
@@ -37,7 +39,8 @@
       "cvssVector": "AV:N/P",
       "epssScore": 0.42,
       "epssPercentile": 0.95,
-      "riskScore": 17.5
+      "riskScore": 17.5,
+      "kev": null
     },
     {
       "id": "CVE-2026-0007",
@@ -65,7 +68,8 @@
       "cvssVector": null,
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": null
+      "riskScore": null,
+      "kev": null
     },
     {
       "id": "CVE-2026-0002",
@@ -93,7 +97,8 @@
       "cvssVector": "AV:N/O",
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": 5
+      "riskScore": 5,
+      "kev": null
     },
     {
       "id": "CVE-2026-0003",
@@ -121,7 +126,8 @@
       "cvssVector": null,
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": null
+      "riskScore": null,
+      "kev": null
     },
     {
       "id": "CVE-2026-0004",
@@ -149,7 +155,8 @@
       "cvssVector": null,
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": null
+      "riskScore": null,
+      "kev": null
     },
     {
       "id": "CVE-2026-0005",
@@ -177,7 +184,8 @@
       "cvssVector": null,
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": null
+      "riskScore": null,
+      "kev": null
     },
     {
       "id": "CVE-2026-0006",
@@ -205,7 +213,8 @@
       "cvssVector": null,
       "epssScore": null,
       "epssPercentile": null,
-      "riskScore": null
+      "riskScore": null,
+      "kev": null
     }
   ]
 }

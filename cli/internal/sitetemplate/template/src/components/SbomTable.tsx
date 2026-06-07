@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef } from 'react';
 import type { ArchPayload, PackageEntry } from '../lib/catalog-schema';
 import { displayLanguage, isPrimaryRuntimePackage } from '../lib/runtime-taxonomy';
+import { useImageRelease } from '../lib/use-image-release';
 
 type Props = {
-  architectures: ArchPayload[];
+  architectures?: ArchPayload[];
+  dataUrl?: string;
+  releaseTag?: string;
   rawSbomUrls: Record<string, string>;
   language?: string;
   tier?: string;
@@ -79,14 +81,33 @@ function sbomInclusionSummary(packageName: string, language: string, tier: strin
   return `Transitive library closure of the ${lang} ${tier} Nix workspace.`;
 }
 
-export default function SbomTable({ architectures, rawSbomUrls, language, tier }: Props) {
-  const [arch, setArch] = useState<string>(architectures[0]?.arch ?? 'amd64');
+export default function SbomTable({
+  architectures: initialArchitectures,
+  dataUrl,
+  releaseTag,
+  rawSbomUrls,
+  language,
+  tier,
+}: Props) {
+  const { architectures, loading, error } = useImageRelease({
+    dataUrl,
+    releaseTag,
+    initialArchitectures,
+  });
+  const [arch, setArch] = useState<string>('amd64');
   const [filter, setFilter] = useState('');
   const [licenseFilter, setLicenseFilter] = useState<string>('all');
   const [catFilter, setCatFilter] = useState<Set<PackageCategory>>(new Set());
   const [onlyNix, setOnlyNix] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  useEffect(() => {
+    if (architectures.length === 0) return;
+    if (!architectures.some((candidate) => candidate.arch === arch)) {
+      setArch(architectures[0].arch);
+    }
+  }, [architectures, arch]);
 
   const current = architectures.find((a) => a.arch === arch) ?? architectures[0];
   const packages: PackageEntry[] = current?.sbom.packages ?? [];
@@ -161,6 +182,30 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
     overscan: 12,
   });
 
+  if (loading) {
+    return (
+      <section className="surface-soft px-5 py-6 text-sm text-ink-300">
+        Loading SBOM data...
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="surface-soft px-5 py-6 text-sm text-warn">
+        {error}
+      </section>
+    );
+  }
+
+  if (architectures.length === 0) {
+    return (
+      <section className="surface-soft px-5 py-6 text-sm text-ink-300">
+        SBOM data is not attached yet.
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-4">
       {/* Unified Control Deck / Dashboard Panel */}
@@ -180,6 +225,7 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
                     setArch(a.arch);
                     setLicenseFilter('all');
                   }}
+                  aria-pressed={a.arch === arch}
                   className={`rounded-md px-3 py-1 font-mono text-[11px] font-medium transition cursor-pointer ${
                     a.arch === arch 
                       ? 'bg-accent/20 text-accent-soft shadow-sm border border-accent/20' 
@@ -241,6 +287,7 @@ export default function SbomTable({ architectures, rawSbomUrls, language, tier }
                 key={k}
                 type="button"
                 onClick={() => toggleCat(k)}
+                aria-pressed={isActive}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[10px] font-medium transition-all duration-200 cursor-pointer ${activeClass} ${opacityClass}`}
                 title={`Toggle ${style.label} filter`}
               >

@@ -209,6 +209,192 @@ func TestRemediationPlanQuietOutExplicitDirAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRemediationPlanClustersMultiCVERootCauseAndRiskContext(t *testing.T) {
+	root := t.TempDir()
+	fixedIn := "3.13.14"
+	epssPercentile := 0.95
+	prodScan := map[string]any{
+		"scannedAt":         "2026-06-07T00:00:00Z",
+		"scanner":           "grype-test",
+		"dbBuiltAt":         "2026-06-06T00:00:00Z",
+		"kevStatus":         "available",
+		"kevCatalogVersion": "2026.06.07",
+		"findings": []map[string]any{
+			{
+				"id":             "CVE-2026-10001",
+				"severity":       "High",
+				"packageName":    "python",
+				"packageVersion": "3.13.13",
+				"layer":          "runtime",
+				"fixedIn":        fixedIn,
+				"fixState":       "fixed",
+				"epssPercentile": epssPercentile,
+				"kev":            map[string]any{"knownExploited": true},
+			},
+			{
+				"id":             "CVE-2026-10002",
+				"severity":       "High",
+				"packageName":    "python",
+				"packageVersion": "3.13.13",
+				"layer":          "runtime",
+				"fixedIn":        fixedIn,
+				"fixState":       "fixed",
+			},
+			{
+				"id":             "CVE-2026-10003",
+				"severity":       "High",
+				"packageName":    "glibc",
+				"packageVersion": "2.39",
+				"layer":          "base",
+				"fixedIn":        "2.40",
+				"fixState":       "fixed",
+			},
+		},
+	}
+	devFinding := map[string]any{
+		"id":             "CVE-2026-20001",
+		"severity":       "Critical",
+		"packageName":    "gradle",
+		"packageVersion": "9.2.0",
+		"layer":          "runtime",
+		"fixedIn":        "9.3.0",
+		"fixState":       "fixed",
+	}
+	dir := filepath.Join(root, "v1.0.0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogJSON(t, filepath.Join(dir, "python3.13-slim-amd64.json"), prodScan)
+	writeCatalogJSON(t, filepath.Join(dir, "java21-dev-amd64.json"), map[string]any{"findings": []map[string]any{devFinding}})
+
+	stdout, err := runCLI(t, "--format", "json", "remediation", "plan", "--vuln-root", root)
+	if err != nil {
+		t.Fatalf("remediation plan failed: %v\n%s", err, stdout)
+	}
+
+	var plan RemediationPlan
+	if err := json.Unmarshal([]byte(stdout), &plan); err != nil {
+		t.Fatalf("parse plan: %v\n%s", err, stdout)
+	}
+	if plan.ScanSource.KEVStatus != "available" || plan.ScanSource.KEVCatalogVersion == nil || *plan.ScanSource.KEVCatalogVersion != "2026.06.07" {
+		t.Fatalf("unexpected scan source: %+v", plan.ScanSource)
+	}
+	if plan.Summary.CampaignCount != 1 || plan.Summary.CandidateCampaignCount != 2 || plan.Summary.DevOnlyCampaignCount != 1 {
+		t.Fatalf("unexpected summary: %+v", plan.Summary)
+	}
+	campaign := plan.Campaigns[0]
+	if campaign.Package != "python" || campaign.PrimaryCVE != "CVE-2026-10001" || campaign.CVE != campaign.PrimaryCVE {
+		t.Fatalf("unexpected primary campaign identity: %+v", campaign)
+	}
+	if got := strings.Join(campaign.CVEs, ","); got != "CVE-2026-10001,CVE-2026-10002" {
+		t.Fatalf("expected clustered CVEs, got %q", got)
+	}
+	if len(campaign.ExpectedRemoved) != 2 || !campaign.RiskFactors.KnownExploited || campaign.RiskFactors.ProductionTargetCount != 1 {
+		t.Fatalf("expected clustered validation and risk factors, got %+v", campaign)
+	}
+	if len(plan.Clusters) != 1 || plan.Clusters[0].Package != "python" || len(plan.Clusters[0].CVEs) != 2 {
+		t.Fatalf("unexpected root-cause clusters: %+v", plan.Clusters)
+	}
+	if plan.Metrics.KnownExploitedCampaigns != 1 || plan.Metrics.ProductionDeferredFindings != 1 {
+		t.Fatalf("unexpected metrics: %+v", plan.Metrics)
+	}
+	if len(plan.TopDeferred) == 0 || plan.TopDeferred[0].Reason != "base_layer" || plan.TopDeferred[0].ProductionCount != 1 {
+		t.Fatalf("expected production base-layer deferral, got %+v", plan.TopDeferred)
+	}
+}
+
+func TestRemediationReportSummarizesDraftsAndResidualOwnerActions(t *testing.T) {
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "remediation-plan.json")
+	reportPath := filepath.Join(dir, "remediation-report.json")
+	writeCatalogJSON(t, planPath, RemediationPlan{
+		GeneratedAt: "2026-06-07T00:00:00Z",
+		TopDeferred: []RemediationDeferredSummary{{
+			Reason:          "base_layer",
+			Package:         "glibc",
+			CVE:             "CVE-2026-10003",
+			Target:          "python3.13-slim",
+			Tier:            "slim",
+			Count:           1,
+			ProductionCount: 1,
+		}},
+	})
+	writeCatalogJSON(t, filepath.Join(dir, "remediation-summary-success.json"), map[string]any{"status": "draft_compiled"})
+	writeCatalogJSON(t, filepath.Join(dir, "remediation-summary-failed.json"), map[string]any{"status": "failed"})
+
+	stdout, err := runCLI(t, "--format", "json", "remediation", "report", "--plan", planPath, "--out", reportPath)
+	if err != nil {
+		t.Fatalf("remediation report failed: %v\n%s", err, stdout)
+	}
+	var report RemediationReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("parse report stdout: %v\n%s", err, stdout)
+	}
+	if report.DraftResults.Drafted != 1 || report.DraftResults.Failed != 1 {
+		t.Fatalf("unexpected draft results: %+v", report.DraftResults)
+	}
+	if len(report.ResidualOwnerActions) != 1 || report.ResidualOwnerActions[0].Owner != "base-image-owner" {
+		t.Fatalf("unexpected residual owner actions: %+v", report.ResidualOwnerActions)
+	}
+	if _, err := os.Stat(reportPath); err != nil {
+		t.Fatalf("expected report output file: %v", err)
+	}
+}
+
+func TestRemediationValidateOverlaysRequiresEvidenceAndDetectsCollisions(t *testing.T) {
+	overlayDir := t.TempDir()
+	overlayPath := filepath.Join(overlayDir, "cve-2026-10001-zlib.nix")
+	if err := os.WriteFile(overlayPath, []byte("final: prev: {\n  zlib = prev.zlib.overrideAttrs (old: { version = \"1.3.2\"; });\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir)
+	if err == nil || !strings.Contains(err.Error(), "missing evidence file") {
+		t.Fatalf("expected missing evidence failure, got %v", err)
+	}
+
+	writeCatalogJSON(t, strings.TrimSuffix(overlayPath, ".nix")+".evidence.json", map[string]any{
+		"status":         "draft_compiled",
+		"policyDecision": map[string]any{"selected": true, "reason": "eligible"},
+		"validation":     []map[string]any{{"status": "passed"}},
+	})
+	stdout, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir)
+	if err != nil {
+		t.Fatalf("validate overlays failed: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Validated 1 remediation overlay") {
+		t.Fatalf("unexpected validate output:\n%s", stdout)
+	}
+
+	collisionPath := filepath.Join(overlayDir, "cve-2026-10002-zlib.nix")
+	if err := os.WriteFile(collisionPath, []byte("final: prev: {\n  zlib = prev.zlib.overrideAttrs (old: { version = \"1.3.3\"; });\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogJSON(t, strings.TrimSuffix(collisionPath, ".nix")+".evidence.json", map[string]any{
+		"status":         "draft_compiled",
+		"policyDecision": map[string]any{"selected": true, "reason": "eligible"},
+		"validation":     []map[string]any{{"status": "passed"}},
+	})
+	_, err = runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir)
+	if err == nil || !strings.Contains(err.Error(), "also overridden") {
+		t.Fatalf("expected overlay collision failure, got %v", err)
+	}
+
+	manualDir := t.TempDir()
+	manualPath := filepath.Join(manualDir, "cve-2026-10003-manual.nix")
+	if err := os.WriteFile(manualPath, []byte("final: prev: {\n  manualPkg = prev.manualPkg.overrideAttrs (old: { postPatch = \"true\"; });\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogJSON(t, strings.TrimSuffix(manualPath, ".nix")+".evidence.json", map[string]any{
+		"status":         "manual_accepted",
+		"owner":          "platform",
+		"reason":         "Existing human-authored overlay with explicit owner metadata.",
+		"policyDecision": map[string]any{"selected": false, "reason": "manual_existing_overlay"},
+	})
+	if stdout, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", manualDir); err != nil {
+		t.Fatalf("manual accepted overlay should pass despite generated hook restriction: %v\n%s", err, stdout)
+	}
+}
+
 // The auto-patch dispatcher invokes `clearcutt remediation plan` and trusts it
 // to select the same "latest" scan directory the scanner most recently wrote.
 // A non-numeric patch segment (v1.2.x) must therefore not be ranked above a

@@ -32,9 +32,16 @@ loop:
 
 ```bash
 ../clearcutt remediation plan --vuln-root ../site/src/data/vulnerabilities
+../clearcutt remediation report --plan ../core/build-outputs/remediation-plan.json --out ../core/build-outputs/remediation-report.json
+../clearcutt remediation validate-overlays --overlay-dir overlays/cve
 ../clearcutt remediation run --vuln-root ../site/src/data/vulnerabilities
 ../clearcutt remediation open-pr --branch cve-remediation/example --package zlib --cve CVE-2026-12345 --dry-run
 ```
+
+The scheduled flow is an approved remediation PR loop: scan, policy rank,
+generate a draft patch, validate that expected CVE/package pairs disappeared,
+and open a draft PR with evidence. It does not merge, release, or deploy the
+change automatically.
 
 ## Scan scoping
 
@@ -44,6 +51,7 @@ bounded window without changing the output JSON shape:
 ```bash
 SCAN_TAG_DEPTH=4 ../clearcutt scan --mode catalog
 SCAN_TAG_DEPTH=1 ../clearcutt scan --mode remediation --sbom-dir ../site/src/data/sboms --out-dir ../site/src/data/vulnerabilities
+KEV_FILE=build-outputs/security-intel/known_exploited_vulnerabilities.json ../clearcutt scan --mode remediation
 SCAN_ALL_TAGS=1 ../clearcutt scan --mode catalog
 SCAN_TAGS=v0.11.1,v0.11.0 ../clearcutt scan --mode catalog
 ```

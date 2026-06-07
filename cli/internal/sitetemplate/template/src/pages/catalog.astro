@@ -33,10 +33,11 @@ const evidenceCoverage = index
 <Base title="Catalog">
   <section class="space-y-8 pb-10">
     <div class="space-y-4 max-w-3xl">
-      <span class="chip-accent">For platform &amp; security engineers shipping enterprise containers</span>
-      <h1 class="heading text-4xl sm:text-5xl">Hardened reference runtimes you can verify.</h1>
+      <span class="chip-accent">Image selection</span>
+      <h1 class="heading text-4xl sm:text-5xl">Pick a runtime image.</h1>
       <p class="text-base text-ink-200">
-        ClearCutt is an open-source container hardening blueprint built declaratively using Nix store layers. The catalog below serves as a live worked-example of a production image feed. Downstream platform teams can fork the blueprint to build and govern their own custom internal feeds.
+        Use the matrix to compare runtime, tier, release state, service images,
+        and attached evidence before you containerize or admit an application.
       </p>
       <p class="text-sm text-ink-300">
         CVE counts on the catalog are refreshed nightly against current vulnerability
@@ -103,11 +104,11 @@ const evidenceCoverage = index
           </div>
         </div>
 
-        <!-- Security & Compliance Audit Legend -->
+        <!-- Evidence and policy legend -->
         <div class="relative rounded-2xl border border-ink-800/60 bg-ink-950/20 p-5 shadow-lg overflow-hidden">
           <div class="absolute -right-24 -top-24 h-48 w-48 rounded-full bg-accent/5 blur-[50px] pointer-events-none" />
           <div class="space-y-3 relative z-10">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-ink-400 font-sans">Security &amp; Compliance Audit Legend</h2>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-ink-400 font-sans">Evidence &amp; Policy Legend</h2>
             <div class="grid gap-6 sm:grid-cols-3 text-[11px] text-ink-200 leading-relaxed font-sans">
               <!-- Item 1 -->
               <div class="space-y-1.5">
@@ -120,7 +121,7 @@ const evidenceCoverage = index
                   Supply Chain Evidence
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Green icons indicate verified cryptographically bound evidence attached to the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM.
+                  Green icons indicate evidence present in the catalog for the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM. Use the audit guide to verify it locally.
                 </p>
               </div>
 
@@ -129,12 +130,12 @@ const evidenceCoverage = index
                 <h3 class="font-bold text-ink-50 flex items-center gap-1.5">
                   <span class="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-400 bg-emerald-950/20 border border-emerald-800/30 rounded px-1.5 py-0.5">
                     <svg viewBox="0 0 24 24" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                    Gate Passed
+                    No high/critical
                   </span>
                   Vulnerability Gates
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Images show <strong>Gate Passed</strong> when current scan data reports no active Critical or High findings. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
+                  Images show <strong>No high/critical</strong> when current scan data reports no active Critical or High findings. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
                 </p>
               </div>
 
@@ -155,16 +156,16 @@ const evidenceCoverage = index
         <div data-pagefind-body class="space-y-3">
           <div class="surface-soft flex flex-wrap items-center gap-3 px-5 py-3 text-xs text-ink-200" data-matrix-filters>
             <span class="text-ink-300">View:</span>
-            <button type="button" data-filter-btn="all" data-active="true" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+            <button type="button" data-filter-btn="all" data-active="true" aria-pressed="true" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
               All ({totalSlots})
             </button>
-            <button type="button" data-filter-btn="production" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+            <button type="button" data-filter-btn="production" aria-pressed="false" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
               Production only (hide {devLabel})
             </button>
-            <button type="button" data-filter-btn="current" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+            <button type="button" data-filter-btn="current" aria-pressed="false" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
               On {index!.latestTag} only
             </button>
-            <button type="button" data-filter-btn="cve" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
+            <button type="button" data-filter-btn="cve" aria-pressed="false" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
               Requires runtime patching
             </button>
             <span class="ml-auto text-ink-300">Filters are stacked: each adds to the selection above.</span>
@@ -180,20 +181,52 @@ const evidenceCoverage = index
             const buttons = document.querySelectorAll('[data-filter-btn]');
             if (!root) return;
             const state = { production: false, current: false, cve: false };
+            const filterClasses = ['view-production', 'view-current', 'view-cve'];
+            const cellPassesFilters = (cell) => {
+              if (cell.getAttribute('aria-hidden') === 'true') return false;
+              if (cell.style.display === 'none') return false;
+              if (state.production && cell.getAttribute('data-tier') === 'dev') return false;
+              if (state.current) {
+                const slotState = cell.getAttribute('data-state');
+                if (slotState === 'lagging' || slotState === 'pending') return false;
+              }
+              if (state.cve) {
+                const vuln = cell.getAttribute('data-vuln');
+                if (vuln === 'clean' || vuln === 'none') return false;
+              }
+              return true;
+            };
+            const syncVisibleGroups = () => {
+              root.querySelectorAll('[data-mobile-tier-panel]').forEach((panel) => {
+                const visible = Array.from(panel.querySelectorAll('.matrix-cell')).some(cellPassesFilters);
+                panel.hidden = !visible;
+              });
+              root.querySelectorAll('details[data-matrix-row]').forEach((row) => {
+                const visible = Array.from(row.querySelectorAll('[data-mobile-tier-panel]')).some((panel) => !panel.hidden);
+                row.hidden = !visible;
+              });
+              root.querySelectorAll('[data-desktop-matrix-row]').forEach((row) => {
+                const visible = Array.from(row.querySelectorAll('.matrix-cell')).some(cellPassesFilters);
+                row.hidden = !visible;
+              });
+            };
             const sync = () => {
-              const classes = [];
-              if (state.production) classes.push('view-production');
-              if (state.current)    classes.push('view-current');
-              if (state.cve)        classes.push('view-cve');
-              root.className = classes.join(' ');
+              root.classList.remove(...filterClasses);
+              if (state.production) root.classList.add('view-production');
+              if (state.current)    root.classList.add('view-current');
+              if (state.cve)        root.classList.add('view-cve');
               buttons.forEach((b) => {
                 const k = b.getAttribute('data-filter-btn');
                 if (k === 'all') {
-                  b.dataset.active = (!state.production && !state.current && !state.cve) ? 'true' : 'false';
+                  const isActive = !state.production && !state.current && !state.cve;
+                  b.dataset.active = isActive ? 'true' : 'false';
+                  b.setAttribute('aria-pressed', isActive ? 'true' : 'false');
                 } else {
                   b.dataset.active = state[k] ? 'true' : 'false';
+                  b.setAttribute('aria-pressed', state[k] ? 'true' : 'false');
                 }
               });
+              syncVisibleGroups();
             };
             buttons.forEach((b) => b.addEventListener('click', () => {
               const k = b.getAttribute('data-filter-btn');
@@ -201,6 +234,7 @@ const evidenceCoverage = index
               else { state[k] = !state[k]; }
               sync();
             }));
+            document.addEventListener('clearcutt:matrix-version-change', sync);
             sync();
           })();
         </script>

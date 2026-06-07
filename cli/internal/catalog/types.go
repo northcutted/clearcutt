@@ -272,11 +272,13 @@ type AssertionInfo struct {
 
 // VulnerabilitiesInfo maps scanner vulnerability details.
 type VulnerabilitiesInfo struct {
-	ScannedAt        string         `json:"scannedAt"`
-	Scanner          string         `json:"scanner"`
-	DBBuiltAt        *string        `json:"dbBuiltAt,omitempty"`
-	CountsBySeverity SeverityCounts `json:"countsBySeverity"`
-	Findings         []FindingInfo  `json:"findings"`
+	ScannedAt         string         `json:"scannedAt"`
+	Scanner           string         `json:"scanner"`
+	DBBuiltAt         *string        `json:"dbBuiltAt,omitempty"`
+	KEVStatus         string         `json:"kevStatus,omitempty"`
+	KEVCatalogVersion *string        `json:"kevCatalogVersion,omitempty"`
+	CountsBySeverity  SeverityCounts `json:"countsBySeverity"`
+	Findings          []FindingInfo  `json:"findings"`
 }
 
 // SeverityCounts categorises vulnerabilities.
@@ -310,6 +312,20 @@ type FindingInfo struct {
 	EpssScore      *float64         `json:"epssScore,omitempty"`
 	EpssPercentile *float64         `json:"epssPercentile,omitempty"`
 	RiskScore      *float64         `json:"riskScore,omitempty"`
+	KEV            *KEVInfo         `json:"kev,omitempty"`
+}
+
+type KEVInfo struct {
+	KnownExploited             bool    `json:"knownExploited"`
+	CatalogVersion             *string `json:"catalogVersion,omitempty"`
+	DateReleased               *string `json:"dateReleased,omitempty"`
+	DateAdded                  *string `json:"dateAdded,omitempty"`
+	DueDate                    *string `json:"dueDate,omitempty"`
+	VendorProject              *string `json:"vendorProject,omitempty"`
+	Product                    *string `json:"product,omitempty"`
+	VulnerabilityName          *string `json:"vulnerabilityName,omitempty"`
+	RequiredAction             *string `json:"requiredAction,omitempty"`
+	KnownRansomwareCampaignUse *string `json:"knownRansomwareCampaignUse,omitempty"`
 }
 
 // RemediationInfo defines policy remediation actions.

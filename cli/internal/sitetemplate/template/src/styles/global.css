@@ -175,6 +175,27 @@
 [data-matrix-root].view-cve .matrix-cell[data-vuln='clean'],
 [data-matrix-root].view-cve .matrix-cell[data-vuln='none']   { display: none; }
 
+@media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    background-attachment: scroll;
+  }
+
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
 /* Shiki dual-theme switching
    ──────────────────────────────────────────────────────────────────────
    Astro's <Code defaultColor={false} themes={{ light, dark }}> emits CSS

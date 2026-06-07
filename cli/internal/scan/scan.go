@@ -70,6 +70,64 @@ type grypeArtifact struct {
 	SourceInfo string          `json:"sourceInfo"`
 }
 
+type KEVCatalog struct {
+	CatalogVersion  string     `json:"catalogVersion"`
+	DateReleased    string     `json:"dateReleased"`
+	Count           int        `json:"count"`
+	Vulnerabilities []KEVEntry `json:"vulnerabilities"`
+	byCVE           map[string]KEVEntry
+}
+
+type KEVEntry struct {
+	CVEID                      string   `json:"cveID"`
+	VendorProject              string   `json:"vendorProject"`
+	Product                    string   `json:"product"`
+	VulnerabilityName          string   `json:"vulnerabilityName"`
+	DateAdded                  string   `json:"dateAdded"`
+	ShortDescription           string   `json:"shortDescription"`
+	RequiredAction             string   `json:"requiredAction"`
+	DueDate                    string   `json:"dueDate"`
+	KnownRansomwareCampaignUse string   `json:"knownRansomwareCampaignUse"`
+	Notes                      string   `json:"notes"`
+	CWEs                       []string `json:"cwes"`
+}
+
+func ParseKEVCatalog(raw []byte) (*KEVCatalog, error) {
+	var catalog KEVCatalog
+	if err := json.Unmarshal(raw, &catalog); err != nil {
+		return nil, err
+	}
+	catalog.byCVE = map[string]KEVEntry{}
+	for _, entry := range catalog.Vulnerabilities {
+		if entry.CVEID != "" {
+			catalog.byCVE[strings.ToUpper(entry.CVEID)] = entry
+		}
+	}
+	return &catalog, nil
+}
+
+func (kevCatalog *KEVCatalog) Info(cve string) *catalog.KEVInfo {
+	if kevCatalog == nil {
+		return nil
+	}
+	entry, ok := kevCatalog.byCVE[strings.ToUpper(cve)]
+	if !ok {
+		return nil
+	}
+	return &catalog.KEVInfo{
+		KnownExploited:             true,
+		CatalogVersion:             strOrNil(kevCatalog.CatalogVersion),
+		DateReleased:               strOrNil(kevCatalog.DateReleased),
+		DateAdded:                  strOrNil(entry.DateAdded),
+		DueDate:                    strOrNil(entry.DueDate),
+		VendorProject:              strOrNil(entry.VendorProject),
+		Product:                    strOrNil(entry.Product),
+		VulnerabilityName:          strOrNil(entry.VulnerabilityName),
+		RequiredAction:             strOrNil(entry.RequiredAction),
+		KnownRansomwareCampaignUse: strOrNil(entry.KnownRansomwareCampaignUse),
+	}
+}
+
 // -- normalized output model -------------------------------------------------
 //
 // Distinct from catalog.FindingInfo (which is the omitempty-tolerant *consumer*
@@ -78,11 +136,13 @@ type grypeArtifact struct {
 
 // Report is the normalized vulnerability scan output for one (tag, target, arch).
 type Report struct {
-	ScannedAt        string                 `json:"scannedAt"`
-	Scanner          string                 `json:"scanner"`
-	DBBuiltAt        *string                `json:"dbBuiltAt"`
-	CountsBySeverity catalog.SeverityCounts `json:"countsBySeverity"`
-	Findings         []finding              `json:"findings"`
+	ScannedAt         string                 `json:"scannedAt"`
+	Scanner           string                 `json:"scanner"`
+	DBBuiltAt         *string                `json:"dbBuiltAt"`
+	KEVStatus         string                 `json:"kevStatus"`
+	KEVCatalogVersion *string                `json:"kevCatalogVersion"`
+	CountsBySeverity  catalog.SeverityCounts `json:"countsBySeverity"`
+	Findings          []finding              `json:"findings"`
 }
 
 type finding struct {
@@ -105,6 +165,7 @@ type finding struct {
 	EpssScore      *float64                `json:"epssScore"`
 	EpssPercentile *float64                `json:"epssPercentile"`
 	RiskScore      *float64                `json:"riskScore"`
+	KEV            *catalog.KEVInfo        `json:"kev"`
 }
 
 type targetMeta struct {
@@ -363,10 +424,24 @@ func parsePurl(raw json.RawMessage) *string {
 var scanSevKeys = map[string]bool{"critical": true, "high": true, "medium": true, "low": true, "negligible": true}
 var scanSevOrder = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, "negligible": 4, "unknown": 5}
 
+type NormalizeOptions struct {
+	KEVCatalog        *KEVCatalog
+	KEVStatus         string
+	KEVCatalogVersion *string
+}
+
 // NormalizeGrype transforms a grype result into the catalog finding model for the
 // given target, classifying each finding's layer, inclusion, and remediation and
 // sorting findings by severity, CVSS, package, then ID.
 func NormalizeGrype(result GrypeResult, scannedAt, scanner string, dbBuiltAt *string, meta targetMeta) Report {
+	return NormalizeGrypeWithOptions(result, scannedAt, scanner, dbBuiltAt, meta, NormalizeOptions{})
+}
+
+func NormalizeGrypeWithOptions(result GrypeResult, scannedAt, scanner string, dbBuiltAt *string, meta targetMeta, opts NormalizeOptions) Report {
+	kevStatus := opts.KEVStatus
+	if kevStatus == "" {
+		kevStatus = "unavailable"
+	}
 	counts := catalog.SeverityCounts{}
 	findings := make([]finding, 0, len(result.Matches))
 	for _, m := range result.Matches {
@@ -438,6 +513,7 @@ func NormalizeGrype(result GrypeResult, scannedAt, scanner string, dbBuiltAt *st
 			EpssScore:      epssScore,
 			EpssPercentile: epssPercentile,
 			RiskScore:      v.Risk,
+			KEV:            opts.KEVCatalog.Info(id),
 		})
 	}
 
@@ -472,10 +548,12 @@ func NormalizeGrype(result GrypeResult, scannedAt, scanner string, dbBuiltAt *st
 	})
 
 	return Report{
-		ScannedAt:        scannedAt,
-		Scanner:          scanner,
-		DBBuiltAt:        dbBuiltAt,
-		CountsBySeverity: counts,
-		Findings:         findings,
+		ScannedAt:         scannedAt,
+		Scanner:           scanner,
+		DBBuiltAt:         dbBuiltAt,
+		KEVStatus:         kevStatus,
+		KEVCatalogVersion: opts.KEVCatalogVersion,
+		CountsBySeverity:  counts,
+		Findings:          findings,
 	}
 }

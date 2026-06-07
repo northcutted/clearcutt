@@ -68,6 +68,15 @@ remediation:
   maxFindingsPerRun: 1
   maxPatchFailuresPerRun: 1
   includeDevOnly: false
+  policy:
+    productionTiers:
+      - slim
+      - distroless
+    minimumSeverity: high
+    requireRuntimeLayer: true
+    requireFixedVersion: true
+    epssPercentileBoostAt: 0.90
+    kevBoost: true
 templates:
   runtimes:
     - java
