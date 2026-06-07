@@ -612,7 +612,7 @@ func runServiceFunctionalSmoke(engine string, service fleet.ServiceImage, image 
 		return nil
 	}
 	container := serviceSmokeContainerName(service.ID)
-	runArgs := []string{"run", "--rm", "-d", "--name", container, image}
+	runArgs := []string{"run", "-d", "--name", container, image}
 	if err := runExternalCommand(externalCommand{Name: engine, Args: runArgs}); err != nil {
 		return fmt.Errorf("%s functional smoke start failed: %w", profile.Name, err)
 	}

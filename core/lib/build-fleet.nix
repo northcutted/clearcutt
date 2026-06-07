@@ -140,15 +140,19 @@ let
   mkdirDataDirs = dataDirs:
     pkgs.lib.concatMapStringsSep "\n" (dir: ''
       mkdir -p ".${dir}"
-      # dockerTools customisation layers run under fakeroot in CI, where
-      # numeric chown can fail. Keep service data dirs writable for the
-      # rootless runtime user; production deployments should mount volumes here.
+      # Prefer rootless ownership for services such as Postgres that enforce
+      # PGDATA permissions. Keep the fallback writable for fakeroot/build
+      # environments that cannot persist numeric chown metadata.
+      chown ${uid}:${gid} ".${dir}" 2>/dev/null || true
       chmod 0777 ".${dir}"
     '') dataDirs;
 
   postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
     set -euo pipefail
     export PGDATA="''${PGDATA:-/var/lib/postgresql/data}"
+    if [ -d "$PGDATA" ] && [ ! -O "$PGDATA" ] && [ ! -s "$PGDATA/PG_VERSION" ]; then
+      export PGDATA="$PGDATA/pgdata"
+    fi
     mkdir -p "$PGDATA"
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       initdb -D "$PGDATA"

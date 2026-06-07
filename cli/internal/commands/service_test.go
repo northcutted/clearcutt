@@ -309,7 +309,7 @@ func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	}
 	joinedCalls := flattenServiceCalls(calls)
 	for _, want := range []string{
-		"podman run --rm -d --name clearcutt-smoke-custom-postgres-",
+		"podman run -d --name clearcutt-smoke-custom-postgres-",
 		"podman exec clearcutt-smoke-custom-postgres-",
 		"pg_isready -h 127.0.0.1 -p 5432",
 		"podman rm -f clearcutt-smoke-custom-postgres-",
