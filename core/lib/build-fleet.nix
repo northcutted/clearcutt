@@ -158,9 +158,22 @@ let
       initdb -D "$PGDATA"
     fi
     log_file="''${POSTGRES_LOG_FILE:-/tmp/postgres.log}"
+    dump_start_failure() {
+      for file in \
+        "$log_file" \
+        "$PGDATA/logfile" \
+        "$PGDATA/postmaster.opts" \
+        "$PGDATA/postmaster.pid" \
+        "$PGDATA/log/"*.log
+      do
+        [ -e "$file" ] || continue
+        echo "[clearcutt-postgres] $file:" >&2
+        cat "$file" >&2 || true
+      done
+    }
     postgres_options="-h 127.0.0.1 -k /tmp $*"
     if ! pg_ctl -D "$PGDATA" -o "$postgres_options" -l "$log_file" -w start; then
-      cat "$log_file" >&2 || true
+      dump_start_failure
       exit 1
     fi
     tail -n +1 -f "$log_file" &
@@ -177,7 +190,7 @@ let
     done
     kill "$tail_pid" >/dev/null 2>&1 || true
     wait "$tail_pid" 2>/dev/null || true
-    cat "$log_file" >&2 || true
+    dump_start_failure
     exit 1
   '';
 
