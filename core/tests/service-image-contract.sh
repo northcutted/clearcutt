@@ -15,7 +15,7 @@ case "$service" in
     expected_entrypoint="/bin/clearcutt-postgres-entrypoint"
     expected_env="PGDATA=/var/lib/postgresql/data"
     data_dirs=("/var/lib/postgresql/data")
-    command_only="false"
+    command_only="true"
     ;;
   valkey8)
     expected_port="6379/tcp"

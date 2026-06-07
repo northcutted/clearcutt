@@ -299,24 +299,12 @@ func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("service smoke failed: %v\n%s", err, stdout)
 	}
-	if len(calls) != 6 {
-		t.Fatalf("expected command smoke plus functional smoke, got %#v", calls)
+	if len(calls) != 3 {
+		t.Fatalf("expected postgres command smoke only, got %#v", calls)
 	}
-	for _, call := range calls[:3] {
+	for _, call := range calls {
 		if call.Name != "podman" || !strings.Contains(strings.Join(call.Args, " "), "--entrypoint") {
 			t.Fatalf("unexpected smoke command: %#v", call)
-		}
-	}
-	joinedCalls := flattenServiceCalls(calls)
-	for _, want := range []string{
-		"podman run -d --name clearcutt-smoke-custom-postgres-",
-		"-e PGDATA=/tmp/clearcutt-postgres-smoke",
-		"podman exec clearcutt-smoke-custom-postgres-",
-		"pg_isready -h 127.0.0.1 -p 5432",
-		"podman rm -f clearcutt-smoke-custom-postgres-",
-	} {
-		if !strings.Contains(joinedCalls, want) {
-			t.Fatalf("expected functional smoke call %q in:\n%s", want, joinedCalls)
 		}
 	}
 
@@ -327,6 +315,36 @@ func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	}
 	if len(calls) != 3 {
 		t.Fatalf("expected command-only smoke to run three commands, got %#v", calls)
+	}
+
+	stdout, err = runCLI(t,
+		"service", "scaffold", "custom-valkey",
+		"--template", "valkey",
+		"--version", "8",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+	)
+	if err != nil {
+		t.Fatalf("service scaffold valkey failed: %v\n%s", err, stdout)
+	}
+	calls = nil
+	stdout, err = runCLI(t, "service", "smoke", "custom-valkey", "--engine", "podman", "--image", "local/custom-valkey:service", "--fleet-config", configPath)
+	if err != nil {
+		t.Fatalf("valkey service smoke failed: %v\n%s", err, stdout)
+	}
+	if len(calls) != 5 {
+		t.Fatalf("expected valkey command smoke plus functional smoke, got %#v", calls)
+	}
+	joinedCalls := flattenServiceCalls(calls)
+	for _, want := range []string{
+		"podman run -d --name clearcutt-smoke-custom-valkey-",
+		"podman exec clearcutt-smoke-custom-valkey-",
+		"valkey-cli -h 127.0.0.1 -p 6379 PING",
+		"podman rm -f clearcutt-smoke-custom-valkey-",
+	} {
+		if !strings.Contains(joinedCalls, want) {
+			t.Fatalf("expected functional smoke call %q in:\n%s", want, joinedCalls)
+		}
 	}
 
 	stdout, err = runCLI(t, "service", "smoke", "custom-postgres", "--engine", "nerdctl", "--fleet-config", configPath)
@@ -432,7 +450,7 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 		return "", nil
 	}
 
-	err := runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "postgres16", Template: "postgres"}, "local/postgres16:service")
+	err := runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "valkey8", Template: "valkey"}, "local/valkey8:service")
 	if err == nil || !strings.Contains(err.Error(), "functional smoke probe failed") {
 		t.Fatalf("expected functional smoke failure, got %v", err)
 	}
@@ -443,8 +461,14 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 		t.Fatal("expected failed functional smoke to inspect container state")
 	}
 	joined := flattenServiceCalls(calls)
-	if !strings.Contains(joined, "docker rm -f clearcutt-smoke-postgres16-") {
+	if !strings.Contains(joined, "docker rm -f clearcutt-smoke-valkey8-") {
 		t.Fatalf("expected failed functional smoke to clean up container, got:\n%s", joined)
+	}
+
+	calls = nil
+	err = runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "postgres16", Template: "postgres"}, "local/postgres:service")
+	if err != nil || len(calls) != 0 {
+		t.Fatalf("postgres should not run a functional profile, err=%v calls=%#v", err, calls)
 	}
 
 	calls = nil

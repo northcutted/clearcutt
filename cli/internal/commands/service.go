@@ -47,7 +47,6 @@ type serviceFlags struct {
 type serviceFunctionalSmokeProfile struct {
 	Name     string
 	Probe    []string
-	Env      []string
 	Attempts int
 	Delay    time.Duration
 }
@@ -614,9 +613,6 @@ func runServiceFunctionalSmoke(engine string, service fleet.ServiceImage, image 
 	}
 	container := serviceSmokeContainerName(service.ID)
 	runArgs := []string{"run", "-d", "--name", container}
-	for _, env := range profile.Env {
-		runArgs = append(runArgs, "-e", env)
-	}
 	runArgs = append(runArgs, image)
 	if err := runExternalCommand(externalCommand{Name: engine, Args: runArgs}); err != nil {
 		return fmt.Errorf("%s functional smoke start failed: %w", profile.Name, err)
@@ -637,14 +633,6 @@ func runServiceFunctionalSmoke(engine string, service fleet.ServiceImage, image 
 
 func serviceFunctionalSmokeProfileFor(template string) (serviceFunctionalSmokeProfile, bool) {
 	switch strings.TrimSpace(template) {
-	case "postgres":
-		return serviceFunctionalSmokeProfile{
-			Name:     "postgres",
-			Probe:    []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432"},
-			Env:      []string{"PGDATA=/tmp/clearcutt-postgres-smoke"},
-			Attempts: 20,
-			Delay:    time.Second,
-		}, true
 	case "valkey":
 		return serviceFunctionalSmokeProfile{
 			Name:     "valkey",
