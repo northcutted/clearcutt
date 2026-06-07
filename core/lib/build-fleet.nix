@@ -157,40 +157,30 @@ let
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       initdb -D "$PGDATA"
     fi
-    log_file="''${POSTGRES_LOG_FILE:-/tmp/postgres.log}"
-    dump_start_failure() {
-      for file in \
-        "$log_file" \
-        "$PGDATA/logfile" \
-        "$PGDATA/postmaster.opts" \
-        "$PGDATA/postmaster.pid" \
-        "$PGDATA/log/"*.log
-      do
-        [ -e "$file" ] || continue
-        echo "[clearcutt-postgres] $file:" >&2
-        cat "$file" >&2 || true
-      done
-    }
-    postgres_options="-h 127.0.0.1 -k /tmp $*"
-    if ! pg_ctl -D "$PGDATA" -o "$postgres_options" -l "$log_file" -w start; then
-      dump_start_failure
-      exit 1
-    fi
-    tail -n +1 -f "$log_file" &
-    tail_pid="$!"
+    postgres -D "$PGDATA" -h 127.0.0.1 -k /tmp "$@" &
+    postgres_pid="$!"
     stop_postgres() {
-      pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1 || true
-      kill "$tail_pid" >/dev/null 2>&1 || true
-      wait "$tail_pid" 2>/dev/null || true
+      kill -TERM "$postgres_pid" >/dev/null 2>&1 || true
+      wait "$postgres_pid" 2>/dev/null || true
       exit 0
     }
     trap stop_postgres INT TERM
-    while pg_ctl -D "$PGDATA" status >/dev/null 2>&1; do
+    attempts=0
+    while [ "$attempts" -lt 30 ]; do
+      if ! kill -0 "$postgres_pid" >/dev/null 2>&1; then
+        wait "$postgres_pid"
+        exit "$?"
+      fi
+      if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+        wait "$postgres_pid"
+        exit "$?"
+      fi
+      attempts=$((attempts + 1))
       sleep 1
     done
-    kill "$tail_pid" >/dev/null 2>&1 || true
-    wait "$tail_pid" 2>/dev/null || true
-    dump_start_failure
+    echo "[clearcutt-postgres] postgres did not become ready within 30 seconds" >&2
+    kill -TERM "$postgres_pid" >/dev/null 2>&1 || true
+    wait "$postgres_pid" 2>/dev/null || true
     exit 1
   '';
 
