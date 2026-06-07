@@ -97,14 +97,13 @@ const footerLinks = [
           </div>
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
-          {nav.showMarketingHome && <a href={base} class="text-ink-200 hover:text-ink-50 transition">Home</a>}
-          {nav.showGettingStarted && <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Getting Started</a>}
-          <a href={`${base}platform-kit`} class="text-ink-200 hover:text-ink-50 transition">Platform Kit</a>
+          {nav.showHome && <a href={base} class="text-ink-200 hover:text-ink-50 transition">Home</a>}
           <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
-          <a href={`${base}app-lifecycle`} class="text-ink-200 hover:text-ink-50 transition">App Lifecycle</a>
-          {nav.showCliDocs && <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI Tools</a>}
-          {nav.showAuditGuide && <a href={`${base}about`} class="text-ink-200 hover:text-ink-50 transition">About &amp; Audit</a>}
+          {nav.showGettingStarted && <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Getting Started</a>}
+          {nav.showAuditGuide && <a href={`${base}about?tab=audit`} class="text-ink-200 hover:text-ink-50 transition">Verify</a>}
           <a href={`${base}limitations`} class="text-ink-200 hover:text-ink-50 transition">Limitations</a>
+          {nav.showOperatorDocs && <a href={`${base}platform-kit`} class="text-ink-200 hover:text-ink-50 transition">Operators</a>}
+          {nav.showCliDocs && <a href={`${base}cli`} class="text-ink-200 hover:text-ink-50 transition">CLI</a>}
           {siteLinks.docs && <a href={siteLinks.docs} class="text-ink-200 hover:text-ink-50 transition" target="_blank" rel="noreferrer">Docs</a>}
           {siteLinks.support && <a href={siteLinks.support} class="text-ink-200 hover:text-ink-50 transition" target="_blank" rel="noreferrer">Support</a>}
           {sourceHref && (

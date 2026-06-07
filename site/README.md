@@ -46,10 +46,11 @@ Edit `clearcutt.site.yaml` to customize branding and behavior:
 
 - `site.title`, `site.description`, and `site.logo` set the catalog identity.
 - `site.theme.mode` and `site.theme.accent` set the theme preference and accent color.
-- `site.navigation` toggles the home, getting started, CLI, and audit nav links.
+- `site.navigation` toggles the home, getting started, operator, CLI, and audit nav links.
 - `site.features` toggles SBOMs, vulnerabilities, layers, provenance, OCI labels, release history, and Kyverno policy examples.
 - `site.terminology` renames tier labels such as distroless, slim, and dev.
 - `site.links` adds source repository, registry, support, and docs links.
+- `site.home` customizes homepage title, notice, quick links, and persona workflow sections.
 
 Use `--site-config ./clearcutt.site.yaml` when scaffolding, building, or
 previewing to copy an external config into the generated project.

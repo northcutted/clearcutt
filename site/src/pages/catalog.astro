@@ -33,10 +33,11 @@ const evidenceCoverage = index
 <Base title="Catalog">
   <section class="space-y-8 pb-10">
     <div class="space-y-4 max-w-3xl">
-      <span class="chip-accent">For platform &amp; security engineers shipping enterprise containers</span>
-      <h1 class="heading text-4xl sm:text-5xl">Hardened reference runtimes you can verify.</h1>
+      <span class="chip-accent">Image selection</span>
+      <h1 class="heading text-4xl sm:text-5xl">Pick a runtime base image.</h1>
       <p class="text-base text-ink-200">
-        ClearCutt is an open-source container hardening blueprint built declaratively using Nix store layers. The catalog below serves as a live worked-example of a production image feed. Downstream platform teams can fork the blueprint to build and govern their own custom internal feeds.
+        Use the matrix to compare runtime, tier, release state, service images,
+        and attached evidence before you pull or admit a base image.
       </p>
       <p class="text-sm text-ink-300">
         CVE counts on the catalog are refreshed nightly against current vulnerability
@@ -103,11 +104,11 @@ const evidenceCoverage = index
           </div>
         </div>
 
-        <!-- Security & Compliance Audit Legend -->
+        <!-- Evidence and policy legend -->
         <div class="relative rounded-2xl border border-ink-800/60 bg-ink-950/20 p-5 shadow-lg overflow-hidden">
           <div class="absolute -right-24 -top-24 h-48 w-48 rounded-full bg-accent/5 blur-[50px] pointer-events-none" />
           <div class="space-y-3 relative z-10">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-ink-400 font-sans">Security &amp; Compliance Audit Legend</h2>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-ink-400 font-sans">Evidence &amp; Policy Legend</h2>
             <div class="grid gap-6 sm:grid-cols-3 text-[11px] text-ink-200 leading-relaxed font-sans">
               <!-- Item 1 -->
               <div class="space-y-1.5">
@@ -120,7 +121,7 @@ const evidenceCoverage = index
                   Supply Chain Evidence
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Green icons indicate verified cryptographically bound evidence attached to the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM.
+                  Green icons indicate evidence present in the catalog for the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM. Use the audit guide to verify it locally.
                 </p>
               </div>
 

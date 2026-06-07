@@ -1,373 +1,239 @@
 ---
 import Base from '../layouts/Base.astro';
-import { loadImage, loadIndex } from '../lib/catalog';
-import { claims } from '../lib/claims';
+import { loadIndex } from '../lib/catalog';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
-import TerminalSimulator from '../components/TerminalSimulator';
 
 let index;
-try { index = loadIndex(); } catch { /* no catalog data yet; render the page without telemetry */ }
+let error: string | null = null;
+try { index = loadIndex(); } catch (e: any) { error = e.message; }
 
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const siteConfig = loadSiteConfig();
+const home = siteConfig.site.home;
+const devLabel = tierLabel(siteConfig, 'dev');
 const distrolessLabel = tierLabel(siteConfig, 'distroless');
-const published = index ? index.images.filter((i) => i.latestTag === index.latestTag).length : 0;
-// One slot per language-version × tier, read from the catalog index so it can't
-// drift from the flake matrix.
+
+const runtimeImages = index ? index.images.filter((i) => (i.kind ?? 'runtime') === 'runtime' && i.tier !== 'service') : [];
+const serviceImages = index ? index.images.filter((i) => i.kind === 'service') : [];
+const latestImages = index ? runtimeImages.filter((i) => i.latestTag === index.latestTag) : [];
 const totalSlots = index ? index.languages.length * index.tiers.length : 0;
+const pending = index ? Math.max(0, totalSlots - runtimeImages.length) : 0;
+const lagging = index ? runtimeImages.filter((i) => i.latestTag !== index.latestTag).length : 0;
 const evidenceCoverage = index
   ? {
-      signatures: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.signature ?? i.signed)).length,
-      provenance: index.images.filter((i) => i.latestTag === index.latestTag && (i.evidence?.provenance ?? i.provenance)).length,
-      scans: index.images.filter((i) => i.latestTag === index.latestTag && !!i.evidence?.vulnerabilities).length,
+      signatures: latestImages.filter((i) => i.evidence?.signature ?? i.signed).length,
+      provenance: latestImages.filter((i) => i.evidence?.provenance ?? i.provenance).length,
+      scans: latestImages.filter((i) => !!i.evidence?.vulnerabilities).length,
     }
   : null;
-const terminalRegistryBase = index?.registryBase ?? 'ghcr.io/northcutted/clearcutt';
-const imageRuntime = (id: string) => id.split('-')[0].toLowerCase();
-const fallbackImagePrefix = (() => {
-  const first = index?.images[0];
-  if (!first) return 'clearcutt';
-  try {
-    const record = loadImage(first.id);
-    const suffix = `-${imageRuntime(first.id)}`;
-    return record.imageName.toLowerCase().endsWith(suffix)
-      ? record.imageName.slice(0, -suffix.length)
-      : 'clearcutt';
-  } catch {
-    return 'clearcutt';
-  }
-})();
-const imageNameFor = (id: string) => {
-  try {
-    return loadImage(id).imageName;
-  } catch {
-    return `${fallbackImagePrefix}-${imageRuntime(id)}`;
-  }
+const latestRelease = index?.releases.find((release) => release.isLatest) ?? index?.releases[0];
+const generatedAt = index ? new Date(index.generatedAt).toLocaleString() : '';
+
+const hrefFor = (href = '') => {
+  const value = href.trim();
+  if (!value || value === '/') return base;
+  if (/^(https?:|mailto:|tel:)/.test(value) || value.startsWith('#')) return value;
+  return `${base}${value.replace(/^\/+/, '')}`;
 };
-const terminalJava25ImageName = imageNameFor('java25-distroless');
-const terminalJava21ImageName = imageNameFor('java21-distroless');
+const isExternal = (href = '') => /^(https?:|mailto:|tel:)/.test(href.trim());
+
+const catalogStats = index
+  ? [
+      {
+        label: 'Current runtimes',
+        value: `${latestImages.length}/${totalSlots}`,
+        helper: pending > 0 ? `${pending} pending matrix slots` : 'matrix slots accounted for',
+      },
+      {
+        label: 'Release',
+        value: index.latestTag,
+        helper: latestRelease?.publishedAt
+          ? `published ${new Date(latestRelease.publishedAt).toLocaleDateString()}`
+          : 'latest catalog tag',
+      },
+      {
+        label: 'Signatures',
+        value: `${evidenceCoverage!.signatures}/${latestImages.length}`,
+        helper: `${evidenceCoverage!.provenance}/${latestImages.length} provenance · ${evidenceCoverage!.scans}/${latestImages.length} scans`,
+      },
+      {
+        label: 'Services',
+        value: String(serviceImages.length),
+        helper: lagging > 0 ? `${lagging} runtime entries lagging` : 'service image records',
+      },
+    ]
+  : [];
 ---
 <Base title="Home">
-  <section class="pb-16 pt-4 space-y-12">
-    <!-- Hero Block -->
-    <div class="relative rounded-3xl border border-ink-800 bg-gradient-to-br from-ink-950/40 via-ink-900/10 to-ink-950/60 p-8 sm:p-12 shadow-2xl backdrop-blur-md overflow-hidden">
-      <!-- Background glowing orb -->
-      <div class="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-accent/5 blur-[120px] pointer-events-none" />
-      <div class="absolute -left-32 -bottom-32 h-96 w-96 rounded-full bg-accent-soft/5 blur-[120px] pointer-events-none" />
-
-      <div class="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] items-center relative z-10">
-        <div class="space-y-6">
-          <div class="space-y-3">
-            <span class="chip-accent">The forkable platform kit for hardened base images</span>
-            <h1 class="heading text-4xl sm:text-5xl lg:text-6xl font-black leading-tight text-ink-50 uppercase">
-              Hardened Base Images,<br />
-              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Evidence Built In.</span>
-            </h1>
-            <p class="text-[10px] uppercase tracking-[0.22em] text-accent-soft font-bold">Fork the kit · Own the trust chain</p>
-          </div>
-          <p class="text-base sm:text-lg text-ink-200 leading-relaxed max-w-xl font-sans">
-            {claims.hero.description}
-          </p>
-
-          <div class="flex flex-wrap gap-4 pt-2">
-            <a href={`${base}platform-kit`} class="rounded-full bg-accent hover:bg-accent-soft px-6 py-3 text-sm font-semibold uppercase tracking-wider text-ink-950 shadow-lg shadow-accent/25 hover:scale-[1.02] transition">
-              Fork The Kit →
-            </a>
-            <a href={`${base}catalog`} class="rounded-full border border-ink-700 bg-ink-950/30 hover:border-ink-600 px-6 py-3 text-sm font-semibold uppercase tracking-wider text-ink-200 hover:text-ink-50 transition">
-              Browse Reference Catalog
-            </a>
-          </div>
+  <section class="space-y-10 pb-12" data-pagefind-body>
+    <header class="grid gap-6 border-b border-ink-800/50 pb-8 lg:grid-cols-[1fr_22rem] lg:items-end">
+      <div class="max-w-3xl space-y-4">
+        <h1 class="heading text-3xl font-bold sm:text-4xl">{home.title}</h1>
+        <p class="text-base leading-relaxed text-ink-200">{home.description}</p>
+        <div class="flex flex-wrap gap-3 pt-1">
+          <a href={`${base}catalog`} class="chip-accent">Open catalog</a>
+          <a href={`${base}getting-started`} class="chip">Application guide</a>
+          <a href={`${base}about?tab=audit`} class="chip">Audit guide</a>
         </div>
+      </div>
 
-        <!-- 3D-Styled Stack Visualization -->
-        <div class="flex items-center justify-center lg:pl-6 select-none">
-          <div class="relative w-full max-w-[280px] aspect-square flex items-center justify-center">
-            <div class="space-y-4 w-full">
-              <!-- Top Layer: OIDC wrapper -->
-              <div class="transform -rotate-x-12 -rotate-y-12 rotate-z-3 border border-emerald-500/40 bg-emerald-950/10 backdrop-blur rounded-xl p-4 shadow-[0_8px_30px_rgb(16_185_129/0.05)] hover:translate-y-[-4px] transition duration-300">
-                <div class="flex items-center justify-between">
-                  <span class="text-[9px] uppercase tracking-widest font-bold text-emerald-400">Cryptographic Seal</span>
-                  <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                </div>
-                <div class="mt-1.5 font-mono text-[10px] text-ink-100 truncate">Sigstore OIDC &amp; Attestations</div>
+      <div class="surface-soft space-y-3 rounded-lg border border-ink-800/60 px-4 py-3 text-xs text-ink-200">
+        {index ? (
+          <>
+            <div class="flex items-center justify-between gap-3">
+              <span class="font-semibold text-ink-50">Catalog snapshot</span>
+              <span class="font-mono text-ink-300">{index.latestTag}</span>
+            </div>
+            <dl class="space-y-2">
+              <div class="flex justify-between gap-3">
+                <dt class="text-ink-300">Generated</dt>
+                <dd class="text-right font-mono text-ink-100">{generatedAt}</dd>
               </div>
-
-              <!-- Middle Layer: Nix store path closures -->
-              <div class="transform -rotate-x-12 -rotate-y-12 rotate-z-3 border border-accent/40 bg-accent/5 backdrop-blur rounded-xl p-4 shadow-[0_8px_30px_rgb(var(--accent)/0.05)] hover:translate-y-[-4px] transition duration-300">
-                <div class="flex items-center justify-between">
-                  <span class="text-[9px] uppercase tracking-widest font-bold text-accent-soft">Runtime Fleet</span>
-                  <svg class="h-3.5 w-3.5 text-accent-soft" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v18M3 12h18M5.636 5.636l12.728 12.728M5.636 18.364L18.364 5.636" /></svg>
-                </div>
-                <div class="mt-1.5 font-mono text-[10px] text-ink-100 truncate">Nix Immutable store closures</div>
+              <div class="flex justify-between gap-3">
+                <dt class="text-ink-300">Registry</dt>
+                <dd class="text-right font-mono text-ink-100">{index.registryBase}</dd>
               </div>
-
-              <!-- Bedrock Layer: Enterprise OS base overlay -->
-              <div class="transform -rotate-x-12 -rotate-y-12 rotate-z-3 border border-ink-800 bg-ink-950/80 backdrop-blur rounded-xl p-4 shadow-lg hover:translate-y-[-4px] transition duration-300">
-                <div class="flex items-center justify-between">
-                  <span class="text-[9px] uppercase tracking-widest font-bold text-ink-400 font-sans">App Teams</span>
-                  <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-ink-900 border border-ink-800 text-[7.5px] font-sans font-bold text-ink-300 tracking-wider">FLEXIBLE OVERLAY</span>
-                </div>
-                <div class="mt-1.5 font-mono text-[10px] text-ink-200 leading-normal">dev, certify, rebase, deploy</div>
+              <div class="flex justify-between gap-3">
+                <dt class="text-ink-300">Source</dt>
+                <dd class="text-right font-mono text-ink-100">{index.owner}/{index.repo}</dd>
               </div>
-            </div>
-          </div>
-        </div>
+            </dl>
+          </>
+        ) : (
+          <>
+            <p class="font-semibold text-warn">Catalog data missing</p>
+            <p class="text-ink-300">{error ?? 'Run catalog generation before publishing this site.'}</p>
+          </>
+        )}
       </div>
-    </div>
+    </header>
 
-    <!-- Lifecycle Spine: one operating model across platform setup and app delivery -->
-    <div class="space-y-4">
-      <header class="space-y-1 border-b border-ink-800/40 pb-3">
-        <h2 class="heading text-xl sm:text-2xl font-bold text-ink-50">One kit, from fleet ownership to app updates</h2>
-        <p class="text-xs sm:text-sm text-ink-300">
-          Managers see the operating outcome; platform engineers can follow each step into commands, workflow evidence, and policy hooks.
-        </p>
-      </header>
-      <ol class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {claims.lifecycle.map((step, i) => (
-          <li class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-2 hover:border-accent/30 transition">
-            <div class="flex items-center gap-2">
-              <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent/15 border border-accent/30 text-[10px] font-bold text-accent-soft font-mono">{i + 1}</span>
-              <span class="text-xs font-bold uppercase tracking-wider text-ink-50">{step.phase}</span>
-            </div>
-            <p class="text-[11px] text-ink-200 leading-relaxed font-sans">{step.outcome}</p>
-            <p class="text-[10px] font-mono text-ink-400 leading-relaxed">{step.detail}</p>
-          </li>
-        ))}
-      </ol>
-      <p class="text-[11px] text-ink-400 font-sans leading-relaxed">
-        Application developers don't need Nix — pull, run, and verify the published images with plain Docker, Podman, or Kubernetes. Nix is only for the platform team authoring the fleet.
-      </p>
-    </div>
-
-    <!-- Interactive CLI Terminal Simulator -->
-    <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] items-center pt-4">
-      <div class="space-y-4">
-        <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">Command Line Interface</span>
-        <h2 class="heading text-2xl sm:text-3xl font-bold text-ink-50 uppercase">See the CLI in action</h2>
-        <p class="text-sm text-ink-200 leading-relaxed font-sans">
-          The statically compiled <code>clearcutt</code> Go CLI handles base-image discovery, local policy-gate verification, and byte-for-byte base rebases — all offline, no Docker daemon or Nix required.
-        </p>
-        <p class="text-xs text-ink-300 font-sans leading-relaxed">
-          The panel is an <strong class="text-ink-200">illustrative</strong> walk-through of real command shapes — scripted sample output, not a live run. Verify any image yourself from the <a href={`${base}about?tab=audit`} class="text-accent-soft underline hover:text-accent">audit guide</a>.
-        </p>
-      </div>
-      <TerminalSimulator
-        registryBase={terminalRegistryBase}
-        java25ImageName={terminalJava25ImageName}
-        java21ImageName={terminalJava21ImageName}
-        client:load
-      />
-    </div>
-
-    <!-- Perspective / Target Switcher Dashboard Section -->
-    <div class="space-y-6">
-      <header class="flex flex-wrap items-end justify-between gap-4 border-b border-ink-800/40 pb-3">
-        <div>
-          <h2 class="heading text-xl sm:text-2xl font-bold">Interactive Platform Perspective</h2>
-          <p class="text-xs sm:text-sm text-ink-300">Switch perspectives to see how ClearCutt serves both platform engineering teams and security auditors.</p>
-        </div>
-
-        <!-- Sliding Selector Switch -->
-        <div class="inline-flex rounded-full border border-ink-800 bg-ink-950/60 p-1 font-sans text-[11px]">
-          <button
-            type="button"
-            data-perspective-btn="operator"
-            class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider transition-all select-none text-accent-soft bg-accent/15 border border-accent/20"
-          >
-            For Platform Teams
-          </button>
-          <button
-            type="button"
-            data-perspective-btn="auditor"
-            class="rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider text-ink-300 transition-all select-none border border-transparent"
-          >
-            For Security Auditors
-          </button>
-        </div>
-      </header>
-
-      <!-- OPERATOR VIEW PANEL -->
-      <div data-perspective-panel="operator" class="grid gap-6 sm:grid-cols-3">
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">{claims.reproducibility.title}</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            {claims.reproducibility.description} <a href={`${base}about?tab=audit`} class="text-accent-soft underline hover:text-accent font-semibold ml-1">Run verification checks →</a>
-          </p>
-        </div>
-
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.249-8.25-3.286zm0 13.036h.008v.008H12v-.008z" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">{claims.stig.title}</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            ClearCutt {distrolessLabel} images reduce runtime utility surface by omitting shells, package managers, and core system tools. The security model names what that proves, and what it does not.
-          </p>
-        </div>
-
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">High Reusability</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            Forkable platform kit. Publish your own signed fleet, catalog site, app templates, CI/CD checks, admission policies, and approved remediation PR flow.
-          </p>
-        </div>
-      </div>
-
-      <!-- AUDITOR VIEW PANEL -->
-      <div data-perspective-panel="auditor" class="hidden grid gap-6 sm:grid-cols-3">
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-accent/10 border border-accent/20 text-accent-soft">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">Verifiable Store Closures</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            Hermetic Nix compilations ensure only transitively reachable packages enter the closure. Every byte can be traced back to its declarative source.
-          </p>
-        </div>
-
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">OIDC Verification Gates</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            Verify keyless signatures at cluster admission using GitHub OIDC identities. Prevent the execution of unsigned or altered OCI containers.
-          </p>
-        </div>
-
-        <div class="surface-soft border border-ink-800/40 rounded-2xl p-5 space-y-3 hover:border-ink-700/50 transition">
-          <header class="flex items-center gap-2">
-            <span class="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-            </span>
-            <h3 class="font-bold text-ink-50">Exploitability Triage</h3>
-          </header>
-          <p class="text-sm text-ink-200 leading-relaxed font-sans">
-            Assess real risk with OpenVEX records instead of raw CVE noise. Zero-rebuild triage separates inert base issues from active exposure.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Active Gating Telemetry -->
-    {evidenceCoverage && (
-      <div class="space-y-4">
-        <!-- Blueprint Reference Notice -->
-        <div class="rounded-xl border border-amber-500/20 bg-amber-950/10 p-4 text-xs text-amber-200/90 leading-relaxed font-sans">
-          <strong>Blueprint Reference Notice:</strong> This catalog represents a live-worked reference feed generated from the canonical <code>northcutted/clearcutt</code> blueprint. These images are verified worked-examples of our hardening methods. Organizations should fork this blueprint repository to compile, sign, and host their own internal production-grade base image feeds under their own OIDC identities.
-        </div>
-
-        <div class="flex flex-wrap items-end justify-between gap-2 border-b border-ink-800/40 pb-2">
-          <h2 class="heading text-xl font-bold">Supply Chain Health &amp; Telemetry</h2>
-          <span class="text-[10.5px] font-mono text-ink-400 uppercase tracking-wider">
-            Catalog Compiled: {new Date(index!.generatedAt).toLocaleString()} • Target: {index!.registryBase}
-          </span>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-4">
-          <!-- Stat 1 -->
-          <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Image Verification</span>
-            <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold font-mono text-ink-50">{evidenceCoverage.signatures}</span>
-              <span class="text-xs text-ink-300 font-mono">/ {published}</span>
-            </div>
-            <p class="text-[10px] text-ink-300">
-              {evidenceCoverage.signatures === published && published > 0
-                ? "All images keyless OIDC signed"
-                : `${evidenceCoverage.signatures} of ${published} signed (pending)`}
-            </p>
-          </div>
-
-          <!-- Stat 2 -->
-          <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">SLSA Provenance</span>
-            <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold font-mono text-ink-50">{evidenceCoverage.provenance}</span>
-              <span class="text-xs text-ink-300 font-mono">/ {published}</span>
-            </div>
-            <p class="text-[10px] text-ink-300">
-              {evidenceCoverage.provenance === published && published > 0
-                ? "All images have SLSA Build L3 provenance"
-                : `${evidenceCoverage.provenance} of ${published} provenanced (pending)`}
-            </p>
-          </div>
-
-          <!-- Stat 3 -->
-          <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Structural Standards</span>
-            <div class="text-lg font-bold text-accent-soft flex items-center gap-1.5 pt-1">
-              <span class="relative flex h-2 w-2">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              {distrolessLabel} / Overlays
-            </div>
-            <p class="text-[10px] text-ink-300">{distrolessLabel} shell-free</p>
-          </div>
-
-          <!-- Stat 4 -->
-          <div class="surface-soft border border-ink-800/40 rounded-2xl p-4 space-y-1">
-            <span class="text-[10px] uppercase tracking-wider text-ink-300 font-bold">Reference Runtimes</span>
-            <div class="flex items-baseline gap-1">
-              <span class="text-2xl font-bold font-mono text-ink-50">{published}</span>
-              <span class="text-xs text-ink-300 font-mono">/ {totalSlots}</span>
-            </div>
-            <p class="text-[10px] text-ink-300">declarative target closures</p>
-          </div>
-        </div>
-      </div>
+    {home.showNotice && (home.noticeTitle || home.noticeBody) && (
+      <aside class="rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink-200">
+        {home.noticeTitle && <p class="font-semibold text-ink-50">{home.noticeTitle}</p>}
+        {home.noticeBody && <p class="mt-1 text-xs leading-relaxed text-ink-300">{home.noticeBody}</p>}
+      </aside>
     )}
+
+    {index ? (
+      <section class="space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="heading text-xl text-ink-50">Current State</h2>
+            <p class="mt-1 text-sm text-ink-300">
+              Factual catalog counts only; inspect image detail pages before using a base in production.
+            </p>
+          </div>
+          <a href={`${base}catalog`} class="text-sm font-semibold text-accent-soft hover:text-accent">View matrix</a>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {catalogStats.map((stat) => (
+            <div class="surface-soft rounded-lg border border-ink-800/60 p-4">
+              <dt class="text-[10px] font-bold uppercase tracking-wider text-ink-300">{stat.label}</dt>
+              <dd class="mt-2 font-mono text-2xl font-semibold text-ink-50">{stat.value}</dd>
+              <p class="mt-1 text-xs text-ink-300">{stat.helper}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    ) : (
+      <section class="surface-soft rounded-lg border border-ink-800/60 p-5">
+        <h2 class="heading text-lg text-ink-50">Generate Catalog Data</h2>
+        <p class="mt-2 text-sm text-ink-300">
+          This template renders once generated catalog artifacts are copied under <code>public/catalog</code>.
+        </p>
+        <pre class="mt-4 overflow-x-auto rounded-md border border-ink-800 bg-ink-950/70 p-4 text-xs text-ink-100"><code>clearcutt catalog generate --config clearcutt.fleet.yaml --output ./dist/catalog
+clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install</code></pre>
+      </section>
+    )}
+
+    {home.quickLinks.length > 0 && (
+      <section class="space-y-4">
+        <h2 class="heading text-xl text-ink-50">Start Here</h2>
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {home.quickLinks.map((link) => (
+            <a
+              href={hrefFor(link.href)}
+              target={isExternal(link.href) ? '_blank' : undefined}
+              rel={isExternal(link.href) ? 'noreferrer' : undefined}
+              class="surface-soft block rounded-lg border border-ink-800/60 p-4 no-underline transition hover:border-accent/40"
+            >
+              <span class="text-sm font-semibold text-ink-50">{link.label}</span>
+              {link.description && <span class="mt-2 block text-xs leading-relaxed text-ink-300">{link.description}</span>}
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+
+    {home.personas.length > 0 && (
+      <section class="space-y-5">
+        <div>
+          <h2 class="heading text-xl text-ink-50">Workflows By Role</h2>
+          <p class="mt-1 text-sm text-ink-300">
+            Each path points to existing catalog pages and commands, so the generated site stays useful after branding changes.
+          </p>
+        </div>
+        <div class="grid gap-4 lg:grid-cols-3">
+          {home.personas.map((persona) => (
+            <section id={`persona-${persona.id}`} class="surface-soft rounded-lg border border-ink-800/60 p-5">
+              <header class="space-y-2 border-b border-ink-800/50 pb-4">
+                <h3 class="text-base font-semibold text-ink-50">{persona.label}</h3>
+                <p class="text-sm leading-relaxed text-ink-300">{persona.summary}</p>
+              </header>
+              <ol class="divide-y divide-ink-800/50">
+                {persona.steps.map((step, i) => (
+                  <li class="py-4">
+                    <div class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent/10 font-mono text-[11px] font-semibold text-accent-soft">
+                        {i + 1}
+                      </span>
+                      <div class="min-w-0 space-y-2">
+                        <h4 class="text-sm font-semibold text-ink-50">{step.title}</h4>
+                        <p class="text-xs leading-relaxed text-ink-300">{step.description}</p>
+                        {step.href && (
+                          <a
+                            href={hrefFor(step.href)}
+                            target={isExternal(step.href) ? '_blank' : undefined}
+                            rel={isExternal(step.href) ? 'noreferrer' : undefined}
+                            class="inline-flex text-xs font-semibold text-accent-soft hover:text-accent"
+                          >
+                            Open step
+                          </a>
+                        )}
+                        {step.command && (
+                          <pre class="overflow-x-auto rounded-md border border-ink-800 bg-ink-950/70 p-3 text-[11px] text-ink-100"><code>{step.command}</code></pre>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </div>
+      </section>
+    )}
+
+    <section class="grid gap-4 border-t border-ink-800/50 pt-8 lg:grid-cols-3">
+      <div class="space-y-2">
+        <h2 class="heading text-lg text-ink-50">Tier Reminder</h2>
+        <p class="text-sm leading-relaxed text-ink-300">
+          {devLabel} images are for build stages. Production workloads should use {distrolessLabel} or a diagnostic runtime tier after reviewing the image detail page.
+        </p>
+      </div>
+      <div class="space-y-2">
+        <h2 class="heading text-lg text-ink-50">Evidence Reminder</h2>
+        <p class="text-sm leading-relaxed text-ink-300">
+          Signatures, provenance, SBOMs, vulnerability scans, test results, and release metadata are reported independently.
+        </p>
+      </div>
+      <div class="space-y-2">
+        <h2 class="heading text-lg text-ink-50">Customization</h2>
+        <p class="text-sm leading-relaxed text-ink-300">
+          Generated-site owners can change this homepage through <code>site.home</code> in <code>clearcutt.site.yaml</code>, or replace pages with <code>site-overrides</code>.
+        </p>
+      </div>
+    </section>
   </section>
-
-  <script is:inline>
-    (function () {
-      const buttons = document.querySelectorAll('[data-perspective-btn]');
-      const panels = document.querySelectorAll('[data-perspective-panel]');
-      
-      const setPerspective = (activeId) => {
-        buttons.forEach((btn) => {
-          const id = btn.getAttribute('data-perspective-btn');
-          if (id === activeId) {
-            btn.className = "rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider transition-all select-none text-accent-soft bg-accent/15 border border-accent/20";
-          } else {
-            btn.className = "rounded-full px-4 py-1.5 font-semibold uppercase tracking-wider text-ink-300 transition-all select-none border border-transparent";
-          }
-        });
-        panels.forEach((p) => {
-          const id = p.getAttribute('data-perspective-panel');
-          if (id === activeId) {
-            p.classList.remove('hidden');
-            p.classList.add('grid');
-          } else {
-            p.classList.add('hidden');
-            p.classList.remove('grid');
-          }
-        });
-      };
-
-      buttons.forEach((btn) => {
-        btn.addEventListener('click', () => {
-          setPerspective(btn.getAttribute('data-perspective-btn'));
-        });
-      });
-    })();
-  </script>
 </Base>

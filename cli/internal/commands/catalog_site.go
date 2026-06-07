@@ -689,8 +689,9 @@ func renderSiteConfigYAML(title, description, sourceRepo, registry string) strin
     accent: "#7c3aed"
 
   navigation:
-    showMarketingHome: true
+    showHome: true
     showGettingStarted: true
+    showOperatorDocs: true
     showCliDocs: true
     showAuditGuide: true
 
@@ -713,7 +714,67 @@ func renderSiteConfigYAML(title, description, sourceRepo, registry string) strin
     registry: %q
     support: ""
     docs: ""
-`, title, description, sourceRepo, registry)
+
+  home:
+    title: %q
+    description: "Use this catalog to choose approved base images, inspect runtime evidence, and find the next step for your role."
+    showNotice: true
+    noticeTitle: "Before you use this catalog"
+    noticeBody: "The catalog is a static view of generated image metadata and evidence. Treat missing signatures, provenance, SBOMs, or scans as explicit gaps instead of inferring trust from another channel."
+    quickLinks:
+      - label: "Browse images"
+        href: "catalog"
+        description: "Filter runtimes, tiers, services, release status, and CVE gates."
+      - label: "Start an app"
+        href: "getting-started"
+        description: "Copy a multi-stage container example and local validation commands."
+      - label: "Audit evidence"
+        href: "about?tab=audit"
+        description: "Verify signatures, provenance, SBOMs, and workflow identity."
+      - label: "Know limits"
+        href: "limitations"
+        description: "Review what the catalog proves and what your team still owns."
+    personas:
+      - id: "platform"
+        label: "Platform engineers"
+        summary: "Publish, govern, and maintain the approved image fleet."
+        steps:
+          - title: "Check catalog coverage"
+            description: "Confirm latest images, pending matrix slots, services, and evidence counts."
+            href: "catalog"
+          - title: "Fork and configure the fleet"
+            description: "Review the platform kit commands, fleet config contract, and generated site workflow."
+            href: "platform-kit"
+          - title: "Publish refreshed catalog data"
+            description: "Generate catalog data and build the static site artifact for your own registry."
+            command: "clearcutt catalog site build --config clearcutt.fleet.yaml --output ./dist/site --install"
+      - id: "application"
+        label: "Application engineers"
+        summary: "Pick a runtime base, build an app image, and validate it before release."
+        steps:
+          - title: "Choose a runtime and tier"
+            description: "Use the catalog matrix to find the right language version and production tier."
+            href: "catalog"
+          - title: "Copy the build pattern"
+            description: "Start with a dev-to-runtime multi-stage example that does not require Nix locally."
+            href: "getting-started"
+          - title: "Plan rebase and certification"
+            description: "Use app lifecycle examples for app build, diff-base, certify, and rebase workflows."
+            href: "app-lifecycle"
+      - id: "audit"
+        label: "Security and audit engineers"
+        summary: "Review evidence channels, vulnerability state, and threat-model boundaries."
+        steps:
+          - title: "Verify supply-chain evidence"
+            description: "Run the audit guide checks for keyless signatures, SLSA provenance, and SBOMs."
+            href: "about?tab=audit"
+          - title: "Inspect vulnerabilities"
+            description: "Use image detail pages to review active findings, fix state, OpenVEX notes, and exceptions."
+            href: "catalog"
+          - title: "Read the boundaries"
+            description: "Confirm what shell-free, provenance, and remediation claims do and do not prove."
+            href: "limitations"
+`, title, description, sourceRepo, registry, title)
 }
 
 func writeSiteReadme(outputDir string) error {
@@ -942,10 +1003,11 @@ Edit ` + "`clearcutt.site.yaml`" + ` to customize branding and behavior:
 
 - ` + "`site.title`" + `, ` + "`site.description`" + `, and ` + "`site.logo`" + ` set the catalog identity.
 - ` + "`site.theme.mode`" + ` and ` + "`site.theme.accent`" + ` set the theme preference and accent color.
-- ` + "`site.navigation`" + ` toggles the home, getting started, CLI, and audit nav links.
+- ` + "`site.navigation`" + ` toggles the home, getting started, operator, CLI, and audit nav links.
 - ` + "`site.features`" + ` toggles SBOMs, vulnerabilities, layers, provenance, OCI labels, release history, and Kyverno policy examples.
 - ` + "`site.terminology`" + ` renames tier labels such as distroless, slim, and dev.
 - ` + "`site.links`" + ` adds source repository, registry, support, and docs links.
+- ` + "`site.home`" + ` customizes homepage title, notice, quick links, and persona workflow sections.
 
 Use ` + "`--site-config ./clearcutt.site.yaml`" + ` when scaffolding or building to copy an
 external config into the generated project.
