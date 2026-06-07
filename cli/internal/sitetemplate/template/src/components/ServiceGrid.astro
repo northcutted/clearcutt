@@ -23,6 +23,12 @@ function evidenceLabel(img: CatalogIndex['images'][number]): string {
   ].filter(Boolean);
   return pieces.length > 0 ? pieces.join(' + ') : 'Evidence pending';
 }
+
+function vulnerabilityLabel(img: CatalogIndex['images'][number]): string {
+  const summary = img.vulnSummary;
+  if (!summary) return 'Scan pending';
+  return `${summary.critical ?? 0} critical / ${summary.high ?? 0} high`;
+}
 ---
 {services.length > 0 && (
   <section class="space-y-3" data-pagefind-body>
@@ -44,31 +50,39 @@ function evidenceLabel(img: CatalogIndex['images'][number]): string {
             href={`${base}images/${img.id}`}
             class="group block rounded-lg border border-ink-800 bg-ink-950/25 p-4 no-underline transition hover:border-accent/40 hover:bg-ink-950/60"
           >
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="font-mono text-sm font-semibold text-ink-50 group-hover:text-accent-soft">{img.id}</div>
-                <div class="mt-1 text-xs text-ink-300">{service?.template ?? 'service'} {service?.version ?? img.languageVersion}</div>
-              </div>
-              <span class={img.lifecycle.productionAllowed ? 'chip-accent' : 'chip-warn'}>
-                {img.lifecycle.productionAllowed ? 'prod allowed' : 'preview'}
-              </span>
-            </div>
-            <div class="mt-4 grid gap-2 text-xs text-ink-200">
-              <div class="flex items-center justify-between gap-3 border-t border-ink-800/50 pt-3">
-                <span class="text-ink-400">Ports</span>
-                <span class="font-mono text-ink-100">{portsLabel(service)}</span>
-              </div>
+	            <div class="flex items-start justify-between gap-3">
+	              <div>
+	                <div class="font-mono text-sm font-semibold text-ink-50 group-hover:text-accent-soft">{img.id}</div>
+	                <div class="mt-1 text-xs text-ink-300">{service?.template ?? 'service'} {service?.version ?? img.languageVersion}</div>
+	              </div>
+	              <span class={img.lifecycle.productionAllowed ? 'chip-accent' : 'chip-warn'}>
+	                {img.lifecycle.productionAllowed ? 'prod allowed' : 'non-prod'}
+	              </span>
+	            </div>
+	            <div class="mt-4 grid gap-2 text-xs text-ink-200">
+	              <div class="flex items-center justify-between gap-3 border-t border-ink-800/50 pt-3">
+	                <span class="text-ink-400">Lifecycle</span>
+	                <span class="font-mono text-ink-100">{img.lifecycle.status}</span>
+	              </div>
+	              <div class="flex items-center justify-between gap-3">
+	                <span class="text-ink-400">Ports</span>
+	                <span class="font-mono text-ink-100">{portsLabel(service)}</span>
+	              </div>
               <div class="flex items-center justify-between gap-3">
                 <span class="text-ink-400">Storage</span>
                 <span class="font-mono text-ink-100">{service?.stateful ? (service.dataDirs?.join(', ') || 'stateful') : 'stateless'}</span>
               </div>
               <div class="flex items-center justify-between gap-3">
-                <span class="text-ink-400">Smoke</span>
-                <span class="font-mono text-ink-100">{service?.smokeStatus ?? 'pending'}</span>
-              </div>
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-ink-400">Evidence</span>
-                <span class="font-mono text-ink-100">{evidenceLabel(img)}</span>
+	                <span class="text-ink-400">Smoke</span>
+	                <span class="font-mono text-ink-100">{service?.smokeStatus ?? 'pending'}</span>
+	              </div>
+	              <div class="flex items-center justify-between gap-3">
+	                <span class="text-ink-400">Vulnerabilities</span>
+	                <span class="font-mono text-ink-100">{vulnerabilityLabel(img)}</span>
+	              </div>
+	              <div class="flex items-center justify-between gap-3">
+	                <span class="text-ink-400">Evidence</span>
+	                <span class="font-mono text-ink-100">{evidenceLabel(img)}</span>
               </div>
             </div>
           </a>

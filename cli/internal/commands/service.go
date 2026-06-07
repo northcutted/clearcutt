@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
@@ -38,9 +39,19 @@ type serviceFlags struct {
 	githubOutputPath  string
 	engine            string
 	image             string
+	commandOnly       bool
 	githubActions     bool
 	matrixKind        string
 }
+
+type serviceFunctionalSmokeProfile struct {
+	Name     string
+	Probe    []string
+	Attempts int
+	Delay    time.Duration
+}
+
+var serviceSmokeSleep = time.Sleep
 
 type ServiceValidation struct {
 	ID     string                `json:"id"`
@@ -168,6 +179,7 @@ the generated Nix extension stays an implementation detail.`,
 	addServiceCommonFlags(smokeCmd)
 	smokeCmd.Flags().StringVar(&serviceOpts.engine, "engine", "docker", "Container engine: docker or podman")
 	smokeCmd.Flags().StringVar(&serviceOpts.image, "image", "", "Image reference to smoke; defaults to fleet service image with :current")
+	smokeCmd.Flags().BoolVar(&serviceOpts.commandOnly, "command-only", false, "Only run configured smoke commands; skip built-in functional service probes")
 
 	matrixCmd := &cobra.Command{
 		Use:   "matrix",
@@ -355,6 +367,12 @@ func runServiceValidate(id string) error {
 	}
 	services := []fleet.ServiceImage{}
 	id = strings.TrimSpace(id)
+	if id == "" && !serviceOpts.all {
+		return fmt.Errorf("pass a service id or --all")
+	}
+	if id != "" && serviceOpts.all {
+		return fmt.Errorf("--all cannot be used with a service id")
+	}
 	if id != "" {
 		service, ok := cfg.ServiceInfo(id)
 		if !ok {
@@ -582,7 +600,96 @@ func runServiceSmoke(id string) error {
 			return err
 		}
 	}
+	if serviceOpts.commandOnly {
+		return nil
+	}
+	return runServiceFunctionalSmoke(engine, service, image)
+}
+
+func runServiceFunctionalSmoke(engine string, service fleet.ServiceImage, image string) error {
+	profile, ok := serviceFunctionalSmokeProfileFor(service.Template)
+	if !ok {
+		return nil
+	}
+	container := serviceSmokeContainerName(service.ID)
+	runArgs := []string{"run", "--rm", "-d", "--name", container, image}
+	if err := runExternalCommand(externalCommand{Name: engine, Args: runArgs}); err != nil {
+		return fmt.Errorf("%s functional smoke start failed: %w", profile.Name, err)
+	}
+	cleanup := func() {
+		if err := runExternalCommand(externalCommand{Name: engine, Args: []string{"rm", "-f", container}}); err != nil {
+			fmt.Fprintf(errOut, "[service-smoke] cleanup failed for %s: %v\n", container, err)
+		}
+	}
+	defer cleanup()
+
+	if err := waitForServiceSmokeProbe(engine, container, profile); err != nil {
+		dumpServiceSmokeLogs(engine, container)
+		return err
+	}
 	return nil
+}
+
+func serviceFunctionalSmokeProfileFor(template string) (serviceFunctionalSmokeProfile, bool) {
+	switch strings.TrimSpace(template) {
+	case "postgres":
+		return serviceFunctionalSmokeProfile{
+			Name:     "postgres",
+			Probe:    []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432"},
+			Attempts: 20,
+			Delay:    time.Second,
+		}, true
+	case "valkey":
+		return serviceFunctionalSmokeProfile{
+			Name:     "valkey",
+			Probe:    []string{"valkey-cli", "-h", "127.0.0.1", "-p", "6379", "PING"},
+			Attempts: 20,
+			Delay:    time.Second,
+		}, true
+	default:
+		return serviceFunctionalSmokeProfile{}, false
+	}
+}
+
+func waitForServiceSmokeProbe(engine, container string, profile serviceFunctionalSmokeProfile) error {
+	var lastErr error
+	for attempt := 1; attempt <= profile.Attempts; attempt++ {
+		args := append([]string{"exec", container}, profile.Probe...)
+		if err := runExternalCommand(externalCommand{Name: engine, Args: args}); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt < profile.Attempts {
+			serviceSmokeSleep(profile.Delay)
+		}
+	}
+	return fmt.Errorf("%s functional smoke probe failed after %d attempt(s): %w", profile.Name, profile.Attempts, lastErr)
+}
+
+func dumpServiceSmokeLogs(engine, container string) {
+	logs, err := captureExternalOutput(externalCommand{Name: engine, Args: []string{"logs", container}})
+	if err != nil {
+		fmt.Fprintf(errOut, "[service-smoke] failed to collect logs for %s: %v\n", container, err)
+		return
+	}
+	logs = strings.TrimSpace(logs)
+	if logs == "" {
+		fmt.Fprintf(errOut, "[service-smoke] %s produced no logs\n", container)
+		return
+	}
+	fmt.Fprintf(errOut, "[service-smoke] logs for %s:\n%s\n", container, logs)
+}
+
+func serviceSmokeContainerName(id string) string {
+	name := strings.ToLower(strings.TrimSpace(id))
+	replacer := strings.NewReplacer(".", "-", "_", "-", "/", "-", ":", "-")
+	name = replacer.Replace(name)
+	name = strings.Trim(name, "-")
+	if name == "" {
+		name = "service"
+	}
+	return fmt.Sprintf("clearcutt-smoke-%s-%d", name, time.Now().UnixNano())
 }
 
 func runServiceAssemble(id string) error {

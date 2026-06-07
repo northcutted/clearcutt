@@ -5,6 +5,12 @@ team's own registry, GitHub Actions OIDC identities, catalog site, and admission
 policies. The reference repository is a working blueprint, not a hosted control
 plane.
 
+The fork owns two platform image lanes:
+
+- runtime base images for app-team builds and deployments,
+- service images for reusable backing services such as Postgres, Valkey, and
+  oauth2-proxy.
+
 For the extension model, see
 [`docs/extending-clearcutt.md`](extending-clearcutt.md): app teams use templates
 and devcontainers, fleet owners edit `clearcutt.fleet.yaml`, and Nix stays in
@@ -16,11 +22,12 @@ the backend authoring path.
 2. Build the CLI, then run `clearcutt platform init --owner YOUR_ORG --repo
    YOUR_REPO --force` to rewrite the fleet config, platform-kit doc, and app
    templates for your fork.
-3. Edit `clearcutt.fleet.yaml` for enabled runtimes, architectures, catalog scan
-   window, admission profile, remediation limits, branding, templates, and
-   optional cache settings. Use `clearcutt matrix explain java21` before adding
-   a runtime line; unsupported IDs fail at the config layer instead of later in
-   the Nix backend.
+3. Edit `clearcutt.fleet.yaml` for enabled runtimes, service images,
+   architectures, catalog scan window, admission profile, remediation limits,
+   branding, templates, and optional cache settings. Use
+   `clearcutt matrix explain java21` and `clearcutt service explain postgres16`
+   before adding fleet lines; unsupported IDs fail at the config layer instead
+   of later in the Nix backend.
 4. In GitHub, enable Actions, grant workflow read/write permissions, create and
    protect the `production` environment, and configure Pages to deploy from
    GitHub Actions.
@@ -36,10 +43,11 @@ the backend authoring path.
    `clearcutt fleet publish-target`, `clearcutt fleet assemble-target`,
    `clearcutt fleet verify-target`, `clearcutt fleet export-provenance`, and
    `clearcutt fleet finalize-release`.
-8. Let the catalog workflow run `clearcutt catalog build` for the full
-   release-evidence pipeline, or `clearcutt catalog generate` when you only
-   need portable catalog artifacts. Deploy the generated site to GitHub Pages or
-   another static host.
+8. Let the catalog workflow run `clearcutt catalog build --include-services`
+   for the full release-evidence pipeline, or
+   `clearcutt catalog generate --include-services` when you need portable mixed
+   runtime and service catalog artifacts. Deploy the generated site to GitHub
+   Pages or another static host.
 9. Give application teams the templates under `examples/clearcutt-template-*`.
 10. Enforce signatures, SBOMs, SLSA Build L3 provenance, and optional rebase
    attestations in CI and Kubernetes admission policy.
@@ -81,8 +89,15 @@ clearcutt matrix remove python3.13
 clearcutt runtime scaffold ruby3.4
 clearcutt runtime validate ruby3.4
 
+# Add and validate platform-owned service images.
+clearcutt service scaffold postgres16 --template postgres --version 16
+clearcutt service scaffold valkey8 --template valkey --version 8
+clearcutt service scaffold oauth2-proxy7 --template oauth2-proxy --version 7
+clearcutt service validate --all
+
 # Emit the release matrix used by GitHub Actions.
 clearcutt --format json matrix export --source fleet --github-actions --matrix release
+clearcutt --format json service matrix --github-actions --matrix release
 
 # Configure and warm the Nix client on fleet-builder machines only.
 clearcutt platform setup-nix --core-dir core --write-user-config
@@ -92,6 +107,11 @@ clearcutt fleet certify-target --system x86_64-linux --language java25 --tier sl
 
 # Build and publish one single-architecture fleet target.
 clearcutt fleet publish-target --system x86_64-linux --language java25 --tier slim --version-tag v1.2.3
+
+# Build, smoke, and publish one service target.
+clearcutt service build postgres16 --system x86_64-linux
+clearcutt service smoke postgres16 --engine docker
+clearcutt service publish postgres16 --system x86_64-linux --version-tag v1.2.3
 
 # Assemble, sign, attest, and write the digest manifest for one multi-arch image.
 clearcutt fleet assemble-target --language java25 --tier slim --version-tag v1.2.3
@@ -106,7 +126,7 @@ clearcutt app template java --output examples/my-java-service
 clearcutt catalog build --limit 10 --scan-depth 4
 
 # Or generate portable catalog artifacts for policy, audit, and site rendering.
-clearcutt catalog generate --config clearcutt.fleet.yaml --output ./dist/catalog
+clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output ./dist/catalog
 
 # Render a static evidence portal from those artifacts.
 clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install

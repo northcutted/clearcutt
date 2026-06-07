@@ -209,7 +209,23 @@ jobs:
           ./clearcutt --catalog cli/internal/testdata/mixed-catalog catalog validate --schema-version clearcutt.catalog.image/v2
 
       - name: Build Catalog Site From Mixed Fixture
-        run: ./clearcutt catalog site build --catalog cli/internal/testdata/mixed-catalog --template site --output "$RUNNER_TEMP/service-site" --install
+        run: |
+          ./clearcutt catalog site build --catalog cli/internal/testdata/mixed-catalog --template site --output "$RUNNER_TEMP/service-site" --install
+          service_page="$RUNNER_TEMP/service-site/images/postgres16/index.html"
+          catalog_page="$RUNNER_TEMP/service-site/catalog/index.html"
+          test -f "$service_page"
+          test -f "$catalog_page"
+          grep -q "Service Images" "$catalog_page"
+          grep -q "Service Image Usage" "$service_page"
+          grep -q "postgres:5432/tcp" "$service_page"
+          grep -q "/var/lib/postgresql/data" "$service_page"
+          grep -q "Non-Prod Only" "$service_page"
+          grep -q "docker-compose.yml" "$service_page"
+          grep -q "pod.yaml" "$service_page"
+          if grep -q "Base Image Layering" "$service_page" || grep -q "Nix Shell" "$service_page" || grep -q "Runtime Security" "$service_page"; then
+            echo "service page still renders runtime-first copy" >&2
+            exit 1
+          fi
 
   integration-checks:
     name: Run Verification Gating Suite

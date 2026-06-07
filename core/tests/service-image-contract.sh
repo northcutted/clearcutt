@@ -15,18 +15,21 @@ case "$service" in
     expected_entrypoint="/bin/clearcutt-postgres-entrypoint"
     expected_env="PGDATA=/var/lib/postgresql/data"
     data_dirs=("/var/lib/postgresql/data")
+    command_only="false"
     ;;
   valkey8)
     expected_port="6379/tcp"
     expected_entrypoint="/bin/valkey-server"
     expected_env=""
     data_dirs=("/data")
+    command_only="false"
     ;;
   oauth2-proxy7)
     expected_port="4180/tcp"
     expected_entrypoint="/bin/oauth2-proxy"
     expected_env=""
     data_dirs=()
+    command_only="true"
     ;;
   *)
     echo "unsupported service contract fixture: $service" >&2
@@ -150,4 +153,8 @@ else
     image="${CLEARCUTT_IMAGE_PREFIX:-clearcutt}-${service}:current"
   fi
 fi
-"$cli" service smoke "$service" --engine "$engine" --image "$image"
+smoke_args=(service smoke "$service" --engine "$engine" --image "$image")
+if [[ "$command_only" == "true" ]]; then
+  smoke_args+=(--command-only)
+fi
+"$cli" "${smoke_args[@]}"

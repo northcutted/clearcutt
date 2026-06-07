@@ -1,6 +1,13 @@
 # ClearCutt Getting Started Guide
 
-This guide gets you up and running with ClearCutt secure container base images in under 5 minutes. You will learn how to consume our hardened runtimes inside your application OCI configurations, run a multi-stage build, and set up the local governance CLI.
+This guide gets app teams up and running with ClearCutt base images in under 5
+minutes. You will consume hardened runtimes with normal OCI tools, run a
+multi-stage build, and set up the local governance CLI.
+
+If you are operating the forked platform itself, start with
+[`platform-kit.md`](platform-kit.md). If you are adding Postgres, Valkey, or
+oauth2-proxy service images to the platform-owned fleet, use
+[`service-images.md`](service-images.md).
 
 ---
 
@@ -9,8 +16,8 @@ This guide gets you up and running with ClearCutt secure container base images i
 > [!IMPORTANT]
 > **No, application developers do NOT need Nix installed to use ClearCutt base images.**
 >
-> * **OCI / Container Consumption (Standard Developers):** You pull, run, and verify our pre-built base images using standard, everyday container tools (such as `docker`, `podman`, `skopeo`, `cosign`, or Kubernetes manifests). Nix is entirely optional.
-> * **Nix Package Manager (Platform Engineers):** Nix is only used if you want to fork this blueprint repository, customize the underlying libraries, or compile your own secure enterprise base image OCI matrix layers from scratch.
+> * **OCI / Container Consumption (Standard Developers):** You pull, run, and verify published runtime base images using standard tools such as `docker`, `podman`, `skopeo`, `cosign`, or Kubernetes manifests. Nix is not required.
+> * **Platform Fleet Ownership:** Nix is used by the fork owner that compiles and publishes runtime and service images. The public authoring surface is `clearcutt.fleet.yaml` plus CLI commands such as `matrix`, `runtime`, and `service`.
 
 ---
 
@@ -131,6 +138,11 @@ OIDC enabled.
 The full stack guide has end-to-end examples for Core/static, Java, Node.js,
 Python, Go, .NET, Rust, and C/C++:
 [`docs/app-lifecycle.md`](app-lifecycle.md).
+
+Platform-owned service images are separate from app images. Do not use
+`clearcutt app build` for Postgres, Valkey, or oauth2-proxy templates; use
+`clearcutt service` and the operator guide in
+[`docs/service-images.md`](service-images.md).
 
 ---
 

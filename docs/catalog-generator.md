@@ -20,8 +20,14 @@ available.
 ```bash
 clearcutt catalog generate \
   --config clearcutt.fleet.yaml \
+  --include-services \
   --output ./dist/catalog
 ```
+
+Omit `--include-services` when you intentionally want a runtime-only catalog.
+Configured service images are included only when that flag is present. Mixed
+runtime and service catalogs emit v2 schema records; runtime-only catalogs stay
+v1-compatible.
 
 Useful flags:
 
@@ -29,6 +35,8 @@ Useful flags:
 - `--registry-base` overrides the image registry namespace.
 - `--limit` bounds the number of non-draft releases to inspect.
 - `--targets` limits generation to a comma-separated image allowlist.
+- `--include-services` includes configured first-class service images such as
+  `postgres16`, `valkey8`, and `oauth2-proxy7`.
 - `--sbom-cache-dir`, `--enrichment-dir`, and `--vuln-dir` point at local
   evidence inputs.
 - `--force-refresh-all` and `--force-refresh-tags` control release asset
@@ -134,6 +142,6 @@ jobs:
         with:
           go-version-file: cli/go.mod
       - run: go build -C cli -o ../clearcutt ./cmd/clearcutt
-      - run: ./clearcutt catalog generate --config clearcutt.fleet.yaml --output dist/catalog
+      - run: ./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
       - run: ./clearcutt --catalog dist/catalog catalog validate
 ```

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/northcutted/clearcutt/internal/fleet"
 )
@@ -50,6 +51,18 @@ func TestServiceScaffoldValidateExplainAndMatrix(t *testing.T) {
 	if err != nil || !strings.Contains(stdout, "service.template") || !strings.Contains(stdout, "service.extension") {
 		t.Fatalf("service validate failed: %v\n%s", err, stdout)
 	}
+	stdout, err = runCLI(t, "service", "validate", "postgres16", "--fleet-config", configPath, "--core-dir", coreDir)
+	if err != nil || !strings.Contains(stdout, "postgres16") || !strings.Contains(stdout, "service.template") {
+		t.Fatalf("service validate one service failed: %v\n%s", err, stdout)
+	}
+	stdout, err = runCLI(t, "service", "validate", "--fleet-config", configPath, "--core-dir", coreDir)
+	if err == nil || !strings.Contains(err.Error(), "pass a service id or --all") {
+		t.Fatalf("expected service validate to require id or --all, got err=%v stdout=\n%s", err, stdout)
+	}
+	stdout, err = runCLI(t, "service", "validate", "postgres16", "--all", "--fleet-config", configPath, "--core-dir", coreDir)
+	if err == nil || !strings.Contains(err.Error(), "--all cannot be used with a service id") {
+		t.Fatalf("expected service validate id/--all conflict, got err=%v stdout=\n%s", err, stdout)
+	}
 
 	stdout, err = runCLI(t, "--format", "json", "service", "explain", "postgres16", "--fleet-config", configPath, "--core-dir", coreDir)
 	if err != nil || !strings.Contains(stdout, `"template": "postgres"`) || !strings.Contains(stdout, `"image": "ghcr.io/acme/platform/platform-postgres16"`) {
@@ -80,6 +93,14 @@ func TestServiceScaffoldValidateExplainAndMatrix(t *testing.T) {
 	if err != nil || !strings.Contains(stdout, "id: postgres16") || !strings.Contains(stdout, "template: postgres") {
 		t.Fatalf("service matrix YAML failed: %v\n%s", err, stdout)
 	}
+}
+
+func flattenServiceCalls(calls []externalCommand) string {
+	lines := make([]string, 0, len(calls))
+	for _, call := range calls {
+		lines = append(lines, call.Name+" "+strings.Join(call.Args, " "))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
@@ -236,10 +257,13 @@ func TestServiceScaffoldForceAndCustomTemplateOptions(t *testing.T) {
 func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	oldServiceOpts := serviceOpts
 	oldRun := runExternalCommand
+	oldSleep := serviceSmokeSleep
 	defer func() {
 		serviceOpts = oldServiceOpts
 		runExternalCommand = oldRun
+		serviceSmokeSleep = oldSleep
 	}()
+	serviceSmokeSleep = func(_ time.Duration) {}
 
 	root := t.TempDir()
 	configPath := writeFleetConfig(t, root)
@@ -275,13 +299,33 @@ func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("service smoke failed: %v\n%s", err, stdout)
 	}
-	if len(calls) != 3 {
-		t.Fatalf("expected three smoke commands, got %#v", calls)
+	if len(calls) != 6 {
+		t.Fatalf("expected command smoke plus functional smoke, got %#v", calls)
 	}
-	for _, call := range calls {
+	for _, call := range calls[:3] {
 		if call.Name != "podman" || !strings.Contains(strings.Join(call.Args, " "), "--entrypoint") {
 			t.Fatalf("unexpected smoke command: %#v", call)
 		}
+	}
+	joinedCalls := flattenServiceCalls(calls)
+	for _, want := range []string{
+		"podman run --rm -d --name clearcutt-smoke-custom-postgres-",
+		"podman exec clearcutt-smoke-custom-postgres-",
+		"pg_isready -h 127.0.0.1 -p 5432",
+		"podman rm -f clearcutt-smoke-custom-postgres-",
+	} {
+		if !strings.Contains(joinedCalls, want) {
+			t.Fatalf("expected functional smoke call %q in:\n%s", want, joinedCalls)
+		}
+	}
+
+	calls = nil
+	stdout, err = runCLI(t, "service", "smoke", "custom-postgres", "--command-only", "--engine", "podman", "--image", "local/custom-postgres:service", "--fleet-config", configPath)
+	if err != nil {
+		t.Fatalf("service smoke --command-only failed: %v\n%s", err, stdout)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("expected command-only smoke to run three commands, got %#v", calls)
 	}
 
 	stdout, err = runCLI(t, "service", "smoke", "custom-postgres", "--engine", "nerdctl", "--fleet-config", configPath)
@@ -351,6 +395,53 @@ func TestServiceValidationHelperBranches(t *testing.T) {
 	}
 	if entrypoint, args := splitSmokeCommand(" \t "); entrypoint != "" || args != nil {
 		t.Fatalf("empty smoke command should be ignored, got %q %#v", entrypoint, args)
+	}
+}
+
+func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
+	oldRun := runExternalCommand
+	oldCapture := captureExternalOutput
+	oldSleep := serviceSmokeSleep
+	defer func() {
+		runExternalCommand = oldRun
+		captureExternalOutput = oldCapture
+		serviceSmokeSleep = oldSleep
+	}()
+	serviceSmokeSleep = func(_ time.Duration) {}
+
+	var calls []externalCommand
+	logsCalled := false
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		if len(c.Args) > 0 && c.Args[0] == "exec" {
+			return errors.New("not ready")
+		}
+		return nil
+	}
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		if len(c.Args) > 0 && c.Args[0] == "logs" {
+			logsCalled = true
+			return "database boot log", nil
+		}
+		return "", nil
+	}
+
+	err := runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "postgres16", Template: "postgres"}, "local/postgres16:service")
+	if err == nil || !strings.Contains(err.Error(), "functional smoke probe failed") {
+		t.Fatalf("expected functional smoke failure, got %v", err)
+	}
+	if !logsCalled {
+		t.Fatal("expected failed functional smoke to collect container logs")
+	}
+	joined := flattenServiceCalls(calls)
+	if !strings.Contains(joined, "docker rm -f clearcutt-smoke-postgres16-") {
+		t.Fatalf("expected failed functional smoke to clean up container, got:\n%s", joined)
+	}
+
+	calls = nil
+	err = runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "oauth2-proxy7", Template: "oauth2-proxy"}, "local/oauth:service")
+	if err != nil || len(calls) != 0 {
+		t.Fatalf("oauth2-proxy should not run a functional profile, err=%v calls=%#v", err, calls)
 	}
 }
 
