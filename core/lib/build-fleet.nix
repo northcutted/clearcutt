@@ -157,7 +157,10 @@ let
     if [ ! -s "$PGDATA/PG_VERSION" ]; then
       initdb -D "$PGDATA"
     fi
-    exec postgres -D "$PGDATA" "$@"
+    exec postgres -D "$PGDATA" \
+      -c listen_addresses=127.0.0.1 \
+      -c unix_socket_directories=/tmp \
+      "$@"
   '';
 
   serviceTemplatePackages = service:
