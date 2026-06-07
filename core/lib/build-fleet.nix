@@ -183,7 +183,7 @@ let
 
   serviceTemplatePackages = service:
     if service.template == "postgres" then
-      [ postgresEntrypoint pkgs.bash pkgs.busybox pkgs.coreutils ]
+      [ postgresEntrypoint pkgs.bash pkgs.coreutils ]
     else
       [];
 
@@ -270,6 +270,11 @@ in
     serviceEnv = service.env or [];
     serviceEntrypoint = builtins.map entrypointPath (service.entrypoint or []);
     serviceCmd = service.cmd or [];
+    serviceRuntimeCommands =
+      if service.template == "postgres" then ''
+        mkdir -p bin
+        ln -sf ${pkgs.bash}/bin/bash bin/sh
+      '' else "";
 
     ociLabels = {
       "org.opencontainers.image.title" = "${imagePrefix}-${service.id}";
@@ -315,6 +320,7 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
+      ${serviceRuntimeCommands}
       ${mkdirDataDirs dataDirs}
     '';
     config = mergedConfig;
