@@ -51,6 +51,36 @@ func TargetMeta(target string) *TargetInfo {
 	return &TargetInfo{LangKey: langKey, Tier: tier}
 }
 
+type recordTarget struct {
+	ID              string
+	Kind            string
+	SchemaVersion   string
+	Language        Language
+	Tier            Tier
+	ImageNameKey    string
+	Lifecycle       Lifecycle
+	RuntimeContract RuntimeContract
+	Service         *catalog.ServiceInfo
+}
+
+func runtimeRecordTarget(target string) *recordTarget {
+	meta := TargetMeta(target)
+	if meta == nil {
+		return nil
+	}
+	langInfo := gatherLanguages[meta.LangKey]
+	tierInfo := gatherTiers[meta.Tier]
+	return &recordTarget{
+		ID:              target,
+		SchemaVersion:   catalog.ImageRecordSchemaVersion,
+		Language:        Language{ID: langInfo.ID, DisplayName: langInfo.Display, Version: langInfo.Version},
+		Tier:            Tier{ID: meta.Tier, Name: tierInfo.Name, Blurb: tierInfo.Blurb},
+		ImageNameKey:    meta.LangKey,
+		Lifecycle:       determineLifecycle(target, meta.Tier),
+		RuntimeContract: determineRuntimeContract(target, meta.Tier),
+	}
+}
+
 func displayAssertionName(name string) string {
 	switch name {
 	case "Grype Vulnerability Gating":
@@ -239,6 +269,7 @@ func SummarizeImageForIndex(img ImageRecord) ImageSummary {
 
 	return ImageSummary{
 		ID:                   img.ID,
+		Kind:                 img.Kind,
 		Language:             img.Language.ID,
 		LanguageDisplay:      img.Language.DisplayName,
 		LanguageVersion:      img.Language.Version,
@@ -254,6 +285,7 @@ func SummarizeImageForIndex(img ImageRecord) ImageSummary {
 		VulnSummary:          vulnSummary,
 		Lifecycle:            img.Lifecycle,
 		RuntimeContract:      img.RuntimeContract,
+		Service:              img.Service,
 	}
 }
 
@@ -340,17 +372,39 @@ func loadVulnerabilities(tag, target, arch, vulnDir string) (*json.RawMessage, *
 }
 
 func BuildImageRecord(target string, releases []Release, refreshSet map[string]bool, opts BuildOptions) (*ImageRecord, error) {
-	meta := TargetMeta(target)
-	if meta == nil {
+	desc := runtimeRecordTarget(target)
+	if desc == nil {
 		return nil, nil
 	}
-	langInfo := gatherLanguages[meta.LangKey]
-	tierInfo := gatherTiers[meta.Tier]
+	return buildImageRecord(desc, releases, refreshSet, opts)
+}
+
+func BuildServiceImageRecord(target string, service catalog.ServiceInfo, lifecycle Lifecycle, runtimeContract RuntimeContract, releases []Release, refreshSet map[string]bool, opts BuildOptions) (*ImageRecord, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return nil, nil
+	}
+	return buildImageRecord(&recordTarget{
+		ID:              target,
+		Kind:            "service",
+		SchemaVersion:   catalog.ImageRecordSchemaVersionV2,
+		Language:        Language{ID: "service", DisplayName: "Service", Version: service.Version},
+		Tier:            Tier{ID: "service", Name: "Service", Blurb: "Platform-owned service image"},
+		ImageNameKey:    target,
+		Lifecycle:       lifecycle,
+		RuntimeContract: runtimeContract,
+		Service:         &service,
+	}, releases, refreshSet, opts)
+}
+
+func buildImageRecord(desc *recordTarget, releases []Release, refreshSet map[string]bool, opts BuildOptions) (*ImageRecord, error) {
+	target := desc.ID
 	imagePrefix := opts.ImagePrefix
 	if imagePrefix == "" {
 		imagePrefix = "clearcutt"
 	}
-	imageName := imagePrefix + "-" + strings.ToLower(meta.LangKey)
+	imageNameKey := FirstNonEmptyStr(desc.ImageNameKey, target)
+	imageName := imagePrefix + "-" + strings.ToLower(imageNameKey)
 	fullName := strings.TrimRight(opts.RegistryBase, "/") + "/" + imageName
 	releaseEntries := []gatherReleaseEntry{}
 	isLatestSet := false
@@ -559,8 +613,8 @@ func BuildImageRecord(target string, releases []Release, refreshSet map[string]b
 			Provenance:      provenance,
 			Attestations:    attestations,
 			AssetURLs:       assetURLsFromAssets(sbomAssets, testAssets, provAsset, digestAsset),
-			Lifecycle:       determineLifecycle(target, meta.Tier),
-			RuntimeContract: determineRuntimeContract(target, meta.Tier),
+			Lifecycle:       desc.Lifecycle,
+			RuntimeContract: desc.RuntimeContract,
 			Exceptions:      defaultGatherExceptions(),
 		}
 		releaseEntry.Evidence = releaseEvidenceFromGather(&releaseEntry)
@@ -571,15 +625,17 @@ func BuildImageRecord(target string, releases []Release, refreshSet map[string]b
 		return nil, nil
 	}
 	return &ImageRecord{
-		SchemaVersion:   catalog.ImageRecordSchemaVersion,
+		SchemaVersion:   desc.SchemaVersion,
 		ID:              target,
-		Language:        Language{ID: langInfo.ID, DisplayName: langInfo.Display, Version: langInfo.Version},
-		Tier:            Tier{ID: meta.Tier, Name: tierInfo.Name, Blurb: tierInfo.Blurb},
+		Kind:            desc.Kind,
+		Language:        desc.Language,
+		Tier:            desc.Tier,
 		Registry:        opts.RegistryBase,
 		ImageName:       imageName,
 		FullName:        fullName,
 		Releases:        releaseEntries,
-		Lifecycle:       determineLifecycle(target, meta.Tier),
-		RuntimeContract: determineRuntimeContract(target, meta.Tier),
+		Lifecycle:       desc.Lifecycle,
+		RuntimeContract: desc.RuntimeContract,
+		Service:         desc.Service,
 	}, nil
 }

@@ -87,6 +87,170 @@ func TestValidateRejectsUnsupportedTier(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsUnsupportedMatrixPublicInputs(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"unsupported system":   func(c *Config) { c.Matrix.Systems = []string{"x86_64-darwin"} },
+		"duplicate system":     func(c *Config) { c.Matrix.Systems = []string{"x86_64-linux", "x86_64-linux"} },
+		"unsupported language": func(c *Config) { c.Matrix.Languages = []string{"ruby3.4"} },
+		"duplicate language":   func(c *Config) { c.Matrix.Languages = []string{"java21", "java21"} },
+		"duplicate tier":       func(c *Config) { c.Matrix.Tiers = []string{"dev", "dev"} },
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
+}
+
+func TestSupportedRuntimeLinesExposePublicRuntimeIDs(t *testing.T) {
+	line, ok := RuntimeLineInfo("java21")
+	if !ok {
+		t.Fatal("java21 should be a supported runtime line")
+	}
+	if line.Language != "java" || line.Version != "21" || line.AppTemplateRuntime != "java" {
+		t.Fatalf("unexpected java21 runtime line: %#v", line)
+	}
+	if _, ok := RuntimeLineInfo("ruby3.4"); ok {
+		t.Fatal("ruby3.4 should not be a supported runtime line")
+	}
+	ids := SupportedRuntimeLineIDs()
+	if len(ids) == 0 || ids[0] != "cc15" {
+		t.Fatalf("supported runtime IDs should be sorted, got %#v", ids)
+	}
+
+	cfg := DefaultConfig("acme", "platform")
+	cfg.RuntimeLines = []RuntimeLine{{
+		ID:                "ruby3.4",
+		Language:          "ruby",
+		Version:           "3.4",
+		PackageCandidates: []string{"ruby_3_4"},
+	}}
+	cfg.Matrix.Languages = []string{"ruby3.4"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("custom runtime line should validate: %v", err)
+	}
+	custom, ok := cfg.RuntimeLineInfo("ruby3.4")
+	if !ok || custom.Language != "ruby" || custom.Version != "3.4" {
+		t.Fatalf("custom runtime line not exposed: %#v", custom)
+	}
+	if !cfg.IsCustomRuntimeLine("ruby3.4") || cfg.IsCustomRuntimeLine("java21") {
+		t.Fatalf("custom runtime helper misclassified runtime lines")
+	}
+	if builtins := BuiltInRuntimeLines(); len(builtins) == 0 || builtins[0].ID != "cc15" {
+		t.Fatalf("built-in runtime lines should be sorted, got %#v", builtins)
+	}
+	if systems := SupportedSystems(); len(systems) != 2 || systems[0] != "aarch64-linux" || systems[1] != "x86_64-linux" {
+		t.Fatalf("supported systems should be sorted, got %#v", systems)
+	}
+}
+
+func TestCustomRuntimeLineValidationErrors(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"missing fields": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "ruby3.4"}}
+		},
+		"built-in conflict": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "java21", Language: "java", Version: "21", PackageCandidates: []string{"jdk21"}}}
+		},
+		"duplicate custom": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{
+				{ID: "ruby3.4", Language: "ruby", Version: "3.4", PackageCandidates: []string{"ruby_3_4"}},
+				{ID: "ruby3.4", Language: "ruby", Version: "3.4", PackageCandidates: []string{"ruby_3_4"}},
+			}
+		},
+		"missing packages": func(c *Config) {
+			c.RuntimeLines = []RuntimeLine{{ID: "ruby3.4", Language: "ruby", Version: "3.4"}}
+		},
+		"empty system": func(c *Config) {
+			c.Matrix.Systems = []string{""}
+		},
+		"empty language": func(c *Config) {
+			c.Matrix.Languages = []string{""}
+		},
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
+}
+
+func TestServiceTemplatesApplyDefaultsAndMatrices(t *testing.T) {
+	cfg := DefaultConfig("acme", "platform")
+	cfg.Matrix.Systems = []string{"x86_64-linux"}
+	cfg.Services = []ServiceImage{{
+		ID:       "postgres16",
+		Template: "postgres",
+		Version:  "16",
+	}}
+	cfg.applyDefaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("service config should validate: %v", err)
+	}
+	service, ok := cfg.ServiceInfo("postgres16")
+	if !ok {
+		t.Fatal("postgres16 should resolve")
+	}
+	if service.PackageCandidates[0] != "postgresql_16" {
+		t.Fatalf("unexpected package defaults: %#v", service.PackageCandidates)
+	}
+	if !service.Stateful || len(service.DataDirs) != 1 || service.DataDirs[0] != "/var/lib/postgresql/data" {
+		t.Fatalf("unexpected storage defaults: %#v", service)
+	}
+	if service.Ports[0].Port != 5432 || service.Ports[0].Protocol != "tcp" {
+		t.Fatalf("unexpected port defaults: %#v", service.Ports)
+	}
+	if cfg.ServiceImageName("Postgres16") != "ghcr.io/acme/platform/platform-postgres16" {
+		t.Fatalf("unexpected service image name: %q", cfg.ServiceImageName("Postgres16"))
+	}
+	if ids := cfg.ServiceIDs(); len(ids) != 1 || ids[0] != "postgres16" {
+		t.Fatalf("unexpected service IDs: %#v", ids)
+	}
+	if got := cfg.GitHubServiceReleaseMatrix().Include; len(got) != 1 || got[0].Service != "postgres16" || got[0].System != "x86_64-linux" {
+		t.Fatalf("unexpected service release matrix: %#v", got)
+	}
+	if got := cfg.GitHubServiceImageMatrix().Include; len(got) != 1 || got[0].Service != "postgres16" {
+		t.Fatalf("unexpected service image matrix: %#v", got)
+	}
+	if templates := BuiltInServiceTemplates(); len(templates) != 3 || templates[0].Template != "oauth2-proxy" {
+		t.Fatalf("built-in service templates should be sorted, got %#v", templates)
+	}
+}
+
+func TestServiceValidationErrors(t *testing.T) {
+	for name, mutate := range map[string]func(*Config){
+		"missing fields": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "postgres16"}}
+		},
+		"unsupported template": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "postgres16", Template: "mysql", Version: "8", PackageCandidates: []string{"mysql80"}}}
+		},
+		"duplicate service": func(c *Config) {
+			c.Services = []ServiceImage{
+				{ID: "postgres16", Template: "postgres", Version: "16"},
+				{ID: "postgres16", Template: "postgres", Version: "16"},
+			}
+		},
+		"stateful missing data dirs": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "oauth2-proxy", Version: "7", PackageCandidates: []string{"oauth2-proxy"}, Stateful: true}}
+		},
+		"relative data dir": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "valkey", Version: "8", PackageCandidates: []string{"valkey"}, Stateful: true, DataDirs: []string{"data"}}}
+		},
+		"invalid port": func(c *Config) {
+			c.Services = []ServiceImage{{ID: "custom", Template: "oauth2-proxy", Version: "7", PackageCandidates: []string{"oauth2-proxy"}, Ports: []ServicePort{{Port: 70000}}}}
+		},
+	} {
+		cfg := DefaultConfig("acme", "platform")
+		mutate(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("%s validation unexpectedly passed", name)
+		}
+	}
+}
+
 func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	cfg := Config{
 		Registry: Registry{Host: "ghcr.io/", Owner: "acme", Repository: "platform", ImagePrefix: "cc"},

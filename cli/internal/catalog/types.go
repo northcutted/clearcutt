@@ -5,10 +5,14 @@ import (
 )
 
 const (
-	// CatalogIndexSchemaVersion identifies the top-level catalog index shape.
+	// CatalogIndexSchemaVersion identifies the top-level v1 runtime catalog shape.
 	CatalogIndexSchemaVersion = "clearcutt.catalog.index/v1"
-	// ImageRecordSchemaVersion identifies individual images/*.json record shape.
+	// CatalogIndexSchemaVersionV2 identifies the top-level mixed-kind catalog shape.
+	CatalogIndexSchemaVersionV2 = "clearcutt.catalog.index/v2"
+	// ImageRecordSchemaVersion identifies individual v1 runtime images/*.json records.
 	ImageRecordSchemaVersion = "clearcutt.catalog.image/v1"
+	// ImageRecordSchemaVersionV2 identifies individual mixed-kind images/*.json records.
+	ImageRecordSchemaVersionV2 = "clearcutt.catalog.image/v2"
 )
 
 // CatalogIndex represents the top-level index.json structure.
@@ -80,6 +84,7 @@ type TierInfo struct {
 // CatalogImageSummary represents a summary image record inside index.json.
 type CatalogImageSummary struct {
 	ID              string `json:"id"`
+	Kind            string `json:"kind,omitempty"`
 	Language        string `json:"language"`
 	LanguageDisplay string `json:"languageDisplay"`
 	LanguageVersion string `json:"languageVersion"`
@@ -98,6 +103,7 @@ type CatalogImageSummary struct {
 	VulnSummary          *VulnSummary     `json:"vulnSummary,omitempty"`
 	Lifecycle            Lifecycle        `json:"lifecycle"`
 	RuntimeContract      RuntimeContract  `json:"runtimeContract"`
+	Service              *ServiceInfo     `json:"service,omitempty"`
 }
 
 // EvidenceSummary tracks the presence of various supply-chain evidence pieces.
@@ -155,10 +161,29 @@ type RuntimeContract struct {
 	ProductionTier        bool    `json:"productionTier"`
 }
 
+// ServiceInfo describes first-class platform service images such as Postgres,
+// Valkey, and oauth2-proxy.
+type ServiceInfo struct {
+	Template    string            `json:"template"`
+	Version     string            `json:"version"`
+	Ports       []ServicePortInfo `json:"ports,omitempty"`
+	Stateful    bool              `json:"stateful"`
+	DataDirs    []string          `json:"dataDirs,omitempty"`
+	Smoke       []string          `json:"smoke,omitempty"`
+	SmokeStatus string            `json:"smokeStatus,omitempty"`
+}
+
+type ServicePortInfo struct {
+	Name     string `json:"name,omitempty"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
 // ImageRecord represents individual image records under images/*.json.
 type ImageRecord struct {
 	SchemaVersion   string          `json:"schemaVersion,omitempty"`
 	ID              string          `json:"id"`
+	Kind            string          `json:"kind,omitempty"`
 	Language        LanguageInfo    `json:"language"`
 	Tier            TierInfo        `json:"tier"`
 	Registry        string          `json:"registry"`
@@ -166,6 +191,7 @@ type ImageRecord struct {
 	FullName        string          `json:"fullName"`
 	Lifecycle       Lifecycle       `json:"lifecycle"`
 	RuntimeContract RuntimeContract `json:"runtimeContract"`
+	Service         *ServiceInfo    `json:"service,omitempty"`
 	Releases        []ReleaseEntry  `json:"releases"`
 }
 

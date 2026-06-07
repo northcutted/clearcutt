@@ -24,6 +24,7 @@ const release = image.releases[0];
 const ownerRepo = `${index.owner}/${index.repo}`;
 const sbomUrls = release.assetUrls.sbom || {};
 const features = loadSiteConfig().site.features;
+const isService = image.kind === 'service';
 const metadataTabs = [
   ...(features.ociLabels ? [{ id: 'labels', label: 'OCI Labels' }] : []),
   ...(features.versionHistory ? [{ id: 'versions', label: 'Version History' }] : []),
@@ -31,7 +32,7 @@ const metadataTabs = [
 const metadataDefaultTab = metadataTabs[0]?.id;
 const showDeepDive = features.sbomTable || features.layerExplorer || metadataTabs.length > 0;
 ---
-<Base title={`${image.imageName}:${image.tier.id}`}>
+<Base title={`${image.imageName}:${isService ? (image.service?.template ?? 'service') : image.tier.id}`}>
   <div class="space-y-12" data-pagefind-body>
     <span class="hidden" data-pagefind-meta={`image:${image.id}`}></span>
     <ImageHeader image={image} selectedTag={release.tag} />
@@ -86,8 +87,12 @@ const showDeepDive = features.sbomTable || features.layerExplorer || metadataTab
           3
         </span>
         <div>
-          <h2 class="heading text-xl sm:text-2xl font-bold">Deep-Dive &amp; OCI Specifications</h2>
-          <p class="text-xs sm:text-sm text-ink-300">Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.</p>
+          <h2 class="heading text-xl sm:text-2xl font-bold">{isService ? 'Evidence &amp; OCI Specifications' : 'Deep-Dive &amp; OCI Specifications'}</h2>
+          <p class="text-xs sm:text-sm text-ink-300">
+            {isService
+              ? 'Inspect service SBOMs, image layers, OCI labels, and release history after reviewing the service contract above.'
+              : 'Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.'}
+          </p>
         </div>
       </header>
 

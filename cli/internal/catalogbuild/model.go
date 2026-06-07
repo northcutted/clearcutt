@@ -97,6 +97,7 @@ type Tier struct {
 type ImageRecord struct {
 	SchemaVersion   string               `json:"schemaVersion,omitempty"`
 	ID              string               `json:"id"`
+	Kind            string               `json:"kind,omitempty"`
 	Language        Language             `json:"language"`
 	Tier            Tier                 `json:"tier"`
 	Registry        string               `json:"registry"`
@@ -105,6 +106,7 @@ type ImageRecord struct {
 	Releases        []gatherReleaseEntry `json:"releases"`
 	Lifecycle       Lifecycle            `json:"lifecycle"`
 	RuntimeContract RuntimeContract      `json:"runtimeContract"`
+	Service         *catalog.ServiceInfo `json:"service,omitempty"`
 }
 
 type gatherReleaseEntry struct {
@@ -210,6 +212,7 @@ type gatherAssetURLs struct {
 
 type ImageSummary struct {
 	ID                   string                  `json:"id"`
+	Kind                 string                  `json:"kind,omitempty"`
 	Language             string                  `json:"language"`
 	LanguageDisplay      string                  `json:"languageDisplay"`
 	LanguageVersion      string                  `json:"languageVersion"`
@@ -225,6 +228,7 @@ type ImageSummary struct {
 	VulnSummary          *gatherVulnSummary      `json:"vulnSummary"`
 	Lifecycle            Lifecycle               `json:"lifecycle"`
 	RuntimeContract      RuntimeContract         `json:"runtimeContract"`
+	Service              *catalog.ServiceInfo    `json:"service,omitempty"`
 }
 
 type gatherVulnSummary struct {

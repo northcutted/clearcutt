@@ -132,11 +132,13 @@ jobs:
               --limit "$RELEASE_LIMIT" \
               --scan-depth "${{ steps.params.outputs.scan_depth }}" \
               --force-refresh-all \
-              --scan-all
+              --scan-all \
+              --include-services
           else
             ./clearcutt catalog build \
               --limit "$RELEASE_LIMIT" \
-              --scan-depth "${{ steps.params.outputs.scan_depth }}"
+              --scan-depth "${{ steps.params.outputs.scan_depth }}" \
+              --include-services
           fi
 
       - name: Upload catalog artifact

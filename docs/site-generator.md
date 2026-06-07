@@ -22,6 +22,7 @@ data, not a general website generator.
 ```bash
 clearcutt catalog generate \
   --config clearcutt.fleet.yaml \
+  --include-services \
   --output ./dist/catalog
 
 clearcutt catalog site scaffold \
@@ -65,7 +66,23 @@ Build and generate catalog data in one command from a ClearCutt fleet config:
 ```bash
 clearcutt catalog site build \
   --config clearcutt.fleet.yaml \
+  --include-services \
   --output ./dist/site \
+  --install
+```
+
+Use `--include-services` whenever the site should show first-class service
+images. Without it, the generated catalog is runtime-only even if
+`clearcutt.fleet.yaml` contains `services[]`.
+
+To verify service rendering without release data, build from the committed
+mixed fixture:
+
+```bash
+clearcutt catalog site build \
+  --catalog cli/internal/testdata/mixed-catalog \
+  --template site \
+  --output ./dist/service-demo \
   --install
 ```
 

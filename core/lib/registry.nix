@@ -33,10 +33,8 @@ let
     '';
   };
 
-in
-rec {
   # Declarative specifications for every supported language runtime and version
-  languages = {
+  baseLanguages = {
     core = {
       versions = {
         "LTS" = {
@@ -162,6 +160,16 @@ rec {
       };
     };
   };
+
+  runtimeExtensions = import ./runtime-extensions.nix { inherit pkgs getPkg removeNpm; };
+
+in
+rec {
+  # Declarative specifications for every supported language runtime and version.
+  # Built-ins stay in this file; CLI-scaffolded custom runtime lines live in
+  # runtime-extensions.nix and are merged here so the flake remains the backend
+  # implementation detail rather than the public extension surface.
+  languages = lib.recursiveUpdate baseLanguages (runtimeExtensions.languages or {});
 
   # Resolves a raw package list for local development / overlays
   resolveRaw = { language, version }:

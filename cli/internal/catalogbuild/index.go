@@ -53,7 +53,11 @@ func BuildIndex(owner, repo, registryBase, generatedAt string, releases []Releas
 		})
 	}
 	summaries := make([]ImageSummary, 0, len(images))
+	hasV2Image := false
 	for _, img := range images {
+		if img.Kind != "" || img.Service != nil {
+			hasV2Image = true
+		}
 		if len(img.Releases) > 0 {
 			summaries = append(summaries, SummarizeImageForIndex(img))
 		}
@@ -62,8 +66,12 @@ func BuildIndex(owner, repo, registryBase, generatedAt string, releases []Releas
 	if latest != nil {
 		latestTag = latest.Tag
 	}
+	schemaVersion := catalog.CatalogIndexSchemaVersion
+	if hasV2Image {
+		schemaVersion = catalog.CatalogIndexSchemaVersionV2
+	}
 	return Index{
-		SchemaVersion: catalog.CatalogIndexSchemaVersion,
+		SchemaVersion: schemaVersion,
 		GeneratedAt:   generatedAt,
 		Owner:         owner,
 		Repo:          repo,

@@ -22,6 +22,13 @@ var knownTiers = map[string]bool{
 	"dev":        true,
 	"slim":       true,
 	"distroless": true,
+	"service":    true,
+}
+
+var knownKinds = map[string]bool{
+	"runtime":     true,
+	"service":     true,
+	"application": true,
 }
 
 // ValidLifecycleStatus reports whether s is a recognized lifecycle status.
@@ -32,6 +39,18 @@ func ValidLifecycleStatus(s string) bool {
 // ValidTier reports whether s is a recognized tier id.
 func ValidTier(s string) bool {
 	return knownTiers[strings.ToLower(s)]
+}
+
+func ValidKind(s string) bool {
+	return knownKinds[normalizedKind(s)]
+}
+
+func normalizedKind(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "runtime"
+	}
+	return s
 }
 
 // ValidateCatalogIndex performs structural sanity checks plus enum validation on
@@ -56,11 +75,24 @@ func ValidateCatalogIndex(idx *CatalogIndex) error {
 		if img.ID == "" {
 			return fmt.Errorf("images[%d]: missing id", i)
 		}
+		kind := normalizedKind(img.Kind)
+		if !ValidKind(kind) {
+			return fmt.Errorf("images[%d] (%s): unknown kind %q", i, img.ID, img.Kind)
+		}
+		if kind == "service" && img.Service == nil {
+			return fmt.Errorf("images[%d] (%s): service image is missing service metadata", i, img.ID)
+		}
 		if !ValidLifecycleStatus(img.Lifecycle.Status) {
 			return fmt.Errorf("images[%d] (%s): unknown lifecycle status %q", i, img.ID, img.Lifecycle.Status)
 		}
 		if img.Tier != "" && !ValidTier(img.Tier) {
 			return fmt.Errorf("images[%d] (%s): unknown tier %q", i, img.ID, img.Tier)
+		}
+		if kind == "service" && img.Tier != "service" {
+			return fmt.Errorf("images[%d] (%s): service image must use compatibility tier %q", i, img.ID, "service")
+		}
+		if kind != "service" && img.Tier == "service" {
+			return fmt.Errorf("images[%d] (%s): tier %q requires kind service", i, img.ID, "service")
 		}
 	}
 	return nil
@@ -75,6 +107,13 @@ func ValidateImageRecord(rec *ImageRecord) error {
 	if rec.ID == "" {
 		return fmt.Errorf("missing id")
 	}
+	kind := normalizedKind(rec.Kind)
+	if !ValidKind(kind) {
+		return fmt.Errorf("unknown kind %q", rec.Kind)
+	}
+	if kind == "service" && rec.Service == nil {
+		return fmt.Errorf("missing service metadata")
+	}
 	if rec.Language.ID == "" {
 		return fmt.Errorf("missing language id")
 	}
@@ -83,6 +122,12 @@ func ValidateImageRecord(rec *ImageRecord) error {
 	}
 	if !ValidTier(rec.Tier.ID) {
 		return fmt.Errorf("unknown tier %q", rec.Tier.ID)
+	}
+	if kind == "service" && rec.Tier.ID != "service" {
+		return fmt.Errorf("service image must use compatibility tier %q", "service")
+	}
+	if kind != "service" && rec.Tier.ID == "service" {
+		return fmt.Errorf("tier %q requires kind service", "service")
 	}
 	for i := range rec.Releases {
 		status := rec.Releases[i].Lifecycle.Status

@@ -142,6 +142,26 @@ export const RuntimeContract = z.object({
 });
 export type RuntimeContract = z.infer<typeof RuntimeContract>;
 
+export const ServiceInfo = z.object({
+  template: z.string(),
+  version: z.string(),
+  ports: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        port: z.number(),
+        protocol: z.enum(['tcp', 'udp']).optional().default('tcp'),
+      }),
+    )
+    .optional()
+    .default([]),
+  stateful: z.boolean(),
+  dataDirs: z.array(z.string()).optional().default([]),
+  smoke: z.array(z.string()).optional().default([]),
+  smokeStatus: z.string().optional(),
+});
+export type ServiceInfo = z.infer<typeof ServiceInfo>;
+
 export const ExceptionSummary = z.object({
   total: z.number(),
   expired: z.number(),
@@ -216,8 +236,9 @@ export const ReleaseEntry = z.object({
 export type ReleaseEntry = z.infer<typeof ReleaseEntry>;
 
 export const ImageRecord = z.object({
-  schemaVersion: z.literal('clearcutt.catalog.image/v1').optional(),
+  schemaVersion: z.union([z.literal('clearcutt.catalog.image/v1'), z.literal('clearcutt.catalog.image/v2')]).optional(),
   id: z.string(),
+  kind: z.enum(['runtime', 'service', 'application']).optional().default('runtime'),
   language: z.object({
     id: z.string(),
     displayName: z.string(),
@@ -225,7 +246,7 @@ export const ImageRecord = z.object({
     icon: NullableString,
   }),
   tier: z.object({
-    id: z.enum(['dev', 'slim', 'distroless']),
+    id: z.enum(['dev', 'slim', 'distroless', 'service']),
     name: z.string(),
     blurb: z.string(),
   }),
@@ -235,11 +256,12 @@ export const ImageRecord = z.object({
   releases: z.array(ReleaseEntry),
   lifecycle: Lifecycle,
   runtimeContract: RuntimeContract,
+  service: ServiceInfo.optional(),
 });
 export type ImageRecord = z.infer<typeof ImageRecord>;
 
 export const CatalogIndex = z.object({
-  schemaVersion: z.literal('clearcutt.catalog.index/v1').optional(),
+  schemaVersion: z.union([z.literal('clearcutt.catalog.index/v1'), z.literal('clearcutt.catalog.index/v2')]).optional(),
   generatedAt: z.string(),
   generator: z
     .object({
@@ -289,7 +311,7 @@ export const CatalogIndex = z.object({
   ),
   tiers: z.array(
     z.object({
-      id: z.enum(['dev', 'slim', 'distroless']),
+      id: z.enum(['dev', 'slim', 'distroless', 'service']),
       name: z.string(),
       blurb: z.string(),
     }),
@@ -297,10 +319,11 @@ export const CatalogIndex = z.object({
   images: z.array(
     z.object({
       id: z.string(),
+      kind: z.enum(['runtime', 'service', 'application']).optional().default('runtime'),
       language: z.string(),
       languageDisplay: z.string(),
       languageVersion: z.string(),
-      tier: z.enum(['dev', 'slim', 'distroless']),
+      tier: z.enum(['dev', 'slim', 'distroless', 'service']),
       latestTag: z.string(),
       latestPackageCount: z.number(),
       architectures: z.array(z.string()),
@@ -342,6 +365,7 @@ export const CatalogIndex = z.object({
         .optional(),
       lifecycle: Lifecycle,
       runtimeContract: RuntimeContract,
+      service: ServiceInfo.optional(),
     }),
   ),
 });

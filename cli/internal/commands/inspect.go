@@ -116,6 +116,25 @@ func runInspect(imageID string) error {
 			fmt.Fprintf(out, "Reason:             %s\n", *targetRelease.Lifecycle.Reason)
 		}
 
+		if record.Kind == "service" && record.Service != nil {
+			fmt.Fprintln(out, "\n--- Service Metadata ---")
+			fmt.Fprintf(out, "Template:           %s\n", record.Service.Template)
+			fmt.Fprintf(out, "Version:            %s\n", record.Service.Version)
+			fmt.Fprintf(out, "Ports:              %s\n", serviceInspectPorts(record.Service.Ports))
+			storage := "stateless"
+			if record.Service.Stateful {
+				storage = strings.Join(record.Service.DataDirs, ", ")
+				if storage == "" {
+					storage = "stateful"
+				}
+			}
+			fmt.Fprintf(out, "Storage:            %s\n", storage)
+			fmt.Fprintf(out, "Smoke Status:       %s\n", firstNonEmptyString(record.Service.SmokeStatus, "pending"))
+			if len(record.Service.Smoke) > 0 {
+				fmt.Fprintf(out, "Smoke Commands:     %s\n", strings.Join(record.Service.Smoke, "; "))
+			}
+		}
+
 		fmt.Fprintln(out, "\n--- Runtime Contract ---")
 		if targetRelease.RuntimeContract.User != nil {
 			fmt.Fprintf(out, "User:               %s\n", *targetRelease.RuntimeContract.User)
@@ -265,4 +284,23 @@ func runInspect(imageID string) error {
 		}
 	}
 	return nil
+}
+
+func serviceInspectPorts(ports []catalog.ServicePortInfo) string {
+	if len(ports) == 0 {
+		return "none"
+	}
+	out := make([]string, 0, len(ports))
+	for _, port := range ports {
+		protocol := port.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		if port.Name != "" {
+			out = append(out, fmt.Sprintf("%s:%d/%s", port.Name, port.Port, protocol))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%d/%s", port.Port, protocol))
+	}
+	return strings.Join(out, ", ")
 }

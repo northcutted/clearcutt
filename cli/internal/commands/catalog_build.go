@@ -2,7 +2,9 @@ package commands
 
 import (
 	"os"
+	"path/filepath"
 
+	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +18,7 @@ type catalogBuildFlags struct {
 	scanDepth       string
 	scanAll         bool
 	lenientEvidence bool
+	includeServices bool
 }
 
 var catalogBuildOpts catalogBuildFlags
@@ -37,6 +40,7 @@ func newCatalogBuildCmd() *cobra.Command {
 	cmd.Flags().StringVar(&catalogBuildOpts.scanDepth, "scan-depth", envOr("SCAN_TAG_DEPTH", "4"), "Newest cached tag count to scan")
 	cmd.Flags().BoolVar(&catalogBuildOpts.scanAll, "scan-all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached SBOM tag")
 	cmd.Flags().BoolVar(&catalogBuildOpts.lenientEvidence, "lenient-evidence", false, "Run verify catalog without requiring signature/provenance/tests")
+	cmd.Flags().BoolVar(&catalogBuildOpts.includeServices, "include-services", false, "Include configured first-class service images from clearcutt.fleet.yaml")
 	return cmd
 }
 
@@ -45,11 +49,13 @@ func runCatalogBuild() error {
 }
 
 func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
+	catalogGatherOpts.config = catalogBuildOpts.config
 	catalogGatherOpts.limit = catalogBuildOpts.limit
 	catalogGatherOpts.targets = catalogBuildOpts.targets
 	catalogGatherOpts.imagePrefix = catalogBuildOpts.imagePrefix
 	catalogGatherOpts.forceRefreshAll = catalogBuildOpts.forceRefreshAll
 	catalogGatherOpts.forceRefreshTags = os.Getenv("FORCE_REFRESH_TAGS")
+	catalogGatherOpts.includeServices = catalogBuildOpts.includeServices
 	if err := applyCatalogGatherFleetConfig(catalogBuildOpts.config, explicitConfig, limitChanged); err != nil {
 		return err
 	}
@@ -86,8 +92,22 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 	// the cache for this build.
 	catalogGatherOpts.forceRefreshAll = false
 	catalogGatherOpts.forceRefreshTags = ""
+	catalogGatherOpts.includeServices = catalogBuildOpts.includeServices
 	if err := runCatalogGather(); err != nil {
 		return err
+	}
+	if catalogBuildOpts.includeServices {
+		cfg, err := fleet.Load(catalogBuildOpts.config)
+		if err != nil {
+			return err
+		}
+		outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
+		if err := appendServiceCatalogRecords(outDir, cfg); err != nil {
+			return err
+		}
+		if err := stampCatalogIndexMetadata(outDir); err != nil {
+			return err
+		}
 	}
 
 	verifyCatalogOpts.lenientEvidence = catalogBuildOpts.lenientEvidence

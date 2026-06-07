@@ -35,7 +35,10 @@ func run() error {
 	repoRoot := filepath.Clean(filepath.Join(pkgDir, "..", "..", "..")) // repository root
 	siteDir := filepath.Join(repoRoot, "site")
 	destDir := filepath.Join(pkgDir, "template")
+	return runFrom(siteDir, destDir)
+}
 
+func runFrom(siteDir, destDir string) error {
 	if info, err := os.Stat(siteDir); err != nil || !info.IsDir() {
 		return fmt.Errorf("live site directory not found at %s: %w", siteDir, err)
 	}

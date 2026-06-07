@@ -33,7 +33,7 @@ type appTemplateSpec struct {
 
 func newAppTemplateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "template <java|node|python|go>",
+		Use:   "template <java|node|python|go|ruby>",
 		Short: "Generate an app-team starter using ClearCutt dev, certify, and rebase flows",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -134,6 +134,14 @@ func main() {
 	fmt.Println("ClearCutt Go template ready")
 }
 `
+	case "ruby":
+		spec.RuntimeLine = templateRuntimeLine(cfg, "ruby", "ruby3.4")
+		spec.BaseID = spec.RuntimeLine + "-distroless"
+		spec.Entrypoint = `["ruby","/workspace/app.rb"]`
+		spec.Files["Gemfile"] = `source "https://rubygems.org"
+`
+		spec.Files["app.rb"] = `puts "ClearCutt Ruby template ready"
+`
 	default:
 		return spec, fmt.Errorf("unsupported app template runtime %q", runtime)
 	}
@@ -222,9 +230,32 @@ WORKDIR /workspace
 COPY --from=builder /workspace/app /workspace/app
 ENTRYPOINT %s
 `, spec.DevImage, spec.RuntimeImage, spec.BaseID, spec.Entrypoint)
+	case "ruby":
+		return fmt.Sprintf(`FROM %s AS builder
+WORKDIR /workspace
+COPY Gemfile .
+COPY app.rb .
+RUN ruby -c app.rb
+
+FROM %s
+LABEL org.opencontainers.image.source="https://github.com/example/app" \
+      org.clearcutt.base="%s"
+WORKDIR /workspace
+COPY --from=builder /workspace/app.rb /workspace/app.rb
+ENTRYPOINT %s
+`, spec.DevImage, spec.RuntimeImage, spec.BaseID, spec.Entrypoint)
 	default:
 		return ""
 	}
+}
+
+func templateRuntimeLine(cfg fleet.Config, runtime, fallback string) string {
+	for _, line := range cfg.RuntimeLines {
+		if line.AppTemplateRuntime == runtime {
+			return line.ID
+		}
+	}
+	return fallback
 }
 
 func templateCertificationPolicy(spec appTemplateSpec) string {

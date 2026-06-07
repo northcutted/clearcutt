@@ -213,6 +213,7 @@ func runPlatformStatus() error {
 		add("fleet.config", "pass", fmt.Sprintf("loaded %s for %s", platformOpts.configPath, cfg.RepoPath()))
 		if len(cfg.Matrix.Languages) > 0 && len(cfg.Matrix.Tiers) > 0 && len(cfg.Matrix.Systems) > 0 {
 			add("fleet.matrix", "pass", fmt.Sprintf("%d languages x %d tiers x %d systems", len(cfg.Matrix.Languages), len(cfg.Matrix.Tiers), len(cfg.Matrix.Systems)))
+			add("fleet.matrix.runtime-lines", "pass", "selected runtime lines are supported by the ClearCutt fleet config contract")
 		} else {
 			add("fleet.matrix", "fail", "matrix languages, tiers, and systems are required")
 		}
@@ -344,12 +345,16 @@ This repository is configured as a forkable platform kit. Platform teams own the
 GitHub repository, GHCR namespace, OIDC release identity, catalog site, admission
 policies, and remediation review loop.
 
+For the extension model, see docs/extending-clearcutt.md: app teams use
+templates and devcontainers, fleet owners edit %[1]s, and Nix stays in the
+backend authoring path.
+
 ## Golden Path
 
-1. Review and edit %[1]s.
+1. Review and edit %[1]s. Use clearcutt matrix explain java21 and clearcutt matrix add java25 for built-in runtime lines; use clearcutt runtime scaffold ruby3.4 plus clearcutt runtime validate ruby3.4 for new runtime families. Unsupported IDs fail at the fleet config layer before the Nix backend runs.
 2. Create and protect the GitHub Environment named production, then enable GitHub Pages from Actions.
 3. Run clearcutt platform status before the first release.
-4. Run clearcutt platform setup-nix on any machine or runner that will build the fleet. It reads %[1]s, writes optional nix.conf/GitHub NIX_CONFIG state, and warms or runs the core dev shell.
+4. Run clearcutt platform setup-nix only on machines or runners that will build the fleet. It reads %[1]s, writes optional nix.conf/GitHub NIX_CONFIG state, and warms or runs the core dev shell.
 5. Run the release workflow to publish the configured fleet to %[2]s. The workflow is a GitHub identity runner; clearcutt platform setup-nix owns fork-specific Nix client setup, and clearcutt fleet certify-target, publish-target, assemble-target, verify-target, export-provenance, and finalize-release own the reusable release mechanics.
 6. Let the catalog workflow run %[3]d-release ingestion with vulnerability scan depth %[4]s.
 7. Give app teams the templates under %[5]s.

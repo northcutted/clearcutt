@@ -3,6 +3,7 @@ package fleet
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -23,20 +24,22 @@ const (
 )
 
 type Config struct {
-	APIVersion  string            `json:"apiVersion"`
-	Kind        string            `json:"kind"`
-	Metadata    Metadata          `json:"metadata"`
-	Registry    Registry          `json:"registry"`
-	Branding    Branding          `json:"branding"`
-	Site        Site              `json:"site"`
-	Matrix      Matrix            `json:"matrix"`
-	Release     Release           `json:"release"`
-	Rebase      Rebase            `json:"rebase"`
-	Catalog     Catalog           `json:"catalog"`
-	Admission   Admission         `json:"admission"`
-	Remediation Remediation       `json:"remediation"`
-	Templates   Templates         `json:"templates"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	APIVersion   string            `json:"apiVersion"`
+	Kind         string            `json:"kind"`
+	Metadata     Metadata          `json:"metadata"`
+	Registry     Registry          `json:"registry"`
+	Branding     Branding          `json:"branding"`
+	Site         Site              `json:"site"`
+	Matrix       Matrix            `json:"matrix"`
+	Release      Release           `json:"release"`
+	Rebase       Rebase            `json:"rebase"`
+	Catalog      Catalog           `json:"catalog"`
+	Admission    Admission         `json:"admission"`
+	Remediation  Remediation       `json:"remediation"`
+	Templates    Templates         `json:"templates"`
+	RuntimeLines []RuntimeLine     `json:"runtimeLines,omitempty"`
+	Services     []ServiceImage    `json:"services,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
 }
 
 type Metadata struct {
@@ -140,6 +143,127 @@ type GitHubReleaseMatrix struct {
 
 type GitHubImageMatrix struct {
 	Include []GitHubImageCell `json:"include"`
+}
+
+type GitHubServiceReleaseCell struct {
+	System  string `json:"system"`
+	Service string `json:"service"`
+}
+
+type GitHubServiceImageCell struct {
+	Service string `json:"service"`
+}
+
+type GitHubServiceReleaseMatrix struct {
+	Include []GitHubServiceReleaseCell `json:"include"`
+}
+
+type GitHubServiceImageMatrix struct {
+	Include []GitHubServiceImageCell `json:"include"`
+}
+
+// RuntimeLine is the public runtime identifier accepted in clearcutt.fleet.yaml.
+// Nix attributes remain an implementation detail behind these stable IDs.
+type RuntimeLine struct {
+	ID                 string   `json:"id"`
+	Language           string   `json:"language"`
+	Version            string   `json:"version"`
+	AppTemplateRuntime string   `json:"appTemplateRuntime,omitempty"`
+	Description        string   `json:"description"`
+	PackageCandidates  []string `json:"packageCandidates,omitempty"`
+	DevPackages        []string `json:"devPackages,omitempty"`
+	OmitInProduction   bool     `json:"omitInProduction,omitempty"`
+	Smoke              []string `json:"smoke,omitempty"`
+}
+
+// ServiceImage is the public service-image identifier accepted in
+// clearcutt.fleet.yaml. The template/package mapping is expanded by the CLI and
+// Nix remains an implementation detail of the build.
+type ServiceImage struct {
+	ID                string           `json:"id"`
+	Template          string           `json:"template"`
+	Version           string           `json:"version"`
+	Description       string           `json:"description,omitempty"`
+	PackageCandidates []string         `json:"packageCandidates,omitempty"`
+	Ports             []ServicePort    `json:"ports,omitempty"`
+	Stateful          bool             `json:"stateful,omitempty"`
+	DataDirs          []string         `json:"dataDirs,omitempty"`
+	Env               []string         `json:"env,omitempty"`
+	Entrypoint        []string         `json:"entrypoint,omitempty"`
+	Cmd               []string         `json:"cmd,omitempty"`
+	Smoke             []string         `json:"smoke,omitempty"`
+	Lifecycle         ServiceLifecycle `json:"lifecycle,omitempty"`
+	ProductionAllowed bool             `json:"productionAllowed,omitempty"`
+}
+
+type ServicePort struct {
+	Name     string `json:"name,omitempty"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+type ServiceLifecycle struct {
+	Status  string `json:"status,omitempty"`
+	Support string `json:"support,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+}
+
+var supportedRuntimeLines = []RuntimeLine{
+	{ID: "coreLTS", Language: "core", Version: "LTS", Description: "Core CA certificates, shell, and baseline utilities"},
+	{ID: "java21", Language: "java", Version: "21", AppTemplateRuntime: "java", Description: "Java 21 LTS runtime line"},
+	{ID: "java25", Language: "java", Version: "25", AppTemplateRuntime: "java", Description: "Java 25 runtime line"},
+	{ID: "node22", Language: "node", Version: "22", AppTemplateRuntime: "node", Description: "Node.js 22 runtime line"},
+	{ID: "node24", Language: "node", Version: "24", AppTemplateRuntime: "node", Description: "Node.js 24 runtime line"},
+	{ID: "python3.13", Language: "python", Version: "3.13", AppTemplateRuntime: "python", Description: "Python 3.13 runtime line"},
+	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 runtime line"},
+	{ID: "python3.15", Language: "python", Version: "3.15", AppTemplateRuntime: "python", Description: "Python 3.15 runtime line"},
+	{ID: "go1.25", Language: "go", Version: "1.25", AppTemplateRuntime: "go", Description: "Go 1.25 toolchain line"},
+	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 toolchain line"},
+	{ID: "dotnet8", Language: "dotnet", Version: "8", Description: ".NET 8 runtime line"},
+	{ID: "dotnet10", Language: "dotnet", Version: "10", Description: ".NET 10 runtime line"},
+	{ID: "rust1.95", Language: "rust", Version: "1.95", Description: "Rust 1.95 toolchain line"},
+	{ID: "cc15", Language: "cc", Version: "15", Description: "C/C++ GCC 15 toolchain line"},
+}
+
+var supportedServiceTemplates = map[string]ServiceImage{
+	"postgres": {
+		Template:          "postgres",
+		Description:       "Postgres database service image",
+		PackageCandidates: []string{"postgresql_16"},
+		Ports:             []ServicePort{{Name: "postgres", Port: 5432, Protocol: "tcp"}},
+		Stateful:          true,
+		DataDirs:          []string{"/var/lib/postgresql/data"},
+		Env:               []string{"PGDATA=/var/lib/postgresql/data"},
+		Entrypoint:        []string{"clearcutt-postgres-entrypoint"},
+		Smoke:             []string{"postgres --version", "initdb --version", "pg_isready --version"},
+		Lifecycle:         ServiceLifecycle{Status: "preview", Support: "current"},
+	},
+	"valkey": {
+		Template:          "valkey",
+		Description:       "Valkey in-memory data store service image",
+		PackageCandidates: []string{"valkey"},
+		Ports:             []ServicePort{{Name: "redis", Port: 6379, Protocol: "tcp"}},
+		Stateful:          true,
+		DataDirs:          []string{"/data"},
+		Entrypoint:        []string{"valkey-server"},
+		Smoke:             []string{"valkey-server --version", "valkey-cli --version"},
+		Lifecycle:         ServiceLifecycle{Status: "preview", Support: "current"},
+	},
+	"oauth2-proxy": {
+		Template:          "oauth2-proxy",
+		Description:       "oauth2-proxy authentication gateway service image",
+		PackageCandidates: []string{"oauth2-proxy"},
+		Ports:             []ServicePort{{Name: "http", Port: 4180, Protocol: "tcp"}},
+		Stateful:          false,
+		Entrypoint:        []string{"oauth2-proxy"},
+		Smoke:             []string{"oauth2-proxy --version"},
+		Lifecycle:         ServiceLifecycle{Status: "preview", Support: "current"},
+	},
+}
+
+var supportedLinuxSystems = map[string]struct{}{
+	"x86_64-linux":  {},
+	"aarch64-linux": {},
 }
 
 // DeriveProductName turns a repository slug into a human product name, e.g.
@@ -324,6 +448,49 @@ func (c *Config) applyDefaults() {
 	if len(c.Templates.Runtimes) == 0 {
 		c.Templates.Runtimes = def.Templates.Runtimes
 	}
+	for i := range c.Services {
+		c.Services[i].applyDefaults()
+	}
+}
+
+func (s *ServiceImage) applyDefaults() {
+	template, ok := ServiceTemplateDefaults(s.Template, s.Version)
+	if !ok {
+		return
+	}
+	s.Template = firstNonEmpty(s.Template, template.Template)
+	s.Version = firstNonEmpty(s.Version, template.Version)
+	s.Description = firstNonEmpty(s.Description, template.Description)
+	if len(s.PackageCandidates) == 0 {
+		s.PackageCandidates = append([]string(nil), template.PackageCandidates...)
+	}
+	if len(s.Ports) == 0 {
+		s.Ports = cloneServicePorts(template.Ports)
+	}
+	if !s.Stateful {
+		s.Stateful = template.Stateful
+	}
+	if len(s.DataDirs) == 0 {
+		s.DataDirs = append([]string(nil), template.DataDirs...)
+	}
+	if len(s.Env) == 0 {
+		s.Env = append([]string(nil), template.Env...)
+	}
+	if len(s.Entrypoint) == 0 {
+		s.Entrypoint = append([]string(nil), template.Entrypoint...)
+	}
+	if len(s.Cmd) == 0 {
+		s.Cmd = append([]string(nil), template.Cmd...)
+	}
+	if len(s.Smoke) == 0 {
+		s.Smoke = append([]string(nil), template.Smoke...)
+	}
+	s.Lifecycle.Status = firstNonEmpty(s.Lifecycle.Status, template.Lifecycle.Status)
+	s.Lifecycle.Support = firstNonEmpty(s.Lifecycle.Support, template.Lifecycle.Support)
+	s.Lifecycle.Notes = firstNonEmpty(s.Lifecycle.Notes, template.Lifecycle.Notes)
+	for i := range s.Ports {
+		s.Ports[i].Protocol = strings.ToLower(firstNonEmpty(s.Ports[i].Protocol, "tcp"))
+	}
 }
 
 func (c Config) Validate() error {
@@ -339,18 +506,59 @@ func (c Config) Validate() error {
 	if len(c.Matrix.Systems) == 0 || len(c.Matrix.Languages) == 0 || len(c.Matrix.Tiers) == 0 {
 		return fmt.Errorf("matrix.systems, matrix.languages, and matrix.tiers must not be empty")
 	}
+	seenSystems := map[string]struct{}{}
+	for _, system := range c.Matrix.Systems {
+		system = strings.TrimSpace(system)
+		if system == "" {
+			return fmt.Errorf("matrix.systems must not contain empty values")
+		}
+		if _, ok := supportedLinuxSystems[system]; !ok {
+			return fmt.Errorf("unsupported matrix system %q (supported: %s)", system, strings.Join(SupportedSystems(), ", "))
+		}
+		if _, exists := seenSystems[system]; exists {
+			return fmt.Errorf("duplicate matrix system %q", system)
+		}
+		seenSystems[system] = struct{}{}
+	}
+	runtimeLines, err := c.runtimeLineMap()
+	if err != nil {
+		return err
+	}
+	seenLanguages := map[string]struct{}{}
+	for _, language := range c.Matrix.Languages {
+		language = strings.TrimSpace(language)
+		if language == "" {
+			return fmt.Errorf("matrix.languages must not contain empty values")
+		}
+		if _, ok := runtimeLines[language]; !ok {
+			return fmt.Errorf("unsupported matrix language %q (supported: %s)", language, strings.Join(c.SupportedRuntimeLineIDs(), ", "))
+		}
+		if _, exists := seenLanguages[language]; exists {
+			return fmt.Errorf("duplicate matrix language %q", language)
+		}
+		seenLanguages[language] = struct{}{}
+	}
+	seenTiers := map[string]struct{}{}
 	for _, tier := range c.Matrix.Tiers {
+		tier = strings.TrimSpace(tier)
 		switch tier {
 		case "dev", "slim", "distroless":
 		default:
 			return fmt.Errorf("unsupported matrix tier %q", tier)
 		}
+		if _, exists := seenTiers[tier]; exists {
+			return fmt.Errorf("duplicate matrix tier %q", tier)
+		}
+		seenTiers[tier] = struct{}{}
 	}
 	if c.Catalog.ReleaseLimit < 1 {
 		return fmt.Errorf("catalog.releaseLimit must be greater than 0")
 	}
 	if c.Remediation.Mode != "approved-pr" {
 		return fmt.Errorf("remediation.mode currently supports only approved-pr")
+	}
+	if _, err := c.serviceMap(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -369,6 +577,230 @@ func (c Config) RegistryBase() string {
 
 func (c Config) ImageName(language string) string {
 	return c.RegistryBase() + "/" + c.Registry.ImagePrefix + "-" + strings.ToLower(language)
+}
+
+func (c Config) ServiceImageName(id string) string {
+	return c.RegistryBase() + "/" + c.Registry.ImagePrefix + "-" + strings.ToLower(strings.TrimSpace(id))
+}
+
+func SupportedSystems() []string {
+	systems := make([]string, 0, len(supportedLinuxSystems))
+	for system := range supportedLinuxSystems {
+		systems = append(systems, system)
+	}
+	sort.Strings(systems)
+	return systems
+}
+
+func SupportedRuntimeLines() []RuntimeLine {
+	return sortedRuntimeLines(supportedRuntimeLines)
+}
+
+func BuiltInRuntimeLines() []RuntimeLine {
+	return SupportedRuntimeLines()
+}
+
+func SupportedServiceTemplates() []ServiceImage {
+	templates := make([]ServiceImage, 0, len(supportedServiceTemplates))
+	for _, template := range supportedServiceTemplates {
+		templates = append(templates, cloneServiceImage(template))
+	}
+	return sortedServiceTemplates(templates)
+}
+
+func BuiltInServiceTemplates() []ServiceImage {
+	return SupportedServiceTemplates()
+}
+
+func (c Config) SupportedRuntimeLines() []RuntimeLine {
+	lines := append([]RuntimeLine{}, supportedRuntimeLines...)
+	lines = append(lines, c.RuntimeLines...)
+	return sortedRuntimeLines(lines)
+}
+
+func sortedRuntimeLines(lines []RuntimeLine) []RuntimeLine {
+	lines = append([]RuntimeLine(nil), lines...)
+	sort.Slice(lines, func(i, j int) bool {
+		return lines[i].ID < lines[j].ID
+	})
+	return lines
+}
+
+func sortedServiceTemplates(templates []ServiceImage) []ServiceImage {
+	templates = append([]ServiceImage(nil), templates...)
+	sort.Slice(templates, func(i, j int) bool {
+		return templates[i].Template < templates[j].Template
+	})
+	return templates
+}
+
+func SupportedRuntimeLineIDs() []string {
+	lines := SupportedRuntimeLines()
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.ID)
+	}
+	return ids
+}
+
+func (c Config) SupportedRuntimeLineIDs() []string {
+	lines := c.SupportedRuntimeLines()
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.ID)
+	}
+	return ids
+}
+
+func RuntimeLineInfo(id string) (RuntimeLine, bool) {
+	id = strings.TrimSpace(id)
+	for _, line := range supportedRuntimeLines {
+		if line.ID == id {
+			return line, true
+		}
+	}
+	return RuntimeLine{}, false
+}
+
+func ServiceTemplateInfo(template string) (ServiceImage, bool) {
+	template = strings.TrimSpace(template)
+	line, ok := supportedServiceTemplates[template]
+	if !ok {
+		return ServiceImage{}, false
+	}
+	return cloneServiceImage(line), true
+}
+
+func ServiceTemplateDefaults(template, version string) (ServiceImage, bool) {
+	defaults, ok := ServiceTemplateInfo(template)
+	if !ok {
+		return ServiceImage{}, false
+	}
+	defaults.Version = strings.TrimSpace(version)
+	if defaults.Template == "postgres" && defaults.Version != "" {
+		defaults.PackageCandidates = []string{"postgresql_" + serviceMajorVersion(defaults.Version)}
+	}
+	return defaults, true
+}
+
+func (c Config) RuntimeLineInfo(id string) (RuntimeLine, bool) {
+	id = strings.TrimSpace(id)
+	if line, ok := RuntimeLineInfo(id); ok {
+		return line, true
+	}
+	for _, line := range c.RuntimeLines {
+		if line.ID == id {
+			return line, true
+		}
+	}
+	return RuntimeLine{}, false
+}
+
+func (c Config) IsCustomRuntimeLine(id string) bool {
+	id = strings.TrimSpace(id)
+	for _, line := range c.RuntimeLines {
+		if line.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) ServiceInfo(id string) (ServiceImage, bool) {
+	id = strings.TrimSpace(id)
+	for _, service := range c.Services {
+		service.applyDefaults()
+		if service.ID == id {
+			return cloneServiceImage(service), true
+		}
+	}
+	return ServiceImage{}, false
+}
+
+func (c Config) ServiceIDs() []string {
+	ids := make([]string, 0, len(c.Services))
+	for _, service := range c.Services {
+		if strings.TrimSpace(service.ID) != "" {
+			ids = append(ids, service.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (c Config) runtimeLineMap() (map[string]RuntimeLine, error) {
+	lines := map[string]RuntimeLine{}
+	for _, line := range supportedRuntimeLines {
+		lines[line.ID] = line
+	}
+	seenCustom := map[string]struct{}{}
+	for _, line := range c.RuntimeLines {
+		line.ID = strings.TrimSpace(line.ID)
+		line.Language = strings.TrimSpace(line.Language)
+		line.Version = strings.TrimSpace(line.Version)
+		if line.ID == "" || line.Language == "" || line.Version == "" {
+			return nil, fmt.Errorf("runtimeLines entries require id, language, and version")
+		}
+		if _, builtin := RuntimeLineInfo(line.ID); builtin {
+			return nil, fmt.Errorf("runtimeLines entry %q conflicts with a built-in runtime line", line.ID)
+		}
+		if _, exists := seenCustom[line.ID]; exists {
+			return nil, fmt.Errorf("duplicate runtimeLines entry %q", line.ID)
+		}
+		if len(line.PackageCandidates) == 0 {
+			return nil, fmt.Errorf("runtimeLines entry %q requires at least one packageCandidates value", line.ID)
+		}
+		lines[line.ID] = line
+		seenCustom[line.ID] = struct{}{}
+	}
+	return lines, nil
+}
+
+func (c Config) serviceMap() (map[string]ServiceImage, error) {
+	services := map[string]ServiceImage{}
+	for _, service := range c.Services {
+		service.applyDefaults()
+		service.ID = strings.TrimSpace(service.ID)
+		service.Template = strings.TrimSpace(service.Template)
+		service.Version = strings.TrimSpace(service.Version)
+		if service.ID == "" || service.Template == "" || service.Version == "" {
+			return nil, fmt.Errorf("services entries require id, template, and version")
+		}
+		if _, ok := ServiceTemplateInfo(service.Template); !ok {
+			return nil, fmt.Errorf("unsupported service template %q (supported: %s)", service.Template, strings.Join(SupportedServiceTemplateNames(), ", "))
+		}
+		if _, exists := services[service.ID]; exists {
+			return nil, fmt.Errorf("duplicate services entry %q", service.ID)
+		}
+		if len(service.PackageCandidates) == 0 {
+			return nil, fmt.Errorf("services entry %q requires at least one packageCandidates value", service.ID)
+		}
+		if service.Stateful && len(service.DataDirs) == 0 {
+			return nil, fmt.Errorf("services entry %q is stateful and requires at least one dataDirs value", service.ID)
+		}
+		for _, dir := range service.DataDirs {
+			if !strings.HasPrefix(strings.TrimSpace(dir), "/") {
+				return nil, fmt.Errorf("services entry %q dataDir %q must be absolute", service.ID, dir)
+			}
+		}
+		for _, port := range service.Ports {
+			if port.Port < 1 || port.Port > 65535 {
+				return nil, fmt.Errorf("services entry %q has invalid port %d", service.ID, port.Port)
+			}
+			switch strings.ToLower(firstNonEmpty(port.Protocol, "tcp")) {
+			case "tcp", "udp":
+			default:
+				return nil, fmt.Errorf("services entry %q port %d has unsupported protocol %q", service.ID, port.Port, port.Protocol)
+			}
+		}
+		switch service.Lifecycle.Status {
+		case "", "preview", "active", "deprecated", "experimental":
+		default:
+			return nil, fmt.Errorf("services entry %q has unsupported lifecycle.status %q", service.ID, service.Lifecycle.Status)
+		}
+		services[service.ID] = service
+	}
+	return services, nil
 }
 
 func (c Config) GitHubReleaseMatrix() GitHubReleaseMatrix {
@@ -398,6 +830,75 @@ func (c Config) GitHubImageMatrix() GitHubImageMatrix {
 		}
 	}
 	return matrix
+}
+
+func (c Config) GitHubServiceReleaseMatrix() GitHubServiceReleaseMatrix {
+	matrix := GitHubServiceReleaseMatrix{}
+	for _, system := range c.Matrix.Systems {
+		for _, service := range c.Services {
+			if strings.TrimSpace(service.ID) == "" {
+				continue
+			}
+			matrix.Include = append(matrix.Include, GitHubServiceReleaseCell{
+				System:  system,
+				Service: service.ID,
+			})
+		}
+	}
+	return matrix
+}
+
+func (c Config) GitHubServiceImageMatrix() GitHubServiceImageMatrix {
+	matrix := GitHubServiceImageMatrix{}
+	for _, service := range c.Services {
+		if strings.TrimSpace(service.ID) == "" {
+			continue
+		}
+		matrix.Include = append(matrix.Include, GitHubServiceImageCell{
+			Service: service.ID,
+		})
+	}
+	return matrix
+}
+
+func SupportedServiceTemplateNames() []string {
+	names := make([]string, 0, len(supportedServiceTemplates))
+	for name := range supportedServiceTemplates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func serviceMajorVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return version
+	}
+	if idx := strings.IndexAny(version, ".-+"); idx >= 0 {
+		return version[:idx]
+	}
+	return version
+}
+
+func cloneServiceImage(service ServiceImage) ServiceImage {
+	service.PackageCandidates = append([]string(nil), service.PackageCandidates...)
+	service.Ports = cloneServicePorts(service.Ports)
+	service.DataDirs = append([]string(nil), service.DataDirs...)
+	service.Env = append([]string(nil), service.Env...)
+	service.Entrypoint = append([]string(nil), service.Entrypoint...)
+	service.Cmd = append([]string(nil), service.Cmd...)
+	service.Smoke = append([]string(nil), service.Smoke...)
+	return service
+}
+
+func cloneServicePorts(ports []ServicePort) []ServicePort {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]ServicePort, len(ports))
+	copy(out, ports)
+	return out
 }
 
 func firstNonEmpty(values ...string) string {

@@ -11,8 +11,11 @@ interface Props {
 const { image, selectedTag } = Astro.props;
 const release = image.releases.find((r) => r.tag === selectedTag) ?? image.releases[0];
 const siteConfig = loadSiteConfig();
-const tierName = tierLabel(siteConfig, image.tier.id);
-const tierRole = image.tier.id === 'distroless'
+const isService = image.kind === 'service';
+const tierName = isService ? 'Service' : tierLabel(siteConfig, image.tier.id);
+const tierRole = isService
+  ? `${image.service?.template ?? 'Platform service'} image`
+  : image.tier.id === 'distroless'
   ? `${tierName} runtime`
   : image.tier.id === 'slim'
     ? `${tierName} runtime`
@@ -51,9 +54,13 @@ const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 
       <h1 class="heading text-2xl sm:text-3xl">
         <span class="font-mono text-ink-50">{image.imageName}</span>
         <span class="text-ink-300">:</span>
-        <span class="text-accent-soft">{image.tier.id}</span>
+        <span class="text-accent-soft">{isService ? (image.service?.template ?? image.tier.id) : image.tier.id}</span>
       </h1>
-      <p class="max-w-2xl text-sm text-ink-200">{image.tier.blurb}</p>
+      <p class="max-w-2xl text-sm text-ink-200">
+        {isService
+          ? `First-class ${image.service?.template ?? 'service'} image with template-owned ports, storage, lifecycle, and smoke checks.`
+          : image.tier.blurb}
+      </p>
       <div class="flex flex-wrap items-center gap-2">
         <span class="chip">{release.tag}</span>
         {arches.map((a) => <span class="chip">{a}</span>)}

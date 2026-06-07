@@ -2,9 +2,9 @@ package catalog
 
 import "testing"
 
-// TestSchemaArtifactsIncludesAllV1Schemas guards the set of versioned schemas
+// TestSchemaArtifactsIncludesVersionedSchemas guards the set of versioned schemas
 // bundled into the binary and emitted by `catalog generate` under schemas/.
-func TestSchemaArtifactsIncludesAllV1Schemas(t *testing.T) {
+func TestSchemaArtifactsIncludesVersionedSchemas(t *testing.T) {
 	artifacts, err := SchemaArtifacts()
 	if err != nil {
 		t.Fatalf("SchemaArtifacts: %v", err)
@@ -18,7 +18,9 @@ func TestSchemaArtifactsIncludesAllV1Schemas(t *testing.T) {
 	}
 	for _, want := range []string{
 		"catalog-index.v1.schema.json",
+		"catalog-index.v2.schema.json",
 		"image-record.v1.schema.json",
+		"image-record.v2.schema.json",
 		"package-entry.v1.schema.json",
 		"vulnerability-finding.v1.schema.json",
 	} {

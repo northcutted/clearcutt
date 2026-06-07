@@ -1,6 +1,13 @@
 # ClearCutt Getting Started Guide
 
-This guide gets you up and running with ClearCutt secure container base images in under 5 minutes. You will learn how to consume our hardened runtimes inside your application OCI configurations, run a multi-stage build, and set up the local governance CLI.
+This guide gets app teams up and running with ClearCutt base images in under 5
+minutes. You will consume hardened runtimes with normal OCI tools, run a
+multi-stage build, and set up the local governance CLI.
+
+If you are operating the forked platform itself, start with
+[`platform-kit.md`](platform-kit.md). If you are adding Postgres, Valkey, or
+oauth2-proxy service images to the platform-owned fleet, use
+[`service-images.md`](service-images.md).
 
 ---
 
@@ -9,8 +16,8 @@ This guide gets you up and running with ClearCutt secure container base images i
 > [!IMPORTANT]
 > **No, application developers do NOT need Nix installed to use ClearCutt base images.**
 >
-> * **OCI / Container Consumption (Standard Developers):** You pull, run, and verify our pre-built base images using standard, everyday container tools (such as `docker`, `podman`, `skopeo`, `cosign`, or Kubernetes manifests). Nix is entirely optional.
-> * **Nix Package Manager (Platform Engineers):** Nix is only used if you want to fork this blueprint repository, customize the underlying libraries, or compile your own secure enterprise base image OCI matrix layers from scratch.
+> * **OCI / Container Consumption (Standard Developers):** You pull, run, and verify published runtime base images using standard tools such as `docker`, `podman`, `skopeo`, `cosign`, or Kubernetes manifests. Nix is not required.
+> * **Platform Fleet Ownership:** Nix is used by the fork owner that compiles and publishes runtime and service images. The public authoring surface is `clearcutt.fleet.yaml` plus CLI commands such as `matrix`, `runtime`, and `service`.
 
 ---
 
@@ -132,10 +139,15 @@ The full stack guide has end-to-end examples for Core/static, Java, Node.js,
 Python, Go, .NET, Rust, and C/C++:
 [`docs/app-lifecycle.md`](app-lifecycle.md).
 
+Platform-owned service images are separate from app images. Do not use
+`clearcutt app build` for Postgres, Valkey, or oauth2-proxy templates; use
+`clearcutt service` and the operator guide in
+[`docs/service-images.md`](service-images.md).
+
 ---
 
 ## 💡 Top 3 Tips for a Smooth Onboarding
 
 1.  **Direct Execution only:** The `distroless` tier has no shell, meaning Docker/OCI entries like `CMD "java -jar app.jar"` will fail because they attempt to evaluate via shell execution. **Always use JSON syntax** `ENTRYPOINT ["java", "-jar", "app.jar"]`.
-2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. Instead, declare it inside your customized `flake.nix` package list or build it in the `dev` stage.
+2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. App teams should build required artifacts in the `dev` stage; platform teams can add new fleet runtime machinery through the documented platform-authoring path.
 3.  **Local Conformance Auditing:** Run `clearcutt conformance run` *inside* a container (e.g. as its ENTRYPOINT, or `docker run --entrypoint clearcutt <image> conformance run`) to prove CA trust, zoneinfo, unprivileged execution, and `/tmp` writability offline. It audits the current environment, not a remote image; add `--expect-runtime java` (or `python`, `node`, …) to also assert the language interpreter is present.
