@@ -249,6 +249,36 @@
         },
         "includeDevOnly": {
           "type": "boolean"
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "productionTiers": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "enum": ["dev", "slim", "distroless"]
+              }
+            },
+            "minimumSeverity": {
+              "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
+            },
+            "requireRuntimeLayer": {
+              "type": "boolean"
+            },
+            "requireFixedVersion": {
+              "type": "boolean"
+            },
+            "epssPercentileBoostAt": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kevBoost": {
+              "type": "boolean"
+            }
+          }
         }
       }
     },

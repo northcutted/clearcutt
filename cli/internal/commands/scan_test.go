@@ -201,7 +201,7 @@ fi
 printf 'not-json'
 `)
 	outPath := filepath.Join(t.TempDir(), "report.json")
-	_, err = scanSBOM(grype, nil, scanWorkItem{target: "java21-slim", sbomPath: filepath.Join(t.TempDir(), "sbom.json"), outPath: outPath}, "grype-test", nil)
+	_, err = scanSBOM(grype, nil, scanWorkItem{target: "java21-slim", sbomPath: filepath.Join(t.TempDir(), "sbom.json"), outPath: outPath}, "grype-test", nil, scanengine.NormalizeOptions{})
 	if err == nil || !strings.Contains(err.Error(), "unparseable JSON") {
 		t.Fatalf("expected unparseable JSON error, got %v", err)
 	}
@@ -219,7 +219,7 @@ exit 7
 	if version != "grype" || db != nil {
 		t.Fatalf("malformed version probe should fall back, got %q %v", version, db)
 	}
-	_, err = scanSBOM(failing, []string{"--add-cpes-if-none"}, scanWorkItem{target: "java21-slim", sbomPath: "missing.sbom.json", outPath: outPath}, "bad", nil)
+	_, err = scanSBOM(failing, []string{"--add-cpes-if-none"}, scanWorkItem{target: "java21-slim", sbomPath: "missing.sbom.json", outPath: outPath}, "bad", nil, scanengine.NormalizeOptions{})
 	if err == nil || !strings.Contains(err.Error(), "grype failed") || !strings.Contains(err.Error(), "scan failed loudly") {
 		t.Fatalf("expected grype failure with stderr snippet, got %v", err)
 	}

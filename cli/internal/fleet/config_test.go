@@ -77,6 +77,19 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 	if got := len(loaded.GitHubReleaseMatrix().Include); got != len(loaded.Matrix.Systems)*len(loaded.Matrix.Languages)*len(loaded.Matrix.Tiers) {
 		t.Fatalf("release matrix size = %d", got)
 	}
+	if loaded.Remediation.Policy.MinimumSeverity != "high" ||
+		len(loaded.Remediation.Policy.ProductionTiers) != 2 ||
+		loaded.Remediation.Policy.ProductionTiers[0] != "slim" ||
+		loaded.Remediation.Policy.ProductionTiers[1] != "distroless" ||
+		loaded.Remediation.Policy.RequireRuntimeLayer == nil ||
+		!*loaded.Remediation.Policy.RequireRuntimeLayer ||
+		loaded.Remediation.Policy.RequireFixedVersion == nil ||
+		!*loaded.Remediation.Policy.RequireFixedVersion ||
+		loaded.Remediation.Policy.KEVBoost == nil ||
+		!*loaded.Remediation.Policy.KEVBoost ||
+		loaded.Remediation.Policy.EPSSPercentileBoostAt != 0.90 {
+		t.Fatalf("unexpected remediation policy defaults: %#v", loaded.Remediation.Policy)
+	}
 }
 
 func TestValidateRejectsUnsupportedTier(t *testing.T) {
@@ -275,12 +288,15 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	}
 
 	for name, mutate := range map[string]func(*Config){
-		"apiVersion":   func(c *Config) { c.APIVersion = "wrong/v1" },
-		"kind":         func(c *Config) { c.Kind = "Wrong" },
-		"registry":     func(c *Config) { c.Registry.Owner = "" },
-		"matrix":       func(c *Config) { c.Matrix.Languages = nil },
-		"releaseLimit": func(c *Config) { c.Catalog.ReleaseLimit = 0 },
-		"remediation":  func(c *Config) { c.Remediation.Mode = "autonomous" },
+		"apiVersion":                    func(c *Config) { c.APIVersion = "wrong/v1" },
+		"kind":                          func(c *Config) { c.Kind = "Wrong" },
+		"registry":                      func(c *Config) { c.Registry.Owner = "" },
+		"matrix":                        func(c *Config) { c.Matrix.Languages = nil },
+		"releaseLimit":                  func(c *Config) { c.Catalog.ReleaseLimit = 0 },
+		"remediation":                   func(c *Config) { c.Remediation.Mode = "autonomous" },
+		"remediationPolicyTier":         func(c *Config) { c.Remediation.Policy.ProductionTiers = []string{"dev"} },
+		"remediationPolicySeverity":     func(c *Config) { c.Remediation.Policy.MinimumSeverity = "urgent" },
+		"remediationPolicyEPSSBoundary": func(c *Config) { c.Remediation.Policy.EPSSPercentileBoostAt = 1.1 },
 	} {
 		bad := cfg
 		mutate(&bad)

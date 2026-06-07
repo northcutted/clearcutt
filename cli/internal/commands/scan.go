@@ -31,6 +31,7 @@ type scanFlags struct {
 	depth       string
 	tags        string
 	all         bool
+	kevFile     string
 	concurrency int
 }
 
@@ -64,6 +65,7 @@ in catalog mode it is best-effort.`,
 	cmd.Flags().StringVar(&scanOpts.depth, "depth", os.Getenv("SCAN_TAG_DEPTH"), "Scan only the newest N tags by version (empty = all)")
 	cmd.Flags().StringVar(&scanOpts.tags, "tags", os.Getenv("SCAN_TAGS"), "Comma-separated explicit tag allowlist (overrides --depth/--all)")
 	cmd.Flags().BoolVar(&scanOpts.all, "all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached tag (overrides --depth)")
+	cmd.Flags().StringVar(&scanOpts.kevFile, "kev-file", os.Getenv("KEV_FILE"), "Optional CISA KEV catalog JSON file for known-exploited enrichment")
 	cmd.Flags().IntVar(&scanOpts.concurrency, "concurrency", 0, "Parallel grype workers (0 = CPU count or $SCAN_CONCURRENCY)")
 	return cmd
 }
@@ -200,6 +202,32 @@ type scanWorkItem struct {
 	tag, target, arch, sbomPath, outPath string
 }
 
+func strPtrOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func loadScanKEVCatalog(path string) (*scan.KEVCatalog, string, *string) {
+	if strings.TrimSpace(path) == "" {
+		return nil, "unavailable", nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		scanWarnf("KEV enrichment unavailable: failed to read %s: %v", path, err)
+		return nil, "unavailable", nil
+	}
+	catalog, err := scan.ParseKEVCatalog(raw)
+	if err != nil {
+		scanWarnf("KEV enrichment unavailable: failed to parse %s: %v", path, err)
+		return nil, "unavailable", nil
+	}
+	version := catalog.CatalogVersion
+	scanLogf("KEV enrichment available: catalog=%s count=%d", fallbackString(version, "unknown"), catalog.Count)
+	return catalog, "available", strPtrOrNil(version)
+}
+
 func runScan() error {
 	strict := scanStrictModes[scanOpts.mode]
 	grypeBin := envOr("GRYPE_BIN", "grype")
@@ -230,6 +258,7 @@ func runScan() error {
 		dbBuiltLabel = *dbBuiltAt
 	}
 	scanLogf("grype %s, db built %s", scannerVersion, dbBuiltLabel)
+	kevCatalog, kevStatus, kevCatalogVersion := loadScanKEVCatalog(scanOpts.kevFile)
 
 	entries, err := os.ReadDir(scanOpts.sbomDir)
 	if err != nil {
@@ -293,7 +322,11 @@ func runScan() error {
 	var mu sync.Mutex
 	total, failed := 0, 0
 	scanOne := func(item scanWorkItem) {
-		report, err := scanSBOM(grypeBin, grypeOpts, item, scannerVersion, dbBuiltAt)
+		report, err := scanSBOM(grypeBin, grypeOpts, item, scannerVersion, dbBuiltAt, scan.NormalizeOptions{
+			KEVCatalog:        kevCatalog,
+			KEVStatus:         kevStatus,
+			KEVCatalogVersion: kevCatalogVersion,
+		})
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
@@ -337,7 +370,7 @@ func runScan() error {
 	return nil
 }
 
-func scanSBOM(grypeBin string, grypeOpts []string, item scanWorkItem, scannerVersion string, dbBuiltAt *string) (scan.Report, error) {
+func scanSBOM(grypeBin string, grypeOpts []string, item scanWorkItem, scannerVersion string, dbBuiltAt *string, opts scan.NormalizeOptions) (scan.Report, error) {
 	args := append([]string{"sbom:" + item.sbomPath, "-o", "json", "--quiet"}, grypeOpts...)
 	raw, err := exec.Command(grypeBin, args...).Output()
 	if err != nil && len(raw) == 0 {
@@ -354,7 +387,7 @@ func scanSBOM(grypeBin string, grypeOpts []string, item scanWorkItem, scannerVer
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return scan.Report{}, fmt.Errorf("grype produced unparseable JSON: %w", err)
 	}
-	report := scan.NormalizeGrype(result, nowRFC3339Milli(), "grype-"+scannerVersion, dbBuiltAt, scan.TargetMetadata(item.target))
+	report := scan.NormalizeGrypeWithOptions(result, nowRFC3339Milli(), "grype-"+scannerVersion, dbBuiltAt, scan.TargetMetadata(item.target), opts)
 	out, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return scan.Report{}, err

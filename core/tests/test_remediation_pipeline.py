@@ -115,12 +115,53 @@ echo '{"matches":[]}'
     def test_overlay_write_remove_uses_cve_then_package_identity(self):
         expr = 'zlib = prev.zlib.overrideAttrs (old: { version = "1.3.2"; });'
         path = draft_agent.write_cve_overlay("CVE-2026-12345", "zlib", expr)
+        summary = {
+            "status": "draft_compiled",
+            "generated_at": "2026-06-07T00:00:00Z",
+            "policy_decision": {"selected": True, "reason": "eligible"},
+            "risk_factors": {"knownExploited": True},
+            "expected_removed": [{"cve": "CVE-2026-12345", "package": "zlib"}],
+            "validation": [{"target": "python3.13-slim", "status": "passed"}],
+        }
+        evidence_path = draft_agent.write_cve_overlay_evidence("CVE-2026-12345", "zlib", summary)
 
         self.assertTrue(path.endswith("cve-2026-12345-zlib.nix"))
         self.assertTrue(os.path.exists(path))
+        self.assertTrue(evidence_path.endswith("cve-2026-12345-zlib.evidence.json"))
+        evidence = json.loads(pathlib.Path(evidence_path).read_text())
+        self.assertEqual(evidence["policyDecision"]["reason"], "eligible")
+        self.assertEqual(evidence["expectedRemoved"][0]["cve"], "CVE-2026-12345")
 
         draft_agent.remove_cve_overlay("CVE-2026-12345", "zlib")
         self.assertFalse(os.path.exists(path))
+        self.assertFalse(os.path.exists(evidence_path))
+
+    def test_expected_removed_from_clustered_campaign(self):
+        campaign = {
+            "cve": "CVE-2026-10001",
+            "package": "python",
+            "installedVersion": "3.13.13",
+            "expectedRemoved": [
+                {"cve": "CVE-2026-10001", "package": "python", "installedVersion": "3.13.13"},
+                {"id": "CVE-2026-10002", "packageName": "python"},
+                "ignore-me",
+            ],
+        }
+
+        expected = draft_agent.expected_removed_from_campaign(
+            campaign,
+            "CVE-2026-10001",
+            "python",
+            "3.13.13",
+        )
+
+        self.assertEqual(
+            expected,
+            [
+                {"cve": "CVE-2026-10001", "package": "python", "installedVersion": "3.13.13"},
+                {"cve": "CVE-2026-10002", "package": "python", "installedVersion": "3.13.13"},
+            ],
+        )
 
     def test_postinstall_comment_remediation_recipe_is_rejected(self):
         recipe = {
@@ -306,6 +347,41 @@ echo '{"matches":[]}'
         finally:
             draft_agent.scan_artifact_for_finding = old_scan
 
+    def test_verify_expected_remediations_removed_requires_all_pairs_gone(self):
+        expected = [
+            {"cve": "CVE-2026-10001", "package": "python"},
+            {"cve": "CVE-2026-10002", "package": "python"},
+        ]
+        old_scan = draft_agent.scan_artifact_for_expected
+        try:
+            draft_agent.scan_artifact_for_expected = lambda artifact, expected_findings: {
+                "target": artifact["target"],
+                "status": "failed",
+                "reason": "expected finding still present",
+                "remainingFindings": [{"id": "CVE-2026-10002", "package": "python"}],
+            }
+            ok, validation = draft_agent.verify_expected_remediations_removed(
+                [{"target": "python3.13-slim", "tarPath": "unused"}],
+                expected,
+            )
+            self.assertFalse(ok)
+            self.assertEqual(validation[0]["remainingFindings"][0]["id"], "CVE-2026-10002")
+
+            draft_agent.scan_artifact_for_expected = lambda artifact, expected_findings: {
+                "target": artifact["target"],
+                "status": "passed",
+                "reason": "expected CVE/package pairs removed",
+                "remainingFindings": [],
+            }
+            ok, validation = draft_agent.verify_expected_remediations_removed(
+                [{"target": "python3.13-slim", "tarPath": "unused"}],
+                expected,
+            )
+            self.assertTrue(ok)
+            self.assertEqual(validation[0]["status"], "passed")
+        finally:
+            draft_agent.scan_artifact_for_expected = old_scan
+
     def test_agent_sandbox_uses_ephemeral_home(self):
         res = subprocess.run(
             ["./scripts/agent-sandbox.sh", "bash", "-lc", 'printf "%s" "$HOME"'],
@@ -376,6 +452,9 @@ echo '{"matches":[]}'
         self.assertIn("jq -r '.remediation.scanDepth'", scheduled_scan)
         self.assertIn("SCAN_TAG_DEPTH: ${{ steps.fleet.outputs.scan_depth }}", scheduled_scan)
         self.assertIn("CLEARCUTT_BIN:", scheduled_scan)
+        self.assertIn("KEV_FILE:", scheduled_scan)
+        self.assertIn("remediation report", scheduled_scan)
+        self.assertIn("REMEDIATION_POLICY_JSON:", scheduled_scan)
         self.assertIn("../clearcutt remediation run", scheduled_scan)
         self.assertIn("VULN_ROOT: ../site/src/data/vulnerabilities", scheduled_scan)
 

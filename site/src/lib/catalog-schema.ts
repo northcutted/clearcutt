@@ -53,6 +53,8 @@ export const ArchPayload = z.object({
       scannedAt: z.string(),
       scanner: z.string(),
       dbBuiltAt: NullableString,
+      kevStatus: z.string().optional(),
+      kevCatalogVersion: NullableString.optional(),
       countsBySeverity: z.object({
         critical: z.number(),
         high: z.number(),
@@ -95,6 +97,21 @@ export const ArchPayload = z.object({
           epssScore: z.number().nullable().optional(),
           epssPercentile: z.number().nullable().optional(),
           riskScore: z.number().nullable().optional(),
+          kev: z
+            .object({
+              knownExploited: z.boolean(),
+              catalogVersion: z.string().nullable().optional(),
+              dateReleased: z.string().nullable().optional(),
+              dateAdded: z.string().nullable().optional(),
+              dueDate: z.string().nullable().optional(),
+              vendorProject: z.string().nullable().optional(),
+              product: z.string().nullable().optional(),
+              vulnerabilityName: z.string().nullable().optional(),
+              requiredAction: z.string().nullable().optional(),
+              knownRansomwareCampaignUse: z.string().nullable().optional(),
+            })
+            .nullable()
+            .optional(),
         }),
       ),
     })

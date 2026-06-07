@@ -132,6 +132,8 @@
             "scannedAt": { "type": "string" },
             "scanner": { "type": "string" },
             "dbBuiltAt": { "type": ["string", "null"] },
+            "kevStatus": { "type": "string" },
+            "kevCatalogVersion": { "type": ["string", "null"] },
             "countsBySeverity": {
               "type": "object",
               "required": ["critical", "high", "medium", "low", "negligible", "unknown"],
@@ -183,7 +185,22 @@
                   "cvssVector": { "type": ["string", "null"] },
                   "epssScore": { "type": ["number", "null"] },
                   "epssPercentile": { "type": ["number", "null"] },
-                  "riskScore": { "type": ["number", "null"] }
+                  "riskScore": { "type": ["number", "null"] },
+                  "kev": {
+                    "type": ["object", "null"],
+                    "properties": {
+                      "knownExploited": { "type": "boolean" },
+                      "catalogVersion": { "type": ["string", "null"] },
+                      "dateReleased": { "type": ["string", "null"] },
+                      "dateAdded": { "type": ["string", "null"] },
+                      "dueDate": { "type": ["string", "null"] },
+                      "vendorProject": { "type": ["string", "null"] },
+                      "product": { "type": ["string", "null"] },
+                      "vulnerabilityName": { "type": ["string", "null"] },
+                      "requiredAction": { "type": ["string", "null"] },
+                      "knownRansomwareCampaignUse": { "type": ["string", "null"] }
+                    }
+                  }
                 }
               }
             }

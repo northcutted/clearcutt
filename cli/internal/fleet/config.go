@@ -115,11 +115,21 @@ type Admission struct {
 }
 
 type Remediation struct {
-	Mode                   string `json:"mode"`
-	ScanDepth              string `json:"scanDepth"`
-	MaxFindingsPerRun      int    `json:"maxFindingsPerRun"`
-	MaxPatchFailuresPerRun int    `json:"maxPatchFailuresPerRun"`
-	IncludeDevOnly         bool   `json:"includeDevOnly"`
+	Mode                   string            `json:"mode"`
+	ScanDepth              string            `json:"scanDepth"`
+	MaxFindingsPerRun      int               `json:"maxFindingsPerRun"`
+	MaxPatchFailuresPerRun int               `json:"maxPatchFailuresPerRun"`
+	IncludeDevOnly         bool              `json:"includeDevOnly"`
+	Policy                 RemediationPolicy `json:"policy,omitempty"`
+}
+
+type RemediationPolicy struct {
+	ProductionTiers       []string `json:"productionTiers,omitempty"`
+	MinimumSeverity       string   `json:"minimumSeverity,omitempty"`
+	RequireRuntimeLayer   *bool    `json:"requireRuntimeLayer,omitempty"`
+	RequireFixedVersion   *bool    `json:"requireFixedVersion,omitempty"`
+	EPSSPercentileBoostAt float64  `json:"epssPercentileBoostAt,omitempty"`
+	KEVBoost              *bool    `json:"kevBoost,omitempty"`
 }
 
 type Templates struct {
@@ -368,6 +378,7 @@ func DefaultConfig(owner, repo string) Config {
 			MaxFindingsPerRun:      1,
 			MaxPatchFailuresPerRun: 1,
 			IncludeDevOnly:         false,
+			Policy:                 DefaultRemediationPolicy(),
 		},
 		Templates: Templates{
 			Runtimes: []string{"java", "node", "python", "go"},
@@ -445,6 +456,7 @@ func (c *Config) applyDefaults() {
 	if c.Remediation.MaxPatchFailuresPerRun == 0 {
 		c.Remediation.MaxPatchFailuresPerRun = def.Remediation.MaxPatchFailuresPerRun
 	}
+	c.Remediation.Policy = EffectiveRemediationPolicy(c.Remediation.Policy)
 	if len(c.Templates.Runtimes) == 0 {
 		c.Templates.Runtimes = def.Templates.Runtimes
 	}
@@ -557,8 +569,72 @@ func (c Config) Validate() error {
 	if c.Remediation.Mode != "approved-pr" {
 		return fmt.Errorf("remediation.mode currently supports only approved-pr")
 	}
+	if err := validateRemediationPolicy(c.Remediation.Policy); err != nil {
+		return err
+	}
 	if _, err := c.serviceMap(); err != nil {
 		return err
+	}
+	return nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func DefaultRemediationPolicy() RemediationPolicy {
+	return RemediationPolicy{
+		ProductionTiers:       []string{"slim", "distroless"},
+		MinimumSeverity:       "high",
+		RequireRuntimeLayer:   boolPtr(true),
+		RequireFixedVersion:   boolPtr(true),
+		EPSSPercentileBoostAt: 0.90,
+		KEVBoost:              boolPtr(true),
+	}
+}
+
+func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
+	def := DefaultRemediationPolicy()
+	if len(policy.ProductionTiers) == 0 {
+		policy.ProductionTiers = append([]string(nil), def.ProductionTiers...)
+	}
+	if policy.MinimumSeverity == "" {
+		policy.MinimumSeverity = def.MinimumSeverity
+	}
+	if policy.RequireRuntimeLayer == nil {
+		policy.RequireRuntimeLayer = def.RequireRuntimeLayer
+	}
+	if policy.RequireFixedVersion == nil {
+		policy.RequireFixedVersion = def.RequireFixedVersion
+	}
+	if policy.EPSSPercentileBoostAt == 0 {
+		policy.EPSSPercentileBoostAt = def.EPSSPercentileBoostAt
+	}
+	if policy.KEVBoost == nil {
+		policy.KEVBoost = def.KEVBoost
+	}
+	return policy
+}
+
+func validateRemediationPolicy(policy RemediationPolicy) error {
+	policy = EffectiveRemediationPolicy(policy)
+	if len(policy.ProductionTiers) == 0 {
+		return fmt.Errorf("remediation.policy.productionTiers must not be empty")
+	}
+	for _, tier := range policy.ProductionTiers {
+		switch strings.TrimSpace(tier) {
+		case "slim", "distroless":
+		default:
+			return fmt.Errorf("unsupported remediation.policy.productionTiers value %q", tier)
+		}
+	}
+	switch strings.ToLower(policy.MinimumSeverity) {
+	case "critical", "high", "medium", "low", "negligible", "unknown":
+	default:
+		return fmt.Errorf("unsupported remediation.policy.minimumSeverity %q", policy.MinimumSeverity)
+	}
+	if policy.EPSSPercentileBoostAt < 0 || policy.EPSSPercentileBoostAt > 1 {
+		return fmt.Errorf("remediation.policy.epssPercentileBoostAt must be between 0 and 1")
 	}
 	return nil
 }
