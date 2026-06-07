@@ -183,7 +183,7 @@ let
 
   serviceTemplatePackages = service:
     if service.template == "postgres" then
-      [ postgresEntrypoint pkgs.bash pkgs.coreutils ]
+      [ postgresEntrypoint pkgs.bash pkgs.busybox pkgs.coreutils ]
     else
       [];
 
