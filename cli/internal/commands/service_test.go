@@ -411,6 +411,7 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 
 	var calls []externalCommand
 	logsCalled := false
+	inspectCalled := false
 	runExternalCommand = func(c externalCommand) error {
 		calls = append(calls, c)
 		if len(c.Args) > 0 && c.Args[0] == "exec" {
@@ -423,6 +424,10 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 			logsCalled = true
 			return "database boot log", nil
 		}
+		if len(c.Args) > 0 && c.Args[0] == "inspect" {
+			inspectCalled = true
+			return `{"ExitCode":127,"Error":"missing interpreter"}`, nil
+		}
 		return "", nil
 	}
 
@@ -432,6 +437,9 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 	}
 	if !logsCalled {
 		t.Fatal("expected failed functional smoke to collect container logs")
+	}
+	if !inspectCalled {
+		t.Fatal("expected failed functional smoke to inspect container state")
 	}
 	joined := flattenServiceCalls(calls)
 	if !strings.Contains(joined, "docker rm -f clearcutt-smoke-postgres16-") {

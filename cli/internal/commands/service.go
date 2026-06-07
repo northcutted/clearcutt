@@ -624,7 +624,7 @@ func runServiceFunctionalSmoke(engine string, service fleet.ServiceImage, image 
 	defer cleanup()
 
 	if err := waitForServiceSmokeProbe(engine, container, profile); err != nil {
-		dumpServiceSmokeLogs(engine, container)
+		dumpServiceSmokeDiagnostics(engine, container)
 		return err
 	}
 	return nil
@@ -667,18 +667,30 @@ func waitForServiceSmokeProbe(engine, container string, profile serviceFunctiona
 	return fmt.Errorf("%s functional smoke probe failed after %d attempt(s): %w", profile.Name, profile.Attempts, lastErr)
 }
 
-func dumpServiceSmokeLogs(engine, container string) {
+func dumpServiceSmokeDiagnostics(engine, container string) {
 	logs, err := captureExternalOutput(externalCommand{Name: engine, Args: []string{"logs", container}})
 	if err != nil {
 		fmt.Fprintf(errOut, "[service-smoke] failed to collect logs for %s: %v\n", container, err)
-		return
-	}
-	logs = strings.TrimSpace(logs)
-	if logs == "" {
+	} else if logs = strings.TrimSpace(logs); logs == "" {
 		fmt.Fprintf(errOut, "[service-smoke] %s produced no logs\n", container)
+	} else {
+		fmt.Fprintf(errOut, "[service-smoke] logs for %s:\n%s\n", container, logs)
+	}
+
+	state, err := captureExternalOutput(externalCommand{
+		Name: engine,
+		Args: []string{"inspect", "--format", "{{json .State}}", container},
+	})
+	if err != nil {
+		fmt.Fprintf(errOut, "[service-smoke] failed to inspect %s: %v\n", container, err)
 		return
 	}
-	fmt.Fprintf(errOut, "[service-smoke] logs for %s:\n%s\n", container, logs)
+	state = strings.TrimSpace(state)
+	if state == "" {
+		fmt.Fprintf(errOut, "[service-smoke] %s produced no inspect state\n", container)
+		return
+	}
+	fmt.Fprintf(errOut, "[service-smoke] state for %s:\n%s\n", container, state)
 }
 
 func serviceSmokeContainerName(id string) string {
