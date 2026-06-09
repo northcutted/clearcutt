@@ -227,7 +227,7 @@ class CredentialBrokerTests(unittest.TestCase):
 
 
 class DockerToolsAssemblyTests(unittest.TestCase):
-    def test_app_workspace_is_not_store_backed_before_chown(self):
+    def test_rootless_ownership_uses_fakeroot_commands(self):
         source = BUILD_FLEET_NIX.read_text(encoding="utf-8")
         base_contents = source.split("baseContents = [", 1)[1].split("];", 1)[0]
 
@@ -235,13 +235,20 @@ class DockerToolsAssemblyTests(unittest.TestCase):
         self.assertNotIn("appDir", base_contents)
         self.assertRegex(
             source,
-            r"installAppWorkspace = ''\n"
+            r"prepareAppWorkspace = ''\n"
             r"\s+mkdir -p app\n"
-            r"\s+chown \$\{uid\}:\$\{gid\} app\n"
             r"\s+chmod 0755 app\n"
             r"\s+'';",
         )
-        self.assertEqual(source.count("${installAppWorkspace}"), 2)
+        self.assertRegex(
+            source,
+            r"ownAppWorkspace = ''\n"
+            r"\s+chown \$\{uid\}:\$\{gid\} app\n"
+            r"\s+'';",
+        )
+        self.assertEqual(source.count("fakeRootCommands"), 2)
+        self.assertIn("fakeRootCommands = ownAppWorkspace;", source)
+        self.assertIn("${ownDataDirs dataDirs}", source)
 
 
 if __name__ == "__main__":

@@ -137,17 +137,24 @@ let
       value = {};
     }) ports);
 
-  mkdirDataDirs = dataDirs:
+  prepareDataDirs = dataDirs:
     pkgs.lib.concatMapStringsSep "\n" (dir: ''
       mkdir -p ".${dir}"
-      chown ${uid}:${gid} ".${dir}"
       chmod 0750 ".${dir}"
     '') dataDirs;
 
-  installAppWorkspace = ''
+  ownDataDirs = dataDirs:
+    pkgs.lib.concatMapStringsSep "\n" (dir: ''
+      chown ${uid}:${gid} ".${dir}"
+    '') dataDirs;
+
+  prepareAppWorkspace = ''
     mkdir -p app
-    chown ${uid}:${gid} app
     chmod 0755 app
+  '';
+
+  ownAppWorkspace = ''
+    chown ${uid}:${gid} app
   '';
 
   postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
@@ -256,8 +263,9 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
-      ${installAppWorkspace}
+      ${prepareAppWorkspace}
     '';
+    fakeRootCommands = ownAppWorkspace;
     config = mergedConfig;
   };
 
@@ -334,9 +342,13 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
-      ${installAppWorkspace}
+      ${prepareAppWorkspace}
       ${serviceRuntimeCommands}
-      ${mkdirDataDirs dataDirs}
+      ${prepareDataDirs dataDirs}
+    '';
+    fakeRootCommands = ''
+      ${ownAppWorkspace}
+      ${ownDataDirs dataDirs}
     '';
     config = mergedConfig;
   };
