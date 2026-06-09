@@ -30,10 +30,39 @@ site_docs=(
 
 fail=0
 
+search_fixed() {
+  local pattern="$1"
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -n --fixed-strings -e "$pattern" "$@"
+  else
+    grep -n -F -e "$pattern" "$@"
+  fi
+}
+
+search_regex() {
+  local pattern="$1"
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -n -e "$pattern" "$@"
+  else
+    grep -n -E -e "$pattern" "$@"
+  fi
+}
+
+contains_fixed() {
+  local token="$1"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q --fixed-strings -- "$token"
+  else
+    grep -q -F -- "$token"
+  fi
+}
+
 check_absent() {
   local pattern="$1"
   local message="$2"
-  if rg -n --fixed-strings "$pattern" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
+  if search_fixed "$pattern" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
     echo "docs command drift: $message" >&2
     cat /tmp/clearcutt-doc-drift.txt >&2
     fail=1
@@ -43,7 +72,7 @@ check_absent() {
 check_absent_site() {
   local pattern="$1"
   local message="$2"
-  if rg -n --fixed-strings "$pattern" "${site_docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
+  if search_fixed "$pattern" "${site_docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
     echo "docs command drift: $message" >&2
     cat /tmp/clearcutt-doc-drift.txt >&2
     fail=1
@@ -55,7 +84,7 @@ help_contains() {
   shift
   local token="${@: -1}"
   local cmd=("${@:1:$#-1}")
-  if ! "$bin" "${cmd[@]}" --help | rg -q --fixed-strings -- "$token"; then
+  if ! "$bin" "${cmd[@]}" --help | contains_fixed "$token"; then
     echo "docs command drift: help for 'clearcutt ${cmd[*]}' does not contain '$token' ($description)" >&2
     fail=1
   fi
@@ -68,7 +97,7 @@ check_absent "clearcutt policy verify" "policy generates admission policy; it is
 check_absent "v0.11.1" "documented ClearCutt release pins must point at a published release"
 check_absent "platform status --output .. --fleet-config clearcutt.fleet.yaml" "go -C cli run resolves relative paths from cli/; use --output \"$PWD\" or build ./clearcutt first"
 check_absent_site "catalog site scaffold --output ./catalog-site" "generated catalog site scaffold examples must pass --catalog ./dist/catalog"
-if rg -n "build provenance and SBOM|SBOM.*gh attestation verify|gh attestation verify.*SBOM" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
+if search_regex "build provenance and SBOM|SBOM.*gh attestation verify|gh attestation verify.*SBOM" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
   echo "docs command drift: GitHub CLI attestation examples must not imply SBOM verification" >&2
   cat /tmp/clearcutt-doc-drift.txt >&2
   fail=1
