@@ -41,13 +41,6 @@ let
     chmod 1777 $out/tmp
   '';
 
-  appDir = pkgs.runCommand "cc-app-dir" {} ''
-    mkdir -p $out/app
-    # Ownership is applied in dockerTools extraCommands, where numeric chown
-    # metadata can be represented in the image layer.
-    chmod 755 $out/app
-  '';
-
   # Compile standard FHS dynamic linker symlinks for non-distroless compatibility
   # tiers. Distroless omits these and relies only on store-bound RPATH/RUNPATH.
   lib64Symlink = pkgs.runCommand "lib64-symlink" {} ''
@@ -100,7 +93,6 @@ let
     passwdFile
     groupFile
     tmpDir
-    appDir
   ];
 
   baseEnv = [
@@ -151,6 +143,12 @@ let
       chown ${uid}:${gid} ".${dir}"
       chmod 0750 ".${dir}"
     '') dataDirs;
+
+  installAppWorkspace = ''
+    mkdir -p app
+    chown ${uid}:${gid} app
+    chmod 0755 app
+  '';
 
   postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
     set -euo pipefail
@@ -258,8 +256,7 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
-      chown ${uid}:${gid} app
-      chmod 0755 app
+      ${installAppWorkspace}
     '';
     config = mergedConfig;
   };
@@ -337,8 +334,7 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
-      chown ${uid}:${gid} app
-      chmod 0755 app
+      ${installAppWorkspace}
       ${serviceRuntimeCommands}
       ${mkdirDataDirs dataDirs}
     '';

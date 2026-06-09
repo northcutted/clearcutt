@@ -11,6 +11,7 @@ import unittest
 CORE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PIPELINE = CORE_ROOT / "pipeline" / "pipeline.sh"
 CREDENTIAL_BROKER = CORE_ROOT / "lib" / "credential-broker.sh"
+BUILD_FLEET_NIX = CORE_ROOT / "lib" / "build-fleet.nix"
 
 
 class PipelineEvidenceTests(unittest.TestCase):
@@ -223,6 +224,24 @@ class CredentialBrokerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+
+class DockerToolsAssemblyTests(unittest.TestCase):
+    def test_app_workspace_is_not_store_backed_before_chown(self):
+        source = BUILD_FLEET_NIX.read_text(encoding="utf-8")
+        base_contents = source.split("baseContents = [", 1)[1].split("];", 1)[0]
+
+        self.assertNotIn("cc-app-dir", source)
+        self.assertNotIn("appDir", base_contents)
+        self.assertRegex(
+            source,
+            r"installAppWorkspace = ''\n"
+            r"\s+mkdir -p app\n"
+            r"\s+chown \$\{uid\}:\$\{gid\} app\n"
+            r"\s+chmod 0755 app\n"
+            r"\s+'';",
+        )
+        self.assertEqual(source.count("${installAppWorkspace}"), 2)
 
 
 if __name__ == "__main__":
