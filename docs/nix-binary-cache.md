@@ -1,6 +1,6 @@
 # Declarative Nix Binary Cache via Cloudflare R2
 
-This document provides complete instructions for establishing a high-performance, **zero-egress-fee** custom Nix binary cache for a ClearCutt-powered fleet using Cloudflare R2 and your own cache domain.
+This document provides instructions for establishing a high-performance custom Nix binary cache for a ClearCutt-powered fleet using Cloudflare R2 and your own cache domain. Cloudflare R2 is commonly used to avoid provider egress charges, but verify current pricing for your account before relying on that assumption.
 
 ---
 
@@ -33,7 +33,7 @@ By placing Cloudflare's CDN in front of an R2 bucket on your cache domain, compi
 ---
 
 ### Step 2: Generate Nix Cache Signing Keys
-To prevent malicious or untampered packages from being downloaded into the cache, Nix requires all binary store paths to be signed.
+To prevent malicious or tampered packages from being downloaded from the cache, Nix requires all binary store paths to be signed.
 
 Run the following command on your local machine to generate the cryptographic keypair:
 ```bash
@@ -112,5 +112,5 @@ Replace `YOUR_PUBLIC_KEY_CONTENT_HERE` with the public trusted key from
 
 ## Security Analysis
 
-* **Zero Trust:** Even if your R2 bucket or Cloudflare account is compromised and a bad actor uploads modified packages, Nix will **reject them instantly** on developer laptops because the files will fail the cryptographic signature check of your configured signing key.
+* **Signed-cache trust boundary:** If an attacker uploads modified store paths without the configured cache signing key, Nix clients should reject those paths during signature verification. Protect the signing key as the trust boundary.
 * **Zero Egress Fees:** Because Cloudflare R2 has zero bandwidth fees for downloading data out of R2 to the internet, you can distribute massive, compiler-heavy dependencies to unlimited CI runners or developers without incurring any cost.

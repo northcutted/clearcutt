@@ -101,7 +101,7 @@
       "signature": {
         "cosignBundlePresent": true,
         "certificate": {
-          "subject": "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main",
+          "subject": "https://github.com/test-owner/test-repo/.github/workflows/release.yml@refs/heads/main",
           "issuer": "https://token.actions.githubusercontent.com"
         }
       },

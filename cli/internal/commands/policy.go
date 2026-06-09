@@ -27,9 +27,12 @@ var policyOpts policyFlags
 func NewPolicyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policy <image-id>",
-		Short: "Generate Kubernetes admission control policy bundles natively",
-		Long:  `Dynamically extracts OIDC signatures from the base image catalog to output deployable Kyverno or OPA Gatekeeper policy manifests matching environment profiles.`,
-		Args:  cobra.ExactArgs(1),
+		Short: "Generate Kubernetes admission control policy examples",
+		Long: `Extracts OIDC signature metadata from the base image catalog to emit
+Kyverno verification policies and Gatekeeper scaffolds for teams with their own
+verifying admission integrations. Kyverno is the stronger generated path today;
+Gatekeeper output is not a standalone cryptographic verifier.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPolicy(args[0])
 		},
@@ -65,8 +68,10 @@ func runPolicy(imageID string) error {
 		return fmt.Errorf("%w for image %q", err, imageID)
 	}
 
-	// Resolve OIDC subject and issuer
-	subject := "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main"
+	// Resolve OIDC subject and issuer. Admission policy generation is a trust
+	// surface, so missing or mismatched signer metadata must fail closed rather
+	// than falling back to the upstream ClearCutt identity.
+	subject := ""
 	issuer := "https://token.actions.githubusercontent.com"
 
 	if release.Signature != nil && release.Signature.Certificate != nil {
@@ -76,6 +81,12 @@ func runPolicy(imageID string) error {
 		if release.Signature.Certificate.Issuer != nil {
 			issuer = *release.Signature.Certificate.Issuer
 		}
+	}
+	if strings.TrimSpace(subject) == "" {
+		return fmt.Errorf("catalog release %s for image %q is missing signature certificate subject; cannot generate admission policy", release.Tag, imageID)
+	}
+	if !signerSubjectMatchesImageRepo(subject, record.FullName) {
+		return fmt.Errorf("catalog release %s for image %q signs %q with unrelated workflow identity %q", release.Tag, imageID, record.FullName, subject)
 	}
 
 	// Resolve defaults by environment profile
@@ -198,6 +209,22 @@ spec:
 `, policyOpts.namespace))
 		}
 
+		if denyPrev && strings.EqualFold(release.Lifecycle.Status, "preview") {
+			rulesBlock.WriteString(fmt.Sprintf(`    - name: deny-preview-images
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["%s"]
+      validate:
+        message: "Security Violation: Preview lifecycle images are forbidden in this environment"
+        pattern:
+          spec:
+            containers:
+              - =(image): "!%s:*"
+`, policyOpts.namespace, record.FullName))
+		}
+
 		if requireNonRoot {
 			rulesBlock.WriteString(fmt.Sprintf(`    - name: require-run-as-non-root
       match:
@@ -238,4 +265,17 @@ spec:
 	}
 
 	return nil
+}
+
+func signerSubjectMatchesImageRepo(subject, fullName string) bool {
+	const ghcrPrefix = "ghcr.io/"
+	if !strings.HasPrefix(fullName, ghcrPrefix) {
+		return true
+	}
+	parts := strings.Split(fullName[len(ghcrPrefix):], "/")
+	if len(parts) < 3 {
+		return true
+	}
+	repoPath := parts[0] + "/" + parts[1]
+	return strings.Contains(subject, "github.com/"+repoPath+"/")
 }

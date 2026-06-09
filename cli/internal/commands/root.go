@@ -25,7 +25,7 @@ func NewRootCmd() *cobra.Command {
 		Use:   "clearcutt",
 		Short: "ClearCutt base-image platform engineering governance CLI",
 		Long: `ClearCutt is a platform-engineering CLI to list, inspect, verify,
-and manage hardened multi-architecture enterprise base images.`,
+and manage hardened multi-architecture platform-owned base images.`,
 		Version: Version,
 		// Returned errors are already actionable; don't dump usage text on every
 		// failure, and let main own error/exit-code presentation.

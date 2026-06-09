@@ -69,6 +69,7 @@ Generation writes a self-contained catalog directory:
 dist/catalog/
   index.json
   summary.json
+  evidence-manifest.json
   images/
     java21-distroless.json
   raw/
@@ -78,6 +79,7 @@ dist/catalog/
     test-results/
   schemas/
     catalog-index.v1.schema.json
+    evidence-manifest.v1.schema.json
     image-record.v1.schema.json
 ```
 
@@ -95,6 +97,8 @@ clearcutt --catalog ./dist/catalog catalog validate \
   --schema-version clearcutt.catalog.index/v1
 clearcutt --catalog ./dist/catalog catalog validate \
   --schema-version clearcutt.catalog.image/v1
+clearcutt --catalog ./dist/catalog catalog validate \
+  --schema-version clearcutt.catalog.evidence-manifest/v1
 ```
 
 Warnings are used for missing optional evidence. Turn them into failures when a
@@ -119,12 +123,23 @@ provenance, SBOMs, tests, vulnerability scans, lifecycle, runtime contracts, and
 per-architecture data are reported independently. A missing SBOM should remain a
 missing SBOM, not become a generic "not secure" or "secure" flag.
 
+`evidence-manifest.json` is the per-release evidence index. It is generated from
+the image records and lists each image release, expected evidence channels,
+observed channels, missing channels, immutable refs when a manifest digest is
+known, signer/provenance summaries, release asset URLs, and the source catalog
+record path. `catalog validate` rejects a manifest that drifts from the image
+records.
+
 That distinction matters for:
 
 - CI gates that require only specific evidence channels.
 - Security review workflows that need to see incomplete inputs.
 - Generated sites that degrade gracefully when generic OCI inputs do not have
   ClearCutt release attestations.
+
+For a reader-facing guide to catalog badges, raw evidence, missing evidence, and
+generic OCI degraded-evidence mode, see
+[`trust/catalog-evidence.md`](trust/catalog-evidence.md).
 
 ## Data-Only CI Example
 

@@ -419,6 +419,9 @@ func resolveCatalogSiteTemplate(flag string) (string, error) {
 	if flag != "" {
 		info, err := os.Stat(flag)
 		if err == nil && info.IsDir() {
+			if !isCatalogSiteTemplateDir(flag) {
+				return "", fmt.Errorf("site template directory is missing package.json or src/: %s", flag)
+			}
 			return flag, nil
 		}
 		return "", fmt.Errorf("site template directory not found: %s", flag)
@@ -429,11 +432,21 @@ func resolveCatalogSiteTemplate(flag string) (string, error) {
 		filepath.Join("..", "..", "site"),
 		filepath.Join("..", "..", "..", "site"),
 	} {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() && isCatalogSiteTemplateDir(candidate) {
 			return candidate, nil
 		}
 	}
 	return "", nil
+}
+
+func isCatalogSiteTemplateDir(path string) bool {
+	if !fileExists(filepath.Join(path, "package.json")) {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(path, "src")); err != nil || !info.IsDir() {
+		return false
+	}
+	return true
 }
 
 func prepareScaffoldOutput(outputDir string, force bool) error {

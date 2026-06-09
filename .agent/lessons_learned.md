@@ -42,6 +42,18 @@ This persistent ledger records critical repository-specific constraints, environ
 
 ## 4. Ecosystem & Astro Constraints
 
-### Astro Catalog Generation Requirement
-* **Context:** Building the Astro site in `site/` will fail or display blank data if the catalog has not been compiled.
-* **Lesson:** Before running `npm run build` or `npm run dev` in `site/`, you must generate the catalog data using `./clearcutt catalog gather` (or `make catalog-generate`).
+### Astro Catalog Data Modes
+* **Context:** Building or previewing the Astro site can silently use ignored local catalog data under `site/src/data/catalog`, which may be stale and is not clean-clone truth.
+* **Lesson:** Be explicit about catalog mode. Use `cli/internal/testdata/catalog` or `cli/internal/testdata/mixed-catalog` for clean-clone and fixture-backed proof. Use `clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output /tmp/clearcutt-catalog` for current generator behavior without touching ignored site data. Use `clearcutt catalog build` only for live release-evidence parity. Inspect `site/src/data/catalog/index.json` before relying on local generated site data.
+
+---
+
+## 5. Agent Self-Improvement
+
+### Promote Lessons Deliberately
+* **Context:** Agent guidance can become stale or too large if every mistake is appended to persistent instructions.
+* **Lesson:** Capture repeated mistakes with the `clearcutt-retrospective` skill, then promote only small, evidence-backed lessons to the right surface: `AGENTS.md` for mandatory rules, `.agents/skills/` for repeatable workflows, `.agent/lessons_learned.md` for durable repo pitfalls, `.codex/rules/` for mechanical guardrails, and Codex Memories for local preference or historical context.
+
+### Token Efficiency Is A Quality Gate
+* **Context:** Broad searches, stale context, oversized logs, unnecessary full builds, and duplicated instruction files waste tokens and hide the useful signal.
+* **Lesson:** Prefer `rg`, targeted file reads, focused validation commands, concise log summaries, and existing skills before broad exploration. During retrospectives, record the specific token/time waste and the smaller command or context path that would have worked.

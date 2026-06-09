@@ -28,6 +28,7 @@ const evidenceCoverage = index
   : null;
 const latestRelease = index?.releases.find((release) => release.isLatest) ?? index?.releases[0];
 const generatedAt = index ? new Date(index.generatedAt).toLocaleString() : '';
+const isReferenceSite = !index || (index.owner === 'northcutted' && index.repo === 'clearcutt');
 
 const hrefFor = (href = '') => {
   const value = href.trim();
@@ -77,6 +78,12 @@ const catalogStats = index
       <div class="min-w-0 max-w-3xl space-y-4">
         <h1 class="heading text-3xl font-bold sm:text-4xl">{home.title}</h1>
         <p class="text-base leading-relaxed text-ink-200">{home.description}</p>
+        {index && (
+          <p class="text-sm leading-relaxed text-ink-300">
+            {isReferenceSite ? 'This reference site renders the upstream catalog for ' : 'This generated portal renders catalog data for '}
+            <span class="font-mono text-ink-100">{index.owner}/{index.repo}</span> from <span class="font-mono text-ink-100">{index.registryBase}</span>. ClearCutt provides the renderer and workflow kit; fork owners control their catalog and evidence.
+          </p>
+        )}
         <div class="flex flex-wrap gap-3 pt-1">
           <a href={`${base}catalog`} class="chip-accent">Open catalog</a>
           <a href={`${base}getting-started`} class="chip">Containerize your app</a>
@@ -103,6 +110,10 @@ const catalogStats = index
               <div class="flex min-w-0 justify-between gap-3">
                 <dt class="text-ink-300">Source</dt>
                 <dd class="min-w-0 break-all text-right font-mono text-ink-100">{index.owner}/{index.repo}</dd>
+              </div>
+              <div class="flex min-w-0 justify-between gap-3">
+                <dt class="text-ink-300">Generator</dt>
+                <dd class="min-w-0 break-words text-right font-mono text-ink-100">ClearCutt static portal</dd>
               </div>
             </dl>
           </>

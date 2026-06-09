@@ -11,9 +11,9 @@ inputs:
     description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.15-slim)'
     required: true
   clearcutt-version:
-    description: 'ClearCutt CLI release tag to download (e.g. v0.11.1). Pin this for reproducible builds.'
+    description: 'ClearCutt CLI release tag to download (e.g. v0.10.2). Pin this for reproducible builds.'
     required: false
-    default: 'v0.11.1'
+    default: 'v0.10.2'
   certificate-identity-regexp:
     description: >-
       Regexp for the Sigstore signing identity the app image must be signed by (the
@@ -41,10 +41,21 @@ runs:
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
         ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
         ASSET="clearcutt-${OS}-${ARCH}"
+        BASE_URL="https://github.com/${{ github.action_repository }}/releases/download/${VERSION}"
+        SIGNING_IDENTITY="https://github.com/${{ github.action_repository }}/.github/workflows/release.yml@refs/heads/main"
         echo "[clearcutt] Downloading ${ASSET} (${VERSION})..."
-        curl -fsSL -o "${RUNNER_TEMP}/clearcutt" \
-          "https://github.com/${{ github.action_repository }}/releases/download/${VERSION}/${ASSET}"
-        chmod +x "${RUNNER_TEMP}/clearcutt"
+        curl -fsSL -o "${RUNNER_TEMP}/${ASSET}" "${BASE_URL}/${ASSET}"
+        curl -fsSL -o "${RUNNER_TEMP}/${ASSET}.sig" "${BASE_URL}/${ASSET}.sig"
+        curl -fsSL -o "${RUNNER_TEMP}/SHA256SUMS.txt" "${BASE_URL}/SHA256SUMS.txt"
+        (
+          cd "${RUNNER_TEMP}"
+          grep -E "  ${ASSET}$" SHA256SUMS.txt | sha256sum -c -
+        )
+        cosign verify-blob "${RUNNER_TEMP}/${ASSET}" \
+          --bundle "${RUNNER_TEMP}/${ASSET}.sig" \
+          --certificate-identity "${SIGNING_IDENTITY}" \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+        install -m 0755 "${RUNNER_TEMP}/${ASSET}" "${RUNNER_TEMP}/clearcutt"
         echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
         "${RUNNER_TEMP}/clearcutt" --version
 
@@ -142,7 +153,7 @@ runs:
         fi
 
     - name: Upload Compliance Certification Evidence
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: clearcutt-certification-report
         path: /tmp/certification-report.json

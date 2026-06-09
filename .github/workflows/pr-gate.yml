@@ -10,7 +10,6 @@ on:
       - main
     # Skip the fleet matrix for PRs that can't affect build output.
     paths-ignore:
-      - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
   workflow_dispatch:
@@ -37,7 +36,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -78,7 +77,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -135,7 +134,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -187,7 +186,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -241,7 +240,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -280,7 +279,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -292,6 +291,12 @@ jobs:
 
       - name: Go Build
         run: make cli-build
+
+      - name: Validate Documented Commands
+        run: ./scripts/validate-doc-commands.sh ./clearcutt
+
+      - name: Validate Workflow Hardening
+        run: ./scripts/validate-workflow-hardening.sh
 
       - name: Dev Command Integration Smoke
         run: |

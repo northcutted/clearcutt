@@ -1,33 +1,34 @@
-# ClearCutt Secure Kubernetes Deployment Blueprint
-# Paradigm: Production K8s Hardening (PodSecurityContext Strict Compliance)
+# ClearCutt app deployment example.
+#
+# This deploys an application image built from a ClearCutt base, not the base
+# runtime image itself. Build and certify the app image first, then admit it.
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: clearcutt-hardened-deployment
-  namespace: default
+  name: payments-api
+  namespace: apps
   labels:
-    app: clearcutt-app
+    app: payments-api
+    clearcutt.dev/base: java21-distroless
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: clearcutt-app
+      app: payments-api
   template:
     metadata:
       labels:
-        app: clearcutt-app
+        app: payments-api
+        clearcutt.dev/base: java21-distroless
     spec:
       containers:
-        - name: application-container
-          # Point to your secure registry target image (e.g. Java 21 Distroless)
-          image: ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless
+        - name: payments-api
+          image: ghcr.io/acme/payments-api:1.0.0
           imagePullPolicy: IfNotPresent
-          
           ports:
             - containerPort: 8080
               name: http
-              
           resources:
             limits:
               cpu: "1"
@@ -35,37 +36,21 @@ spec:
             requests:
               cpu: 500m
               memory: 256Mi
-              
-          # 1. Container-Level Security context (Strict Sandboxing)
           securityContext:
-            # Prevent process privilege escalation
             allowPrivilegeEscalation: false
-            
-            # Mount the root container filesystem as strictly read-only
             readOnlyRootFilesystem: true
-            
-            # Remove all raw Linux kernel capabilities
             capabilities:
               drop:
                 - ALL
-                
-            # Restrict system calls natively
             seccompProfile:
               type: RuntimeDefault
-              
           volumeMounts:
             - name: ephemeral-tmp
               mountPath: /tmp
-              
-      # 2. Pod-Level Security Context
       securityContext:
-        # Enforce non-root execution matching our static appuser UID/GID
         runAsUser: 10001
         runAsGroup: 10001
         runAsNonRoot: true
-        
-      # 3. Ephemeral Temp Storage Definition
-      # Mounts a secure, memory-backed temporary volume for /tmp writes
       volumes:
         - name: ephemeral-tmp
           emptyDir:

@@ -226,6 +226,7 @@ func runPlatformStatus() error {
 		if strings.EqualFold(cfg.Admission.Engine, "kyverno") {
 			checkFileContains(root, "examples/k8s-deployment/kyverno-policy.yaml", cfg.RegistryBase(), "admission.identity", "admission policy pins the fork image namespace and signing identity", add)
 		}
+		checkReleaseIdentityContract(root, cfg, add)
 	}
 
 	checkFileContains(root, ".github/workflows/release.yml", "matrix export --source fleet", "release.workflow", "release workflow derives its matrix from clearcutt.fleet.yaml", add)
@@ -273,6 +274,46 @@ func runPlatformStatus() error {
 		return ErrCheckFailed
 	}
 	return nil
+}
+
+func checkReleaseIdentityContract(root string, cfg fleet.Config, add func(string, string, string)) {
+	if cfg.Release.SourceBranch == "" {
+		add("release.sourceBranch", "fail", "release.sourceBranch is required")
+		return
+	}
+	expectedReleaseIdentity := fmt.Sprintf("https://github.com/%s/.github/workflows/release.yml@refs/heads/%s", cfg.RepoPath(), cfg.Release.SourceBranch)
+	if cfg.Release.WorkflowIdentity != expectedReleaseIdentity {
+		add("release.workflowIdentity", "fail", fmt.Sprintf("release.workflowIdentity must be %q for this repo/sourceBranch", expectedReleaseIdentity))
+	} else {
+		add("release.workflowIdentity", "pass", "release workflow identity matches fleet repo and source branch")
+	}
+	releaseRef := "refs/heads/" + cfg.Release.SourceBranch
+	checkFileContains(root, ".github/workflows/release.yml", fmt.Sprintf("github.ref != '%s'", releaseRef), "release.sourceBranch.guard", "release workflow guard matches release.sourceBranch", add)
+	checkFileContains(root, ".github/workflows/release.yml", "@${{ github.ref }}", "release.identity.dynamic", "release verifier derives workflow identity from the actual GitHub ref", add)
+
+	rebasePath, rebaseRef, ok := workflowIdentityPathAndRef(cfg.Rebase.WorkflowIdentity)
+	if !ok || !strings.HasPrefix(cfg.Rebase.WorkflowIdentity, "https://github.com/"+cfg.RepoPath()+"/.github/workflows/") {
+		add("rebase.workflowIdentity", "fail", "rebase.workflowIdentity must be an exact workflow identity in this repo")
+	} else if rebaseRef != releaseRef {
+		add("rebase.workflowIdentity", "fail", fmt.Sprintf("rebase.workflowIdentity uses %s, expected %s", rebaseRef, releaseRef))
+	} else {
+		add("rebase.workflowIdentity", "pass", "rebase workflow identity matches fleet repo and source branch")
+		checkPath(root, rebasePath, "rebase.workflowIdentity.path", "configured rebase workflow file exists", add)
+	}
+}
+
+func workflowIdentityPathAndRef(identity string) (string, string, bool) {
+	const marker = "/.github/workflows/"
+	i := strings.Index(identity, marker)
+	if i < 0 {
+		return "", "", false
+	}
+	relAndRef := identity[i+1:]
+	parts := strings.SplitN(relAndRef, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func checkPath(root, rel, id, msg string, add func(string, string, string)) {
@@ -358,7 +399,7 @@ backend authoring path.
 5. Run the release workflow to publish the configured fleet to %[2]s. The workflow is a GitHub identity runner; clearcutt platform setup-nix owns fork-specific Nix client setup, and clearcutt fleet certify-target, publish-target, assemble-target, verify-target, export-provenance, and finalize-release own the reusable release mechanics.
 6. Let the catalog workflow run %[3]d-release ingestion with vulnerability scan depth %[4]s.
 7. Give app teams the templates under %[5]s.
-8. Enforce signatures, SBOMs, SLSA Build L3 provenance, and rebase attestations at CI and admission.
+8. Gate on required signature, SBOM, provenance, and rebase-attestation evidence at CI and admission.
 
 ## Trust Story
 

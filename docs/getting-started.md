@@ -1,153 +1,144 @@
-# ClearCutt Getting Started Guide
+# App-Team Getting Started
 
-This guide gets app teams up and running with ClearCutt base images in under 5
-minutes. You will consume hardened runtimes with normal OCI tools, run a
-multi-stage build, and set up the local governance CLI.
+This guide is for application developers consuming a ClearCutt fleet. You do
+not need Nix to choose an image, generate a starter, build an app container, or
+certify it locally.
 
-If you are operating the forked platform itself, start with
-[`platform-kit.md`](platform-kit.md). If you are adding Postgres, Valkey, or
-oauth2-proxy service images to the platform-owned fleet, use
-[`service-images.md`](service-images.md).
+If you operate the forked platform, start with [`platform-kit.md`](platform-kit.md).
+If you review trust evidence, start with
+[`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md).
 
----
+## 1. Prove The CLI Path From A Clean Clone
 
-## ⚡ Do I Need Nix to Use ClearCutt?
+Use the committed catalog fixture before your organization publishes its own
+catalog data:
 
-> [!IMPORTANT]
-> **No, application developers do NOT need Nix installed to use ClearCutt base images.**
->
-> * **OCI / Container Consumption (Standard Developers):** You pull, run, and verify published runtime base images using standard tools such as `docker`, `podman`, `skopeo`, `cosign`, or Kubernetes manifests. Nix is not required.
-> * **Platform Fleet Ownership:** Nix is used by the fork owner that compiles and publishes runtime and service images. The public authoring surface is `clearcutt.fleet.yaml` plus CLI commands such as `matrix`, `runtime`, and `service`.
-
----
-
-## 🚀 Step 1: Write a Hardened Multi-Stage Dockerfile
-
-To satisfy both developer debugging speed and production security minimality, ClearCutt publishes three distinct matrix tiers:
-*   **`dev`**: Toolchains, compilers, interactive shells (`bash`), standard utilities, and a transient credential broker.
-*   **`slim`**: Lean execution layer retaining `bash`, `/bin/sh`, dynamic runtime interpreters, and CA certificates.
-*   **`distroless`**: Hardened production target with **exactly zero shells or package managers** (No `/bin/sh`, `apk`, `apt`, `ls`, or `cat`).
-
-The recommended approach is to use the `dev` tier as a compiler stage, then copy the compiled outputs into `distroless` for execution.
-
-### Example A: Java 25 (Fat JAR) Multi-Stage Build
-```dockerfile
-# 1. Compiler Stage (using the ClearCutt dev tier)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-java25:dev-latest AS builder
-WORKDIR /app
-COPY . .
-# Run gradle/maven build natively using the secure, gated dev toolchain
-RUN ./gradlew bootJar --no-daemon
-
-# 2. Execution Stage (using the hardened distroless tier)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-java25:distroless-latest
-WORKDIR /app
-# Copy only the compiled JAR from the builder stage
-COPY --from=builder /app/build/libs/app.jar app.jar
-# The image enforces unprivileged user 10001:10001 natively.
-# Execute JRE directly (no shell invocation)
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
-
-### Example B: Python 3.15 (Virtual Environment) Multi-Stage Build
-```dockerfile
-# 1. Builder Stage (using the dev tier to build wheels)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.15:dev-latest AS builder
-WORKDIR /app
-COPY requirements.txt .
-# Compile dependencies into a clean, isolated virtualenv
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
-
-# 2. Runtime Stage (using the slim tier to run python)
-FROM ghcr.io/northcutted/clearcutt/clearcutt-python3.15:slim-latest
-WORKDIR /app
-COPY --from=builder /opt/venv /opt/venv
-COPY . .
-ENV PATH="/opt/venv/bin:$PATH"
-# Run FastAPI, Flask, or standard python applications
-ENTRYPOINT ["python", "main.py"]
-```
-
----
-
-## 🛠️ Step 2: Set Up the Governance CLI (`clearcutt`)
-
-The `clearcutt` CLI is a single, zero-daemon Go governance engine designed to enforce supply chain policies and audit application artifacts locally.
-
-### 1. Build or Download the CLI
-
-* **Build from Source (Requires Go 1.26+):**
-  ```bash
-  git clone https://github.com/northcutted/clearcutt.git
-  cd clearcutt
-  make cli-build
-  ```
-* **Install to PATH:**
-  ```bash
-  chmod +x clearcutt
-  sudo mv clearcutt /usr/local/bin/
-  ```
-
-> [!IMPORTANT]
-> **Catalog data is required (and not committed).** `verify`, `inspect`, `list`, and the other discovery commands read a generated catalog of image records. Generate portable data from a clone with `./clearcutt catalog generate --output site/src/data/catalog`, run the full release-evidence pipeline with `./clearcutt catalog build`, or pass `--catalog cli/internal/testdata/catalog` to try the commands against the bundled fixture image. See [`docs/catalog-generator.md`](catalog-generator.md) for the data-only workflow.
-
-### 2. Verify Your Security Gates
-
-Run policy checks on target base images before integrating them in your builds:
 ```bash
-# Check that an image satisfies strict production gates
-clearcutt verify image java25-distroless \
+go -C cli build -o ../clearcutt ./cmd/clearcutt
+./clearcutt --catalog cli/internal/testdata/catalog list
+./clearcutt --catalog cli/internal/testdata/catalog inspect java21-distroless
+./clearcutt --catalog cli/internal/testdata/catalog verify image java21-distroless \
   --require-signature \
   --require-sbom \
+  --require-provenance \
   --max-critical 0 \
-  --max-high 3
+  --max-high 3 \
+  --allow-preview
 ```
 
-### 3. Declarative Compliance Audit (Local/CI)
+`verify image` is a catalog policy gate. It checks recorded catalog evidence,
+smoke tests, lifecycle state, and vulnerability thresholds. It is not a live
+registry-side cryptographic verification.
 
-Before deploying downstream container images, audit them completely offline to
-verify the absence of shells, dynamic package managers, and root access:
+## 2. Choose A Runtime And Tier
+
+ClearCutt publishes three runtime tiers:
+
+| Tier | Use it for | Avoid it for |
+| --- | --- | --- |
+| `dev` | Local development, CI build stages, compilers, package managers, and shells. | Production runtime. |
+| `slim` | Runtime workloads that need a diagnostic shell. | Shell-free production policy. |
+| `distroless` | Production-oriented runtime images without shells or package managers. | Debugging inside the final image. |
+
+Use catalog inspection to pick the base id:
+
 ```bash
-# Save your application OCI image as an offline tarball
-docker save my-app:latest -o my-app.tar
-
-# Certify the application against a custom security contract
-clearcutt certify my-app.tar \
-  --base java25-distroless \
-  --policy certification-policy.yaml
+./clearcutt --catalog cli/internal/testdata/catalog inspect java21-distroless
 ```
 
-### 4. Build a Rebasable App Image
+## 3. Generate A Starter App
 
-For downstream services that publish a single prebuilt artifact, `clearcutt app
-build` can assemble the application layer directly on top of a ClearCutt base:
+Build the CLI, then scaffold an app starter with Dockerfile, devcontainer,
+certification policy, release workflow, and rebase workflow:
+
 ```bash
-clearcutt app build \
+./clearcutt app template java --output examples/my-java-service --name my-java-service
+```
+
+The generated README explains the chosen build tier, runtime tier, certification
+policy, and rebase path.
+
+## 4. Open The Devcontainer Or Run The Dev Image
+
+The generated starter includes `.devcontainer/devcontainer.json` pinned to the
+matching ClearCutt `dev` image. You can also generate one directly:
+
+The first command below is fixture-backed and prints the devcontainer JSON
+without writing into the checkout. The container command requires Docker,
+Podman, or another engine that can pull the configured dev image.
+
+```bash
+./clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --devcontainer --print
+./clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --container --engine docker --command 'java -version'
+```
+
+The dev tier gives app teams build tools without making them install Nix.
+
+## 5. Build And Certify The App Image
+
+Use the generated Dockerfile or your existing build to produce an app image.
+The generated policy requires a digest-pinned image ref, so push the image,
+resolve its registry digest, then certify the archived image with `--image-ref`:
+
+```bash
+docker build -t ghcr.io/acme/payments-api:1.0.0 examples/my-java-service
+docker push ghcr.io/acme/payments-api:1.0.0
+APP_DIGEST=$(docker buildx imagetools inspect ghcr.io/acme/payments-api:1.0.0 \
+  --format '{{json .Manifest.Digest}}' | tr -d '"')
+docker save ghcr.io/acme/payments-api:1.0.0 -o payments-api.tar
+
+./clearcutt certify payments-api.tar \
   --base java21-distroless \
-  --artifact target/app.jar \
-  --dest /workspace/app.jar \
-  --entrypoint '["java","-jar","/workspace/app.jar"]' \
-  --image ghcr.io/acme/payments-api:1.0.0
+  --policy examples/my-java-service/certification-policy.yaml \
+  --image-ref "ghcr.io/acme/payments-api@${APP_DIGEST}"
 ```
 
-When the base is patched later, use `clearcutt app diff-base` to check runtime
-compatibility and `clearcutt app rebase --sign --attest` from a CI workflow with
-OIDC enabled.
+Certification checks the downstream image against your local hardening policy:
+known base, digest pinning, shell/package-manager restrictions, non-root
+requirements, and vulnerability thresholds.
 
-The full stack guide has end-to-end examples for Core/static, Java, Node.js,
-Python, Go, .NET, Rust, and C/C++:
-[`docs/app-lifecycle.md`](app-lifecycle.md).
+## 6. Hand Evidence To CI
 
-Platform-owned service images are separate from app images. Do not use
-`clearcutt app build` for Postgres, Valkey, or oauth2-proxy templates; use
-`clearcutt service` and the operator guide in
-[`docs/service-images.md`](service-images.md).
+The generated release workflow builds, pushes, signs, attests, and runs the
+certification action:
 
----
+```bash
+sed -n '1,140p' examples/my-java-service/.github/workflows/release.yml
+```
 
-## 💡 Top 3 Tips for a Smooth Onboarding
+Treat the generated workflows as starters. Fork owners still need to pin signer
+identities, registry permissions, branch policy, and admission rules before
+production use.
 
-1.  **Direct Execution only:** The `distroless` tier has no shell, meaning Docker/OCI entries like `CMD "java -jar app.jar"` will fail because they attempt to evaluate via shell execution. **Always use JSON syntax** `ENTRYPOINT ["java", "-jar", "app.jar"]`.
-2.  **No Package Managers:** If you need an extra system library (like `ffmpeg` or `imagemagick`), you cannot run `apk add` or `apt-get install` inside a ClearCutt container. App teams should build required artifacts in the `dev` stage; platform teams can add new fleet runtime machinery through the documented platform-authoring path.
-3.  **Local Conformance Auditing:** Run `clearcutt conformance run` *inside* a container (e.g. as its ENTRYPOINT, or `docker run --entrypoint clearcutt <image> conformance run`) to prove CA trust, zoneinfo, unprivileged execution, and `/tmp` writability offline. It audits the current environment, not a remote image; add `--expect-runtime java` (or `python`, `node`, …) to also assert the language interpreter is present.
+For app images that support the rebase contract, the generated rebase workflow
+shows the separate trust boundary: developer workflow signs the original app
+image; platform rebase workflow verifies that signature, swaps compatible base
+layers, signs the rebased result, and attaches a rebase attestation.
+
+## Manual Dockerfile Fallback
+
+If the app template does not fit your stack, keep the same tier pattern:
+
+```dockerfile
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:dev AS builder
+WORKDIR /workspace
+COPY . .
+RUN ./mvnw -DskipTests package
+
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless
+WORKDIR /workspace
+COPY --from=builder /workspace/target/app.jar /workspace/app.jar
+USER 10001:10001
+ENTRYPOINT ["java", "-jar", "/workspace/app.jar"]
+```
+
+Use JSON exec form for `ENTRYPOINT` and `CMD`. The `distroless` tier has no
+shell, so shell-form commands fail by design.
+
+## More App Paths
+
+- [App lifecycle](app-lifecycle.md) covers app build, diff-base, rebase, and
+  attestation examples across supported stacks.
+- [Certification](certification.md) covers local app-image checks.
+- [Catalog evidence](trust/catalog-evidence.md) explains what image detail pages
+  report and what still needs registry-side verification.

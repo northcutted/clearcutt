@@ -1,9 +1,0 @@
-{
-  "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://clearcutt.internal/vex/go1.26-distroless/v0.2.1",
-  "author": "ClearCutt Security Platform Gating Engine",
-  "role": "Document Creator",
-  "timestamp": "2026-05-31T15:55:04Z",
-  "version": 1,
-  "statements": []
-}

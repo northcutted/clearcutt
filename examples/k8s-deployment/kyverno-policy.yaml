@@ -6,11 +6,11 @@ kind: ClusterPolicy
 metadata:
   name: clearcutt-verify-provenance
   annotations:
-    policies.kyverno.io/title: "Verify ClearCutt Signatures, SBOMs, and Rebase Attestations"
+    policies.kyverno.io/title: "Verify ClearCutt Signatures, Provenance, and Rebase Attestations"
     policies.kyverno.io/subject: "Pod"
     policies.kyverno.io/description: >
-      Validates ClearCutt base-image signatures/SBOMs and verifies securely
-      rebased downstream application images before permitting deployment.
+      Validates ClearCutt base-image signatures/SLSA provenance and verifies
+      securely rebased downstream application images before permitting deployment.
 spec:
   validationFailureAction: Enforce
   background: false
@@ -34,7 +34,7 @@ spec:
           verifyDigest: true
           required: true
 
-    - name: verify-clearcutt-base-sbom
+    - name: verify-clearcutt-base-provenance
       match:
         any:
           - resources:
@@ -45,7 +45,7 @@ spec:
             - "ghcr.io/northcutted/clearcutt/clearcutt-*"
           failureAction: Enforce
           attestations:
-            - predicateType: "https://spdx.dev/Document"
+            - predicateType: "https://slsa.dev/provenance/v1"
               attestors:
                 - entries:
                     - keyless:

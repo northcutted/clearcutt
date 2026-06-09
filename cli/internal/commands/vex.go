@@ -54,19 +54,18 @@ const (
 	vexUnderInvestigation = "under_investigation"
 )
 
-// vexStatusFromException maps the richer exception status vocabulary
-// (which includes accepted_risk / false_positive) onto a valid OpenVEX status.
-// Anything without a direct equivalent collapses to not_affected, where a
-// justification can carry the rationale.
+// vexStatusFromException maps the richer exception status vocabulary onto a
+// valid OpenVEX status. Governance states that still acknowledge exposure, such
+// as accepted_risk, must not become not_affected claims.
 func vexStatusFromException(status string) string {
 	switch strings.ToLower(status) {
-	case "affected":
+	case "affected", "accepted_risk":
 		return vexAffected
 	case "fixed":
 		return vexFixed
 	case "under_investigation":
 		return vexUnderInvestigation
-	case "not_affected", "false_positive", "accepted_risk":
+	case "not_affected", "false_positive":
 		return vexNotAffected
 	default:
 		return vexUnderInvestigation
@@ -83,6 +82,15 @@ func vexJustificationFromReason(reason string) string {
 		return "vulnerable_code_not_in_execute_path"
 	default:
 		return "vulnerable_code_cannot_be_controlled_by_adversary"
+	}
+}
+
+func vexReasonSupportsNotAffected(reason string) bool {
+	switch strings.ToLower(reason) {
+	case "vulnerable_code_not_present", "scanner_false_positive", "vulnerable_code_not_executed", "inherited_from_base":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -177,7 +185,11 @@ func runVex(imageID string) error {
 				stmt.Status = vexStatusFromException(entry.Status)
 				stmt.ImpactStatement = entry.Notes
 				if stmt.Status == vexNotAffected {
-					stmt.Justification = vexJustificationFromReason(entry.Reason)
+					if vexReasonSupportsNotAffected(entry.Reason) {
+						stmt.Justification = vexJustificationFromReason(entry.Reason)
+					} else {
+						stmt.Status = vexUnderInvestigation
+					}
 				}
 			case finding.Remediation != nil:
 				reason := strings.ToLower(finding.Remediation.Reason)
@@ -185,21 +197,21 @@ func runVex(imageID string) error {
 				stmt.ImpactStatement = finding.Remediation.Summary
 
 				switch {
-				case status == "deferred" && (reason == "base_layer" || reason == "below_priority_threshold"):
-					stmt.Status = vexNotAffected
-					stmt.Justification = "vulnerable_code_not_in_execute_path"
 				case status == "deferred" && reason == "accepted_risk":
+					stmt.Status = vexAffected
+				case status == "ignored" && vexReasonSupportsNotAffected(reason):
 					stmt.Status = vexNotAffected
-					stmt.Justification = "vulnerable_code_cannot_be_controlled_by_adversary"
+					stmt.Justification = vexJustificationFromReason(reason)
 				case status == "deferred":
-					// no_fixed_version and any other deferral remain open.
+					// base_layer, below_priority_threshold, no_fixed_version, and
+					// any other deferral are policy/remediation facts, not proof
+					// that vulnerable code is absent or unreachable.
 					stmt.Status = vexUnderInvestigation
 				case status == "eligible":
 					stmt.Status = vexAffected
 					stmt.ImpactStatement = "Image layer is affected; a fixed version is eligible for rebuild."
 				default:
-					stmt.Status = vexNotAffected
-					stmt.Justification = "vulnerable_code_not_present"
+					stmt.Status = vexUnderInvestigation
 				}
 			default:
 				stmt.Status = vexUnderInvestigation

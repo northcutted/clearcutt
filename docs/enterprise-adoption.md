@@ -4,6 +4,9 @@ ClearCutt adoption should read like a platform rollout, not a base-image swap.
 Stand up the fleet once, then move application teams through a repeatable
 delivery loop: adopt, certify, admit, and update.
 
+For build-vs-buy positioning and when not to use ClearCutt, see
+[`alternatives.md`](alternatives.md).
+
 ## 1. Own And Publish The Fleet
 
 Start with a platform fork that runs under your GitHub organization, registry,

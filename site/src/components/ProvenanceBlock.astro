@@ -317,7 +317,7 @@ const gatingArchs = architectures.map((a) => a.arch);
               {sig?.cosignBundlePresent ? (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
                   <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  VERIFIED KEYLESS
+                  CATALOG REPORTS SIGNATURE
                 </span>
               ) : (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-warn/10 text-warn border border-warn/25">
@@ -398,7 +398,7 @@ const gatingArchs = architectures.map((a) => a.arch);
               {prov ? (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-accent/15 text-accent-soft border border-accent/25">
                   <span class="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_rgba(var(--accent),0.5)]" />
-                  SLSA LEVEL {prov.slsaLevel}
+                  PROVENANCE RECORDED {prov.slsaLevel}
                 </span>
               ) : (
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-ink-800 text-ink-300 border border-ink-700/50">
@@ -462,7 +462,7 @@ const gatingArchs = architectures.map((a) => a.arch);
 
           {prov && (
             <div class="rounded-lg border border-ink-800 bg-ink-950/70 p-2.5 font-mono text-[9.5px] text-ink-300 flex items-center justify-between select-none">
-              <span class="text-ink-400 font-sans font-semibold">Non-falsifiable attestation:</span>
+              <span class="text-ink-400 font-sans font-semibold">Signed provenance record:</span>
               <span class="text-emerald-400 font-semibold font-mono flex items-center gap-1.5">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]" /> Passed
               </span>

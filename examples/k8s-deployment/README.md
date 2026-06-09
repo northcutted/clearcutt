@@ -1,12 +1,16 @@
 # ClearCutt Kubernetes Deployment & Admission Gating Blueprint
 
-This blueprint demonstrates how to run **ClearCutt Hardened container images** inside **Kubernetes (K8s)** with strict process sandboxing, and establishes an end-to-end **"Keyboard to Cloud"** trust validation loop at admission time.
+This blueprint demonstrates how to run **application images built from ClearCutt
+base images** inside Kubernetes with strict process sandboxing, and establishes
+an evidence-aware admission path.
 
 ---
 
 ## 1. Production Pod Hardening
 
-The [`deployment.yaml`](./deployment.yaml) manifest implements strict Pod Security Standards (PSS) to enforce maximum runtime isolation:
+The [`deployment.yaml`](./deployment.yaml) manifest models an app image
+(`ghcr.io/acme/payments-api:1.0.0`) that was built from `java21-distroless` and
+certified before deployment. It implements strict Pod Security Standards (PSS):
 
 *   **Rootless Context:** Runs the container as unprivileged UID/GID `10001 (appuser)` via Pod-level `runAsUser` settings, reducing the blast radius of runtime compromise.
 *   **Immutable RootFS:** Employs `readOnlyRootFilesystem: true` to prevent any modifications to the image layer at runtime.
@@ -16,11 +20,14 @@ The [`deployment.yaml`](./deployment.yaml) manifest implements strict Pod Securi
 
 ---
 
-## 2. Dynamic Admission Gating (Kyverno)
+## 2. Admission Gating (Kyverno)
 
-The [`kyverno-policy.yaml`](./kyverno-policy.yaml) is a declarative Kyverno `ClusterPolicy` that acts as the cluster's secure gatekeeper.
+The [`kyverno-policy.yaml`](./kyverno-policy.yaml) is a hand-written Kyverno
+`ClusterPolicy` example aligned with the canonical generated path from
+`clearcutt policy --engine kyverno --environment production`.
 
-When a deployment is submitted, Kyverno intercepts the API request and performs the following dynamic cryptographic checks **before the pod is admitted to the cluster**:
+When a deployment is submitted, Kyverno intercepts the API request and performs
+the following cryptographic checks **before the pod is admitted to the cluster**:
 
 ```
                        Kubernetes Cluster API Server
@@ -33,11 +40,11 @@ When a deployment is submitted, Kyverno intercepts the API request and performs 
                                      │
              ┌───────────────────────┴───────────────────────┐
              ▼                                               ▼
-     1. Signature Check                              2. Attestation Check
+     1. Signature Check                              2. Provenance Check
 ┌───────────────────────────┐                   ┌───────────────────────────┐
-│ Is the OCI image signed   │                   │ Does a signed SPDX SBOM   │
-│ by our verified GitHub    │                   │ attestation exist in the  │
-│ Actions Release OIDC?     │                   │ image registry metadata?  │
+│ Is the OCI image signed   │                   │ Does signed SLSA          │
+│ by our verified GitHub    │                   │ provenance exist for this │
+│ Actions Release OIDC?     │                   │ release workflow?         │
 └────────────┬──────────────┘                   └────────────┬──────────────┘
              │                                               │
              └───────────────────────┬───────────────────────┘
@@ -54,13 +61,13 @@ file includes a template pair of rules for `ghcr.io/acme/*`:
 *   The predicate must say `rebaseDecision: allowed`, `developerSignatureVerified: true`, and must carry the expected developer identity and issuer.
 
 Kyverno evaluates signatures and attestations as separate `verifyImages` entries,
-so the policy keeps the base-image signature rule, SBOM rule, rebase-engine
-signature rule, and rebase-attestation rule split for clarity.
+so the policy keeps the base-image signature rule, SLSA provenance rule,
+rebase-engine signature rule, and rebase-attestation rule split for clarity.
 
 ### Keyless OIDC Assertions
-Instead of managing static public/private keys in Kyverno (which introduces key rotation overhead), the policy verifies our **GitHub Actions OIDC Identity**. 
+Instead of managing static public/private keys in Kyverno (which introduces key rotation overhead), the policy verifies our **GitHub Actions OIDC Identity**.
 *   It checks that the certificate issuer was `https://token.actions.githubusercontent.com`.
-*   It asserts that the certificate subject was our non-falsifiable release workflow: `https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main`.
+*   It asserts that the certificate subject matches the pinned release workflow: `https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main`.
 
 For rebased downstream applications, replace the `acme` placeholders with your
 developer and rebase-engine workflow subjects. Pin exact workflow identities
@@ -84,11 +91,12 @@ these admission checks across every supported stack, see
     ```bash
     kubectl apply -f kyverno-policy.yaml
     ```
-3.  Deploy your hardened application:
+3.  Deploy your certified application image:
     ```bash
     kubectl apply -f deployment.yaml
     ```
-4.  Test policy gating. If you try to deploy an unsigned image or one without the required SBOM attestation from the clearcutt namespace, Kyverno should block admission:
+4.  Test policy gating. If you try to deploy an unsigned app image or one
+    without the required base-image evidence, Kyverno should block admission:
     ```bash
     kubectl run uncertified --image=ghcr.io/northcutted/clearcutt/clearcutt-python3.15:slim
     # Outputs: Error from server: policy clearcutt-verify-provenance error: image verification failed...

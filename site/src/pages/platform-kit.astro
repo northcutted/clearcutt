@@ -81,14 +81,14 @@ clearcutt catalog build --limit 10 --scan-depth 4`} />
       </p>
       <CopyBlock language="shell" code={`# Generate and validate catalog JSON
 clearcutt catalog generate --config clearcutt.fleet.yaml --output ./dist/catalog
-clearcutt catalog validate --catalog ./dist/catalog
+clearcutt --catalog ./dist/catalog catalog validate
 
 # Scaffold or refresh the generated site project
-clearcutt catalog site scaffold --output ./catalog-site
+clearcutt catalog site scaffold --catalog ./dist/catalog --output ./catalog-site
 
 # Build and preview the generated static site
 clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install
-clearcutt catalog site preview --site ./dist/site`} />
+clearcutt catalog site preview --catalog ./dist/catalog --install --host 127.0.0.1 --port 4321`} />
     </section>
 
     <section class="space-y-4 max-w-3xl">

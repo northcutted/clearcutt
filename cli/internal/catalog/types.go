@@ -13,6 +13,8 @@ const (
 	ImageRecordSchemaVersion = "clearcutt.catalog.image/v1"
 	// ImageRecordSchemaVersionV2 identifies individual mixed-kind images/*.json records.
 	ImageRecordSchemaVersionV2 = "clearcutt.catalog.image/v2"
+	// EvidenceManifestSchemaVersion identifies the generated per-release evidence manifest.
+	EvidenceManifestSchemaVersion = "clearcutt.catalog.evidence-manifest/v1"
 )
 
 // CatalogIndex represents the top-level index.json structure.

@@ -75,9 +75,11 @@ func NewVerifyCmd() *cobra.Command {
 func newVerifyImageCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "image <image-id>",
-		Short: "Verify a specific ClearCutt image against policy contract gates",
-		Long:  `Enforces signatures, SBOMs, SLSA provenance, smoke tests, vulnerability limits, and lifecycle constraints.`,
-		Args:  cobra.ExactArgs(1),
+		Short: "Gate a specific ClearCutt catalog image against policy contract checks",
+		Long: `Evaluates catalog-record evidence flags, smoke test status, vulnerability
+limits, and lifecycle constraints for a specific image. This is a catalog policy
+gate; use verify release-evidence for registry-side Cosign and SLSA verification.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runVerify(args[0])
 		},
@@ -93,9 +95,9 @@ func addVerifyImageFlags(cmd *cobra.Command, hidden bool) {
 	cmd.Flags().BoolVar(&verifyOpts.requireProduction, "require-production", false, "Require that the image is approved for production deployment")
 	cmd.Flags().BoolVar(&verifyOpts.allowPreview, "allow-preview", false, "Allow images currently marked in the 'preview' lifecycle status")
 	cmd.Flags().BoolVar(&verifyOpts.allowDeprecated, "allow-deprecated", false, "Allow images currently marked in the 'deprecated' lifecycle status")
-	cmd.Flags().BoolVar(&verifyOpts.requireSignature, "require-signature", false, "Enforce presence of a valid Cosign cryptographic signature")
-	cmd.Flags().BoolVar(&verifyOpts.requireSBOM, "require-sbom", false, "Enforce presence of SPDX SBOM assets for all architectures")
-	cmd.Flags().BoolVar(&verifyOpts.requireProvenance, "require-provenance", false, "Enforce presence of SLSA level-3 build provenance attestations")
+	cmd.Flags().BoolVar(&verifyOpts.requireSignature, "require-signature", false, "Require the catalog release record to report Sigstore signature evidence")
+	cmd.Flags().BoolVar(&verifyOpts.requireSBOM, "require-sbom", false, "Require the catalog release record to report SPDX SBOM evidence for all architectures")
+	cmd.Flags().BoolVar(&verifyOpts.requireProvenance, "require-provenance", false, "Require the catalog release record to report SLSA provenance evidence")
 	cmd.Flags().BoolVar(&verifyOpts.requireTests, "require-tests", false, "Enforce that smoke and conformance tests exist and have passed")
 	cmd.Flags().BoolVar(&verifyOpts.requireVulnScan, "require-vuln-scan", false, "Enforce presence of complete vulnerability scan results")
 	cmd.Flags().IntVar(&verifyOpts.maxCritical, "max-critical", -1, "Maximum tolerated critical severity vulnerabilities (-1 to disable threshold)")
@@ -193,28 +195,28 @@ func runVerify(imageID string) error {
 	}
 	if verifyOpts.requireSignature {
 		if hasSig {
-			addCheck("signature.present", "pass", "Sigstore signature verified in release record")
+			addCheck("signature.present", "pass", "catalog release record reports Sigstore signature evidence")
 		} else {
-			addCheck("signature.present", "fail", "Sigstore cryptographic signature is missing")
+			addCheck("signature.present", "fail", "catalog release record is missing Sigstore signature evidence")
 		}
 	} else if hasSig {
-		addCheck("signature.present", "pass", "Sigstore signature present (not explicitly required)")
+		addCheck("signature.present", "pass", "catalog release record reports Sigstore signature evidence (not explicitly required)")
 	}
 
 	// 3. Check SBOM
 	hasSBOM := release.Evidence != nil && release.Evidence.SBOM
 	if verifyOpts.requireSBOM {
 		if hasSBOM {
-			addCheck("sbom.present", "pass", "SPDX SBOM evidence verified for all platforms")
+			addCheck("sbom.present", "pass", "catalog release record reports SPDX SBOM evidence for all platforms")
 		} else {
 			missingCount := 0
 			if release.Evidence != nil {
 				missingCount = release.Evidence.ArchCount - release.Evidence.SBOMArchCount
 			}
-			addCheck("sbom.present", "fail", fmt.Sprintf("SPDX SBOM is missing or incomplete (%d platforms missing)", missingCount))
+			addCheck("sbom.present", "fail", fmt.Sprintf("catalog release record is missing or has incomplete SPDX SBOM evidence (%d platforms missing)", missingCount))
 		}
 	} else if hasSBOM {
-		addCheck("sbom.present", "pass", "SPDX SBOM present for all platforms (not explicitly required)")
+		addCheck("sbom.present", "pass", "catalog release record reports SPDX SBOM evidence for all platforms (not explicitly required)")
 	}
 
 	// 4. Check SLSA Provenance
@@ -224,12 +226,12 @@ func runVerify(imageID string) error {
 	}
 	if verifyOpts.requireProvenance {
 		if hasProv {
-			addCheck("provenance.present", "pass", "SLSA Level-3 build provenance attestation present")
+			addCheck("provenance.present", "pass", "catalog release record reports SLSA provenance evidence")
 		} else {
-			addCheck("provenance.present", "fail", "SLSA build provenance attestation is missing")
+			addCheck("provenance.present", "fail", "catalog release record is missing SLSA provenance evidence")
 		}
 	} else if hasProv {
-		addCheck("provenance.present", "pass", "SLSA build provenance present (not explicitly required)")
+		addCheck("provenance.present", "pass", "catalog release record reports SLSA provenance evidence (not explicitly required)")
 	}
 
 	// 5. Check Conformance Tests

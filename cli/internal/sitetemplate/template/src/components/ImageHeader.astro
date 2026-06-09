@@ -36,7 +36,7 @@ const evidence = release.evidence ?? {
 const lastRebuiltAt = release.lastRebuiltAt || release.publishedAt;
 const lastRebuiltDate = new Date(lastRebuiltAt);
 const isStale = (new Date().getTime() - lastRebuiltDate.getTime()) > (30 * 24 * 60 * 60 * 1000);
-const scanStateLabel = evidence.vulnerabilities ? 'Catalog scan attached' : 'Catalog scan pending';
+const scanStateLabel = evidence.vulnerabilities ? 'Scan data attached' : 'Scan data pending';
 const scanStateTitle = evidence.vulnerabilities
   ? 'Vulnerability scan data is attached to this catalog release.'
   : 'No vulnerability scan data is attached to this catalog release yet.';
@@ -72,19 +72,19 @@ const scanStateTitle = evidence.vulnerabilities
         <StatusPill kind="ok" label={`Support: ${release.lifecycle.support.toUpperCase()}`} />
         <StatusPill kind={release.lifecycle.productionAllowed ? 'ok' : 'warn'} label={release.lifecycle.productionAllowed ? 'Prod Allowed' : 'Non-Prod Only'} />
         {evidence.signature
-          ? <StatusPill kind="ok" label="Cosign signed" />
+          ? <StatusPill kind="ok" label="Signature reported" />
           : <StatusPill kind="warn" label="Signature missing" />}
         {evidence.provenance
-          ? <StatusPill kind="ok" label="SLSA L3" />
+          ? <StatusPill kind="ok" label="Provenance reported" />
           : <StatusPill kind="warn" label="Provenance missing" />}
         {evidence.sbom
-          ? <StatusPill kind="ok" label="SBOM attached" />
+          ? <StatusPill kind="ok" label="SBOM reported" />
           : <StatusPill kind="warn" label="SBOM incomplete" />}
         {evidence.vulnerabilities
-          ? <StatusPill kind="ok" label="Scan attached" />
-          : <StatusPill kind="warn" label="Scan pending" />}
+          ? <StatusPill kind="ok" label="Scan data reported" />
+          : <StatusPill kind="warn" label="Scan data pending" />}
         {passed
-          ? <StatusPill kind="ok" label="Tests passed" />
+          ? <StatusPill kind="ok" label="Tests recorded passed" />
           : <StatusPill kind="warn" label="Tests pending" />}
         {image.tier.id === 'distroless' && <StatusPill kind="ok" label="Shell-Free" />}
         {image.tier.id !== 'dev' && <StatusPill kind="ok" label="Evidence overlays listed" />}

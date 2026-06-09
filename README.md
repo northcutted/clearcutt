@@ -1,613 +1,116 @@
 # ClearCutt
 
-**The forkable platform kit for hardened base images — every image signed, attested, and yours to own.**
+**The forkable platform kit and reference implementation for publishing owned,
+evidence-backed base images.**
 
 [![Live Catalog Site](https://img.shields.io/badge/Live%20Catalog-Site-blueviolet.svg?logo=astro&logoColor=white)](https://northcutted.github.io/clearcutt)
 [![ClearCutt PR Gating](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml)
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
-[![SLSA Build L3](https://img.shields.io/badge/SLSA-Build%20L3-green.svg)](https://slsa.dev)
+[![SLSA Provenance](https://img.shields.io/badge/SLSA-Provenance-green.svg)](https://slsa.dev)
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**ClearCutt** is a free, open-source platform kit for teams that need to own
-their container image supply chain. Fork it into your organization and you get
-an image fleet, release workflows, signing and attestation, catalog data, a
-static evidence portal, CI/CD gates, admission policy examples, app-team
-templates, and remediation workflows under **your** registry, GitHub Actions
-OIDC identities, and review process.
+ClearCutt is a free, open-source platform kit for teams that want to own their
+container image supply chain. Fork it into your organization and operate an
+image fleet, release workflows configured for signing and attestation, catalog
+data, a static evidence portal, CI/CD gates, admission policy examples,
+app-team templates, and remediation workflows under **your** registry, GitHub
+Actions OIDC identities, and review process.
 
-There is no hosted ClearCutt control plane. The repository is the control plane.
-Your fork owns the configuration, the builds, the evidence, the catalog, and the
-policy.
+There is no hosted ClearCutt control plane. The repository is the control plane:
+your fork owns the configuration, builds, evidence, catalog, policies, and
+operational burden.
 
----
+## What It Is
 
-## What ClearCutt Publishes
+ClearCutt is best understood as a **forkable platform kit and reference
+implementation**, not a hosted product. It provides the pieces a platform team
+can fork, configure, run, inspect, and adapt:
 
-ClearCutt has two first-class platform image lanes. Application images are a
-downstream consumer path, not a third platform-owned lane.
+| Surface | What it does today | Owner |
+| --- | --- | --- |
+| Runtime base images | Publishes language runtime images in `dev`, `slim`, and `distroless` tiers. | Platform team |
+| Service images | Publishes platform-owned service images such as Postgres, Valkey, and oauth2-proxy. | Platform team |
+| Catalog and portal | Reports image metadata, evidence channels, vulnerability scans, tests, and missing data. | Platform team |
+| App path | Gives app teams templates, devcontainers, local certification, app build, and rebase examples. | App teams |
+| Trust controls | Provides signing, SBOM, provenance, policy, exception, VEX, and remediation examples. | Platform and security teams |
 
-| Lane | What it is | Primary commands | Who owns it |
-| :--- | :--- | :--- | :--- |
-| **Runtime base images** | Multi-language `dev`, `slim`, and `distroless` base images for app teams. | `matrix`, `runtime`, `fleet`, `catalog` | Platform team |
-| **Service images** | Platform-owned backing services such as Postgres, Valkey, and oauth2-proxy. | `service scaffold`, `service validate`, `service build`, `service smoke` | Platform team |
-| **Application images** | Downstream app images built on, certified against, or rebased onto ClearCutt bases. | `dev`, `app template`, `app build`, `certify`, `app rebase` | App teams |
+Nix is the backend build engine for platform-owned images. App teams consume the
+fleet with Docker, Podman, Kubernetes, Cosign, and the ClearCutt CLI; they do
+not need to learn Nix.
 
-Nix is the backend build engine for the platform-owned lanes. App teams pull,
-run, verify, and certify images with Docker, Podman, Kubernetes, Cosign, and the
-ClearCutt CLI. They do not need to learn Nix.
+## First Proof From A Clean Clone
 
-## Who Cares
-
-| Audience | What they get | Proof surface |
-| :--- | :--- | :--- |
-| **Platform leads** | A forkable image platform with owned registry, workflows, policy, and catalog. | `clearcutt.fleet.yaml`, release workflows, catalog site |
-| **App developers** | Paved base images, devcontainers, app templates, and local certification. | `clearcutt dev`, `app template`, `app build`, `certify` |
-| **Security auditors** | Independent evidence channels for signatures, SBOMs, SLSA provenance, scans, tests, and exceptions. | `catalog validate`, `verify`, `exceptions`, VEX docs |
-| **Compliance teams** | A reviewable path from source checkout to admission gate, with conservative claims and documented trade-offs. | catalog evidence, policy bundles, release assets |
-
-## ClearCutt Across The SDLC
-
-ClearCutt is best understood as one operating model with two connected loops:
-platform teams publish and govern trusted images; app teams adopt, gate, admit,
-and update against that fleet.
-
-| Moment | Manager-level value | Platform-engineering depth |
-| :--- | :--- | :--- |
-| **Own the fleet** | Runtime and service images become an owned platform capability instead of an external feed you hope stays aligned. | `clearcutt.fleet.yaml`, `clearcutt matrix explain`, `clearcutt service explain`, `clearcutt platform status` |
-| **Publish evidence** | Every release has visible proof: signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | `clearcutt catalog build`, `clearcutt catalog generate`, `clearcutt catalog site`, Sigstore keyless signing, SPDX attestations, SLSA Build L3 provenance |
-| **Onboard apps** | App teams get a paved path without learning Nix or reverse-engineering base-image contracts. | `clearcutt list`, `inspect`, `dev`, `app template`, `app build`, devcontainers, stack examples |
-| **Gate delivery** | CI and admission can block images that miss your runtime, evidence, or vulnerability policy. | `clearcutt certify`, `verify`, `conformance`, `policy`, `certification-policy.yaml`, Kyverno / OPA bundles |
-| **Operate updates** | Security teams can triage CVEs, document exceptions, and move compatible app images onto patched bases under review. | `clearcutt scan`, `remediation`, `exceptions`, `vex`, `mirror`, `app diff-base`, `app rebase` |
-
-## Monorepo Layout
-
-ClearCutt is organized as a three-part monorepo:
-
-| Workspace | Purpose | Common commands |
-| :--- | :--- | :--- |
-| `core/` | Nix image factory, runtime overlays, release pipeline, vulnerability scanning, and image conformance tests. | `./clearcutt platform setup-nix --core-dir core`, `make core-verify` |
-| `cli/` | Go governance CLI (`clearcutt`) and its tests. | `make cli-build`, `make cli-test` |
-| `site/` | Astro catalog site and generated catalog data. | `make site-dev`, `make site-build`, `clearcutt catalog site build` |
-
-Shared contracts and consumer material remain at the root: `schemas/`, `docs/`,
-`examples/`, and `.github/`.
-
-### Fork Setup
-
-Start with [FORKING.md](FORKING.md) if you want to run ClearCutt as your own
-internal image platform. It covers GitHub Actions permissions, the `production`
-environment gate, Pages, fork-local OIDC identities, and the first release.
-
-## First Paths
-
-### 1. App Teams: Start Without Learning Nix
-
-Use the catalog, devcontainer flow, app templates, and certification commands
-with normal container tools:
+These commands use the committed catalog fixture, so they work before you
+generate or publish your own catalog data:
 
 ```bash
-make cli-build
+go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list
+go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless
+go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog catalog validate
 
-# Inspect a known runtime before adopting it.
-./clearcutt matrix explain java21
-
-# Generate a starter app with Dockerfile, devcontainer, policy, and CI.
-./clearcutt app template java --output examples/my-java-service --name my-java-service
-
-# Commit a release-tag-pinned devcontainer, or launch with Docker/Podman.
-./clearcutt dev java21-distroless --devcontainer
-./clearcutt dev java21-distroless --container --engine docker
-```
-
-### 2. Platform Owners: Configure Runtime And Service Lanes
-
-Fleet owners edit `clearcutt.fleet.yaml` or use the CLI scaffold commands. The
-public config is YAML; generated Nix extension files are backend inputs.
-
-```bash
-# Runtime lane.
-./clearcutt matrix explain java25
-./clearcutt matrix add java25
-./clearcutt runtime scaffold ruby3.4
-./clearcutt runtime validate ruby3.4
-
-# Service lane.
-./clearcutt service scaffold postgres16 --template postgres --version 16
-./clearcutt service scaffold valkey8 --template valkey --version 8
-./clearcutt service scaffold oauth2-proxy7 --template oauth2-proxy --version 7
-./clearcutt service validate --all
-```
-
-### 3. Build, Publish, And Catalog Evidence
-
-Only machines that compile or publish platform-owned images need Nix. Let the
-CLI configure fork-specific Nix client settings from `clearcutt.fleet.yaml`.
-
-```bash
-./clearcutt platform setup-nix --core-dir core --write-user-config
-make core-verify
-
-# Generate a mixed runtime + service catalog and build the evidence portal.
-./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
-./clearcutt --catalog dist/catalog catalog validate
-./clearcutt catalog site build --catalog dist/catalog --output dist/site --install
-```
-
-For an offline service rendering demo, use the committed mixed fixture:
-
-```bash
-./clearcutt --catalog cli/internal/testdata/mixed-catalog catalog validate
-./clearcutt catalog site build --catalog cli/internal/testdata/mixed-catalog --output dist/service-demo --install
-```
-
----
-
-## Deeper Proof
-
-The README stays outcome-first. The deeper technical proof lives in focused
-docs:
-
-- [Platform kit](docs/platform-kit.md) covers fork setup, owned workflows, OIDC identities, and release operations.
-- [Extending ClearCutt](docs/extending-clearcutt.md) explains app templates first, fleet YAML next, and Nix authoring only for backend changes.
-- [Service images](docs/service-images.md) covers Postgres, Valkey, and oauth2-proxy service image operations.
-- [Catalog generator](docs/catalog-generator.md) covers `clearcutt catalog generate`, validation, summaries, inspection, and data-only CI.
-- [Astro site generator](docs/site-generator.md) covers `clearcutt catalog site scaffold/build/preview/eject`.
-- [Catalog schema](docs/catalog-schema.md) documents versioned `index.json`, image records, schemas, and raw evidence directories.
-- [Generic OCI mode](docs/generic-oci-mode.md) covers non-Nix catalogs from `images.yaml`.
-- [Security model](docs/security-model.md) and [BYO base images](docs/byo-base-images.md) document trade-offs, overlay assumptions, and migration constraints.
-
-## Supported Matrix & Offering
-
-ClearCutt maintains and continuously gates a wide matrix of modern runtime base
-images. Gating reduces attack surface through minimal dependency closures, but
-does not guarantee "zero CVEs", especially for cutting-edge or pre-release
-runtimes.
-
-| Language | Supported Versions | dev Tier | slim Tier | distroless Tier |
-| :--- | :--- | :--- | :--- | :--- |
-| **Java** | `21`, `25` (LTS) | JDK + Compiler | JRE | Minimal JRE (No JShell) |
-| **Node.js** | `22`, `24` (LTS) | Node + NPM + Yarn | Node Runtime | Pure Node Binary |
-| **Python** | `3.15` (Pre-release) | Python + Pip + DevHeaders | Python Runtime | Pure Python Interpreter |
-| **Go** | `1.25`, `1.26` (Pre-release) | Full Go Toolchain | Go Runtime | Binary Execution Layer |
-| **.NET** | `8.0`, `10.0` | Full .NET SDK | ASP.NET Runtime | Hardened ASP.NET Layer |
-| **Rust** | `1.95` | rustc + Cargo + Clippy + rustfmt | Static-binary base | Static-binary base |
-| **C/C++** | `15` (GCC) | GCC + Make + CMake + Ninja | Static-binary base | Static-binary base |
-| **Core** | `LTS` | Coreutils + Bash | Bash + BusyBox | CA Certificates Only |
-
-> [!NOTE]
-> **Compiled-language runtime tiers:** Rust and C/C++ produce statically-linkable binaries, so their `slim`/`distroless` tiers ship a minimal hardened base (CA certificates, plus a shell on `slim`) for you to drop your compiled artifact into — they intentionally omit the compiler toolchain, which lives only in the `dev` tier.
-
-The service lane currently includes `postgres16`, `valkey8`, and
-`oauth2-proxy7`. They are cataloged as `kind: service`, not as runtime tiers.
-
----
-
-## Go Governance CLI (`clearcutt`)
-
-To simplify local image discovery, platform inspection, and supply-chain policy verification, ClearCutt includes a statically compiled, operationally boring Go CLI named `clearcutt`.
-
-### Build the CLI
-
-Compile the binary from the root of the repository:
-```bash
-make cli-build
-```
-
-> [!NOTE]
-> **Catalog data is required (and not committed).** The discovery/governance commands (`list`, `inspect`, `verify`, `diff`, `mirror`, `policy`, `vex`, `matrix`) read a generated catalog of image records. Generate portable data with `./clearcutt catalog generate --output site/src/data/catalog`, run the full release-evidence pipeline with `./clearcutt catalog build`, or point `--catalog` at any catalog directory — e.g. the bundled fixture `cli/internal/testdata/catalog` for a quick offline demo:
-> ```bash
-> ./clearcutt list --catalog cli/internal/testdata/catalog
-> ```
-
-### CLI Command Reference
-
-The `clearcutt` CLI is divided into purpose-built subcommands. Catalog and governance commands are offline; `app` commands are registry-direct and network-touching, but still require no Docker daemon or Nix installation.
-
-#### 1. `list` (Catalog Image Discovery)
-List all base images available in the local catalog index, with rich support for filtering by runtime language, matrix tier, and production readiness:
-```bash
-# List all images in clean, tabular format
-./clearcutt list
-
-# Filter images to only those allowed in production running Java
-./clearcutt list --runtime java --production-only
-
-# Filter images specifically by tier
-./clearcutt list --tier distroless
-
-# Output full images metadata in standard JSON format for pipeline parsing
-./clearcutt list --format json
-```
-
-#### 2. `inspect` (Image Metadata Auditer)
-Query high-fidelity security metadata, dynamic entrypoints, non-root user settings, compiled architectures, vulnerability counts, exception details, and release asset URLs:
-```bash
-# Inspect the latest release of Java 25 Distroless
-./clearcutt inspect java25-distroless
-
-# Inspect a specific release version tag
-./clearcutt inspect java25-distroless --tag v0.6.2
-
-# Inspect and output as structured YAML
-./clearcutt inspect java25-distroless --format yaml
-```
-
-#### 3. `verify` (Policy Gate Enforcement)
-Enforce software supply chain compliance checks locally or inside CI/CD gates. Validate OIDC signatures, SBOM attestations, SLSA levels, smoke test status, active support lifecycles, and maximum vulnerability counts. Can verify images, local catalog indexes, or published release evidence:
-```bash
-# Enforce strict supply chain gates locally on a catalog image
-./clearcutt verify image java25-distroless \
+go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless \
   --require-signature \
   --require-sbom \
+  --require-provenance \
   --max-critical 0 \
   --max-high 3 \
-  --exceptions exceptions.yaml
-
-# Verify published OCI release evidence against Cosign + SLSA
-./clearcutt verify release-evidence \
-  --ref ghcr.io/northcutted/clearcutt/clearcutt-java25:distroless-v0.6.2 \
-  --repo northcutted/clearcutt \
-  --workflow-identity 'https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main'
-
-# Verify the local catalog structure and database schema compliance
-./clearcutt verify catalog
+  --allow-preview
 ```
 
-#### 4. `certify` (Downstream Container Auditor)
-Audit downstream application image tarballs completely offline. Unpacks layered filesystems in-memory to verify the absence of shells, interactive package managers, and root UIDs, matching a declarative security policy:
-```bash
-# Export the target OCI container archive
-docker save ghcr.io/acme/my-app:latest -o my-app.tar
+`verify image` is a catalog policy gate. It checks catalog-record evidence flags,
+smoke tests, lifecycle status, and vulnerability thresholds. Use
+`verify release-evidence`, Cosign, GitHub attestations, and SLSA verification
+when you need registry-side cryptographic proof for a published OCI ref.
 
-# Run offline certification compliance audits
-./clearcutt certify my-app.tar \
-  --base java25-distroless \
-  --policy certification-policy.yaml
-```
+## Where To Start
 
-#### 5. `conformance run` (Offline Spec Verification)
-Runs local assertions against the current host or container environment completely offline. Validates timezone configurations, CA certificate link pathways, unprivileged execution permissions, and executes dynamic interpreter assertions:
-```bash
-# Execute standard conformance suite asserting Java is present on PATH
-./clearcutt conformance run --expect-runtime java
-```
+| Role | First document | First useful command |
+| --- | --- | --- |
+| App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
+| Platform owner | [Platform kit](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` |
+| Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
+| Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,140p' docs/alternatives.md` |
+| Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |
 
-#### 6. `matrix add/remove` / `runtime scaffold` (Fleet Extension)
-Select known runtime lines in `clearcutt.fleet.yaml`, or scaffold a new custom runtime line with a generated backend extension:
-```bash
-# Known runtime line: config-only update
-./clearcutt matrix explain java25
-./clearcutt matrix add java25
-./clearcutt matrix remove python3.13
+The full documentation index is [docs/README.md](docs/README.md).
 
-# New runtime line: guided scaffold plus validation
-./clearcutt runtime scaffold ruby3.4
-./clearcutt runtime validate ruby3.4
-./clearcutt matrix explain ruby3.4
-./clearcutt app template ruby --output clearcutt-template-ruby --name my-ruby-app
-```
+## Proof Map
 
-`runtime scaffold` writes a `runtimeLines` entry to `clearcutt.fleet.yaml`, selects it in `matrix.languages`, regenerates `core/lib/runtime-extensions.nix`, and enables the matching app-template runtime when ClearCutt has one. Ruby is the reference scaffold path: by default it uses `ruby_3_4` with `ruby` as a fallback package candidate and emits `ruby3.4-dev`, `ruby3.4-slim`, and `ruby3.4-distroless` image IDs.
+- [Mental model](docs/concepts/mental-model.md) explains the two loops:
+  platform teams publish the fleet; app teams adopt, gate, admit, and update.
+- [Glossary](docs/concepts/glossary.md) defines lanes, tiers, evidence,
+  certification, verification, exceptions, VEX, rebase, preview, and scaffold.
+- [CLI reference](docs/cli-reference.md) maps the current command surface.
+- [Catalog generator](docs/catalog-generator.md) explains generated catalog
+  data, raw evidence directories, validation, and generic OCI mode.
+- [Catalog evidence walkthrough](docs/trust/catalog-evidence.md) explains what
+  the portal proves, what it only reports, and how missing evidence appears.
+- [Security model](docs/security-model.md) documents trust boundaries and
+  non-claims.
+- [Policy bundles](docs/policy-bundles.md) covers Kyverno and Gatekeeper policy
+  generation.
+- [Fork validation](docs/fork-validation.md) lists checks to run before a fork's
+  first release.
 
-#### 7. `dev` (Pinned Local Development Environments)
-Launch the dev-tier sibling for any ClearCutt runtime line. The command pins the release tag, writes VS Code/Codespaces devcontainer definitions, or opens the same environment through a local container engine or Nix:
-```bash
-# Commit a release-tag-pinned devcontainer definition
-./clearcutt dev java21-distroless --devcontainer
+## Repo Layout
 
-# Run the dev image locally with a writable bind mount
-./clearcutt dev java21-distroless --container --engine docker
+| Workspace | Purpose |
+| --- | --- |
+| `core/` | Nix image factory, runtime overlays, release pipeline, scans, and conformance tests. |
+| `cli/` | Go governance CLI and tests. |
+| `site/` | Astro catalog portal and generated-site template source. |
+| `docs/` | Role-routed documentation, trust walkthroughs, and operating guides. |
+| `examples/` | App templates, deployment manifests, policy examples, and overlays. |
+| `.github/` | Release, catalog, Pages, remediation, PR, and rebase workflows. |
 
-# Run a non-interactive CI smoke inside the dev image
-./clearcutt dev java21-distroless --container --command 'java -version'
+## Boundaries
 
-# Optional: use the Nix native dev shell when you already have Nix installed
-./clearcutt dev java21-distroless --nix
-```
+ClearCutt is pre-1.0 and intentionally conservative in its claims. The reference
+repo demonstrates a production-oriented blueprint, but fork owners must operate
+their own registry, workflow identities, release approvals, catalog data,
+admission policies, exception process, and remediation defaults.
 
-#### 8. `overlay generate` (Corporate Base Overlay Scaffolder)
-Generates a self-contained Nix multi-stage grafting workspace to overlay ClearCutt secure runtimes directly on top of corporate base OS layers (e.g., Red Hat UBI, Ubuntu Pro, Amazon Linux). Includes Makefile, smoke tests, Containerfile, and GHA workflows:
-```bash
-# Scaffold workspace to graft Java 25 JRE onto RHEL UBI9
-./clearcutt overlay generate \
-  --runtime java25 \
-  --tier distroless \
-  --base registry.access.redhat.com/ubi9/ubi-minimal \
-  --output my-java25-overlay/
-```
-
-#### 9. `exceptions validate` (Exceptions Schema Auditor)
-Audits local declarative `exceptions.yaml` triage files against standard governance schemas. Verifies active owners, reference tags, and immediately flags any expired exception mappings:
-```bash
-# Audit exceptions configurations for syntax and expiration
-./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
-```
-
-#### 10. `mirror` / `mirror verify` (Secure OCI Layer Replication)
-Generates high-fidelity `skopeo` and `cosign` shell script templates to securely replicate multi-arch base layers into internal registries while preserving Sigstore OIDC signatures, attestations, and OCI referrers. Supports verification of replicated artifacts:
-```bash
-# Generate replication script
-./clearcutt mirror --source ghcr.io/acme/java25 --target my-registry.internal/java25
-
-# Verify referrers and signatures of mirrored OCI elements
-./clearcutt mirror verify --source ghcr.io/acme/java25 --target my-registry.internal/java25
-```
-
-#### 11. `app build` / `app diff-base` / `app rebase` / `app template` (Downstream Application Lifecycle)
-Build, update, and scaffold downstream application images on ClearCutt bases without a Docker daemon. The rebase path swaps only base layers and preserves application layers byte-for-byte; it refuses runtime major/minor changes and requires a verified developer signature before emitting a signed "allowed" rebase attestation. The `template` command scaffolds starter projects.
-
-For language-specific examples across Core/static, Java, Node.js, Python, Go,
-.NET, Rust, and C/C++, see the aligned end-to-end guide in
-[`docs/app-lifecycle.md`](docs/app-lifecycle.md).
-
-```bash
-# Scaffold an app-team starter project using ClearCutt
-./clearcutt app template java --output clearcutt-template-java --name my-java-app
-
-# Assemble a prebuilt artifact onto a ClearCutt base and push it
-./clearcutt app build \
-  --base java21-distroless \
-  --artifact target/app.jar \
-  --dest /workspace/app.jar \
-  --entrypoint '["java","-jar","/workspace/app.jar"]' \
-  --image ghcr.io/acme/payments-api:1.0.0
-
-# Compare a candidate base before rebasing
-./clearcutt app diff-base \
-  --image ghcr.io/acme/payments-api:1.0.0 \
-  --candidate-base java21-distroless
-
-# Rebase, sign with the rebase-engine identity, and attach a rebase attestation
-./clearcutt app rebase \
-  --image ghcr.io/acme/payments-api:1.0.0 \
-  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2 \
-  --candidate-base-id java21-distroless \
-  --tag ghcr.io/acme/payments-api:1.0.0-rebased \
-  --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
-  --sign \
-  --attest
-```
-
----
-
-### Declarative Governance Schemas
-
-ClearCutt standardizes compliance policies and vulnerability triages using declarative YAML configurations that the CLI validates and parses.
-
-#### 1. Exceptions Schema (`exceptions.yaml`)
-Documents accepted CVE risks, owner mappings, and active expiration dates:
-```yaml
-apiVersion: clearcutt.dev/v1
-kind: VulnerabilityExceptions
-metadata:
-  name: app-triage-exceptions
-spec:
-  exceptions:
-    - id: "CVE-2026-9999"
-      package: "openssl"
-      image: "*"
-      release: "*"
-      status: "accepted_risk"
-      reason: "inherited_from_base"
-      owner: "eddie-northcutt"
-      createdAt: "2026-05-30"
-      expiresAt: "2026-08-30"
-      references:
-        - "https://nvd.nist.gov/vuln/detail/CVE-2026-9999"
-      notes: "Affected functions are not reachable in our current distroless runtime closure."
-```
-
-#### 2. Certification Policy Schema (`certification-policy.yaml`)
-Configures downstream OCI compliance gates dynamically:
-```yaml
-apiVersion: clearcutt.dev/v1
-kind: CertificationPolicy
-metadata:
-  name: production-hardening-contract
-spec:
-  base:
-    allowedImages:
-      - "java25-distroless"
-      - "python3.15-slim"
-    requireDigestPinned: true
-    requireKnownBase: true
-  supplyChain:
-    requireSignature: true
-    requireProvenance: true
-    requireSbom: true
-    minimumSlsaLevel: 3
-  runtime:
-    requireNonRoot: true
-    forbidShell: true
-    forbidPackageManagers: true
-    forbidDevTier: true
-  lifecycle:
-    allowPreview: false
-    allowDeprecated: false
-    allowExperimental: false
-  vulnerabilities:
-    maxCritical: 0
-    maxHigh: 3
-    allowExceptions: true
-    exceptionFile: "exceptions.yaml"
-```
-
-#### 3. Rebase Attestation Schema
-`schemas/rebase-attestation.schema.json` defines the full in-toto statement shape for `clearcutt app rebase --attest`. The CLI gives cosign the predicate body and cosign wraps it with the subject digest; an `allowed` predicate requires `developerSignatureVerified: true`, a pinned developer identity, the source image digest, compressed preserved app-layer digests, and the base-layer add/remove accounting.
-
----
-
-## Consumption & Integration Patterns
-
-### 1. CI/CD: Reusable GitHub Action Composite Block
-You can easily build, certify, and sign your downstream applications using our composite action:
-
-```yaml
-# .github/workflows/build-app.yml
-name: Build Application
-on: [push]
-
-permissions:
-  contents: read
-  packages: write
-  id-token: write # Required for keyless OIDC Cosign signing
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # ... your own build + push steps that produce the image referenced below ...
-      - name: Certify Application Against ClearCutt Contracts
-        uses: northcutted/clearcutt/.github/actions/certify-app@v0.11.1
-        with:
-          image: 'ghcr.io/${{ github.repository }}/my-app:latest'
-          base: 'java25-distroless'
-          policy: 'certification-policy.yaml'
-          # Pin the signer identity that built/signed the app image — never a wildcard:
-          certificate-identity-regexp: 'https://github.com/${{ github.repository }}/.github/workflows/.*'
-```
-
-### 1.5 CI/CD: Compatible-Base Rebasing
-After a developer workflow signs the original application image, a separate rebase workflow can move compatible, rebasable images onto a patched ClearCutt base without rebuilding the app artifact:
-```yaml
-permissions:
-  contents: read
-  packages: write
-  id-token: write
-
-steps:
-  - uses: sigstore/cosign-installer@v4
-  - run: |
-      clearcutt app rebase \
-        --image ghcr.io/acme/payments-api:1.0.0 \
-        --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2 \
-        --candidate-base-id java21-distroless \
-        --tag ghcr.io/acme/payments-api:1.0.0-rebased \
-        --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
-        --sign \
-        --attest
-```
-Run this from CI with GitHub Actions OIDC (`id-token: write`) so cosign can sign keylessly as the rebase-engine workflow.
-For the full app-build, developer-sign, diff, rebase, verify, and admission
-pattern for every supported stack, see
-[`docs/app-lifecycle.md`](docs/app-lifecycle.md).
-
-### 2. Adopting ClearCutt Under a Base-Image Mandate
-ClearCutt images are built **from scratch** for maximum hardening, but if your organization mandates a sanctioned base OS (Amazon Linux, UBI, Ubuntu Pro), you don't have to migrate to start benefiting. Because each runtime is a self-contained, `RPATH`-bound `/nix/store` closure, you can graft it directly onto the mandated base without modifying any OS layer or its bundled monitoring/security agents:
-
-```dockerfile
-# examples/base-image-overlay/Dockerfile
-FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless AS clearcutt
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
-
-# Graft the hardened runtime closure on top — no /lib, /usr, or /etc/passwd
-# from the mandated base is overwritten.
-COPY --from=clearcutt /nix /nix
-USER 10001:10001
-```
-
-See [`examples/base-image-overlay/`](examples/base-image-overlay/) for the full Dockerfile and an honest comparison of this overlay approach (Path A) versus full migration to the from-scratch images (Path B).
-
-### 3. OCI Deployment: Secure Docker Compose Blueprint
-For container runtimes, the project provides a hardened Compose blueprint enforcing strict Sandboxing:
-
-```yaml
-# examples/oci-deployment/docker-compose.yml
-services:
-  secure-app:
-    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.15:distroless
-    read_only: true               # Locks container root (Nix store is immutable)
-    security_opt:
-      - no-new-privileges:true    # Prevents runtime privilege escalation
-    cap_drop:
-      - ALL                       # Drops all Linux kernel capabilities
-    user: "10001:10001"           # Enforces unprivileged rootless boundaries
-    tmpfs:
-      - /tmp:mode=1777            # Mounts ephemeral /tmp into memory
-```
-
-### 4. Nix Native Flake overlay
-For Nix native developers and downstream clusters, ClearCutt publishes packages and devShell libraries natively. Import ClearCutt in your `flake.nix` and apply the default overlay:
-
-```nix
-{
-  inputs.clearcutt.url = "github:northcutted/clearcutt";
-  outputs = { self, nixpkgs, clearcutt }: {
-    devShells.x86_64-linux.default = let
-      pkgs = import nixpkgs {
-        system = "x86_64-linux";
-        overlays = [ clearcutt.overlays.default ];
-      };
-    in pkgs.mkShell {
-      # Instantly overrides environment runtimes with ClearCutt verified layers
-      buildInputs = [ pkgs.clearcuttJava25 ];
-    };
-  };
-}
-```
-
-### 5. Kubernetes Native Deployment & Kyverno Admission Gating
-ClearCutt provides complete deployment and policy manifests under `examples/k8s-deployment/` to enforce signature and SBOM verification.
-
-* **Hardened Deployment (`deployment.yaml`):** Uses the secure unprivileged context (`runAsUser: 10001`), drops kernel capabilities, disables privilege escalation, and locks the root layer.
-* **Admission Verification (`kyverno-policy.yaml`):** Enforces Kyverno `ClusterPolicy` rules that intercept Pod creation requests and traceably verify image signatures, signed SPDX SBOMs, and optional ClearCutt rebase attestations.
-
-> [!CAUTION]
-> **Webhook Availability Trade-off:** The provided Kyverno policy defaults to a fail-closed configuration (enforced via `validationFailureAction: Enforce`). If the Kyverno admission controller webhook becomes unavailable or crashes, all pod deployment operations matching this policy will be blocked on the cluster. Organizations must evaluate whether to fall back to auditing mode (`validationFailureAction: Audit`) depending on their high-availability and business continuity requirements.
-
-### 6. Red Hat OpenShift Production Deployment
-For deployment onto **Red Hat OpenShift (OCP)**, the project provides dedicated blueprints complying with strict **Security Context Constraints (SCC)** under `examples/openshift-deployment/`.
-
-* **Arbitrary User ID Compliance:** OpenShift's `restricted-v2` SCC allocates random, high-range namespace UIDs at runtime and assigns membership to the `root` group (`gid: 0`). 
-* **Optimized Manifest (`deployment.yaml`):** Omit hardcoded UIDs by removing the `runAsUser` pod spec parameter, enabling `runAsNonRoot: true`, and assigning `runAsGroup: 0` alongside emptyDir ephemeral volume mounts on writeable target paths (`/tmp`, `/app/logs`) to ensure maximum execution compliance.
-
-> [!WARNING]
-> **Root Group Security Implications:** Running with `runAsGroup: 0` (root group membership) alongside `runAsNonRoot: true` is standard practice on OpenShift to facilitate directory write access for dynamically assigned dynamic UIDs. However, it represents a security trade-off: any host filesystem file or system resource configured with group-write permissions (`g+w`) owned by `root` will be writeable by the unprivileged container user. Platform teams must ensure strict file permission audit controls on host systems to mitigate this risk.
-
----
-
-## Fast path: adopt → certify → admit
-
-The quickest way to feel the value is to walk one app team through the app
-delivery loop: adopt a ClearCutt base, certify the resulting image, then admit
-only evidence-backed images in the cluster. The fleet ownership and evidence
-publishing steps are the one-time platform-team setup. Each step is incremental;
-you do not have to migrate everything at once.
-
-### Step 1: Scaffold App Starters
-Instead of writing complex custom Dockerfiles, use the Go CLI to bootstrap standard, secure project layouts for app teams:
-```bash
-./clearcutt app template node --output clearcutt-template-node --name payments-api
-```
-This scaffolds a project layout preconfigured with:
-* Multi-stage build targetting ClearCutt `dev` and `distroless` runtimes.
-* A strict declarative compliance policy (`certification-policy.yaml`).
-* Automated GitHub Action release pipelines and rebase loops.
-
-### Step 2: Integrate CI Verification Gates
-Add the `clearcutt certify` check into your application PR pipelines completely offline (requiring no docker daemon or Nix):
-```bash
-# Save container build output
-docker save my-app:latest -o my-app.tar
-
-# Run compliance checks against policy gates
-./clearcutt certify my-app.tar \
-  --base node22-distroless \
-  --policy certification-policy.yaml
-```
-This gates against accidental inclusion of shell utilities, package managers, root users, and high-severity CVEs before the image leaves CI.
-
-### Step 3: Enforce Cluster Admission Gating
-Deploy Kyverno policies in your Kubernetes namespaces to enforce supply chain integrity. Reject any deployment trying to run an unsigned container or one lacking a signed SBOM:
-```bash
-kubectl apply -f examples/k8s-deployment/kyverno-policy.yaml
-```
-This establishes a cryptographic security gate for signed images with the required catalog evidence.
-
----
-
-## License
-
-This project is open-source software licensed under the **Apache License, Version 2.0**.
+Use ClearCutt when owning the full image supply chain is the point. Do not use
+it when you primarily want a vendor SLA, hosted control plane, fully managed
+patch stream, or FIPS/STIG certification out of the box.

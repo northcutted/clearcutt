@@ -10,16 +10,32 @@ interface Props {
   showKyverno?: boolean;
 }
 const { image, release, ownerRepo, showKyverno = true } = Astro.props;
-const versioned = `${image.fullName}:${release.tag}-${image.tier.id}`;
+const catalogPath = './path/to/catalog';
+const releaseTag = image.tier.id && image.tier.id !== 'service' ? `${release.tag}-${image.tier.id}` : release.tag;
+const versioned = `${image.fullName}:${releaseTag}`;
 const digestRef = release.manifestDigest ? `${image.fullName}@${release.manifestDigest}` : versioned;
-const subject = release.signature?.certificate?.subject ?? `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
-const issuer = release.signature?.certificate?.issuer ?? 'https://token.actions.githubusercontent.com';
+const subject = release.signature?.certificate?.subject ?? '';
+const issuer = release.signature?.certificate?.issuer ?? '';
+const hasSignature = Boolean(subject && issuer && release.signature);
+const hasProvenance = Boolean(release.provenance);
+const hasSbom = Boolean(release.evidence?.sbom || Object.keys(release.assetUrls.sbom || {}).length > 0);
+const hasTests = Boolean(release.evidence?.tests);
+const hasRegistryEvidence = Boolean(release.manifestDigest && hasSignature && hasProvenance && hasSbom && hasTests);
+const missingChannels = [
+  !release.manifestDigest && 'manifest digest',
+  !hasSignature && 'signature',
+  !hasProvenance && 'provenance',
+  !hasSbom && 'SBOM',
+  !hasTests && 'test results',
+].filter(Boolean).join(', ');
 
 const runtimeId = image.language.id === 'c' ? 'cc15' : `${image.language.id}${image.language.version}`;
 
-const clearcuttInspect = `clearcutt inspect ${image.id} --tag ${release.tag}`;
+const clearcuttInspect = `CATALOG_DIR=${catalogPath}
+clearcutt --catalog "$CATALOG_DIR" inspect ${image.id} --tag ${release.tag}`;
 
-const clearcuttVerify = `clearcutt verify image ${image.id} \\
+const clearcuttVerify = `CATALOG_DIR=${catalogPath}
+clearcutt --catalog "$CATALOG_DIR" verify image ${image.id} \\
   --tag ${release.tag} \\
   --require-production \\
   --require-signature \\
@@ -27,6 +43,11 @@ const clearcuttVerify = `clearcutt verify image ${image.id} \\
   --require-provenance \\
   --max-critical 0 \\
   --max-high 5`;
+
+const evidenceManifestInspect = `CATALOG_DIR=${catalogPath}
+jq --arg image "${image.id}" --arg tag "${release.tag}" \\
+  '.releases[] | select(.imageId == $image and .tag == $tag) | {imageRef, immutableRef, channels, missing}' \\
+  "$CATALOG_DIR/evidence-manifest.json"`;
 
 const clearcuttConformance = `clearcutt conformance run \\
   --expect-runtime ${image.language.id}`;
@@ -57,12 +78,20 @@ const ghAttest = `gh attestation verify oci://${digestRef} \\
   --cert-identity '${subject}' \\
   --source-ref refs/heads/main`;
 
+const policyGenerate = `CATALOG_DIR=${catalogPath}
+clearcutt --catalog "$CATALOG_DIR" policy ${image.id} \\
+  --tag ${release.tag} \\
+  --engine kyverno \\
+  --environment production \\
+  --namespace apps`;
+
 const kyverno = `apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: verify-${image.imageName}
 spec:
   validationFailureAction: Enforce
+  background: false
   webhookTimeoutSeconds: 30
   rules:
     - name: verify-cosign-signature
@@ -78,7 +107,7 @@ spec:
                      subject: "${subject}"
                      issuer: "${issuer}"
           attestations:
-            - predicateType: "https://spdx.dev/Document"
+            - predicateType: https://slsa.dev/provenance/v1
               attestors:
                 - entries:
                     - keyless:
@@ -92,9 +121,11 @@ spec:
   <div>
     <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">Active Verification Toolkit</h3>
     <p class="mt-1 text-xs text-ink-400">
-      {showKyverno
-        ? 'Run local cryptographic OIDC audits and generate Kyverno cluster policies to enforce supply chain integrity.'
-        : 'Run local cryptographic OIDC audits to verify supply chain integrity.'}
+      {hasRegistryEvidence
+        ? (showKyverno
+          ? 'Run registry-side verification commands and generate example Kyverno policies for selected signature and SLSA provenance checks.'
+          : 'Run registry-side verification commands for the recorded release evidence.')
+        : 'This catalog record is missing one or more registry evidence channels. Start with catalog policy checks and the evidence manifest.'}
     </p>
   </div>
 
@@ -153,20 +184,33 @@ spec:
     
     <div class="space-y-1.5 border-t border-ink-800/40 pt-4">
       <span class="text-ink-400 font-bold block uppercase text-[10px]">One-step Audit Command</span>
-      <p class="text-xs text-ink-300">Run the native compiled Go CLI command locally to verify the registry digest, Sigstore signature, SBOM and test attestations, and SLSA provenance:</p>
-      <CopyBlock language="shell" code={`clearcutt verify release-evidence \\
+      {hasRegistryEvidence ? (
+        <>
+          <p class="text-xs text-ink-300">Run the native compiled Go CLI command locally to verify the registry digest, Sigstore signature, SBOM and test attestations, and SLSA provenance:</p>
+          <CopyBlock language="shell" code={`clearcutt verify release-evidence \\
   --ref ${digestRef} \\
   --repo ${ownerRepo} \\
   --workflow-identity '${subject}'`} />
+        </>
+      ) : (
+        <>
+          <p class="text-xs text-ink-300">
+            Missing or incomplete registry evidence: <strong class="text-ink-100">{missingChannels || 'unknown'}</strong>. Do not use registry verification or admission snippets until those channels are present.
+          </p>
+          <CopyBlock language="shell" code={evidenceManifestInspect} />
+        </>
+      )}
     </div>
   </div>
 
   <Tabs name={`verify-${image.id}`} tabs={[
     { id: 'clearcutt', label: 'ClearCutt CLI' },
-    { id: 'cosign', label: 'Cosign' },
-    { id: 'slsa', label: 'SLSA Verifier' },
-    { id: 'gh-cli', label: 'GitHub CLI' },
-    ...(showKyverno ? [{ id: 'kyverno', label: 'Kyverno Policy' }] : []),
+    ...(hasRegistryEvidence ? [
+      { id: 'cosign', label: 'Cosign' },
+      { id: 'slsa', label: 'SLSA Verifier' },
+      { id: 'gh-cli', label: 'GitHub CLI' },
+      ...(showKyverno ? [{ id: 'kyverno', label: 'Kyverno Policy' }] : []),
+    ] : []),
   ]}>
     <div data-panel-id="clearcutt" data-panel-active="true" class="space-y-6">
       <div class="space-y-2">
@@ -180,7 +224,7 @@ spec:
       <div class="space-y-2 border-t border-ink-800/40 pt-5">
         <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">2. Local Policy Gate Verification</h3>
         <p class="text-xs text-ink-400">
-          Enforce signatures, SBOMs, SLSA provenance, smoke tests, vulnerability limits, and lifecycle constraints locally or in CI pipelines.
+          Check catalog-record evidence flags, smoke tests, vulnerability limits, and lifecycle constraints locally or in CI pipelines. Use the release-evidence command or the Cosign/SLSA tabs for registry-side cryptographic verification.
         </p>
         <CopyBlock language="shell" code={clearcuttVerify} />
       </div>
@@ -202,7 +246,7 @@ spec:
       </div>
     </div>
 
-    <div data-panel-id="cosign" data-panel-active="false" class="space-y-6">
+    {hasRegistryEvidence && <div data-panel-id="cosign" data-panel-active="false" class="space-y-6">
       <div class="space-y-2">
         <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold">1. Verify Keyless OIDC Signature</h3>
         <p class="text-xs text-ink-400">
@@ -218,9 +262,9 @@ spec:
         </p>
         <CopyBlock language="shell" code={cosignAttest} />
       </div>
-    </div>
+    </div>}
 
-    <div data-panel-id="slsa" data-panel-active="false" class="space-y-4">
+    {hasRegistryEvidence && <div data-panel-id="slsa" data-panel-active="false" class="space-y-4">
       <div>
         <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300 font-bold">slsa-verifier (SLSA Build L3)</h3>
         <p class="mb-3 text-xs text-ink-400">
@@ -228,25 +272,26 @@ spec:
         </p>
         <CopyBlock language="shell" code={slsa} />
       </div>
-    </div>
+    </div>}
 
-    <div data-panel-id="gh-cli" data-panel-active="false" class="space-y-4">
+    {hasRegistryEvidence && <div data-panel-id="gh-cli" data-panel-active="false" class="space-y-4">
       <div>
         <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300 font-bold">GitHub Native Attestation</h3>
         <p class="mb-3 text-xs text-ink-400">
-          Audit standard GitHub OCI attestations natively using the GitHub CLI client.
+          Audit the GitHub-native provenance attestation using the GitHub CLI client.
         </p>
         <CopyBlock language="shell" code={ghAttest} />
       </div>
-    </div>
+    </div>}
 
-    {showKyverno && (
+    {hasRegistryEvidence && showKyverno && (
       <div data-panel-id="kyverno" data-panel-active="false" class="space-y-4">
         <div data-kyverno-panel-root data-subject={subject} data-issuer={issuer} data-image-name={image.imageName} data-image-fullname={image.fullName}>
           <h3 class="mb-2 text-xs uppercase tracking-wider text-ink-300">Admission Control (Kyverno Policy)</h3>
           <p class="mb-3 text-xs text-ink-200">
-            Enforce keyless signature and cryptographic SBOM attestation checks in Kubernetes clusters dynamically.
+            Use <code class="font-mono text-ink-100">clearcutt policy</code> as the canonical generator for keyless signature and SLSA provenance checks; validate the generated YAML against your Kyverno version.
           </p>
+          <CopyBlock language="shell" code={policyGenerate} />
 
           <!-- Interactive Policy Settings Card -->
           <div class="surface-soft p-4 border border-ink-700/40 rounded-xl space-y-4 mb-4">
@@ -267,11 +312,11 @@ spec:
 
             <div class="flex items-center justify-between gap-4 pt-3 border-t border-ink-800/40">
               <div>
-                <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Require SBOM Verification</label>
-                <span class="text-[11px] text-ink-300">Block pods if they lack a cryptographically signed SPDX SBOM</span>
+                <label class="text-xs font-semibold text-ink-100 uppercase tracking-wide block">Require SLSA Provenance</label>
+                <span class="text-[11px] text-ink-300">Block pods if they lack signed SLSA provenance from the release workflow</span>
               </div>
-              <button type="button" data-sbom-toggle data-active="true" role="switch" aria-checked="true" aria-label="Require SBOM verification" class="w-10 h-6 rounded-full p-1 bg-ink-950 border border-ink-700/40 transition-colors duration-200 relative focus:outline-none data-[active=true]:bg-accent/20 data-[active=true]:border-accent/40 shrink-0">
-                <span class="w-3.5 h-3.5 rounded-full bg-ink-400 block transition-all duration-200 transform data-[active=true]:translate-x-4 data-[active=true]:bg-accent-soft" data-sbom-dot data-active="true" />
+              <button type="button" data-provenance-toggle data-active="true" role="switch" aria-checked="true" aria-label="Require SLSA provenance" class="w-10 h-6 rounded-full p-1 bg-ink-950 border border-ink-700/40 transition-colors duration-200 relative focus:outline-none data-[active=true]:bg-accent/20 data-[active=true]:border-accent/40 shrink-0">
+                <span class="w-3.5 h-3.5 rounded-full bg-ink-400 block transition-all duration-200 transform data-[active=true]:translate-x-4 data-[active=true]:bg-accent-soft" data-provenance-dot data-active="true" />
               </button>
             </div>
           </div>
@@ -291,8 +336,8 @@ spec:
     if (!root) return;
 
     const actionBtns = root.querySelectorAll('[data-action-btn]');
-    const sbomToggle = root.querySelector('[data-sbom-toggle]');
-    const sbomDot = root.querySelector('[data-sbom-dot]');
+    const provenanceToggle = root.querySelector('[data-provenance-toggle]');
+    const provenanceDot = root.querySelector('[data-provenance-dot]');
     const codeContainer = root.querySelector('[data-kyverno-code-block]');
 
     const subject = root.getAttribute('data-subject');
@@ -301,12 +346,12 @@ spec:
     const imageFullName = root.getAttribute('data-image-fullname');
 
     let currentAction = 'Enforce';
-    let requireSbom = true;
+    let requireProvenance = true;
 
     function renderYaml() {
-      const sbomSection = requireSbom 
+      const provenanceSection = requireProvenance
         ? `          attestations:
-            - predicateType: "https://spdx.dev/Document"
+            - predicateType: https://slsa.dev/provenance/v1
               attestors:
                 - entries:
                     - keyless:
@@ -321,6 +366,7 @@ spec:
         `  name: verify-${imageName}`,
         'spec:',
         `  validationFailureAction: ${currentAction}`,
+        '  background: false',
         '  webhookTimeoutSeconds: 30',
         '  rules:',
         '    - name: verify-cosign-signature',
@@ -335,7 +381,7 @@ spec:
         '                - keyless:',
         `                    subject: "${subject}"`,
         `                    issuer: "${issuer}"`,
-        sbomSection,
+        provenanceSection,
         '          mutateDigest: true',
         '          verifyDigest: true',
         '          required: true'
@@ -361,11 +407,11 @@ spec:
       });
     });
 
-    sbomToggle.addEventListener('click', () => {
-      requireSbom = !requireSbom;
-      sbomToggle.setAttribute('data-active', requireSbom ? 'true' : 'false');
-      sbomToggle.setAttribute('aria-checked', requireSbom ? 'true' : 'false');
-      sbomDot.setAttribute('data-active', requireSbom ? 'true' : 'false');
+    provenanceToggle.addEventListener('click', () => {
+      requireProvenance = !requireProvenance;
+      provenanceToggle.setAttribute('data-active', requireProvenance ? 'true' : 'false');
+      provenanceToggle.setAttribute('aria-checked', requireProvenance ? 'true' : 'false');
+      provenanceDot.setAttribute('data-active', requireProvenance ? 'true' : 'false');
       renderYaml();
     });
   })();

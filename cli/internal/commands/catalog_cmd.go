@@ -175,6 +175,9 @@ func finalizeGeneratedCatalog(outDir string) error {
 	if err := stampCatalogIndexMetadata(outDir); err != nil {
 		return err
 	}
+	if err := removeStaleImageRecords(outDir); err != nil {
+		return err
+	}
 	if err := ensureRawEvidenceDirs(outDir); err != nil {
 		return err
 	}
@@ -182,10 +185,47 @@ func finalizeGeneratedCatalog(outDir string) error {
 		return err
 	}
 	fmt.Fprintf(out, "[generate] wrote summary.json\n")
+	if err := writeEvidenceManifestFile(outDir); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[generate] wrote %s\n", evidenceManifestFilename)
 	if err := writeCatalogSchemaFiles(outDir); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "[generate] wrote schemas/\n")
+	return nil
+}
+
+func removeStaleImageRecords(outDir string) error {
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		return err
+	}
+	expected := map[string]bool{}
+	for _, image := range index.Images {
+		expected[image.ID] = true
+	}
+	imagesDir := filepath.Join(outDir, "images")
+	entries, err := os.ReadDir(imagesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		if expected[id] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(imagesDir, entry.Name())); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "[generate] removed stale image record %s\n", entry.Name())
+	}
 	return nil
 }
 

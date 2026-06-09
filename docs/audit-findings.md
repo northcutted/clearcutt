@@ -42,6 +42,6 @@ reviewing README, docs, site copy, examples, and generated catalog language.
 
 - CLI command tree and grouped help: `cd cli && go test ./...`.
 - Site copy and generated pages: `cd site && npm run typecheck && npm run build`.
-- Catalog trust-data consistency: `./clearcutt verify catalog --catalog site/src/data/catalog`.
+- Catalog trust-data consistency: `./clearcutt --catalog site/src/data/catalog verify catalog`.
 - Claim hygiene scans: search for `zero risk`, `autonomous`, `certified`,
   `FIPS`, `STIG`, and broad `guarantee` language before publishing.

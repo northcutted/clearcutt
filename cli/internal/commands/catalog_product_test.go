@@ -735,6 +735,10 @@ exit 2
 
 func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	outDir := copyFixtureCatalog(t)
+	orphanPath := filepath.Join(outDir, "images", "python3.13-dev.json")
+	if err := os.WriteFile(orphanPath, []byte(`{"id":"python3.13-dev"}`), 0o644); err != nil {
+		t.Fatalf("write orphan image record: %v", err)
+	}
 	oldNewReleaseSource := newReleaseSource
 	t.Cleanup(func() { newReleaseSource = oldNewReleaseSource })
 	newReleaseSource = func(owner, repo, token string) catalogbuild.ReleaseSource {
@@ -753,8 +757,13 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("catalog generate failed: %v\n%s", err, stdout)
 	}
-	if !strings.Contains(stdout, "[generate] wrote summary.json") {
-		t.Fatalf("expected summary output, got:\n%s", stdout)
+	for _, want := range []string{"[generate] wrote summary.json", "[generate] wrote evidence-manifest.json"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected generate output %q, got:\n%s", want, stdout)
+		}
+	}
+	if _, err := os.Stat(orphanPath); !os.IsNotExist(err) {
+		t.Fatalf("catalog generate should remove orphan image records, stat err=%v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(outDir, "summary.json"))
 	if err != nil {
@@ -767,7 +776,24 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	if summary.ImageCount != 1 || summary.LatestTag == "" {
 		t.Fatalf("unexpected generated summary: %#v", summary)
 	}
-	for _, schemaName := range []string{"catalog-index.v1.schema.json", "image-record.v1.schema.json"} {
+	manifestRaw, err := os.ReadFile(filepath.Join(outDir, evidenceManifestFilename))
+	if err != nil {
+		t.Fatalf("expected generated evidence manifest: %v", err)
+	}
+	var manifest evidenceManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("failed to decode generated evidence manifest: %v\n%s", err, manifestRaw)
+	}
+	if manifest.SchemaVersion != catalog.EvidenceManifestSchemaVersion || manifest.Summary.ImageReleases != 1 || manifest.Summary.Complete != 1 {
+		t.Fatalf("unexpected generated evidence manifest summary: %#v", manifest)
+	}
+	if got := manifest.Releases[0].ImageRef; got != "ghcr.io/test-owner/test-repo/clearcutt-java:v1.0.0-distroless" {
+		t.Fatalf("unexpected manifest image ref %q", got)
+	}
+	if manifest.Releases[0].ImmutableRef == nil || !strings.Contains(*manifest.Releases[0].ImmutableRef, "@sha256:") {
+		t.Fatalf("expected immutable ref in manifest release: %#v", manifest.Releases[0])
+	}
+	for _, schemaName := range []string{"catalog-index.v1.schema.json", "evidence-manifest.v1.schema.json", "image-record.v1.schema.json"} {
 		schemaRaw, err := os.ReadFile(filepath.Join(outDir, "schemas", schemaName))
 		if err != nil {
 			t.Fatalf("expected generated schema %s: %v", schemaName, err)
@@ -813,6 +839,51 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.ImageRecordSchemaVersion)
 	if err != nil {
 		t.Fatalf("generated catalog should satisfy image schema version: %v\n%s", err, validateOut)
+	}
+	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.EvidenceManifestSchemaVersion)
+	if err != nil {
+		t.Fatalf("generated catalog should satisfy evidence manifest schema version: %v\n%s", err, validateOut)
+	}
+}
+
+func TestCatalogValidateRejectsOrphanImageRecords(t *testing.T) {
+	outDir := copyFixtureCatalog(t)
+	orphanPath := filepath.Join(outDir, "images", "python3.13-dev.json")
+	if err := os.WriteFile(orphanPath, []byte(`{"id":"python3.13-dev"}`), 0o644); err != nil {
+		t.Fatalf("write orphan image record: %v", err)
+	}
+
+	validateOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate")
+	if err == nil {
+		t.Fatalf("expected orphan image validation to fail:\n%s", validateOut)
+	}
+	if !strings.Contains(validateOut, "images/python3.13-dev.json: image record is not referenced by index.json") {
+		t.Fatalf("expected orphan image error, got err=%v\n%s", err, validateOut)
+	}
+}
+
+func TestCatalogValidateRejectsStaleEvidenceManifest(t *testing.T) {
+	outDir := copyFixtureCatalog(t)
+	if err := writeEvidenceManifestFile(outDir); err != nil {
+		t.Fatalf("write evidence manifest: %v", err)
+	}
+
+	manifest, err := loadEvidenceManifest(outDir)
+	if err != nil {
+		t.Fatalf("load evidence manifest: %v", err)
+	}
+	manifest.Releases[0].Channels.Signature.Observed = false
+	manifest.Releases[0].Channels.Signature.Status = "missing"
+	if err := writeJSONFile(filepath.Join(outDir, evidenceManifestFilename), manifest); err != nil {
+		t.Fatalf("write stale evidence manifest: %v", err)
+	}
+
+	validateOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate")
+	if err == nil {
+		t.Fatalf("expected stale manifest validation to fail:\n%s", validateOut)
+	}
+	if !strings.Contains(validateOut, "evidence-manifest.json: does not match catalog image records") {
+		t.Fatalf("expected stale manifest error, got err=%v\n%s", err, validateOut)
 	}
 }
 
@@ -875,7 +946,7 @@ func TestCatalogGenerateIncludeServicesEmitsV2ServiceRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mixed service catalog should validate with warnings only: %v\n%s", err, validateOut)
 	}
-	for _, schemaName := range []string{"catalog-index.v2.schema.json", "image-record.v2.schema.json"} {
+	for _, schemaName := range []string{"catalog-index.v2.schema.json", "evidence-manifest.v1.schema.json", "image-record.v2.schema.json"} {
 		if _, err := os.Stat(filepath.Join(outDir, "schemas", schemaName)); err != nil {
 			t.Fatalf("expected generated v2 schema %s: %v", schemaName, err)
 		}
@@ -1122,6 +1193,7 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	for _, want := range []string{
 		"[generate] wrote 1 generic OCI image record(s)",
 		"[generate] wrote summary.json",
+		"[generate] wrote evidence-manifest.json",
 		"[generate] wrote schemas/",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -1186,6 +1258,20 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if release.Evidence == nil || release.Evidence.ArchCount != 2 || release.Evidence.Signature || release.Evidence.Provenance || release.Evidence.SBOM {
 		t.Fatalf("unexpected generic release evidence: %#v", release.Evidence)
 	}
+	manifestRaw, err := os.ReadFile(filepath.Join(outDir, evidenceManifestFilename))
+	if err != nil {
+		t.Fatalf("expected generic evidence manifest: %v", err)
+	}
+	var manifest evidenceManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("failed to decode generic evidence manifest: %v\n%s", err, manifestRaw)
+	}
+	if manifest.Summary.ImageReleases != 1 || manifest.Summary.Complete != 0 || manifest.Summary.MissingEvidence != 1 {
+		t.Fatalf("unexpected generic manifest summary: %#v", manifest.Summary)
+	}
+	if got := strings.Join(manifest.Releases[0].Missing, ","); !strings.Contains(got, "signature") || !strings.Contains(got, "sbom") {
+		t.Fatalf("expected generic manifest to preserve missing evidence, got %#v", manifest.Releases[0].Missing)
+	}
 	if len(release.Architectures) != 2 {
 		t.Fatalf("expected two generic architectures, got %d", len(release.Architectures))
 	}
@@ -1196,6 +1282,9 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "schemas", "catalog-index.v1.schema.json")); err != nil {
 		t.Fatalf("expected generated catalog index schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "schemas", "evidence-manifest.v1.schema.json")); err != nil {
+		t.Fatalf("expected generated evidence manifest schema: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "schemas", "image-record.v1.schema.json")); err != nil {
 		t.Fatalf("expected generated image record schema: %v", err)
@@ -1208,6 +1297,10 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.ImageRecordSchemaVersion)
 	if err != nil {
 		t.Fatalf("generic catalog should satisfy image schema version: %v\n%s", err, validateOut)
+	}
+	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.EvidenceManifestSchemaVersion)
+	if err != nil {
+		t.Fatalf("generic catalog should satisfy evidence manifest schema version: %v\n%s", err, validateOut)
 	}
 	if !strings.Contains(validateOut, "missing signature evidence") || !strings.Contains(validateOut, "missing or incomplete SBOM evidence") {
 		t.Fatalf("expected generic validation warnings for unavailable evidence, got:\n%s", validateOut)

@@ -16,17 +16,12 @@ on:
         default: ""
 
 permissions:
-  contents: write # Required to push tags, commits, and upload final assets to the GitHub Release
-  packages: write # Required to push OCI layered images to GHCR
-  id-token: write # CRITICAL: Required for Sigstore Cosign OIDC Keyless signing
-  statuses: write
+  contents: read
   actions: read
-  pages: write # Required to deploy the catalog site to GitHub Pages
-  attestations: write # Required to create first-party GitHub Attestations
 
-# Releases mutate GHCR tags + SLSA provenance — never let two run concurrently.
-# Per-ref grouping lets workflow_dispatch on a non-main ref (e.g. a hotfix
-# branch tag) proceed even while main has a release in flight.
+# Releases mutate GHCR tags + SLSA provenance. The release identity is pinned to
+# refs/heads/main in clearcutt.fleet.yaml and admission examples, so dispatches
+# from other refs are rejected before any mutable release work starts.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -39,6 +34,12 @@ jobs:
       version: ${{ steps.version-calc.outputs.version }}
       version_type: ${{ steps.version-calc.outputs.version_type }}
     steps:
+      - name: Enforce main release identity
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::ClearCutt release identity is pinned to refs/heads/main. Dispatch releases from main, or update fleet config, policies, and verifier commands together."
+          exit 1
+
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -72,6 +73,8 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-version.outputs.version_type != 'none' }}
     runs-on: ubuntu-latest
     environment: production # <-- Manual approval gate here!
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -115,7 +118,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -145,6 +148,10 @@ jobs:
     name: Publish Target (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
     needs: [check-version, release-gate, fleet-matrix]
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
@@ -158,7 +165,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -250,6 +257,10 @@ jobs:
     name: Publish Service (${{ matrix.system }} - ${{ matrix.service }})
     needs: [check-version, release-gate, fleet-matrix]
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.service_release_matrix) }}
@@ -263,7 +274,7 @@ jobs:
         uses: ./.github/actions/setup-nix
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -342,8 +353,8 @@ jobs:
     needs: [check-version, release-gate]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
-      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -351,7 +362,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -420,6 +431,7 @@ jobs:
     needs: [check-version, publish-matrix, release-gate, fleet-matrix]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
       packages: write
       attestations: write
@@ -433,7 +445,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -468,8 +480,11 @@ jobs:
           # index"). crane authenticates via the docker config written by the
           # GHCR login step above.
           CRANE_VERSION=v0.20.6
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin crane
+          CRANE_TARBALL=go-containerregistry_Linux_x86_64.tar.gz
+          CRANE_SHA256=c1d593d01551f2c9a3df5ca0a0be4385a839bd9b86d4a76e18d7b17d16559127
+          curl -fsSL -o "/tmp/${CRANE_TARBALL}" "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${CRANE_TARBALL}"
+          printf '%s  %s\n' "${CRANE_SHA256}" "/tmp/${CRANE_TARBALL}" | sha256sum -c -
+          sudo tar -xzf "/tmp/${CRANE_TARBALL}" -C /usr/local/bin crane
           crane version
 
       - name: Download amd64 SBOM
@@ -540,6 +555,7 @@ jobs:
     needs: [check-version, publish-service-matrix, release-gate, fleet-matrix]
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       id-token: write
       packages: write
       attestations: write
@@ -553,7 +569,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -580,8 +596,11 @@ jobs:
         run: |
           set -euo pipefail
           CRANE_VERSION=v0.20.6
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin crane
+          CRANE_TARBALL=go-containerregistry_Linux_x86_64.tar.gz
+          CRANE_SHA256=c1d593d01551f2c9a3df5ca0a0be4385a839bd9b86d4a76e18d7b17d16559127
+          curl -fsSL -o "/tmp/${CRANE_TARBALL}" "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${CRANE_TARBALL}"
+          printf '%s  %s\n' "${CRANE_SHA256}" "/tmp/${CRANE_TARBALL}" | sha256sum -c -
+          sudo tar -xzf "/tmp/${CRANE_TARBALL}" -C /usr/local/bin crane
           crane version
 
       - name: Download amd64 Service SBOM
@@ -658,7 +677,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -694,7 +713,7 @@ jobs:
       fail-fast: false
       matrix:
         target: ${{ fromJSON(needs.aggregate-digests.outputs.matrix) }}
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
     with:
       image: ${{ matrix.target.image }}
       digest: ${{ matrix.target.digest }}
@@ -735,12 +754,17 @@ jobs:
         run: |
           set -euo pipefail
           CRANE_VERSION=v0.20.6
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin crane
+          CRANE_TARBALL=go-containerregistry_Linux_x86_64.tar.gz
+          CRANE_SHA256=c1d593d01551f2c9a3df5ca0a0be4385a839bd9b86d4a76e18d7b17d16559127
+          curl -fsSL -o "/tmp/${CRANE_TARBALL}" "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/${CRANE_TARBALL}"
+          printf '%s  %s\n' "${CRANE_SHA256}" "/tmp/${CRANE_TARBALL}" | sha256sum -c -
+          sudo tar -xzf "/tmp/${CRANE_TARBALL}" -C /usr/local/bin crane
 
           SLSA_VERIFIER_VERSION=v2.7.1
+          SLSA_VERIFIER_SHA256=946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339
           curl -fsSL -o /tmp/slsa-verifier \
             "https://github.com/slsa-framework/slsa-verifier/releases/download/${SLSA_VERIFIER_VERSION}/slsa-verifier-linux-amd64"
+          printf '%s  %s\n' "${SLSA_VERIFIER_SHA256}" /tmp/slsa-verifier | sha256sum -c -
           chmod +x /tmp/slsa-verifier
           sudo mv /tmp/slsa-verifier /usr/local/bin/slsa-verifier
 
@@ -748,7 +772,7 @@ jobs:
           slsa-verifier version
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
           cache: true
@@ -788,7 +812,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -847,7 +871,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -886,6 +910,9 @@ jobs:
     name: Finalize GitHub Release Assets
     needs: [check-version, publish-matrix, publish-service-matrix, provenance, verify-release-evidence, export-provenance, export-service-provenance, release-gate, build-cli, fleet-matrix]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -893,7 +920,7 @@ jobs:
           ref: v${{ needs.check-version.outputs.version }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: 'cli/go.mod'
           cache-dependency-path: 'cli/go.sum'
@@ -924,5 +951,10 @@ jobs:
   deploy-site:
     name: Deploy Catalog Site
     needs: finalize-release
+    permissions:
+      contents: read
+      packages: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/publish-pages.yml
     secrets: inherit

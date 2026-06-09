@@ -62,7 +62,7 @@ when the fleet needs a new language family or version that is not built in.`,
 	scaffoldCmd.Flags().StringArrayVar(&runtimeOpts.packageCandidates, "package", nil, "Nix package candidate attr path; repeat for fallbacks")
 	scaffoldCmd.Flags().StringArrayVar(&runtimeOpts.devPackages, "dev-package", nil, "Additional dev-tier Nix package attr path; repeat as needed")
 	scaffoldCmd.Flags().StringArrayVar(&runtimeOpts.smoke, "smoke", nil, "Smoke command for humans and follow-up tests; repeat as needed")
-	scaffoldCmd.Flags().StringVar(&runtimeOpts.appTemplateRuntime, "app-template-runtime", "", "Optional app template runtime to enable, for example ruby")
+	scaffoldCmd.Flags().StringVar(&runtimeOpts.appTemplateRuntime, "app-template-runtime", "", "Optional supported app template runtime to enable, for example ruby")
 	scaffoldCmd.Flags().BoolVar(&runtimeOpts.omitInProduction, "omit-in-production", false, "Ship toolchain only in dev tier; production tiers contain only hardened base tools")
 	scaffoldCmd.Flags().BoolVar(&runtimeOpts.noAddToMatrix, "no-add-to-matrix", false, "Create the runtime line without selecting it in matrix.languages")
 	scaffoldCmd.Flags().BoolVar(&runtimeOpts.force, "force", false, "Replace an existing custom runtime line")
@@ -167,6 +167,9 @@ func runtimeScaffoldLine(runtimeLine string) (fleet.RuntimeLine, error) {
 		OmitInProduction:   runtimeOpts.omitInProduction,
 	}
 	applyRuntimeDefaults(&spec)
+	if spec.AppTemplateRuntime != "" && !appTemplateRuntimeSupported(spec.AppTemplateRuntime) {
+		return fleet.RuntimeLine{}, fmt.Errorf("unsupported app template runtime %q (supported: %s)", spec.AppTemplateRuntime, supportedAppTemplateRuntimeList())
+	}
 	if len(spec.PackageCandidates) == 0 {
 		return fleet.RuntimeLine{}, fmt.Errorf("runtime line %q requires at least one --package value", runtimeLine)
 	}

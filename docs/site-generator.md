@@ -44,6 +44,12 @@ start-here links, and role-specific workflow sections for platform,
 application, and security/audit engineers. Customize that surface through
 `site.home` in `clearcutt.site.yaml` before reaching for page overrides.
 
+Generated portals identify the catalog owner, registry, source repository,
+generation time, and ClearCutt tooling. The intended reading is: "this site
+renders catalog data for `<owner>/<repo>`; ClearCutt is the generator." Fork
+owners should customize `site.title`, `site.description`, and links, but the
+portal should keep ownership and evidence scope visible.
+
 The Astro template is embedded in the `clearcutt` binary, so `scaffold`,
 `build`, `preview`, and `eject` work from any directory — no ClearCutt checkout
 required. When you run inside the repository, the live `site/` directory is used
@@ -66,18 +72,23 @@ clearcutt catalog site build \
   --clean
 ```
 
-Build and generate catalog data in one command from a ClearCutt fleet config:
+Generate mixed runtime/service catalog data, then build the static site from that
+catalog:
 
 ```bash
-clearcutt catalog site build \
+clearcutt catalog generate \
   --config clearcutt.fleet.yaml \
   --include-services \
+  --output ./dist/catalog
+
+clearcutt catalog site build \
+  --catalog ./dist/catalog \
   --output ./dist/site \
   --install
 ```
 
-Use `--include-services` whenever the site should show first-class service
-images. Without it, the generated catalog is runtime-only even if
+Use `catalog generate --include-services` whenever the site should show service
+image records. Without it, the generated catalog is runtime-only even if
 `clearcutt.fleet.yaml` contains `services[]`.
 
 To verify service rendering without release data, build from the committed

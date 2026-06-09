@@ -2,7 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -125,9 +127,57 @@ func validateCatalogDirectory(catalogPath string) catalogValidationReport {
 		validateImageSchemaVersion(record, catalogValidateOpts.schemaVersion, addError)
 		validateCatalogRecord(catalogPath, index, summary, record, addError, addWarning)
 	}
+	validateNoOrphanImageRecords(catalogPath, seen, addError)
+	validateEvidenceManifest(catalogPath, catalogValidateOpts.schemaVersion, addError)
 
 	report.finish()
 	return report
+}
+
+func validateNoOrphanImageRecords(catalogPath string, indexed map[string]bool, addError func(string, ...any)) {
+	imagesDir := filepath.Join(catalogPath, "images")
+	entries, err := os.ReadDir(imagesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		addError("images/: %v", err)
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		if !indexed[id] {
+			addError("images/%s: image record is not referenced by index.json", entry.Name())
+		}
+	}
+}
+
+func validateEvidenceManifest(catalogPath, requestedSchema string, addError func(string, ...any)) {
+	manifest, err := loadEvidenceManifest(catalogPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if requestedSchema == catalog.EvidenceManifestSchemaVersion {
+				addError("%s: missing required schemaVersion %q", evidenceManifestFilename, catalog.EvidenceManifestSchemaVersion)
+			}
+			return
+		}
+		addError("%s: %v", evidenceManifestFilename, err)
+		return
+	}
+	if manifest.SchemaVersion != catalog.EvidenceManifestSchemaVersion {
+		addError("%s: unsupported schemaVersion %q", evidenceManifestFilename, manifest.SchemaVersion)
+	}
+	expected, err := buildEvidenceManifest(catalogPath)
+	if err != nil {
+		addError("%s: failed to rebuild expected manifest: %v", evidenceManifestFilename, err)
+		return
+	}
+	if !reflect.DeepEqual(*manifest, expected) {
+		addError("%s: does not match catalog image records; regenerate catalog output", evidenceManifestFilename)
+	}
 }
 
 func validateIndexSchemaVersion(index *catalog.CatalogIndex, requested string, addError func(string, ...any)) {
@@ -142,10 +192,10 @@ func validateIndexSchemaVersion(index *catalog.CatalogIndex, requested string, a
 		if index.SchemaVersion != requested {
 			addError("index.json: schemaVersion %s does not match requested %q", schemaVersionLabel(index.SchemaVersion), requested)
 		}
-	case catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2:
-		// Checked against each image record as records are loaded.
+	case catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2, catalog.EvidenceManifestSchemaVersion:
+		// Checked against each image record or the evidence manifest as files are loaded.
 	default:
-		addError("unsupported schema version %q (known: %q, %q, %q, %q)", requested, catalog.CatalogIndexSchemaVersion, catalog.CatalogIndexSchemaVersionV2, catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2)
+		addError("unsupported schema version %q (known: %q, %q, %q, %q, %q)", requested, catalog.CatalogIndexSchemaVersion, catalog.CatalogIndexSchemaVersionV2, catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2, catalog.EvidenceManifestSchemaVersion)
 	}
 }
 

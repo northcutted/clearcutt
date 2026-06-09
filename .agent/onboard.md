@@ -1,6 +1,6 @@
 # Agent Onboarding & Self-Extension Guide
 
-Welcome, Agent! You are working in the **ClearCutt Hardened Fleets** repository. 
+Welcome, Agent! You are working in the **ClearCutt Hardened Fleets** repository.
 
 To ensure you can operate here with maximum efficiency, zero regressions, and full synchronization with other AI tools, this repository implements a **Unified, Harness-Agnostic Agent DX & Memory System**.
 

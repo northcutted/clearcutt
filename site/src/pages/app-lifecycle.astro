@@ -30,7 +30,7 @@ const imageNameFor = (id: string) => {
     return `${fallbackImagePrefix}-${imageRuntime(id)}`;
   }
 };
-const baseRef = (id: string) => `${registryBase}/${imageNameFor(id)}:distroless-v0.2.2`;
+const baseRef = (id: string) => `${registryBase}/${imageNameFor(id)}:v0.2.2-distroless`;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const devLabel = tierLabel(loadSiteConfig(), 'dev');
 
@@ -301,6 +301,7 @@ clearcutt app build \\
       <h2 class="heading text-xl text-ink-50">Common Rebase Loop</h2>
       <p class="max-w-3xl text-sm text-ink-200">
         Each stack example sets <code>BASE_ID</code> and <code>PATCHED_BASE</code>. The source image, rebased tag, developer signer, and rebase-engine signer stay the same across stacks.
+        These examples assume a generated or live catalog; a clean clone only proves the Java 21 fixture path.
       </p>
       <div class="grid min-w-0 gap-6 lg:grid-cols-2">
         <CopyBlock language="shell" label="shared environment" code={envCode} />

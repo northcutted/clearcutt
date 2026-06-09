@@ -13,7 +13,7 @@ Every agent MUST respect and preserve the following design decisions, constraint
 
 ## 2. Matrix Lifecycle Hardening
 
-* **`distroless` Tier:** This is a zero-utility tier containing **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`). 
+* **`distroless` Tier:** This is a zero-utility tier containing **exactly zero interactive shells or coreutils** (No `/bin/sh`, `/bin/bash`, `ls`, or `cat`).
 * **Privilege Restriction:** Containers are configured to drop all Linux kernel capabilities (`cap_drop: - ALL`) and run under the unprivileged rootless boundary **`user: "10001:10001"`**.
 * **OpenShift Arbitrary UID Support:** To comply with OpenShift SCC (which assigns random random high-range dynamic UIDs at runtime and mounts them inside group ID `0`), container manifests should omit hardcoded UIDs and run with `runAsNonRoot: true` alongside `runAsGroup: 0`.
 

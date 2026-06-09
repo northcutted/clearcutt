@@ -19,23 +19,44 @@ type appTemplateFlags struct {
 
 var appTemplateOpts appTemplateFlags
 
+const (
+	currentClearCuttRelease = "v0.10.2"
+
+	appTemplateCheckoutAction    = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2"
+	appTemplateDockerLoginAction = "docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0"
+	appTemplateDockerBuildAction = "docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6"
+	appTemplateCosignInstaller   = "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2"
+	appTemplateSBOMAction        = "anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0"
+	appTemplateBuildProvenance   = "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0"
+	appTemplateAttestSBOM        = "actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0"
+)
+
+var supportedAppTemplateRuntimes = []string{"java", "node", "python", "go", "ruby"}
+
 type appTemplateSpec struct {
-	Runtime      string
-	RuntimeLine  string
-	BaseID       string
-	AppName      string
-	ClearCuttRef string
-	DevImage     string
-	RuntimeImage string
-	Entrypoint   string
-	Files        map[string]string
+	Runtime       string
+	RuntimeLine   string
+	BaseID        string
+	AppName       string
+	ClearCuttRepo string
+	ClearCuttTag  string
+	DevImage      string
+	RuntimeImage  string
+	Entrypoint    string
+	Files         map[string]string
 }
 
 func newAppTemplateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "template <java|node|python|go|ruby>",
+		Use:   "template <runtime>",
 		Short: "Generate an app-team starter using ClearCutt dev, certify, and rebase flows",
-		Args:  cobra.ExactArgs(1),
+		Long: `Generate an app-team starter using ClearCutt dev, certify, and rebase
+flows. The runtime must be enabled in clearcutt.fleet.yaml templates.runtimes
+(defaults: java, node, python, go). Supported template generators are java,
+node, python, go, and ruby. Other custom runtime lines can be built by the
+platform fleet, but they need a ClearCutt template generator before app template
+can scaffold an application for them.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			runtime := strings.ToLower(args[0])
 			cfg, err := fleet.Load(appTemplateOpts.configPath)
@@ -84,11 +105,18 @@ func writeAppTemplate(cfg fleet.Config, runtime, appName, outputDir string, forc
 }
 
 func buildAppTemplateSpec(cfg fleet.Config, runtime, appName string) (appTemplateSpec, error) {
+	if !appTemplateRuntimeSupported(runtime) {
+		return appTemplateSpec{}, fmt.Errorf("unsupported app template runtime %q (supported: %s)", runtime, supportedAppTemplateRuntimeList())
+	}
+	if !templateRuntimeEnabled(cfg, runtime) {
+		return appTemplateSpec{}, fmt.Errorf("app template runtime %q is supported but not enabled in templates.runtimes; enable it in clearcutt.fleet.yaml or run runtime scaffold", runtime)
+	}
 	spec := appTemplateSpec{
-		Runtime:      runtime,
-		AppName:      appName,
-		ClearCuttRef: cfg.RepoPath() + "/.github/actions/certify-app@v0.11.1",
-		Files:        map[string]string{},
+		Runtime:       runtime,
+		AppName:       appName,
+		ClearCuttRepo: cfg.RepoPath(),
+		ClearCuttTag:  currentClearCuttRelease,
+		Files:         map[string]string{},
 	}
 	switch runtime {
 	case "java":
@@ -156,20 +184,65 @@ func main() {
 	return spec, nil
 }
 
+func templateRuntimeEnabled(cfg fleet.Config, runtime string) bool {
+	for _, enabled := range cfg.Templates.Runtimes {
+		if strings.EqualFold(enabled, runtime) {
+			return true
+		}
+	}
+	return false
+}
+
+func appTemplateRuntimeSupported(runtime string) bool {
+	for _, supported := range supportedAppTemplateRuntimes {
+		if strings.EqualFold(supported, runtime) {
+			return true
+		}
+	}
+	return false
+}
+
+func supportedAppTemplateRuntimeList() string {
+	return strings.Join(supportedAppTemplateRuntimes, ", ")
+}
+
 func templateReadme(spec appTemplateSpec) string {
 	return fmt.Sprintf(`# %s
 
-This starter app uses one ClearCutt runtime line for the whole path:
+This starter app is the app-team path for one ClearCutt runtime line. It keeps
+Nix in the platform fleet and uses normal container tooling for application
+delivery.
 
-- build in: %s
-- run in: %s
-- certify with: %s
-- optional rebase base id: %s
+- build stage: %s
+- runtime stage: %s
+- ClearCutt CLI release: %s@%s (checksum and Sigstore bundle verified in CI)
+- base id for policy/rebase: %s
+
+## Local path
+
+The generated policy requires a digest-pinned image reference. Push the image,
+resolve the registry digest, and pass that immutable ref to certification:
+
+~~~bash
+APP_IMAGE=ghcr.io/acme/%s:1.0.0
+docker build -t "$APP_IMAGE" .
+docker push "$APP_IMAGE"
+APP_DIGEST=$(docker buildx imagetools inspect "$APP_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')
+docker save "$APP_IMAGE" -o %s.tar
+clearcutt certify %s.tar --base %s --policy certification-policy.yaml --image-ref "${APP_IMAGE%%:*}@${APP_DIGEST}"
+~~~
+
+Open this repository in a devcontainer to build with the matching ClearCutt dev
+image, then ship the final app image from the runtime stage.
+
+## CI path
 
 The release workflow builds, signs, attests, and certifies the image. The rebase
-workflow lets a platform workflow move the app layer onto a patched ClearCutt base
-without recompiling the application.
-`, spec.AppName, spec.DevImage, spec.RuntimeImage, spec.ClearCuttRef, spec.BaseID)
+workflow lets a platform workflow move the app layer onto a patched ClearCutt
+base without recompiling the application.
+These are starter workflows; fork owners must pin identities, registry
+permissions, branch policy, and admission rules before production use.
+`, spec.AppName, spec.DevImage, spec.RuntimeImage, spec.ClearCuttRepo, spec.ClearCuttTag, spec.BaseID, spec.AppName, spec.AppName, spec.AppName, spec.BaseID)
 }
 
 func templateDockerfile(spec appTemplateSpec) string {
@@ -312,28 +385,28 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: %s
 
-      - uses: docker/login-action@v4
+      - uses: %s
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - uses: %s
         id: build
         with:
           context: .
           push: true
           tags: ${{ env.IMAGE }}
 
-      - uses: sigstore/cosign-installer@v4
+%s
 
       - name: Sign image digest
         run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: %s
         with:
           image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           format: spdx-json
@@ -343,28 +416,32 @@ jobs:
         run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${IMAGE}@${{ steps.build.outputs.digest }}"
 
       - name: Attach GitHub build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: %s
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
       - name: Attach GitHub SBOM attestation
-        uses: actions/attest-sbom@v2
+        uses: %s
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: sbom.spdx.json
           push-to-registry: true
 
+      - name: Save image for offline certification
+        run: |
+          docker pull "${IMAGE}@${{ steps.build.outputs.digest }}"
+          docker save "${IMAGE}@${{ steps.build.outputs.digest }}" -o app-image.tar
+
       - name: Certify image against ClearCutt contracts
-        uses: %s
-        with:
-          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
-          base: %s
-          policy: certification-policy.yaml
-          certificate-identity-regexp: '^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/heads/main$'
-`, spec.AppName, spec.ClearCuttRef, spec.BaseID)
+        run: |
+          clearcutt certify app-image.tar \
+            --base %s \
+            --policy certification-policy.yaml \
+            --image-ref "${IMAGE}@${{ steps.build.outputs.digest }}"
+`, spec.AppName, appTemplateCheckoutAction, appTemplateDockerLoginAction, appTemplateDockerBuildAction, templateVerifiedClearCuttInstall(spec.ClearCuttRepo), appTemplateSBOMAction, appTemplateBuildProvenance, appTemplateAttestSBOM, spec.BaseID)
 }
 
 func templateRebaseWorkflow(spec appTemplateSpec, cfg fleet.Config) string {
@@ -393,16 +470,7 @@ jobs:
   rebase:
     runs-on: ubuntu-latest
     steps:
-      - uses: sigstore/cosign-installer@v4
-
-      - name: Install ClearCutt CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="v0.11.1"
-          curl -fsSL -o "${RUNNER_TEMP}/clearcutt" "https://github.com/%s/releases/download/${VERSION}/clearcutt-linux-amd64"
-          chmod +x "${RUNNER_TEMP}/clearcutt"
-          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+%s
 
       - name: Check base compatibility
         run: |
@@ -422,7 +490,35 @@ jobs:
             --dev-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main" \
             --sign \
             --attest
-`, spec.RuntimeImage, cfg.RepoPath(), spec.BaseID, spec.BaseID)
+`, spec.RuntimeImage, templateVerifiedClearCuttInstall(cfg.RepoPath()), spec.BaseID, spec.BaseID)
+}
+
+func templateVerifiedClearCuttInstall(repoPath string) string {
+	return fmt.Sprintf(`      - uses: %s
+
+      - name: Install verified ClearCutt CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="%s"
+          REPO="%s"
+          ASSET="clearcutt-linux-amd64"
+          BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+          SIGNING_IDENTITY="https://github.com/${REPO}/.github/workflows/release.yml@refs/heads/main"
+          curl -fsSL -o "${RUNNER_TEMP}/${ASSET}" "${BASE_URL}/${ASSET}"
+          curl -fsSL -o "${RUNNER_TEMP}/${ASSET}.sig" "${BASE_URL}/${ASSET}.sig"
+          curl -fsSL -o "${RUNNER_TEMP}/SHA256SUMS.txt" "${BASE_URL}/SHA256SUMS.txt"
+          (
+            cd "${RUNNER_TEMP}"
+            grep -E "  ${ASSET}$" SHA256SUMS.txt | sha256sum -c -
+          )
+          cosign verify-blob "${RUNNER_TEMP}/${ASSET}" \
+            --bundle "${RUNNER_TEMP}/${ASSET}.sig" \
+            --certificate-identity "${SIGNING_IDENTITY}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          install -m 0755 "${RUNNER_TEMP}/${ASSET}" "${RUNNER_TEMP}/clearcutt"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+          clearcutt --version`, appTemplateCosignInstaller, currentClearCuttRelease, repoPath)
 }
 
 func templateDevContainer(spec appTemplateSpec) string {

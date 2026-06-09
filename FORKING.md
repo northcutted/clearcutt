@@ -46,7 +46,11 @@ need Nix.
    - enabled languages, tiers, and systems
    - admission and remediation policy settings
 
-8. Dispatch `.github/workflows/release.yml` to publish the first fleet release.
+8. Dispatch `.github/workflows/release.yml` from `main` to publish the first
+   fleet release. The reference policy is main-only: `release.workflowIdentity`,
+   admission policy examples, and verifier commands all pin `refs/heads/main`.
+   If your fork intentionally releases from another ref, update those trust
+   anchors together before dispatching.
    The workflow is intentionally thin: it builds the CLI, asks
    `clearcutt platform setup-nix` to apply the fork-specific Nix client config,
    asks `clearcutt fleet publish-target` to build and push each single-arch target,
@@ -95,6 +99,10 @@ evidence. The rebase workflow performs the privileged app-update leg: it verifie
 the original developer signature, preserves app layers byte-for-byte, signs the
 rebased app image, and attaches the ClearCutt rebase attestation.
 
+Use [`docs/trust/evidence-walkthrough.md`](docs/trust/evidence-walkthrough.md)
+to trace one published digest from registry evidence back to the pinned workflow
+identity and catalog record.
+
 ## Optional Secrets
 
 Most workflows use only `GITHUB_TOKEN`.
@@ -105,7 +113,8 @@ push rebased app images outside packages writable by this repository's
 the repository variable `CLEARCUTT_REBASE_REGISTRY_USER`.
 
 Add `OPENROUTER_API_KEY` only if you intend to run
-`.github/workflows/cve-patch-agent.yml` for AI-assisted remediation PR drafting.
+`.github/workflows/cve-patch-agent.yml` or opt in to patch drafting in
+`.github/workflows/scheduled-scan.yml` for AI-assisted remediation PR drafting.
 
 Add `NIX_CACHE_SECRET_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
 `CLOUDFLARE_ACCOUNT_ID` only if you want the release workflow to publish signed
@@ -134,6 +143,10 @@ public trusted key come from `release.nixCache` in `clearcutt.fleet.yaml`.
 
 Before advertising the fork as an internal image platform, this command should
 pass in the fork:
+
+Use [`docs/fork-validation.md`](docs/fork-validation.md) as the full checklist
+for workflow identities, registry permissions, GitHub environments, Pages,
+optional secrets, and first-release evidence.
 
 ```bash
 ./clearcutt platform status

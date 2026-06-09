@@ -32,6 +32,8 @@ const siteLinks = siteConfig.site.links;
 const sourceHref = siteLinks.sourceRepo || index?.repoUrl;
 const registryHref = siteLinks.registry || (index?.registryBase ? `https://${index.registryBase}` : '');
 const sourceLabel = index ? `${index.owner}/${index.repo}` : 'Source';
+const isReferenceSite = !index || (index.owner === 'northcutted' && index.repo === 'clearcutt');
+const catalogSubtitle = index ? (isReferenceSite ? 'Reference Catalog' : `Catalog for ${sourceLabel}`) : 'Evidence Catalog';
 const footerLinks = [
   sourceHref && { label: 'Source', href: sourceHref },
   registryHref && { label: 'Registry', href: registryHref },
@@ -93,7 +95,9 @@ const footerLinks = [
           )}
           <div class="leading-tight">
             <div class="text-sm font-semibold text-ink-50">{siteConfig.site.title}</div>
-            <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">Evidence Catalog</div>
+            <div class="text-[11px] uppercase tracking-[0.18em] text-ink-300">
+              {catalogSubtitle}
+            </div>
           </div>
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
@@ -127,7 +131,7 @@ const footerLinks = [
       <div class="mx-auto flex max-w-7xl flex-col items-center gap-3 px-6">
         {index ? (
           <p>
-            Catalog rebuilt {new Date(index.generatedAt).toUTCString()} ·
+            This site renders catalog data for <span class="font-mono text-ink-200">{sourceLabel}</span>; ClearCutt is the generator. Catalog rebuilt {new Date(index.generatedAt).toUTCString()} ·
             <a href={sourceHref || index.repoUrl} class="ml-1 text-ink-200 hover:text-accent-soft" target="_blank" rel="noreferrer">
               source on GitHub
             </a>

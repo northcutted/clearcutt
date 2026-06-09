@@ -25,3 +25,10 @@ cli/coverage.html
 cli/coverage-packages.txt
 cli/coverage-low-functions.txt
 .agent/active_context.md
+
+# Accidental nested output roots created when commands run from cli/.
+# The canonical project roots are /site, /examples, /docs, and /core.
+/cli/site/
+/cli/examples/
+/cli/docs/
+/cli/core/
