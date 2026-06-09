@@ -9,10 +9,14 @@ test:
 	./tests/smoke.sh $(IMAGE_NAME)
 
 certify:
-	docker save $(IMAGE_NAME) -o image.tar
+	docker push $(IMAGE_NAME)
+	APP_IMAGE="$(IMAGE_NAME)"; \
+	APP_DIGEST=$$(docker buildx imagetools inspect "$$APP_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"'); \
+	docker save "$$APP_IMAGE" -o image.tar; \
 	clearcutt certify image.tar \
 	  --policy policy.yaml \
-	  --base python3.15-slim
+	  --base python3.15-slim \
+	  --image-ref "$${APP_IMAGE%:*}@$${APP_DIGEST}"
 	rm -f image.tar
 
 scan:

@@ -14,6 +14,12 @@ If your service needs a whole publish directory, runtime package installation,
 or multiple sidecar files inside the image, keep using a normal Containerfile
 and run `clearcutt certify` until directory artifact support exists.
 
+For deployment shapes after certification, see
+[`examples/oci-deployment/docker-compose.yml`](../examples/oci-deployment/docker-compose.yml)
+and [`examples/k8s-deployment/deployment.yaml`](../examples/k8s-deployment/deployment.yaml).
+Both examples deploy an app image built from a ClearCutt base, not the base image
+itself.
+
 ---
 
 ## The Contract
@@ -48,6 +54,11 @@ Supported base families:
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
+
+The sections below are live/generated-catalog examples. A clean clone only
+proves the Java 21 fixture path; run `./clearcutt --catalog
+cli/internal/testdata/catalog inspect java21-distroless` before your fork has
+published a full catalog.
 
 ---
 
@@ -114,7 +125,7 @@ Use a fat JAR or another single executable JAR as the artifact.
 cp target/payments-api-*-all.jar target/app.jar
 
 export BASE_ID="java21-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -142,7 +153,7 @@ npx esbuild src/server.ts \
   --outfile=dist/server.mjs
 
 export BASE_ID="node22-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-node22:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-node22:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -166,7 +177,7 @@ pex . \
   -o dist/payments-api.pyz
 
 export BASE_ID="python3.15-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.15:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.15:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -186,7 +197,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   -o dist/payments-api ./cmd/payments-api
 
 export BASE_ID="go1.25-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.25:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.25:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -217,7 +228,7 @@ mkdir -p dist
 cp out/Payments.Api dist/payments-api
 
 export BASE_ID="dotnet8-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -244,7 +255,7 @@ mkdir -p dist
 cp target/x86_64-unknown-linux-musl/release/payments-api dist/payments-api
 
 export BASE_ID="rust1.95-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-rust1.95:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-rust1.95:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -267,7 +278,7 @@ cmake -S . -B build \
 cmake --build build --target payments-api
 
 export BASE_ID="cc15-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-cc15:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-cc15:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -291,7 +302,7 @@ zig cc -target x86_64-linux-musl -O2 -static \
   -o dist/worker src/worker.c
 
 export BASE_ID="coreLTS-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-corelts:distroless-v0.2.2"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-corelts:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -341,7 +352,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: sigstore/cosign-installer@v4
       - name: Build clearcutt
-        run: make cli-build
+        run: go -C cli build -o ../clearcutt ./cmd/clearcutt
       - name: Check candidate base
         run: |
           ./clearcutt app diff-base \

@@ -669,7 +669,7 @@ export default function LayerExplorer({
                           })}
                         </div>
                         <p className="text-[9.5px] text-ink-300 leading-relaxed font-sans">
-                          Nix closures trace full direct/transitive dependency trees, meaning all runtime libraries are cataloged with zero-trust cryptographic precision.
+                          Nix closures expose direct/transitive dependency trees so runtime libraries can be cataloged and reviewed.
                         </p>
                       </div>
                     )}

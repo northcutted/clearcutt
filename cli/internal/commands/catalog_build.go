@@ -110,6 +110,10 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 			return err
 		}
 	}
+	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
+	if err := finalizeGeneratedCatalog(outDir); err != nil {
+		return err
+	}
 
 	verifyCatalogOpts.lenientEvidence = catalogBuildOpts.lenientEvidence
 	return runVerifyCatalog()

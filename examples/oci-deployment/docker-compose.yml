@@ -1,46 +1,28 @@
-# ClearCutt Hardened OCI Container Sandbox Blueprint
-# Paradigm: Production Compose Hardening (Zero Capabilities / Immutable Filesystem)
+# ClearCutt app deployment example.
+#
+# The service image below is an application image built from a ClearCutt base
+# using examples/clearcutt-template-java/Dockerfile or an equivalent app-team
+# Dockerfile. Do not deploy the base runtime image itself as the application.
 
-version: '3.8'
+version: "3.8"
 
 services:
-  secure-app:
-    # Point to your secure ClearCutt matrix target (e.g. Python 3.15 Distroless)
-    image: ghcr.io/northcutted/clearcutt/clearcutt-python3.15:distroless
-    
-    container_name: clearcutt-hardened-app
-    
+  payments-api:
+    build:
+      context: ../clearcutt-template-java
+    image: ghcr.io/acme/payments-api:1.0.0
+    container_name: payments-api
     ports:
       - "8080:8080"
-      
-    # 1. Rootless User Space Enforcement
-    # Forces execution as unprivileged user 10001 (appuser) natively
     user: "10001:10001"
-    
-    # 2. Immutable Filesystem Boundary
-    # Mounts the root container filesystem as strictly read-only
     read_only: true
-    
-    # 3. Dynamic Local Cache Mapping
-    # Because the rootfs is read-only, we map an ephemeral in-memory tmpfs volume 
-    # to /tmp so libraries can safely write transient cache segments
     tmpfs:
       - /tmp:mode=1777,size=64M
-      
-    # 4. Privilege Escalation Prevention
-    # Drop all Linux kernel capabilities and block any setuid/setgid binary executions
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-      
-    # 5. Linux Seccomp Sandbox Profile
-    # Standard seccomp isolation
-    sysctls: []
-    
-    # Example application workspace volume mounts
-    # Mounts downstream code strictly as read-only, separating execution from code modifications
-    volumes:
-      - ./app-code:/app:ro
-      
+    labels:
+      org.clearcutt.base: java21-distroless
+      org.clearcutt.certify: "clearcutt certify payments-api.tar --base java21-distroless --policy certification-policy.yaml --image-ref ghcr.io/acme/payments-api@sha256:..."
     restart: unless-stopped

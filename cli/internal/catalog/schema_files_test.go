@@ -19,6 +19,7 @@ func TestSchemaArtifactsIncludesVersionedSchemas(t *testing.T) {
 	for _, want := range []string{
 		"catalog-index.v1.schema.json",
 		"catalog-index.v2.schema.json",
+		"evidence-manifest.v1.schema.json",
 		"image-record.v1.schema.json",
 		"image-record.v2.schema.json",
 		"package-entry.v1.schema.json",

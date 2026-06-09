@@ -85,7 +85,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
             <h2 class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">THE CLEARCUTT BLUEPRINT</h2>
             <div class="heading text-xl sm:text-2xl font-black uppercase text-ink-50 tracking-wide">
               Hardened Base Images,<br />
-              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Hermetically Built.</span>
+              <span class="text-accent-soft bg-gradient-to-r from-accent-soft to-accent bg-clip-text text-transparent">Nix Closure Built.</span>
             </div>
             <p class="text-xs text-ink-300 max-w-xl font-sans pt-1 leading-relaxed">
               {claims.hero.description}
@@ -102,10 +102,10 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
           </div>
 
           <p>
-            ClearCutt is a free, open-source base image blueprint designed for platform and security engineers who want cryptographically certifiable, shell-less runtime containers. Unlike traditional opinionated base OS projects, ClearCutt is a forkable framework built with Nix. Downstream teams are expected to fork this repository to compile and govern their own custom internal container feeds, or overlay safe Nix closures on top of standard base images (like Red Hat UBI or Ubuntu Pro).
+            ClearCutt is a free, open-source base image blueprint designed for platform and security engineers who want signed, evidence-backed runtime tiers with shell-free distroless options. Unlike traditional opinionated base OS projects, ClearCutt is a forkable framework built with Nix. Downstream teams are expected to fork this repository to compile and govern their own custom internal container feeds, or overlay scoped Nix closures on top of standard base images (like Red Hat UBI or Ubuntu Pro).
           </p>
           <p>
-            Our supply chain pipeline compiles target runtimes as isolated, hermetically-built <code class="font-mono text-ink-100">/nix/store</code> closures. The catalog serves as a live worked-example proving the end-to-end verifiability of our OCI builds, from OIDC-based signing to transparent OpenVEX exploitability records.
+            Our supply chain pipeline compiles target runtimes as isolated <code class="font-mono text-ink-100">/nix/store</code> closures with declared inputs. The catalog serves as a live worked example for inspecting OCI build evidence, from OIDC-based signing to OpenVEX exploitability records.
           </p>
         </header>
 
@@ -113,7 +113,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         <section class="space-y-4 pt-2">
           <h2 class="heading text-xl text-ink-50">Supply Chain Architecture Flow</h2>
           <p class="text-sm">
-            The end-to-end ClearCutt trust flow coordinates hermetic Nix base compilations, OIDC-based signing and attestation metadata, and Kubernetes dynamic policy checks at admission time:
+            The end-to-end ClearCutt trust flow coordinates Nix store base builds, OIDC-based signing and attestation metadata, and Kubernetes dynamic policy checks at admission time:
           </p>
           <div class="rounded-2xl border border-ink-800 bg-ink-950/40 p-4 sm:p-6 shadow-lg">
             <img src="/supply-chain-flow.svg" alt="ClearCutt Supply Chain Architecture" class="w-full h-auto" />
@@ -151,7 +151,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
                 <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Rescan Without Rebuild</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                Because an SPDX SBOM is attached to every image, the catalog re-scans it nightly against the current vulnerability database — newly-disclosed CVEs surface without rebuilding the image. A separate scheduled job drafts remediation PRs for review; nothing merges or deploys on its own.
+                When an SPDX SBOM is attached to an image, the catalog can re-scan it nightly against the current vulnerability database — newly-disclosed CVEs surface without rebuilding the image. A separate scheduled job drafts remediation PRs for review; nothing merges or deploys on its own.
               </p>
             </div>
           </div>
@@ -227,11 +227,11 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         <header class="space-y-3">
           <h2 class="heading text-xl text-ink-50">Verifying ClearCutt images</h2>
           <p class="text-sm text-ink-200">
-            Every published ClearCutt image is expected to carry independent evidence stored with
-            the GHCR manifest: a Sigstore signature (keyless OIDC), an SPDX SBOM attestation, SLSA
-            provenance, and GitHub-native attestations. The catalog marks each evidence channel
-            separately so a missing signature, attestation, or scan is visible instead of being
-            inferred from another signal.
+            ClearCutt release workflows are configured to attach independent evidence with
+            the GHCR manifest when it is available: a Sigstore signature (keyless OIDC), an
+            SPDX SBOM attestation, SLSA provenance, and GitHub-native provenance attestations.
+            The catalog marks each evidence channel separately so a missing signature,
+            attestation, or scan is visible instead of being inferred from another signal.
           </p>
           <p class="text-xs text-ink-300">
             The examples below use <code class="font-mono text-ink-100">{sampleImageName}</code>
@@ -274,7 +274,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         <section class="space-y-3">
           <h3 class="heading text-base text-ink-50">4. Verify SLSA L3 provenance</h3>
           <p class="text-sm text-ink-200">
-            Confirms the build was non-falsifiable — produced by the upstream
+            Confirms the build provenance was produced by the configured upstream
             slsa-github-generator running on hosted GitHub runners, from the protected release
             branch. The image tag and manifest digest still pin the released artifact.
           </p>
@@ -284,9 +284,9 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         <section class="space-y-3">
           <h3 class="heading text-base text-ink-50">5. Verify with the GitHub CLI (alternative to cosign)</h3>
           <p class="text-sm text-ink-200">
-            The same build provenance and SBOM are also published as GitHub-native attestations.
+            The same build provenance is also published as a GitHub-native attestation.
             If you'd rather not run cosign, <code class="font-mono text-ink-100">gh attestation
-            verify</code> checks them against GitHub's attestation store and the Sigstore
+            verify</code> checks it against GitHub's attestation store and the Sigstore
             public-good transparency log — pinning the repository, workflow identity, and source
             ref so only attestations produced by the release workflow are trusted.
           </p>

@@ -66,16 +66,36 @@ N attestation checks were deferred to registry-side verification.
 ## 2. CI/CD Pipeline Enforcement
 
 ### 2.1 GitHub Actions Integration
-Use our composite GitHub Action to automate certification and archive compliance reports:
+Use the generated app-template workflow pattern to verify the ClearCutt CLI
+before running certification. Do not pin generated apps to old remote composite
+action tags that predate the verified CLI install path.
+
 ```yaml
-- uses: northcutted/clearcutt/.github/actions/certify-app@v0.11.1
-  with:
-    image: ghcr.io/acme/my-app@sha256:fedcba...
-    policy: policies/production.yaml
-    base: java25-distroless
-    # Required when the policy requires signature/provenance/SBOM verification —
-    # pin the signer identity that built/signed the image (wildcards are refused):
-    certificate-identity-regexp: 'https://github.com/acme/.*/.github/workflows/.*'
+- name: Install verified ClearCutt CLI
+  run: |
+    set -euo pipefail
+    VERSION="v0.10.2"
+    REPO="northcutted/clearcutt"
+    ASSET="clearcutt-linux-amd64"
+    BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+    SIGNING_IDENTITY="https://github.com/${REPO}/.github/workflows/release.yml@refs/heads/main"
+    curl -fsSL -o "${RUNNER_TEMP}/${ASSET}" "${BASE_URL}/${ASSET}"
+    curl -fsSL -o "${RUNNER_TEMP}/${ASSET}.sig" "${BASE_URL}/${ASSET}.sig"
+    curl -fsSL -o "${RUNNER_TEMP}/SHA256SUMS.txt" "${BASE_URL}/SHA256SUMS.txt"
+    (cd "${RUNNER_TEMP}" && grep -E "  ${ASSET}$" SHA256SUMS.txt | sha256sum -c -)
+    cosign verify-blob "${RUNNER_TEMP}/${ASSET}" \
+      --bundle "${RUNNER_TEMP}/${ASSET}.sig" \
+      --certificate-identity "${SIGNING_IDENTITY}" \
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+    install -m 0755 "${RUNNER_TEMP}/${ASSET}" "${RUNNER_TEMP}/clearcutt"
+    echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+
+- name: Certify app image
+  run: |
+    clearcutt certify app-image.tar \
+      --policy policies/production.yaml \
+      --base java25-distroless \
+      --image-ref ghcr.io/acme/my-app@sha256:fedcba...
 ```
 
 ### 2.2 Rebasable Application Images
@@ -122,7 +142,7 @@ The default trust model is dual-control at rebase time:
 ```bash
 clearcutt app rebase \
   --image ghcr.io/acme/payments-api:1.0.0 \
-  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless-v0.2.2 \
+  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.2.2-distroless \
   --candidate-base-id java21-distroless \
   --tag ghcr.io/acme/payments-api:1.0.0-rebased \
   --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
@@ -139,13 +159,19 @@ certify:
   # Pin a released CLI version — never track a moving tag in a supply-chain gate.
   # Bump this as you adopt new releases.
   variables:
-    CLEARCUTT_VERSION: "v0.11.1"
+    CLEARCUTT_VERSION: "v0.10.2"
   before_script:
-    - apk add --no-cache curl
-    - curl -fsSL -o /usr/local/bin/clearcutt "https://github.com/northcutted/clearcutt/releases/download/${CLEARCUTT_VERSION}/clearcutt-linux-amd64"
-    - chmod +x /usr/local/bin/clearcutt
+    - apk add --no-cache curl cosign coreutils
+    - export ASSET=clearcutt-linux-amd64
+    - export BASE_URL="https://github.com/northcutted/clearcutt/releases/download/${CLEARCUTT_VERSION}"
+    - curl -fsSL -o "/tmp/${ASSET}" "${BASE_URL}/${ASSET}"
+    - curl -fsSL -o "/tmp/${ASSET}.sig" "${BASE_URL}/${ASSET}.sig"
+    - curl -fsSL -o /tmp/SHA256SUMS.txt "${BASE_URL}/SHA256SUMS.txt"
+    - cd /tmp && grep -E "  ${ASSET}$" SHA256SUMS.txt | sha256sum -c -
+    - cosign verify-blob "/tmp/${ASSET}" --bundle "/tmp/${ASSET}.sig" --certificate-identity "https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+    - install -m 0755 "/tmp/${ASSET}" /usr/local/bin/clearcutt
   script:
-    - clearcutt certify app-image.tar --policy policy.yaml --base java25-distroless
+    - clearcutt certify app-image.tar --policy policy.yaml --base java25-distroless --image-ref "$APP_IMAGE@$APP_DIGEST"
   artifacts:
     paths:
       - certification-report.json

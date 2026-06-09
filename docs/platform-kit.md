@@ -37,7 +37,10 @@ the backend authoring path.
    on machines that will build or publish the fleet. In CI the workflows call
    the same command with `--github-env "$GITHUB_ENV"` so fork cache trust comes
    from `clearcutt.fleet.yaml`, not workflow constants.
-7. Run the release workflow to publish the configured base-image fleet to GHCR.
+7. Run the release workflow from `main` to publish the configured base-image
+   fleet to GHCR. The reference trust policy is main-only:
+   `release.workflowIdentity`, verifier examples, and admission policies pin
+   `refs/heads/main`.
    The workflow is a GitHub identity runner; the reusable mechanics live behind
    `clearcutt platform setup-nix`, `clearcutt fleet certify-target`,
    `clearcutt fleet publish-target`, `clearcutt fleet assemble-target`,
@@ -49,8 +52,8 @@ the backend authoring path.
    runtime and service catalog artifacts. Deploy the generated site to GitHub
    Pages or another static host.
 9. Give application teams the templates under `examples/clearcutt-template-*`.
-10. Enforce signatures, SBOMs, SLSA Build L3 provenance, and optional rebase
-   attestations in CI and Kubernetes admission policy.
+10. Gate on required signature, SBOM, provenance, and optional rebase-attestation
+   evidence in CI and Kubernetes admission policy.
 
 ## Trust Story
 
@@ -68,9 +71,13 @@ the backend authoring path.
 - The catalog displays each evidence channel independently so missing
   signatures, SBOMs, provenance, test results, or vulnerability scans remain
   visible.
-- Remediation is approved automation: the scanner creates a ranked plan and the
-  agent drafts bounded PRs for review. It does not silently merge, deploy, or
-  mutate production workloads.
+- The trust walkthrough in [`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md)
+  shows how to compare a registry-side verification result with the catalog
+  record.
+- Remediation is approved automation: the scheduled workflow creates a ranked
+  scan/plan/report by default. AI-assisted patch PR drafting is an explicit
+  `workflow_dispatch` opt-in that requires `OPENROUTER_API_KEY`; it does not
+  silently merge, deploy, or mutate production workloads.
 
 ## Operator Commands
 

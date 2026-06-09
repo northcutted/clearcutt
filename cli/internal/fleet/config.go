@@ -352,7 +352,7 @@ func DefaultConfig(owner, repo string) Config {
 		Release: Release{
 			SourceBranch:     "main",
 			WorkflowIdentity: fmt.Sprintf("https://github.com/%s/.github/workflows/release.yml@refs/heads/main", repoPath),
-			SLSABuilder:      "slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0",
+			SLSABuilder:      "slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a",
 		},
 		Rebase: Rebase{
 			WorkflowIdentity: fmt.Sprintf("https://github.com/%s/.github/workflows/rebase.yml@refs/heads/main", repoPath),

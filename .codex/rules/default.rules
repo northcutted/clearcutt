@@ -1,0 +1,51 @@
+# ClearCutt Codex command policy.
+# These rules apply when Codex asks to run matching commands outside the sandbox.
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Do not discard local ClearCutt worktree changes. Ask the owner for an explicit destructive reset if needed.",
+    match = ["git reset --hard", "git reset --hard HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "prompt",
+    justification = "Cleaning can remove untracked audit outputs, generated fixtures, and local handoff files.",
+    match = ["git clean -fd", "git clean -fdx"],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Pushing ClearCutt branches, tags, or release fixes should be an explicit owner decision.",
+    match = ["git push", "git push origin HEAD", "git push --force-with-lease"],
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", "run"],
+    decision = "prompt",
+    justification = "Workflow dispatch can publish images, refresh evidence, or open remediation work.",
+    match = ["gh workflow run release.yml", "gh workflow run scheduled-scan.yml"],
+)
+
+prefix_rule(
+    pattern = ["gh", "release"],
+    decision = "prompt",
+    justification = "Release mutation affects public ClearCutt evidence and catalog assets.",
+    match = ["gh release upload v0.9.8 asset.json", "gh release delete v0.9.8"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf"],
+    decision = "prompt",
+    justification = "Recursive deletion should be reviewed in this repo because generated and untracked analysis artifacts are common.",
+    match = ["rm -rf dist", "rm -rf site/dist"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-fr"],
+    decision = "prompt",
+    justification = "Recursive deletion should be reviewed in this repo because generated and untracked analysis artifacts are common.",
+    match = ["rm -fr dist", "rm -fr site/dist"],
+)

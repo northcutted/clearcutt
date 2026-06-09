@@ -16,9 +16,9 @@ Build static output with:
 npm run build
 ```
 
-In the ClearCutt repository, the site can read checked-in catalog data from
-`src/data/catalog`. Scaffolded sites receive generated catalog data under
-`public/catalog`.
+In the ClearCutt repository, the site reads generated catalog data from
+`src/data/catalog` when that build output exists locally. Scaffolded sites
+receive generated catalog data under `public/catalog`.
 
 ## Generate A Site
 
@@ -35,8 +35,8 @@ The scaffold command copies the Astro site and the catalog data you pass with
 `--catalog`. The build command emits static HTML that can be deployed to GitHub
 Pages or any static host.
 
-Use `--include-services` when the generated site should show first-class
-service images such as Postgres, Valkey, and oauth2-proxy. The committed
+Use `catalog generate --include-services` when the generated site should show
+service image records such as Postgres, Valkey, and oauth2-proxy. The committed
 `cli/internal/testdata/mixed-catalog` fixture can be used to preview mixed
 runtime and service rendering without waiting for a release.
 

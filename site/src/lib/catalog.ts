@@ -105,14 +105,17 @@ export function loadImage(id: string): ImageRecordT {
   return publicImageRecord(ImageRecord.parse(raw));
 }
 
-export function listImageIds(): string[] {
+export function loadCatalogArtifact(relativePath: string): string {
   const dataRoot = resolveDataRoot();
-  const dir = path.join(dataRoot, 'images');
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.replace(/\.json$/, ''));
+  const file = path.join(dataRoot, relativePath);
+  if (!fs.existsSync(file)) {
+    throw new Error(`Catalog artifact not found: ${relativePath}`);
+  }
+  return fs.readFileSync(file, 'utf8');
+}
+
+export function listImageIds(): string[] {
+  return loadIndex().images.map((image) => image.id);
 }
 
 function resolveDataRoot(): string {

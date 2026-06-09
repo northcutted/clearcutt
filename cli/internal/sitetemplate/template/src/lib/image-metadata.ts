@@ -93,9 +93,9 @@ export function getImageMetadata(
 
     case 'node':
       if (tierId === 'dev') {
-        description = `This Node.js developer image delivers Node.js ${languageVersion}, npm, yarn, corepack, and system compilers. It enables native dependency compilation (node-gyp) in a secure, CVE-remediated workspace.`;
+        description = `This Node.js developer image delivers Node.js ${languageVersion}, npm, yarn, corepack, and system compilers. It enables native dependency compilation (node-gyp) in a catalog-scanned workspace.`;
         useCases = [
-          'Building production-ready frontend bundles (Vite, Next.js, Nuxt) from source',
+          'Building deployable frontend bundles (Vite, Next.js, Nuxt) from source',
           'Compiling native C-bindings (node-gyp, bcrypt, sharp, sqlite) cleanly',
           'Running testing tools and linting engines inside sandboxed container stages'
         ];
@@ -109,7 +109,7 @@ export function getImageMetadata(
       } else {
         description = `This Node.js distroless image packages a hardened, shell-less Node.js ${languageVersion} engine. It excludes package managers (npm, yarn) and shell layers while keeping the Node runtime directly executable.`;
         useCases = [
-          'Hosting mission-critical production backend microservices in locked-down environments',
+          'Hosting backend microservices in shell-free runtime environments',
           'Deploying performance-sensitive REST or gRPC APIs with minimal layer counts',
           'Secure runtime hosting that resists common shell-spawn exploit paths'
         ];
@@ -161,7 +161,7 @@ export function getImageMetadata(
         useCases = [
           'Hardened production hosting of highly sensitive Go REST and gRPC microservices',
           'Deploying edge containers and cloud-native agents with a minimal storage footprint',
-          'Achieving maximum protection against remote execution exploits (no shell to hijack)'
+          'Reducing common shell-spawn exploit paths by omitting shell utilities'
         ];
       }
       break;
@@ -172,7 +172,7 @@ export function getImageMetadata(
         useCases = [
           'Compiling, packing, and publishing C# and F# enterprise applications from source code',
           'Running MSBuild and dotnet test execution stages inside automated pipelines',
-          'Building highly secure C# microservices with isolated NuPkg package restores'
+          'Building C# microservices with isolated NuPkg package restores'
         ];
       } else if (tierId === 'slim') {
         description = `This .NET ASP.NET runtime image delivers the core runtime engine next to a restricted BusyBox shell, ideal for standard enterprise deployments requiring lightweight terminal access.`;
@@ -197,7 +197,7 @@ export function getImageMetadata(
         useCases = [
           'Compiling multi-platform Cargo crates with optimized build cache systems',
           'Running cargo clippy, cargo test, and static analyzer engines',
-          'Developing system tools natively inside secure, CVE-remediated OCI pipelines'
+          'Developing system tools natively inside catalog-scanned OCI pipelines'
         ];
       } else if (tierId === 'slim') {
         description = `This Rust runtime image delivers standard system libraries and a restricted BusyBox shell, ideal for hosting pre-built Rust binaries that require limited terminal troubleshooting utilities.`;
@@ -211,7 +211,7 @@ export function getImageMetadata(
         useCases = [
           'Production deployments of ultra-high-performance Rust web servers and gRPC APIs',
           'Deploying resource-constrained edge-computing nodes and embedded container workloads',
-          'Eliminating all potential shell-injection exploit paths in mission-critical environments'
+          'Reducing common shell-injection paths in minimal runtime environments'
         ];
       }
       break;

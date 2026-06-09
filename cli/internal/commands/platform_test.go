@@ -24,6 +24,17 @@ func writeFleetConfig(t *testing.T, dir string) string {
 	return path
 }
 
+func writeFleetConfigStruct(t *testing.T, path string, cfg fleet.Config) {
+	t.Helper()
+	raw, err := fleet.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fleet config: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write fleet config: %v", err)
+	}
+}
+
 func TestMatrixExportFromFleetEmitsGitHubImageMatrix(t *testing.T) {
 	path := writeFleetConfig(t, t.TempDir())
 	stdout, err := runCLI(t, "--format", "json", "matrix", "export", "--source", "fleet", "--fleet-config", path, "--github-actions", "--matrix", "image")
@@ -221,6 +232,72 @@ func TestRuntimeScaffoldValidateAndTemplateRuby(t *testing.T) {
 	}
 }
 
+func TestAppTemplateRejectsRuntimeNotEnabledInFleet(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	outDir := filepath.Join(root, "ruby-template")
+	stdout, err := runCLI(t, "app", "template", "ruby", "--fleet-config", configPath, "--output", outDir)
+	if err == nil {
+		t.Fatalf("expected ruby template to fail before runtime scaffold enables it:\n%s", stdout)
+	}
+	if !strings.Contains(err.Error(), `app template runtime "ruby" is supported but not enabled in templates.runtimes`) {
+		t.Fatalf("unexpected ruby template error: %v\n%s", err, stdout)
+	}
+	if _, statErr := os.Stat(filepath.Join(outDir, "Dockerfile")); !os.IsNotExist(statErr) {
+		t.Fatalf("disabled runtime should not write template files, stat err=%v", statErr)
+	}
+}
+
+func TestAppTemplateRejectsUnsupportedRuntimeBeforeAndAfterEnablement(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	outDir := filepath.Join(root, "rust-template")
+	stdout, err := runCLI(t, "app", "template", "rust", "--fleet-config", configPath, "--output", outDir)
+	if err == nil {
+		t.Fatalf("expected unsupported rust template to fail:\n%s", stdout)
+	}
+	for _, needle := range []string{`unsupported app template runtime "rust"`, "java, node, python, go, ruby"} {
+		if !strings.Contains(err.Error(), needle) {
+			t.Fatalf("unsupported runtime error missing %q: %v\n%s", needle, err, stdout)
+		}
+	}
+
+	cfg, err := fleet.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Templates.Runtimes = append(cfg.Templates.Runtimes, "rust")
+	writeFleetConfigStruct(t, configPath, cfg)
+	stdout, err = runCLI(t, "app", "template", "rust", "--fleet-config", configPath, "--output", outDir)
+	if err == nil {
+		t.Fatalf("enabled-but-unsupported rust template should still fail:\n%s", stdout)
+	}
+	if !strings.Contains(err.Error(), `unsupported app template runtime "rust"`) {
+		t.Fatalf("unexpected enabled unsupported runtime error: %v\n%s", err, stdout)
+	}
+}
+
+func TestRuntimeScaffoldRejectsUnsupportedAppTemplateRuntime(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	coreDir := filepath.Join(root, "core")
+	stdout, err := runCLI(t,
+		"runtime", "scaffold", "rust1.96",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+		"--language", "rust",
+		"--version", "1.96",
+		"--package", "rustc",
+		"--app-template-runtime", "rust",
+	)
+	if err == nil {
+		t.Fatalf("expected runtime scaffold to reject unsupported app template runtime:\n%s", stdout)
+	}
+	if !strings.Contains(err.Error(), `unsupported app template runtime "rust"`) {
+		t.Fatalf("unexpected scaffold error: %v\n%s", err, stdout)
+	}
+}
+
 func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFleetConfig(t, dir)
@@ -245,9 +322,22 @@ func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 		t.Fatalf("read release workflow: %v", err)
 	}
 	release := string(releaseRaw)
-	for _, needle := range []string{"cosign sign", "actions/attest-build-provenance", "actions/attest-sbom", "certify-app"} {
+	for _, needle := range []string{"cosign sign", "actions/attest-build-provenance", "actions/attest-sbom", "SHA256SUMS.txt", "cosign verify-blob", "clearcutt certify", "--image-ref"} {
 		if !strings.Contains(release, needle) {
 			t.Fatalf("generated release workflow missing %q:\n%s", needle, release)
+		}
+	}
+	if strings.Contains(release, "certify-app@") || strings.Contains(release, "@v4") || strings.Contains(release, "@v6") {
+		t.Fatalf("generated release workflow must not contain old action tags:\n%s", release)
+	}
+	rebaseRaw, err := os.ReadFile(filepath.Join(outDir, ".github/workflows/rebase.yml"))
+	if err != nil {
+		t.Fatalf("read rebase workflow: %v", err)
+	}
+	rebase := string(rebaseRaw)
+	for _, needle := range []string{"SHA256SUMS.txt", "cosign verify-blob", "clearcutt app rebase"} {
+		if !strings.Contains(rebase, needle) {
+			t.Fatalf("generated rebase workflow missing %q:\n%s", needle, rebase)
 		}
 	}
 }
@@ -335,7 +425,7 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 	root := t.TempDir()
 	writeFleetConfig(t, root)
 	files := map[string]string{
-		".github/workflows/release.yml":                 "matrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nslsa-github-generator\n",
+		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nmatrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "matrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet certify-target\n",
 		".github/workflows/rebase.yml":                  "clearcutt app rebase\n",
 		".github/workflows/publish-pages.yml":           "clearcutt catalog build\n",
@@ -368,6 +458,52 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 	}
 	if got.Status != "pass" {
 		t.Fatalf("status = %q, checks = %#v", got.Status, got.Checks)
+	}
+}
+
+func TestPlatformStatusFailsWhenReleaseBranchGuardDrifts(t *testing.T) {
+	root := t.TempDir()
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Release.SourceBranch = "release"
+	cfg.Release.WorkflowIdentity = "https://github.com/acme/platform/.github/workflows/release.yml@refs/heads/release"
+	cfg.Rebase.WorkflowIdentity = "https://github.com/acme/platform/.github/workflows/rebase.yml@refs/heads/release"
+	raw, err := fleet.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fleet config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "clearcutt.fleet.yaml"), raw, 0o644); err != nil {
+		t.Fatalf("write fleet config: %v", err)
+	}
+	files := map[string]string{
+		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nmatrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nslsa-github-generator\n",
+		".github/workflows/pr-gate.yml":                 "matrix export --source fleet\nclearcutt platform setup-nix\nclearcutt fleet certify-target\n",
+		".github/workflows/rebase.yml":                  "clearcutt app rebase\n",
+		".github/workflows/publish-pages.yml":           "clearcutt catalog build\n",
+		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",
+		".github/actions/certify-app/action.yml":        "name: certify\n",
+		"core/flake.nix":                                "inputs = {}\n",
+		"core/lib/platform-metadata.nix":                "https://github.com/acme/platform\n",
+		"examples/clearcutt-template-java/Dockerfile":   "FROM scratch\n",
+		"examples/clearcutt-template-node/Dockerfile":   "FROM scratch\n",
+		"examples/clearcutt-template-python/Dockerfile": "FROM scratch\n",
+		"examples/clearcutt-template-go/Dockerfile":     "FROM scratch\n",
+		"examples/k8s-deployment/kyverno-policy.yaml":   "imageReferences:\n  - \"ghcr.io/acme/platform/clearcutt-*\"\n",
+	}
+	for rel, body := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	stdout, err := runCLI(t, "--format", "json", "platform", "status", "--output", root)
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("expected ErrCheckFailed, got %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "release.sourceBranch.guard") {
+		t.Fatalf("expected source branch guard failure, got:\n%s", stdout)
 	}
 }
 

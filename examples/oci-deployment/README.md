@@ -1,42 +1,47 @@
-# ClearCutt Docker Compose Container Hardening Blueprint
+# ClearCutt Docker Compose App Deployment Example
 
-This blueprint demonstrates how to deploy **ClearCutt Hardened OCI images** inside **Docker Compose** or single-host docker sandboxes utilizing industry-standard security profiles.
+This example runs an application image built from a ClearCutt base image. It is
+not a base-image deployment example.
 
-By combining Nix store paths with strict container runtime parameters, this blueprint narrows the writable surface and reduces default process privileges for target application containers.
+The compose file builds `ghcr.io/acme/payments-api:1.0.0` from the Java app
+template, runs it as UID/GID `10001`, drops Linux capabilities, mounts the root
+filesystem read-only, and keeps writable scratch data in `/tmp`.
 
----
+## Build and certify the app image
 
-## The Four Core Hardening Pillars
+```bash
+cd examples/oci-deployment
+APP_IMAGE=ghcr.io/acme/payments-api:1.0.0
+docker compose build
+docker push "$APP_IMAGE"
+APP_DIGEST=$(docker buildx imagetools inspect "$APP_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')
+docker save "$APP_IMAGE" -o payments-api.tar
+clearcutt certify payments-api.tar \
+  --base java21-distroless \
+  --policy ../clearcutt-template-java/certification-policy.yaml \
+  --image-ref "${APP_IMAGE%:*}@${APP_DIGEST}"
+```
 
-The [`docker-compose.yml`](./docker-compose.yml) template implements the following defense-in-depth measures:
+The generated policy requires a digest-pinned image ref. For production, deploy
+the same immutable digest ref that certification checked.
 
-### 1. Rootless Boundaries (`user: "10001:10001"`)
-Ensures the container process starts in a pre-provisioned unprivileged user space. If an attacker compromises the application process, they start from UID `10001` instead of root, reducing the blast radius of common container escape paths.
+## Run the local deployment
 
-### 2. Immutable Filesystem (`read_only: true`)
-Mounts the container's root layers as read-only. 
-*   **Why Nix helps:** In standard Docker, `read_only` often breaks containers because applications try to write logs, caches, or binaries to random paths. ClearCutt images keep runtime libraries and binaries in read-only `/nix/store` paths, while this blueprint maps an ephemeral `tmpfs` volume to `/tmp` for expected transient writes.
+```bash
+docker compose up -d
+docker compose exec payments-api id
+docker compose exec payments-api sh -lc 'touch /test'
+```
 
-### 3. Total Capability Drop (`cap_drop: [ALL]`)
-By default, Docker containers retain some kernel capabilities (like raw socket mappings or system time configurations). We drop **all** Linux kernel capabilities. The process can execute code but cannot manipulate network routes, raw device mounts, or OS boundaries.
+The final command should fail if the image has no shell or if the read-only root
+filesystem blocks the write. Either result is useful: it confirms the runtime is
+not behaving like a writable general-purpose container.
 
-### 4. Privilege Escalation Block (`no-new-privileges:true`)
-Blocks the container process or child sub-processes from acquiring new privileges (e.g. via `setuid` or `setgid` dynamic binaries).
+## What this example proves
 
----
-
-## How to Execute the Blueprint
-
-1.  Place your application runtime code inside a local `./app-code` folder.
-2.  Start the sandbox:
-    ```bash
-    docker compose up -d
-    ```
-3.  Verify container process permissions:
-    ```bash
-    docker exec clearcutt-hardened-app whoami
-    # Outputs: appuser
-    
-    docker exec clearcutt-hardened-app touch /test
-    # Outputs: touch: /test: Read-only file system
-    ```
+- App teams can build an application image from a ClearCutt base without
+  learning Nix.
+- The resulting image can be checked with `clearcutt certify` before deployment.
+- Compose hardening is separate from catalog trust. Runtime settings reduce
+  process privileges, while signatures, SBOMs, provenance, scans, and
+  certification policy are inspected through ClearCutt evidence paths.

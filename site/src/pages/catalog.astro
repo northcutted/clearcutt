@@ -123,6 +123,12 @@ const evidenceCoverage = index
                 <p class="text-ink-300 leading-normal">
                   Green icons indicate evidence present in the catalog for the OCI manifest: Sigstore keyless OIDC signature, SLSA Build L3 provenance, and SPDX SBOM. Use the audit guide to verify it locally.
                 </p>
+                <p class="text-ink-400 leading-normal">
+                  The generated <code>evidence-manifest.json</code> indexes each release's expected, observed, and missing evidence channels.
+                </p>
+                <a href={`${base}catalog/evidence-manifest.json`} class="inline-flex text-[11px] font-semibold text-accent-soft underline decoration-accent/40 hover:text-accent">
+                  Download evidence manifest
+                </a>
               </div>
 
               <!-- Item 2 -->
@@ -130,12 +136,12 @@ const evidenceCoverage = index
                 <h3 class="font-bold text-ink-50 flex items-center gap-1.5">
                   <span class="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-400 bg-emerald-950/20 border border-emerald-800/30 rounded px-1.5 py-0.5">
                     <svg viewBox="0 0 24 24" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                    No high/critical
+                    No high/critical in current scan
                   </span>
-                  Vulnerability Gates
+                  Current Scan Results
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  Images show <strong>No high/critical</strong> when current scan data reports no active Critical or High findings. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
+                  Images show <strong>No high/critical in current scan</strong> when attached scan data reports no active Critical or High findings. Counts of outstanding CVE findings display in red (critical) or orange (high) badges.
                 </p>
               </div>
 
@@ -143,10 +149,10 @@ const evidenceCoverage = index
               <div class="space-y-1.5">
                 <h3 class="font-bold text-ink-50 flex items-center gap-1.5">
                   <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-bold text-emerald-400 tracking-wider">SHELL-FREE</span>
-                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">EVIDENCE PINNED</span>
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[7.5px] font-bold text-sky-400 tracking-wider">EVIDENCE LISTED</span>
                 </h3>
                 <p class="text-ink-300 leading-normal">
-                  <strong>Shell-Free</strong> indicates that shells, core utilities, and package managers are omitted from the runtime. <strong>Evidence Pinned</strong> means the catalog exposes signatures, SBOMs, provenance, and workflow identities separately.
+                  <strong>Shell-Free</strong> indicates that shells, core utilities, and package managers are omitted from the runtime. <strong>Evidence Listed</strong> means the catalog exposes signatures, SBOMs, provenance, and workflow identities separately.
                 </p>
               </div>
             </div>

@@ -142,9 +142,9 @@ Every agent MUST respect and preserve the following design decisions, constraint
 
 ---
 
-## 1. Nix hermetic overlay isolation
+## 1. Nix store overlay isolation
 
-* **RPATH / RUNPATH Isolation:** Run-times (Java, Node.js, Python, etc.) compiled by our Nix image factory are bound strictly to Nix store subpaths. They perform execution in isolation from the host filesystem's `/lib` or `/usr/lib`. This preserves security but assumes downstream applications have no hard dependencies on external host-operating system libraries outside the Nix store closure.
+* **RPATH / RUNPATH Isolation:** Run-times (Java, Node.js, Python, etc.) compiled by our Nix image factory are expected to resolve runtime libraries from Nix store subpaths instead of host filesystem paths such as `/lib` or `/usr/lib`. This reduces dependency drift but assumes downstream applications have no hard dependencies on external host-operating system libraries outside the Nix store closure.
 * **Mac OS Cross-Compilation Constraint:** You can run development shells on macOS, but **cross-compiling runtimes (like Java JDK, Node, .NET) from macOS to Linux target layers via Nix `pkgsCross` is unstable and unsupported**. Production matrix builds MUST be built on native Linux (e.g., standard Linux VM or CI runner).
 
 ---
@@ -219,4 +219,4 @@ This persistent ledger records critical repository-specific constraints, environ
 
 ### Astro Catalog Generation Requirement
 * **Context:** Building the Astro site in `site/` will fail or display blank data if the catalog has not been compiled.
-* **Lesson:** Before running `npm run build` or `npm run dev` in `site/`, you must generate the catalog data using `./clearcutt catalog gather` (or `make catalog-generate`).
+* **Lesson:** Before running `npm run build` or `npm run dev` in `site/`, generate catalog data with `./clearcutt catalog generate --output site/src/data/catalog`, run the full release-evidence path with `./clearcutt catalog build`, or use a fixture-backed site build.

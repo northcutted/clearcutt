@@ -11,9 +11,12 @@ Application teams should not edit flakes to adopt ClearCutt.
 
 ```bash
 clearcutt app template java --output examples/my-java-service --name my-java-service
-clearcutt dev java21-distroless --devcontainer
-clearcutt dev java21-distroless --container --engine docker
-clearcutt certify my-app.tar --base java21-distroless --policy certification-policy.yaml
+clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --devcontainer --print
+clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --container --engine docker --command 'java -version'
+APP_IMAGE=ghcr.io/acme/my-app:1.0.0
+APP_DIGEST=$(docker buildx imagetools inspect "$APP_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')
+docker save "$APP_IMAGE" -o my-app.tar
+clearcutt certify my-app.tar --base java21-distroless --policy certification-policy.yaml --image-ref "${APP_IMAGE%:*}@${APP_DIGEST}"
 ```
 
 This path gives teams a Dockerfile, devcontainer, certification policy, release
@@ -55,7 +58,7 @@ matching app-template runtime when one is known, and regenerates
 clearcutt runtime scaffold ruby3.4
 clearcutt runtime validate ruby3.4
 clearcutt matrix explain ruby3.4
-clearcutt app template ruby --output examples/my-ruby-service --name my-ruby-service
+clearcutt app template ruby --fleet-config clearcutt.fleet.yaml --output examples/my-ruby-service --name my-ruby-service
 clearcutt platform status
 ```
 
@@ -66,7 +69,7 @@ Ruby is the reference scaffold candidate. With no extra flags,
 - language/version: `ruby` / `3.4`
 - package candidates: `ruby_3_4`, then `ruby`
 - image IDs: `ruby3.4-dev`, `ruby3.4-slim`, `ruby3.4-distroless`
-- app-template runtime: `ruby`
+- app-template runtime: `ruby`, enabled in `templates.runtimes` by the scaffold
 - smoke hint: `ruby --version`
 
 For less obvious packages, pass explicit candidates and dev packages:

@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
           cache: true
@@ -55,20 +55,23 @@ jobs:
           cd cli
           go build -o ../clearcutt ./cmd/clearcutt
 
-      - name: Install cosign and grype
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pin cosign v3 so catalog enrichment reads the same bundle format
+          # produced by the release workflow.
+          cosign-release: 'v3.0.6'
+
+      - name: Install grype
         run: |
           set -euo pipefail
-          # cosign binary pinned to match the release workflow's signer
-          # (cosign-release in release.yml). The release signs OCI image indexes
-          # with cosign v3's default new bundle format, so the Go catalog enricher
-          # must read with the same major to resolve those attestations; pinning
-          # avoids writer/reader format drift.
-          COSIGN_VERSION=v3.0.6
-          curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
-          chmod +x /tmp/cosign && sudo mv /tmp/cosign /usr/local/bin/cosign
+          GRYPE_VERSION=0.114.0
+          GRYPE_TARBALL="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          GRYPE_SHA256="edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343"
+          curl -fsSL -o "/tmp/${GRYPE_TARBALL}" "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${GRYPE_TARBALL}"
+          printf '%s  %s\n' "${GRYPE_SHA256}" "/tmp/${GRYPE_TARBALL}" | sha256sum -c -
+          sudo tar -xzf "/tmp/${GRYPE_TARBALL}" -C /usr/local/bin grype
           cosign version
-          # grype via official install script
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
           grype version
 
       - name: Refresh grype DB
@@ -174,10 +177,10 @@ jobs:
 
       - name: Install site dependencies
         working-directory: site
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
           cache: true

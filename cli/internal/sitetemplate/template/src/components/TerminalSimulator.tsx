@@ -8,27 +8,25 @@ type CommandOption = {
 
 type Props = {
   registryBase?: string;
-  java25ImageName?: string;
   java21ImageName?: string;
 };
 
-function commandOptions(registryBase: string, java25ImageName: string, java21ImageName: string): CommandOption[] {
-  const java25 = `${registryBase}/${java25ImageName}`;
+function commandOptions(registryBase: string, java21ImageName: string): CommandOption[] {
   const java21 = `${registryBase}/${java21ImageName}`;
 
   return [
     {
       name: 'clearcutt inspect',
-      command: 'clearcutt inspect java25-distroless',
+      command: 'clearcutt --catalog cli/internal/testdata/catalog inspect java21-distroless',
       output: [
-        'Image Metadata Report for java25-distroless',
+        'Image Metadata Report for java21-distroless',
         '-----------------------------------------------------------------',
-        'ID                     : java25-distroless',
+        'ID                     : java21-distroless',
         `Registry               : ${registryBase}`,
-        `FullName               : ${java25}`,
-        'Runtime Line           : java25',
+        `FullName               : ${java21}`,
+        'Runtime Line           : java21',
         'Tier                   : distroless (hardened, shell-free)',
-        'Latest Release Version : v0.6.2',
+        'Latest Release Version : v0.10.2',
         'Digest                 : sha256:8894dfc15a7721ff07d1ea21b2d7f5ca9158ba6ea6afe058ab6d1bd854f0466e',
         'Architectures          : amd64, arm64',
         'Size (Total)           : 48.7 MB',
@@ -48,15 +46,15 @@ function commandOptions(registryBase: string, java25ImageName: string, java21Ima
     },
     {
       name: 'clearcutt verify',
-      command: 'clearcutt verify image java25-distroless --max-critical 0 --max-high 3 --exceptions exceptions.yaml',
+      command: 'clearcutt --catalog cli/internal/testdata/catalog verify image java21-distroless --max-critical 0 --max-high 3 --allow-preview',
       output: [
-        'Policy Gating Report for java25-distroless:v0.6.2',
+        'Policy Gating Report for java21-distroless:v0.10.2',
         '-----------------------------------------------------------------',
         '[✔ PASS] digest.present                  : manifest digest present: sha256:8894dfc1...',
         '[✔ PASS] architectures.present           : architectures present: amd64, arm64',
-        '[✔ PASS] signature.present               : Sigstore signature verified in release record',
-        '[✔ PASS] sbom.present                    : SPDX SBOM evidence verified for all platforms',
-        '[✔ PASS] provenance.present              : SLSA Level-3 build provenance attestation present',
+        '[✔ PASS] signature.present               : catalog release record reports Sigstore signature evidence',
+        '[✔ PASS] sbom.present                    : catalog release record reports SPDX SBOM evidence for all platforms',
+        '[✔ PASS] provenance.present              : catalog release record reports SLSA provenance evidence',
         '[✔ PASS] tests.passed                    : conformance and smoke tests passed on all platforms',
         '[✔ PASS] vulnerabilities.scanned         : vulnerability scan results present for all platforms',
         '[✔ PASS] lifecycle.status                : lifecycle status verified: preview',
@@ -97,10 +95,9 @@ function commandOptions(registryBase: string, java25ImageName: string, java21Ima
 
 export default function TerminalSimulator({
   registryBase = 'ghcr.io/northcutted/clearcutt',
-  java25ImageName = 'clearcutt-java25',
   java21ImageName = 'clearcutt-java21',
 }: Props) {
-  const commands = commandOptions(registryBase, java25ImageName, java21ImageName);
+  const commands = commandOptions(registryBase, java21ImageName);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [displayedCommand, setDisplayedCommand] = useState('');
   const [displayedOutput, setDisplayedOutput] = useState<string[]>([]);

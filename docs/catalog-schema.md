@@ -12,6 +12,7 @@ Current schema version identifiers:
 - `clearcutt.catalog.image/v1`
 - `clearcutt.catalog.index/v2`
 - `clearcutt.catalog.image/v2`
+- `clearcutt.catalog.evidence-manifest/v1`
 
 Runtime-only catalogs may remain on v1. Catalogs containing first-class service
 records emit v2 and add `kind` plus service metadata while preserving the
@@ -33,6 +34,7 @@ clearcutt --catalog ./dist/catalog catalog validate \
 catalog/
   index.json
   summary.json
+  evidence-manifest.json
   images/
     <image-id>.json
   raw/
@@ -43,6 +45,7 @@ catalog/
   schemas/
     catalog-index.v1.schema.json
     catalog-index.v2.schema.json
+    evidence-manifest.v1.schema.json
     image-record.v1.schema.json
     image-record.v2.schema.json
 ```
@@ -98,6 +101,24 @@ For `kind: service` records, v2 also includes:
 `summary.json` is a small report for CI logs, dashboards, and quick checks. It
 summarizes image, release, SBOM, scan, and evidence counts without requiring a
 consumer to parse every image record.
+
+## `evidence-manifest.json`
+
+`evidence-manifest.json` is a formal per-release evidence manifest generated
+from `images/*.json`. It gives auditors one index of:
+
+- image id, release tag, image ref, immutable digest ref when available, and
+  catalog record path,
+- expected and observed channel status for signature, provenance, SBOM, tests,
+  vulnerability scans, exceptions, and VEX,
+- missing evidence channels,
+- per-architecture SBOM/test/scan state,
+- signer identity, provenance summary, and release asset URLs when recorded.
+
+The manifest does not replace registry-side verification. It centralizes what
+the generated catalog currently reports and makes missing data queryable.
+`catalog validate` rejects a present manifest if it no longer matches the image
+records.
 
 ## `raw/`
 
