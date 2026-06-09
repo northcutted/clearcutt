@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -843,6 +844,103 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	validateOut, err = runCLI(t, "--catalog", outDir, "catalog", "validate", "--schema-version", catalog.EvidenceManifestSchemaVersion)
 	if err != nil {
 		t.Fatalf("generated catalog should satisfy evidence manifest schema version: %v\n%s", err, validateOut)
+	}
+}
+
+func TestEvidenceManifestHelperAndErrorBranches(t *testing.T) {
+	partial := countedChannelStatus(true, true, 1, 2, "architecture SBOMs")
+	if partial.Status != "partial" || partial.Detail != "1/2 architecture SBOMs" {
+		t.Fatalf("expected partial counted channel, got %#v", partial)
+	}
+
+	exceptionStatus := exceptionsChannelStatus(catalog.ExceptionSummary{Total: 3, Active: 2, Expired: 1})
+	if exceptionStatus.Status != "present" || !exceptionStatus.Expected || !exceptionStatus.Observed || !strings.Contains(exceptionStatus.Detail, "3 total exceptions") {
+		t.Fatalf("expected present exception channel, got %#v", exceptionStatus)
+	}
+
+	vexStatus := vexChannelStatus("java21-distroless", "v1.2.3", catalog.ExceptionSummary{Total: 1})
+	if vexStatus.Status != "on_demand" || vexStatus.Expected || vexStatus.Observed || !strings.Contains(vexStatus.Detail, "clearcutt vex java21-distroless --tag v1.2.3") {
+		t.Fatalf("expected on-demand VEX channel, got %#v", vexStatus)
+	}
+
+	missing := missingEvidenceChannels(evidenceManifestChannels{
+		Signature:       evidenceManifestChannel{Expected: true, Observed: false},
+		Provenance:      evidenceManifestChannel{Expected: true, Observed: true},
+		SBOM:            evidenceManifestChannel{Expected: true, Observed: false},
+		Tests:           evidenceManifestChannel{Expected: false, Observed: false},
+		Vulnerabilities: evidenceManifestChannel{Expected: true, Observed: false},
+		Exceptions:      evidenceManifestChannel{Expected: true, Observed: false},
+	})
+	if got := strings.Join(missing, ","); got != "signature,sbom,vulnerabilities,exceptions" {
+		t.Fatalf("unexpected missing channel list %q", got)
+	}
+
+	badDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(badDir, evidenceManifestFilename), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write invalid manifest: %v", err)
+	}
+	if _, err := loadEvidenceManifest(badDir); err == nil {
+		t.Fatal("expected invalid evidence manifest JSON to fail")
+	}
+	if err := writeEvidenceManifestFile(t.TempDir()); err == nil {
+		t.Fatal("expected writing evidence manifest without catalog index to fail")
+	}
+}
+
+func TestValidateEvidenceManifestBranches(t *testing.T) {
+	var errors []string
+	addError := func(format string, args ...any) {
+		errors = append(errors, fmt.Sprintf(format, args...))
+	}
+
+	missingRequiredDir := copyFixtureCatalog(t)
+	if err := os.Remove(filepath.Join(missingRequiredDir, evidenceManifestFilename)); err != nil {
+		t.Fatalf("remove evidence manifest: %v", err)
+	}
+	validateEvidenceManifest(missingRequiredDir, catalog.EvidenceManifestSchemaVersion, addError)
+	if len(errors) != 1 || !strings.Contains(errors[0], "missing required schemaVersion") {
+		t.Fatalf("expected required missing manifest error, got %#v", errors)
+	}
+
+	errors = nil
+	validateEvidenceManifest(missingRequiredDir, "", addError)
+	if len(errors) != 0 {
+		t.Fatalf("missing manifest should be optional unless schemaVersion is requested, got %#v", errors)
+	}
+
+	invalidDir := copyFixtureCatalog(t)
+	if err := os.WriteFile(filepath.Join(invalidDir, evidenceManifestFilename), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write invalid evidence manifest: %v", err)
+	}
+	errors = nil
+	validateEvidenceManifest(invalidDir, "", addError)
+	if len(errors) != 1 || !strings.Contains(errors[0], "unexpected end of JSON input") {
+		t.Fatalf("expected invalid manifest JSON error, got %#v", errors)
+	}
+
+	staleDir := copyFixtureCatalog(t)
+	manifest, err := buildEvidenceManifest(staleDir)
+	if err != nil {
+		t.Fatalf("build evidence manifest: %v", err)
+	}
+	manifest.SchemaVersion = "clearcutt.catalog.evidence-manifest/v0"
+	if err := writeJSONFile(filepath.Join(staleDir, evidenceManifestFilename), manifest); err != nil {
+		t.Fatalf("write stale evidence manifest: %v", err)
+	}
+	errors = nil
+	validateEvidenceManifest(staleDir, "", addError)
+	if got := strings.Join(errors, "\n"); !strings.Contains(got, "unsupported schemaVersion") || !strings.Contains(got, "does not match catalog image records") {
+		t.Fatalf("expected stale manifest errors, got %#v", errors)
+	}
+
+	rebuildFailureDir := t.TempDir()
+	if err := writeJSONFile(filepath.Join(rebuildFailureDir, evidenceManifestFilename), evidenceManifest{SchemaVersion: catalog.EvidenceManifestSchemaVersion}); err != nil {
+		t.Fatalf("write manifest without catalog: %v", err)
+	}
+	errors = nil
+	validateEvidenceManifest(rebuildFailureDir, "", addError)
+	if len(errors) != 1 || !strings.Contains(errors[0], "failed to rebuild expected manifest") {
+		t.Fatalf("expected rebuild failure error, got %#v", errors)
 	}
 }
 
