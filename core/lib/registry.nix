@@ -1,6 +1,4 @@
 # ClearCutt Declarative Language & Runtime Registry
-# Design: Eddie Northcutt
-# Paradigm: Declarative base registry for OCI base fleets and native shells
 
 { pkgs }:
 

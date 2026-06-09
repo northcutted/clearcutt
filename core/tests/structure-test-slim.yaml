@@ -37,6 +37,10 @@ fileExistenceTests:
     shouldExist: true
 
 fileContentTests:
+  - name: 'Passwd Root User'
+    path: '/etc/passwd'
+    expectedContents:
+      - ".*root:x:0:0:root:/root:/sbin/nologin.*"
   - name: 'Passwd App User'
     path: '/etc/passwd'
     expectedContents:

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # ClearCutt Runtimes Heavy End-to-End (E2E) Test Suite
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Strategy-matrix verified container build, run, rebase, and verify loop
 
 set -euo pipefail
 
-# Console colors for premium UI/UX feedback
+# Console colors
 BLUE="\033[1;34m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # ClearCutt Hardened Fleets Agent Sandbox Wrapper
-# Author: Eddie Northcutt
-# Paradigm: Ephemeral Sandbox Boundary Credentials Scrubbing
 
 set -euo pipefail
 
 # Load Nix environment if available to keep commands accessible inside the sandbox
 if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-elif [ -f /Users/eddie/.nix-profile/etc/profile.d/nix.sh ]; then
-  source /Users/eddie/.nix-profile/etc/profile.d/nix.sh
+elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  source "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 
 # Status UI feedback
@@ -22,9 +20,7 @@ fi
 
 # Maintain PATH so standard commands and nix tools are accessible
 CLEAN_PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
-if [[ -n "${PATH:-}" ]]; then
-  CLEAN_PATH="${PATH}"
-fi
+CLEAN_PATH="${AGENT_SANDBOX_PATH:-$CLEAN_PATH}"
 
 # Keep LLM-authored commands away from ~/.config, ~/.netrc, ~/.aws, SSH keys,
 # and other ambient host credentials. The real build isolation is still Nix's

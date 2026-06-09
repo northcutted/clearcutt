@@ -94,7 +94,36 @@ builder has Nix installed and you want a flake eval as part of validation:
 clearcutt runtime validate ruby3.4 --nix --system x86_64-linux
 ```
 
-## 4. Nix Backend Escape Hatch
+## 4. Corporate Base Grafts
+
+When a platform owner must layer a ClearCutt runtime closure onto a mandated
+corporate base image, use the flake library helper instead of editing generated
+packages directly:
+
+```nix
+{
+  packages.x86_64-linux.java21-corporate =
+    clearcutt.lib.graftOntoBase {
+      system = "x86_64-linux";
+      fromImage = corporateBaseImage;
+      runtime = "java21";
+      tier = "slim";
+      tag = "corporate";
+    };
+}
+```
+
+`fromImage` should be a `dockerTools.pullImage`-style derivation or another
+compatible OCI image derivation. This is a compatibility escape hatch: grafted
+images inherit the parent image's shell, package manager, and CVE footprint, so
+they do not carry the same zero-utility guarantee as native ClearCutt
+`distroless` images.
+
+Use `clearcutt overlay verify` with the source runtime archive, grafted archive,
+and digest-pinned runtime/grafted refs to emit an offline in-toto
+closure-equivalence predicate before promotion.
+
+## 5. Nix Backend Escape Hatch
 
 Most runtime additions should go through `runtime scaffold`. Hand-edit
 `core/lib/registry.nix` only when the runtime needs custom closure-shaping logic

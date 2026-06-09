@@ -1,6 +1,5 @@
 # ClearCutt Approved Vulnerability Remediation Gateway
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Scheduled/gated remediation planning with bounded PR drafting
+# Scheduled/gated remediation planning with bounded PR drafting.
 
 name: ClearCutt Approved Remediation Scan
 
@@ -234,11 +233,11 @@ jobs:
 
       # Persist /nix/store between runs. Without this every cold runner has to
       # re-fetch the unpatched base closure from R2 even when nothing in the
-      # flake.lock changed.
+      # flake.lock, shared build helpers, or CVE overlays changed.
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Run Go Remediation Dispatcher

@@ -56,6 +56,7 @@ func NewVerifyCmd() *cobra.Command {
 		Long: `Verification subcommands:
   image            gate a specific catalog image against policy contract gates
   catalog          check the generated catalog publishes complete, consistent trust data
+  rebuild          verify rebuild digest and runtime/grafted closure equivalence predicates
   release-evidence verify a published image ref's Sigstore signature + SLSA provenance`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,6 +68,7 @@ func NewVerifyCmd() *cobra.Command {
 	addVerifyImageFlags(cmd, true)
 	cmd.AddCommand(newVerifyImageCmd())
 	cmd.AddCommand(NewVerifyCatalogCmd())
+	cmd.AddCommand(NewVerifyRebuildCmd())
 	cmd.AddCommand(NewVerifyReleaseEvidenceCmd())
 	return cmd
 }

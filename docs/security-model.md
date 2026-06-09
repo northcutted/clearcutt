@@ -5,7 +5,9 @@ This document defines the supply-chain security model, trust boundaries, and evi
 For a command-level path through one image digest, use
 [`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md). For catalog
 badge semantics and missing-evidence states, use
-[`trust/catalog-evidence.md`](trust/catalog-evidence.md).
+[`trust/catalog-evidence.md`](trust/catalog-evidence.md). For the remediation
+drafting agent boundary, use
+[`trust/cve-agent-threat-model.md`](trust/cve-agent-threat-model.md).
 
 ---
 
@@ -29,8 +31,27 @@ graph TD
 ```
 
 ### 2.1 Build-Time Assumptions
-- The Nix store compilation pipeline constrains runtime interpreters and their declared inputs inside a Nix build closure.
-- All dynamic linkage paths are RPATH/RUNPATH bound directly to `/nix/store` entries, bypassing host path resolution and preventing dynamic linkage hijacking.
+- The Nix store compilation pipeline compiles and layers all runtime interpreters inside a completely hermetic closure.
+- Distroless runtime images omit FHS linker/library fallback paths and rely on RPATH/RUNPATH entries bound directly to `/nix/store`.
+- Slim, dev, and service images retain `/lib`/`/lib64` compatibility symlinks plus `LD_LIBRARY_PATH` for teams that need to run FHS-oriented binaries inside a ClearCutt-managed runtime. Treat those tiers as compatibility tiers, not as the strictest dynamic-linkage boundary.
+- The RPATH/interpreter gate verifies the binaries in the Nix closure; it does not claim that a downstream application cannot add new dynamic-linkage paths after the image is extended.
+
+### 2.1.1 License Metadata Boundary
+- The source recipes and CLI/site code are Apache-2.0, but released images contain third-party packages from nixpkgs with mixed upstream licenses.
+- OCI image labels therefore use `org.opencontainers.image.licenses=NOASSERTION` for the image artifact and `dev.clearcutt.recipe.license=Apache-2.0` for the ClearCutt recipe layer.
+- The SPDX SBOM is the source of package-level license evidence for a concrete image digest.
+
+### 2.1.2 Closure-Diff Baseline
+- The G2 remediation gate compares the current image's extracted `/nix/store`
+  roots with a registry-derived known-good image, not with the image being
+  tested.
+- The default baseline is the upstream `coreLTS-slim` rolling image
+  (`ghcr.io/northcutted/clearcutt/clearcutt-corelts:slim`) and the default
+  package boundary is `bash-interactive`.
+- Forks and offline test fixtures can set `CLEARCUTT_G2_KNOWN_GOOD_REF`,
+  `CLEARCUTT_G2_KNOWN_GOOD_ARCH`, `CLEARCUTT_G2_KNOWN_GOOD_CLOSURE`, and
+  `CLEARCUTT_G2_TARGET_PACKAGE` to compare against their own release baseline
+  and patched package.
 
 ### 2.2 Registry & Distribution Boundaries
 - Cryptographic signatures and SPDX SBOMs are stored alongside container images as OCI referrers.
@@ -64,7 +85,5 @@ To remain precise and conservative:
 - **No FIPS Cryptographic Claims**: ClearCutt runtimes use standard upstream cryptographic modules and do not assert FIPS validation unless an explicit cryptographic module boundary has been formally certified.
 - **No Zero Risk Guarantees**: While vulnerability exception models enable structured patch governance, vulnerability scans only represent findings at a discrete point in time and do not guarantee an absence of future security defects.
 - **BYO Base Image Overlays Limitation**: Overlay images grafted onto mandated corporate operating systems (e.g., Red Hat UBI or AL2023) **do not** inherit ClearCutt's distroless zero-utility guarantee. They retain the parent base image's shell, package manager, and CVE footprint.
-- **Main-Only Reference Release Identity**: The upstream reference policy pins
-  release evidence to `.github/workflows/release.yml@refs/heads/main`. Forks
-  that release from additional refs must update fleet config, policy, and
-  verifier commands together.
+- **Service Data Directory Permissions**: Service images create declared data directories in image layers so rootless smoke tests can start without a mounted volume. Production deployments should mount managed volumes at those paths and enforce their own ownership/mode policy.
+- **CVE Draft Agent Boundary**: the remediation agent produces untrusted overlay drafts from untrusted advisory text. Drafts require sandboxed execution, `validate-overlays`, build/scan proof, and human review before merge.

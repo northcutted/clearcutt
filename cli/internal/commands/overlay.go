@@ -10,13 +10,20 @@ import (
 )
 
 type overlayFlags struct {
-	runtime    string
-	tier       string
-	base       string
-	runtimeRef string
-	binary     string
-	image      string
-	output     string
+	runtime               string
+	tier                  string
+	base                  string
+	runtimeRef            string
+	binary                string
+	image                 string
+	output                string
+	runtimeArchive        string
+	graftedArchive        string
+	runtimeRefForVerify   string
+	graftedRefForVerify   string
+	target                string
+	outputPredicate       bool
+	attestationOutputPath string
 }
 
 var overlayOpts overlayFlags
@@ -30,7 +37,7 @@ func NewOverlayCmd() *cobra.Command {
 	generateCmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate a new BYO base image overlay project layout",
-		Long:  `Generates a standard Containerfile, smoke tests, admission control policies, and CI workflows to graft a ClearCutt Nix store runtime closure onto a mandated enterprise base OS image.`,
+		Long:  `Generates a standard flake-based overlay project, smoke tests, admission control policies, and CI workflows to graft a ClearCutt Nix store runtime closure onto a mandated enterprise base OS image.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runOverlayGenerate()
 		},
@@ -50,13 +57,37 @@ func NewOverlayCmd() *cobra.Command {
 	generateCmd.MarkFlagRequired("image")
 	generateCmd.MarkFlagRequired("output")
 
-	cmd.AddCommand(generateCmd)
+	verifyCmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify a grafted overlay image preserves the ClearCutt runtime closure",
+		Long:  `Compares the /nix/store closure bytes in a source ClearCutt runtime archive and a grafted overlay archive, then emits a closure-equivalence in-toto predicate for signing or admission review.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runOverlayVerify()
+		},
+	}
+	verifyCmd.Flags().StringVar(&overlayOpts.runtimeArchive, "runtime-archive", "", "Source ClearCutt runtime image archive, docker-save or OCI-layout (required)")
+	verifyCmd.Flags().StringVar(&overlayOpts.graftedArchive, "grafted-archive", "", "Grafted overlay image archive, docker-save or OCI-layout (required)")
+	verifyCmd.Flags().StringVar(&overlayOpts.runtimeRefForVerify, "runtime-ref", "", "Digest-pinned runtime image ref recorded as an in-toto subject, name@sha256:... (required)")
+	verifyCmd.Flags().StringVar(&overlayOpts.graftedRefForVerify, "grafted-ref", "", "Digest-pinned grafted image ref recorded as an in-toto subject, name@sha256:... (required)")
+	verifyCmd.Flags().StringVar(&overlayOpts.target, "target", "", "ClearCutt runtime target id recorded in the predicate")
+	verifyCmd.Flags().BoolVar(&overlayOpts.outputPredicate, "output-predicate", false, "Print the closure-equivalence predicate as JSON")
+	verifyCmd.Flags().StringVar(&overlayOpts.attestationOutputPath, "attestation-out", "", "Write the closure-equivalence predicate JSON to this file")
+	verifyCmd.MarkFlagRequired("runtime-archive")
+	verifyCmd.MarkFlagRequired("grafted-archive")
+	verifyCmd.MarkFlagRequired("runtime-ref")
+	verifyCmd.MarkFlagRequired("grafted-ref")
+
+	cmd.AddCommand(generateCmd, verifyCmd)
 
 	return cmd
 }
 
 func runOverlayGenerate() error {
 	outDir := overlayOpts.output
+
+	if !strings.Contains(overlayOpts.runtimeRef, "@sha256:") {
+		return fmt.Errorf("--runtime-ref must be digest-pinned in name@sha256:... form")
+	}
 
 	if overlayOpts.binary == "" {
 		overlayOpts.binary = resolveBinary(overlayOpts.runtime)
@@ -101,50 +132,45 @@ spec:
 		return fmt.Errorf("failed to write overlay config: %w", err)
 	}
 
-	var versionCheckCmd string
-	switch overlayOpts.binary {
-	case "go":
-		versionCheckCmd = "/usr/local/bin/go version"
-	case "sh", "bash":
-		versionCheckCmd = "/usr/local/bin/sh -c 'echo \"ClearCutt Core\"'"
-	case "java":
-		versionCheckCmd = "/usr/local/bin/java -version"
-	default:
-		versionCheckCmd = fmt.Sprintf("/usr/local/bin/%s --version", overlayOpts.binary)
-	}
+	baseImageName, baseImageDigest := splitDigestRef(overlayOpts.base)
+	imageName, imageTag := splitTagRef(overlayOpts.image)
+	flake := fmt.Sprintf(`{
+  description = "ClearCutt grafted overlay for %s on a mandated base";
 
-	// 2. Generate Containerfile / Dockerfile
-	containerfile := fmt.Sprintf(`# =========================================================================
-# ClearCutt BYO Base Image Overlay Containerfile
-# Generated Runtime: %s (%s)
-# Mandated Base:    %s
-# =========================================================================
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    clearcutt.url = "github:northcutted/clearcutt?dir=core";
+  };
 
-ARG BASE_IMAGE=%s
-ARG CLEARCUTT_RUNTIME=%s
+  outputs = { self, nixpkgs, clearcutt }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+    in {
+      packages = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          mandatedBase = pkgs.dockerTools.pullImage {
+            imageName = "%s";
+            imageDigest = "%s";
+            sha256 = "sha256-REPLACE_WITH_NIX_HASH_FROM_NIX_PREFETCH_DOCKER";
+          };
+        in {
+          overlayImage = clearcutt.lib.graftOntoBase {
+            inherit system;
+            fromImage = mandatedBase;
+            runtime = "%s";
+            tier = "%s";
+            name = "%s";
+            tag = "%s";
+          };
+        });
+    };
+}
+`, overlayOpts.runtime, baseImageName, baseImageDigest, overlayOpts.runtime, overlayOpts.tier, imageName, imageTag)
 
-# Stage 1: Pull ClearCutt Nix store closure
-FROM ${CLEARCUTT_RUNTIME} AS clearcutt
-
-# Stage 2: Graft Nix store onto enterprise mandated base OS
-FROM ${BASE_IMAGE}
-
-# Graft the self-contained Nix closure onto the sanctioned base
-COPY --from=clearcutt /nix /nix
-
-# Expose PATH links and assert interpreter linkage works cleanly
-RUN set -eux; \
-    runtime_bin="$(find /nix/store -maxdepth 4 -type f -path '*/bin/%s' | head -n1)"; \
-    test -n "$runtime_bin"; \
-    ln -sf "$runtime_bin" /usr/local/bin/%s; \
-    %s
-
-USER 10001:10001
-ENTRYPOINT ["/usr/local/bin/%s"]
-`, overlayOpts.runtime, overlayOpts.tier, overlayOpts.base, overlayOpts.base, overlayOpts.runtimeRef, overlayOpts.binary, overlayOpts.binary, versionCheckCmd, overlayOpts.binary)
-
-	if err := os.WriteFile(filepath.Join(outDir, "Containerfile"), []byte(containerfile), 0644); err != nil {
-		return fmt.Errorf("failed to write Containerfile: %w", err)
+	if err := os.WriteFile(filepath.Join(outDir, "flake.nix"), []byte(flake), 0644); err != nil {
+		return fmt.Errorf("failed to write flake.nix: %w", err)
 	}
 
 	// 3. Generate README.md
@@ -167,12 +193,24 @@ This project lays a self-contained ClearCutt **%s** runtime closure on top of a 
 ---
 
 ## How to Build & Run Smoke Tests
-Compile locally using the provided Makefile:
+Build locally using the provided flake-backed Makefile:
 `+"```"+`bash
 make build
+docker load -i result
 make test
 `+"```"+`
-`, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.tier, overlayOpts.base, overlayOpts.image)
+
+Generate an offline runtime-equivalence predicate before signing the overlay:
+`+"```"+`bash
+clearcutt overlay verify \
+  --runtime-archive clearcutt-runtime.tar \
+  --grafted-archive result \
+  --runtime-ref %s \
+  --grafted-ref %s@sha256:REPLACE_WITH_GRAFTED_IMAGE_DIGEST \
+  --target %s \
+  --output-predicate > closure-equivalence.intoto.json
+`+"```"+`
+`, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.runtime, overlayOpts.tier, overlayOpts.base, overlayOpts.image, overlayOpts.runtimeRef, overlayOpts.image, overlayOpts.runtime)
 
 	if err := os.WriteFile(filepath.Join(outDir, "README.md"), []byte(readme), 0644); err != nil {
 		return fmt.Errorf("failed to write README: %w", err)
@@ -180,39 +218,41 @@ make test
 
 	// 4. Generate Makefile
 	makefile := fmt.Sprintf(`IMAGE_NAME ?= %s
-BASE_IMAGE ?= %s
-CLEARCUTT_RUNTIME ?= %s
+SYSTEM ?= x86_64-linux
+RUNTIME_ARCHIVE ?= clearcutt-runtime.tar
+GRAFTED_ARCHIVE ?= result
+GRAFTED_REF ?= $(IMAGE_NAME)@sha256:REPLACE_WITH_GRAFTED_IMAGE_DIGEST
 
-.PHONY: build test scan
+.PHONY: build load test scan predicate
 
 build:
-	docker build \
-	  --build-arg BASE_IMAGE=$(BASE_IMAGE) \
-	  --build-arg CLEARCUTT_RUNTIME=$(CLEARCUTT_RUNTIME) \
-	  -t $(IMAGE_NAME) -f Containerfile .
+	nix build .#packages.$(SYSTEM).overlayImage
+
+load:
+	docker load -i $(GRAFTED_ARCHIVE)
 
 test:
 	./tests/smoke.sh $(IMAGE_NAME)
 
 scan:
 	grype $(IMAGE_NAME)
-`, overlayOpts.image, overlayOpts.base, overlayOpts.runtimeRef)
+
+predicate:
+	clearcutt overlay verify \
+	  --runtime-archive $(RUNTIME_ARCHIVE) \
+	  --grafted-archive $(GRAFTED_ARCHIVE) \
+	  --runtime-ref %s \
+	  --grafted-ref $(GRAFTED_REF) \
+	  --target %s \
+	  --output-predicate > closure-equivalence.intoto.json
+`, overlayOpts.image, overlayOpts.runtimeRef, overlayOpts.runtime)
 
 	if err := os.WriteFile(filepath.Join(outDir, "Makefile"), []byte(makefile), 0644); err != nil {
 		return fmt.Errorf("failed to write Makefile: %w", err)
 	}
 
 	var smokeVersionCheck string
-	switch overlayOpts.binary {
-	case "go":
-		smokeVersionCheck = "docker run --entrypoint /usr/local/bin/go \"$IMAGE_NAME\" version 2>&1"
-	case "sh", "bash":
-		smokeVersionCheck = "docker run --entrypoint /usr/local/bin/sh \"$IMAGE_NAME\" -c 'echo \"ClearCutt Core\"' 2>&1"
-	case "java":
-		smokeVersionCheck = "docker run --entrypoint /usr/local/bin/java \"$IMAGE_NAME\" -version 2>&1"
-	default:
-		smokeVersionCheck = fmt.Sprintf("docker run --entrypoint /usr/local/bin/%s \"$IMAGE_NAME\" --version 2>&1", overlayOpts.binary)
-	}
+	smokeVersionCheck = runtimeSmokeCheck(overlayOpts.binary)
 
 	// 5. Generate tests/smoke.sh
 	smokeSh := fmt.Sprintf(`#!/usr/bin/env bash
@@ -377,4 +417,38 @@ func resolveBinary(runtime string) string {
 	default:
 		return "sh"
 	}
+}
+
+func runtimeSmokeCheck(binary string) string {
+	switch binary {
+	case "go":
+		return `docker run --entrypoint /bin/sh "$IMAGE_NAME" -c 'for runtime_bin in /nix/store/*/bin/go; do [ -x "$runtime_bin" ] && exec "$runtime_bin" version; done; exit 1' 2>&1`
+	case "sh", "bash":
+		return `docker run --entrypoint /bin/sh "$IMAGE_NAME" -c 'test -d /nix/store && echo "ClearCutt Core"' 2>&1`
+	case "java":
+		return `docker run --entrypoint /bin/sh "$IMAGE_NAME" -c 'for runtime_bin in /nix/store/*/bin/java; do [ -x "$runtime_bin" ] && exec "$runtime_bin" -version; done; exit 1' 2>&1`
+	default:
+		return fmt.Sprintf(`docker run --entrypoint /bin/sh "$IMAGE_NAME" -c 'for runtime_bin in /nix/store/*/bin/%s; do [ -x "$runtime_bin" ] && exec "$runtime_bin" --version; done; exit 1' 2>&1`, binary)
+	}
+}
+
+func splitDigestRef(ref string) (imageName, imageDigest string) {
+	parts := strings.SplitN(ref, "@", 2)
+	imageName = parts[0]
+	if len(parts) == 2 {
+		imageDigest = parts[1]
+	} else {
+		imageDigest = "sha256:REPLACE_WITH_MANDATED_BASE_DIGEST"
+	}
+	return imageName, imageDigest
+}
+
+func splitTagRef(ref string) (imageName, tag string) {
+	withoutDigest := strings.SplitN(ref, "@", 2)[0]
+	lastSlash := strings.LastIndex(withoutDigest, "/")
+	lastColon := strings.LastIndex(withoutDigest, ":")
+	if lastColon > lastSlash {
+		return withoutDigest[:lastColon], withoutDigest[lastColon+1:]
+	}
+	return withoutDigest, "latest"
 }

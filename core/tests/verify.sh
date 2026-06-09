@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # ClearCutt Automated Test Verification Suite
-# Author: Eddie Northcutt
 # Verifies all PRD success metrics and technical compliance gates
 
 set -euo pipefail
@@ -12,15 +11,15 @@ elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
   source "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 
-# Console colors for premium UI/UX feedback
+# Console colors
 BLUE="\033[1;34m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
 RED="\033[1;31m"
 RESET="\033[0m"
+WARNING_COUNT=0
 
 # Global exit handler to clean up all session resources cleanly.
-# Bypasses fragile local trap overwrites which would wipe out broker cleanup traps.
 verify_exit_handler() {
   # 1. Clean up credential broker dynamically if sourced
   if declare -f cleanup_credential_broker >/dev/null; then
@@ -40,6 +39,7 @@ log_info() {
 }
 
 log_warn() {
+  WARNING_COUNT=$((WARNING_COUNT + 1))
   echo -e "${YELLOW}[ClearCutt Test] ⚠ $1${RESET}"
 }
 
@@ -50,6 +50,128 @@ log_pass() {
 log_fail() {
   echo -e "${RED}  ✘ FAIL: $1${RESET}" >&2
   exit 1
+}
+
+find_clearcutt_cli() {
+  if [[ -n "${CLEARCUTT_BIN:-}" && -x "${CLEARCUTT_BIN}" ]]; then
+    printf '%s\n' "$CLEARCUTT_BIN"
+    return 0
+  fi
+  if [[ -x "../clearcutt" ]]; then
+    printf '%s\n' "../clearcutt"
+    return 0
+  fi
+  if command -v clearcutt >/dev/null 2>&1; then
+    command -v clearcutt
+    return 0
+  fi
+  return 1
+}
+
+g2_known_good_ref() {
+  if [[ -n "${CLEARCUTT_G2_KNOWN_GOOD_REF:-}" ]]; then
+    printf '%s\n' "$CLEARCUTT_G2_KNOWN_GOOD_REF"
+    return 0
+  fi
+  printf '%s\n' "ghcr.io/northcutted/clearcutt/clearcutt-corelts:slim"
+}
+
+g2_target_package() {
+  printf '%s\n' "${CLEARCUTT_G2_TARGET_PACKAGE:-bash-interactive}"
+}
+
+write_g2_known_good_closure() {
+  local output_file="$1"
+  local image_ref
+  image_ref="$(g2_known_good_ref)"
+
+  if [[ -n "${CLEARCUTT_G2_KNOWN_GOOD_CLOSURE:-}" ]]; then
+    cp "$CLEARCUTT_G2_KNOWN_GOOD_CLOSURE" "$output_file"
+    log_info "Using explicit G2 known-good closure file: $CLEARCUTT_G2_KNOWN_GOOD_CLOSURE"
+    return 0
+  fi
+
+  if ! command -v skopeo >/dev/null 2>&1; then
+    log_fail "G2 requires skopeo or CLEARCUTT_G2_KNOWN_GOOD_CLOSURE to derive a registry baseline."
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_fail "G2 requires python3 to extract /nix/store paths from the registry image archive."
+  fi
+
+  local work_dir="$2"
+  local archive="$work_dir/g2-known-good.oci.tar"
+  local arch="${CLEARCUTT_G2_KNOWN_GOOD_ARCH:-amd64}"
+  log_info "Pulling G2 known-good baseline from ${image_ref} (${arch})..."
+  if ! skopeo --insecure-policy copy \
+    --override-os linux \
+    --override-arch "$arch" \
+    "docker://${image_ref}" \
+    "oci-archive:${archive}" >/dev/null; then
+    log_fail "G2 could not pull known-good baseline image: ${image_ref}"
+  fi
+  if ! python3 ./tests/nix-store-closure-from-image.py "$archive" > "$output_file"; then
+    log_fail "G2 could not extract /nix/store closure from known-good baseline image: ${image_ref}"
+  fi
+}
+
+write_g2_current_closure() {
+  local image_archive="$1"
+  local output_file="$2"
+  if ! python3 ./tests/nix-store-closure-from-image.py "$image_archive" > "$output_file"; then
+    log_fail "G2 could not extract /nix/store closure from current image archive: ${image_archive}"
+  fi
+}
+
+representative_smoke_targets() {
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    "$cli" --format json matrix export --source fleet --github-actions --matrix release |
+      python3 -c '
+import json
+import sys
+
+priority = [
+    ("coreLTS", "slim"),
+    ("java21", "slim"),
+    ("python3.15", "slim"),
+    ("rust1.95", "slim"),
+    ("cc15", "distroless"),
+]
+data = json.load(sys.stdin)
+available = {(row.get("language"), row.get("tier")) for row in data.get("include", [])}
+def strip_prefix(value, prefix):
+    return value[len(prefix):] if value.startswith(prefix) else value
+for language, tier in priority:
+    if (language, tier) not in available:
+        continue
+    if language == "coreLTS":
+        print(f"core LTS {tier} {language}-{tier}")
+    elif language.startswith("python"):
+        print(f"python {strip_prefix(language, 'python')} {tier} {language}-{tier}")
+    elif language.startswith("rust"):
+        print(f"rust {strip_prefix(language, 'rust')} {tier} {language}-{tier}")
+    elif language.startswith("java"):
+        print(f"java {strip_prefix(language, 'java')} {tier} {language}-{tier}")
+    elif language.startswith("cc"):
+        print(f"cc {strip_prefix(language, 'cc')} {tier} {language}-{tier}")
+    elif language.startswith("node"):
+        print(f"node {strip_prefix(language, 'node')} {tier} {language}-{tier}")
+    elif language.startswith("go"):
+        print(f"go {strip_prefix(language, 'go')} {tier} {language}-{tier}")
+    elif language.startswith("dotnet"):
+        print(f"dotnet {strip_prefix(language, 'dotnet')} {tier} {language}-{tier}")
+' || return 1
+    return 0
+  fi
+
+  cat <<'EOF'
+core LTS slim coreLTS-slim
+java 21 slim java21-slim
+python 3.15 slim python3.15-slim
+rust 1.95 slim rust1.95-slim
+cc 15 distroless cc15-distroless
+EOF
 }
 
 # ----------------------------------------------------
@@ -71,11 +193,6 @@ test_credential_broker() {
   # Source the broker to activate session hooks
   # shellcheck source=lib/credential-broker.sh
   source ./lib/credential-broker.sh
-
-  # Sourcing the broker registers its own trap, which overwrites our global handler.
-  # We restore verify_exit_handler immediately to ensure all subsequent failures
-  # or exits route through the unified global handler (which wraps cleanup_credential_broker).
-  trap verify_exit_handler EXIT INT TERM
 
   # Assert environment variables are compiled correctly
   if [[ "${NPM_CONFIG_USERCONFIG:-}" != *".nix-enterprise-auth-cache/.npmrc" ]]; then
@@ -136,7 +253,7 @@ test_credential_broker() {
   if [ -d ".nix-enterprise-auth-cache" ]; then
     log_fail ".nix-enterprise-auth-cache directory still exists after cleanup."
   fi
-  log_pass "Transient credential broker session cleanup verified perfectly."
+  log_pass "Transient credential broker session cleanup verified."
 }
 
 # ----------------------------------------------------
@@ -474,7 +591,7 @@ test_container_structure_tests() {
   # Leverage global verify_exit_handler for absolute guarantees
   rm -f "$slim_tmp_tar" "$distroless_tmp_tar"
 
-  log_pass "Container structure verification tests passed flawlessly."
+  log_pass "Container structure verification tests passed."
 }
 
 # ----------------------------------------------------
@@ -498,10 +615,43 @@ test_cve_remediation_gates() {
   fi
   log_pass "G1 Gate: Image compiled successfully."
 
-  # G2 Closure Diff Verification: Comparing a closure to itself should pass
+  # G2 Closure Diff Verification: compare the current local image closure against a
+  # registry-derived known-good image, or an explicit closure fixture supplied
+  # via CLEARCUTT_G2_KNOWN_GOOD_CLOSURE for offline tests.
   log_info "Verifying G2: Closure Diff Analysis..."
-  if ! ./tests/verify-closure-diff.sh core ".#coreLTS-slim" ".#coreLTS-slim"; then
-    log_fail "G2 Gate Failed: Valid closure comparison failed."
+
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    local g2_fixture_dir
+    g2_fixture_dir=$(mktemp -d)
+    local g2_known_good="$g2_fixture_dir/known-good.closure"
+    local g2_current="$g2_fixture_dir/current.closure"
+    local g2_target_pkg
+    g2_target_pkg="$(g2_target_package)"
+
+    write_g2_known_good_closure "$g2_known_good" "$g2_fixture_dir"
+    write_g2_current_closure "$build_tar" "$g2_current"
+    if ! ./tests/verify-closure-diff.sh "$g2_target_pkg" "$g2_known_good" "$g2_current"; then
+      rm -rf "$g2_fixture_dir"
+      log_fail "G2 Gate Failed: Current $target_image closure diverged from known-good baseline outside the $g2_target_pkg package boundary."
+    fi
+
+    local g2_old="$g2_fixture_dir/fixture-old.closure"
+    local g2_new="$g2_fixture_dir/fixture-new.closure"
+    cat > "$g2_old" <<'EOF'
+/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-core-1.0
+/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40
+EOF
+    cat > "$g2_new" <<'EOF'
+/nix/store/cccccccccccccccccccccccccccccccc-core-1.1
+/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-glibc-2.40
+EOF
+    if ! ./tests/verify-closure-diff.sh core "$g2_old" "$g2_new"; then
+      rm -rf "$g2_fixture_dir"
+      log_fail "G2 Gate Failed: Target-only closure fixture was rejected."
+    fi
+    rm -rf "$g2_fixture_dir"
+  else
+    log_info "Skipping G2 target-only fixture on macOS (bypassed)."
   fi
   
   # Assert G2 correctly fails on invalid/unexplained package addition (only on Linux where G2 is fully active)
@@ -525,21 +675,23 @@ test_cve_remediation_gates() {
     rm -f "$uncompressed_tar"
   fi
   
-  # Grype scan on SBOM
+  # Grype scan on SBOM. This target is a production slim runtime, so findings
+  # that cross the release threshold must fail the local gate the same way they
+  # fail in the release pipeline.
   if ! grype "sbom:$sbom_path" --fail-on high --only-fixed >/dev/null; then
-    log_warn "G3 scan found vulnerabilities. (Expected in unpatched versions, but scanner works)"
+    log_fail "G3 Gate Failed: fixable high/critical vulnerabilities found in $target_image."
   fi
   log_pass "G3 Gate: Vulnerability re-scanning pipeline active."
 
   # G4 Smoke Test Verification: Functional execution test
   log_info "Verifying G4: Language-specific Functional Smoke Testing..."
-  local smoke_targets=(
-    "core LTS slim coreLTS-slim"
-    "java 21 slim java21-slim"
-    "python 3.15 slim python3.15-slim"
-    "rust 1.95 slim rust1.95-slim"
-    "cc 15 distroless cc15-distroless"
-  )
+  local smoke_targets=()
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] && smoke_targets+=("$spec")
+  done < <(representative_smoke_targets)
+  if [[ "${#smoke_targets[@]}" -eq 0 ]]; then
+    log_fail "G4 Gate Failed: no representative smoke targets resolved from fleet matrix."
+  fi
   for spec in "${smoke_targets[@]}"; do
     local smoke_lang smoke_ver smoke_tier smoke_target smoke_tar smoke_link
     IFS=' ' read -r smoke_lang smoke_ver smoke_tier smoke_target <<< "$spec"
@@ -579,9 +731,16 @@ main() {
   test_container_structure_tests
   test_cve_remediation_gates
 
-  echo -e "\n${GREEN}===================================================="
-  echo -e "      ALL CLEARCUTT SECURITY GATING CHECKS PASSED   "
-  echo -e "====================================================${RESET}"
+  if [[ "$WARNING_COUNT" -gt 0 ]]; then
+    echo -e "\n${YELLOW}===================================================="
+    echo -e "      CLEARCUTT GATING COMPLETED WITH WARNINGS      "
+    echo -e "      Review $WARNING_COUNT warning(s)/skip(s) above."
+    echo -e "====================================================${RESET}"
+  else
+    echo -e "\n${GREEN}===================================================="
+    echo -e "      ALL CLEARCUTT SECURITY GATING CHECKS PASSED   "
+    echo -e "====================================================${RESET}"
+  fi
 }
 
 main

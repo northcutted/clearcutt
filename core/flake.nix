@@ -1,17 +1,27 @@
 # ClearCutt Hardened Fleets Declarative Entrypoint
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Declarative OCI Layer Compilation (SLSA L3 Ready)
 
 {
   description = "ClearCutt Hardened Base Image Fleets - Declarative, CVE-aware Nix Store Layers";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, utils }:
-    utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs }:
+    let
+      linuxSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      darwinSystems = [
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      systems = linuxSystems ++ darwinSystems;
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+      forLinuxSystems = nixpkgs.lib.genAttrs linuxSystems;
+      forDarwinSystems = nixpkgs.lib.genAttrs darwinSystems;
+      perSystem = system:
       let
         hostPkgs = import nixpkgs {
           inherit system;
@@ -28,11 +38,9 @@
           ];
         };
 
-        # Host package alignment: we build native OCI layers using the host system platform
-        # to ensure absolute compilation stability across all runtime systems (JDK, Node, Python, Go, .NET).
-        # We completely avoid unstable pkgsCross cross-compilation on macOS hosts, enabling 100% stable local
-        # testing and development shells natively on Darwin, while relying on native Linux environments (GHA/runners)
-        # for production release matrix compilation.
+        # Host package alignment: build native OCI layers on Linux release
+        # runners, and expose native development shells on Darwin for the local
+        # inner loop instead of relying on pkgsCross for image builds.
         pkgs = hostPkgs;
 
         # Import centralized language and runtime registry
@@ -58,13 +66,10 @@
         versions = builtins.mapAttrs (lang: spec: builtins.attrNames spec.versions) registry.languages;
         tiers = [ "dev" "slim" "distroless" ];
 
-        # Generate a nested set representing the full combinations matrix
-        # For each language, version, and tier:
-        # e.g., packages.java21-distroless
-        # We only evaluate and compile OCI image layered targets on Linux host systems.
-        # This completely avoids trying to evaluate Linux-only packages (like Busybox) or cross-compilation
-        # matrices on Darwin hosts, guaranteeing that `nix flake check` runs green on macOS.
-        matrixPackages = if hostPkgs.stdenv.isLinux then pkgs.lib.listToAttrs (
+        # Generate image package outputs for the Linux build systems only.
+        # Darwin still exposes native runtime closures and dev shells, but not
+        # OCI image attrs that require Linux container tooling.
+        matrixPackages = pkgs.lib.listToAttrs (
           pkgs.lib.concatMap (lang:
             pkgs.lib.concatMap (ver:
               pkgs.lib.map (tier:
@@ -84,9 +89,9 @@
               ) tiers
             ) (pkgs.lib.attrByPath [ lang ] [] versions)
           ) languages
-        ) else {};
+        );
 
-        servicePackages = if hostPkgs.stdenv.isLinux then pkgs.lib.listToAttrs (
+        servicePackages = pkgs.lib.listToAttrs (
           builtins.map (service: {
             name = service.id;
             value = compiler.buildServiceImage {
@@ -95,7 +100,7 @@
               inherit service;
             };
           }) serviceSpecs
-        ) else {};
+        );
 
         # Resolve raw, dynamic-link-patched matrix runtimes
         nativeHelpers = import ./lib/nix-native.nix { inherit self; pkgs = hostPkgs; };
@@ -132,8 +137,8 @@
 
       in
       {
-        # Expose all generated images and raw packages as outputs
-        packages = matrixPackages // servicePackages // rawPackages;
+        imagePackages = matrixPackages // servicePackages;
+        nativePackages = rawPackages;
 
         # Default dev shell (build/gating tooling) plus per-target dev shells
         # (devTargetShells) for the local inner loop.
@@ -155,22 +160,24 @@
           ];
 
           shellHook = ''
-            echo -e "\033[1;36m====================================================\033[0m"
-            echo -e "\033[1;36m           ${productName} Hardened Fleets Dev Shell      \033[0m"
-            echo -e "\033[1;36m====================================================\033[0m"
-            echo -e "Target Architectures: \033[32mx86_64-linux\033[0m, \033[32maarch64-linux\033[0m"
-            echo -e "Status: \033[32mActive\033[0m"
-            echo
-
-            # Source transient credentials broker
             if [ -f ${./lib/credential-broker.sh} ]; then
               source ${./lib/credential-broker.sh}
+              install_credential_broker_trap
             fi
           '';
           };
         } // devTargetShells;
-      }
-    ) // {
+      };
+    in
+    {
+      packages =
+        (forLinuxSystems (system:
+          let p = perSystem system;
+          in p.imagePackages // p.nativePackages
+        ))
+        // (forDarwinSystems (system: (perSystem system).nativePackages));
+      devShells = forAllSystems (system: (perSystem system).devShells);
+
       # Raw overlays for downstream consumers
       overlays.default = final: prev:
         let
@@ -186,6 +193,73 @@
             helpers = import ./lib/nix-native.nix { inherit self pkgs; };
           in
           helpers.mkHardenedShell (pkgs.lib.filterAttrs (n: v: n != "system") args);
+
+        graftOntoBase =
+          { system
+          , fromImage
+          , runtime ? null
+          , language ? null
+          , version ? null
+          , tier ? "distroless"
+          , tag ? "grafted"
+          , name ? null
+          , ...
+          }@args:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              config = {
+                allowUnfree = true;
+              };
+              overlays = [
+                (import ./overlays/cve-remediation.nix)
+              ];
+            };
+            compiler = import ./lib/build-fleet.nix { inherit pkgs; };
+            platformMetadata = import ./lib/platform-metadata.nix;
+            imagePrefix = platformMetadata.imagePrefix or "clearcutt";
+            parseRuntime = runtimeId:
+              if runtimeId == "coreLTS" then {
+                language = "core";
+                version = "LTS";
+              } else
+                let
+                  parsed = builtins.match "([A-Za-z]+)([0-9].*)" runtimeId;
+                in
+                if parsed == null then
+                  throw "clearcutt.lib.graftOntoBase: runtime must look like java21, python3.15, go1.25, dotnet8, rust1.95, cc15, or coreLTS"
+                else {
+                  language = builtins.elemAt parsed 0;
+                  version = builtins.elemAt parsed 1;
+                };
+            parsedRuntime =
+              if runtime != null then parseRuntime runtime else {};
+            languageFinal =
+              if language != null then language
+              else parsedRuntime.language or (throw "clearcutt.lib.graftOntoBase requires runtime or language");
+            versionFinal =
+              if version != null then version
+              else parsedRuntime.version or (throw "clearcutt.lib.graftOntoBase requires runtime or version");
+            imageName = if name == null then "${imagePrefix}-${languageFinal}-${versionFinal}" else name;
+            cleanArgs = pkgs.lib.filterAttrs (n: v: !(builtins.elem n [
+              "system"
+              "name"
+              "runtime"
+              "language"
+              "version"
+              "tag"
+              "tier"
+              "fromImage"
+            ])) args;
+          in
+          compiler.buildFleetImage (cleanArgs // {
+            name = imageName;
+            tag = tag;
+            language = languageFinal;
+            version = versionFinal;
+            tier = tier;
+            fromImage = fromImage;
+          });
       };
     };
 }

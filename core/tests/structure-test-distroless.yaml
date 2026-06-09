@@ -41,6 +41,12 @@ fileExistenceTests:
   - name: 'Cat Utility Absence'
     path: '/bin/cat'
     shouldExist: false
+  - name: 'FHS Lib64 Loader Absence'
+    path: '/lib64/ld-linux-x86-64.so.2'
+    shouldExist: false
+  - name: 'FHS Libc Absence'
+    path: '/lib/libc.so.6'
+    shouldExist: false
   - name: 'Usr Bin Ls Absence'
     path: '/usr/bin/ls'
     shouldExist: false
@@ -49,6 +55,10 @@ fileExistenceTests:
     shouldExist: false
 
 fileContentTests:
+  - name: 'Passwd Root User'
+    path: '/etc/passwd'
+    expectedContents:
+      - ".*root:x:0:0:root:/root:/sbin/nologin.*"
   - name: 'Passwd App User'
     path: '/etc/passwd'
     expectedContents:

@@ -1,6 +1,4 @@
 # ClearCutt Hardened OpenShift Production Deployment
-# Paradigm: Compliance with restricted-v2 SCC using Arbitrary Namespace UIDs
-# Brand Owner & Principal Architect: Eddie Northcutt
 
 apiVersion: apps/v1
 kind: Deployment

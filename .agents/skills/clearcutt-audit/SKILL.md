@@ -22,7 +22,7 @@ Use this skill when auditing ClearCutt rather than implementing a fix.
 
 1. Run `git status --short` and note whether the worktree is already dirty.
 2. Inventory the relevant surfaces before judging: `README.md`, `docs/`, `site/`, `cli/internal/commands/`, `.github/workflows/`, `examples/`, and catalog fixtures.
-3. For broad audits, use the project custom agents in `.codex/agents/` when subagents are available and the user allows parallel read-only analysis. Good default coverage:
+3. For broad audits, use the project custom agents in `.agents/reviewers/` when subagents are available and the user allows parallel read-only analysis. Good default coverage:
    - `platform_engineer`
    - `security_auditor`
    - `app_developer`

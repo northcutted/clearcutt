@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# ClearCutt Consolidated & Portable Patch, Build, Scan, & Release Pipeline
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Hermetic supply chain pipeline with Trivy+Grype double-gates, Syft SBOMs, and SLSA v1 Provenance
+# ClearCutt patch, build, scan, and release pipeline.
 
 set -euo pipefail
 
-# Console colors for premium UI/UX feedback
+# Console colors
 BLUE="\033[1;34m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
@@ -13,8 +11,10 @@ RED="\033[1;31m"
 RESET="\033[0m"
 
 # Load Nix daemon environment if available
-if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
-  source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+if [[ "${CLEARCUTT_SKIP_NIX_ENV_LOAD:-false}" != "true" ]]; then
+  if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+    source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+  fi
 fi
 
 # Global Configuration Parameters
@@ -37,6 +37,38 @@ log_warn() {
 
 log_error() {
   echo -e "${RED}[ClearCutt Pipeline] ✘ $1${RESET}" >&2
+}
+
+aggregate_assertion_status() {
+  local aggregate="passed"
+  local status
+
+  for status in "$@"; do
+    case "$status" in
+      failed)
+        printf '%s\n' "failed"
+        return 0
+        ;;
+      warning)
+        if [[ "$aggregate" != "failed" ]]; then
+          aggregate="warning"
+        fi
+        ;;
+      skipped)
+        if [[ "$aggregate" == "passed" ]]; then
+          aggregate="skipped"
+        fi
+        ;;
+      passed)
+        ;;
+      *)
+        printf '%s\n' "failed"
+        return 0
+        ;;
+    esac
+  done
+
+  printf '%s\n' "$aggregate"
 }
 
 platform_image_prefix() {
@@ -142,6 +174,7 @@ certify_target() {
 
   local tar_path="$OUTPUT_DIR/$target.tar.gz"
   local sbom_path="$OUTPUT_DIR/$target.sbom.json"
+  local scan_path="$OUTPUT_DIR/$target.grype.json"
   local sig_path="$OUTPUT_DIR/$target.sig"
 
   local lang
@@ -158,11 +191,10 @@ certify_target() {
   local link_path="$OUTPUT_DIR/$target-link"
   local build_attr=""
 
-  # The OCI image matrix (packages.<system>."<lang><ver>-<tier>") is only
-  # evaluated on Linux hosts — see the `hostPkgs.stdenv.isLinux` guard in
-  # flake.nix. On macOS those attributes simply don't exist, so fail fast with
-  # an actionable message instead of letting Nix emit an opaque
-  # "attribute 'java21-distroless' missing" error several seconds later.
+  # The OCI image matrix (packages.<system>."<lang><ver>-<tier>") is exposed
+  # only for Linux systems in flake.nix. On macOS, only native package/dev-shell
+  # outputs exist, so fail fast with an actionable message instead of letting
+  # Nix emit an opaque "attribute 'java21-distroless' missing" error later.
   if [[ "$system" == *"-darwin" ]]; then
     log_error "OCI image target '$target' is only buildable on a Linux host."
     log_error "On macOS, use 'nix build .#<lang><ver>-native' for raw runtime closures,"
@@ -201,9 +233,11 @@ certify_target() {
   # C. Security Vulnerability Gating via Syft + Grype
   log_info "Executing vulnerability gate: Running Grype scanner directly against compiled SPDX SBOM..."
   local grype_assertion_status="passed"
-  if grype "sbom:$sbom_path" --fail-on high --only-fixed; then
+  local grype_exit=0
+  if grype "sbom:$sbom_path" --fail-on high --only-fixed -o json > "$scan_path"; then
     log_success "Security Gate: Grype SBOM scan passed with no fixable Critical/High CVEs."
   else
+    grype_exit=$?
     if [[ "$target_kind" == "runtime" && "$tier" == "dev" ]]; then
       grype_assertion_status="warning"
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in Dev tier. Continuing (Dev is non-blocking)..."
@@ -211,9 +245,8 @@ certify_target() {
       grype_assertion_status="warning"
       log_warn "Vulnerability Warning: Grype identified Critical/High CVEs in preview/non-production service target. Continuing, but recording the gate as a warning..."
     else
+      grype_assertion_status="failed"
       log_error "Vulnerability Gate Failed! Grype identified Critical/High CVEs with available patches."
-      rm -f "$uncompressed_tar" 2>/dev/null || true
-      return 1
     fi
   fi
 
@@ -221,6 +254,19 @@ certify_target() {
 
   # C2. Generate structured test results predicate
   local test_results_path="$OUTPUT_DIR/$target.test-results.json"
+  local test_results_status
+  test_results_status="$(aggregate_assertion_status "passed" "passed" "$grype_assertion_status")"
+  local policy_blocking="true"
+  local policy_production_allowed="${CLEARCUTT_SERVICE_PRODUCTION_ALLOWED:-false}"
+  local policy_lifecycle_status="${CLEARCUTT_SERVICE_LIFECYCLE_STATUS:-}"
+  if [[ "$target_kind" == "service" && -z "$policy_lifecycle_status" ]]; then
+    policy_lifecycle_status="preview"
+  fi
+  if [[ "$target_kind" == "runtime" && "$tier" == "dev" ]]; then
+    policy_blocking="false"
+  elif [[ "$target_kind" == "service" ]] && { [[ "$policy_production_allowed" != "true" ]] || [[ "$policy_lifecycle_status" != "active" ]]; }; then
+    policy_blocking="false"
+  fi
   log_info "Generating structured security gating and test results predicate..."
   cat <<EOF > "$test_results_path"
 {
@@ -229,8 +275,19 @@ certify_target() {
   "kind": "$target_kind",
   "language": "$lang",
   "tier": "$tier",
-  "status": "passed",
+  "status": "$test_results_status",
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "policy": {
+    "blocking": $policy_blocking,
+    "failOn": "high",
+    "onlyFixed": true,
+    "productionAllowed": $policy_production_allowed,
+    "lifecycleStatus": "$policy_lifecycle_status"
+  },
+  "evidence": {
+    "sbomPath": "$sbom_path",
+    "scanPath": "$scan_path"
+  },
   "assertions": [
     {
       "name": "Nix Compilation",
@@ -248,6 +305,9 @@ certify_target() {
 }
 EOF
   log_success "Test results predicate generated -> $test_results_path"
+  if [[ "$grype_assertion_status" == "failed" ]]; then
+    return "$grype_exit"
+  fi
 
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase
   if [[ "$publish" == "true" ]]; then
@@ -448,4 +508,6 @@ main() {
   fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -1,6 +1,4 @@
-# ClearCutt Composite Action — Install Nix with baseline client config
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Install the Nix client; the ClearCutt CLI owns fork-specific config
+# Install Nix with baseline client config; the ClearCutt CLI owns fork-specific config.
 
 name: 'ClearCutt Setup Nix'
 description: 'Install Nix with flakes enabled; clearcutt platform setup-nix applies fork-specific fleet cache config'
@@ -17,7 +15,7 @@ runs:
         extra_nix_config: |
           experimental-features = nix-command flakes
           accept-flake-config = true
-          allow-import-from-derivation = true
+          sandbox = true
           substituters = https://cache.nixos.org
           trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
           connect-timeout = 5

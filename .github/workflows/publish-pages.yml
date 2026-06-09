@@ -1,6 +1,4 @@
 # Build and deploy the ClearCutt catalog site to GitHub Pages.
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Dynamic catalog rebuilt from immutable GitHub Release assets and live GHCR metadata
 
 name: ClearCutt Catalog Site
 

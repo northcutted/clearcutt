@@ -72,8 +72,7 @@ func TestMyCommand(t *testing.T) {
 
 If your command processes YAML/JSON policies (like Triages, Exceptions, or Certification policies):
 
-* **JSON Schema:** Declare or update the schema definition inside:
-  👉 **[schemas/](file:///Users/eddie/Development/clearcutt-images/schemas/)**
+* **JSON Schema:** Declare or update schema definitions inside `schemas/`.
 * **Schema Validation:** Implement schema verification constraints inside the Go code using structured JSON schema checkers.
 * **Exceptions Constraint:** Remember that exceptions triages MUST declare exactly `kind: VulnerabilityExceptions`. Do not use generic resource kinds.
 

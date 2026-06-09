@@ -23,6 +23,8 @@ document, one first command, and then deeper links.
   release workflow, image digest, SBOM, provenance, catalog record, and policy.
 - [Catalog evidence walkthrough](trust/catalog-evidence.md): understand evidence
   badges, missing data, raw evidence, and generic OCI mode.
+- [CVE draft agent threat model](trust/cve-agent-threat-model.md): understand
+  the untrusted advisory/model-output boundary for remediation drafts.
 - [Catalog generator](catalog-generator.md): generate and validate catalog data.
 - [Catalog schema](catalog-schema.md): inspect the JSON contract.
 

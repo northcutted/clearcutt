@@ -33,3 +33,12 @@ This document traces the design logic and rationale behind the key security cons
 * **Decision**: The `distroless` tier strips out every interactive shell (`/bin/sh`, `/bin/bash`, `/bin/ash`, `/bin/zsh`) and core utility binary (`ls`, `cat`) in both `/bin` and `/usr/bin`.
 * **Rationale**: Many post-exploitation paths rely on spawning a local shell binary (such as executing `exec("/bin/sh")` or using shell pipe redirects) to download malware, crawl networks, or extract credentials. Removing shell binaries blocks that class of behavior.
 * **Attack Surface Reduction**: Stripping core utilities removes the developer's "convenience tools" (like `cat` or `ls`). That reduces built-in discovery and scripting options after compromise, while the security model still treats other RCE paths as in scope.
+
+---
+
+## 5. Tracking `nixpkgs-unstable` For Runtime Inputs
+
+* **Decision**: ClearCutt pins `nixpkgs-unstable` in `core/flake.nix` rather than a stable NixOS channel.
+* **Rationale**: The image fleet is vulnerability-gated at build/release time and needs fast access to fixed upstream packages. The unstable channel usually carries language-runtime patch releases sooner than stable channels, which reduces the need for custom backports in `core/overlays/cve/`.
+* **Consequence**: Some runtimes can surface preview or beta upstream versions when nixpkgs exposes them, such as Python `3.15` during its pre-GA lifecycle. Preview runtimes must remain policy-bounded in the catalog and should not be promoted as production defaults until upstream lifecycle status and package stability are acceptable for the consuming platform.
+* **Control**: The pinned `flake.lock`, release evidence, SBOM, vulnerability gate, and catalog lifecycle metadata are the review points for each released digest. Moving to a stable channel remains a valid downstream fork decision when slower package movement is preferable to preview-runtime availability.

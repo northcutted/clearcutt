@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # ClearCutt Vulnerability Scan and Remediation Detection Script
-# Author: Eddie Northcutt
-# Paradigm: CVE scan refresh for catalog or remediation gating (Stage 1)
 
 set -euo pipefail
 
@@ -23,8 +21,8 @@ log_fail() { echo -e "${RED}[Remediation Scan] ✘ $1${RESET}" >&2; exit 1; }
 # Source Nix environment if available to keep commands accessible
 if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-elif [ -f /Users/eddie/.nix-profile/etc/profile.d/nix.sh ]; then
-  source /Users/eddie/.nix-profile/etc/profile.d/nix.sh
+elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  source "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 
 SCAN_MODE="${SCAN_MODE:-catalog}"

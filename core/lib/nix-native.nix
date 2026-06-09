@@ -1,6 +1,4 @@
 # ClearCutt Nix Native Consumer Integration Library
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Declarative overlay and development shells for host platforms
 
 { self, pkgs, platformMetadata ? import ./platform-metadata.nix }:
 
@@ -68,17 +66,9 @@ in
     buildInputs = allBuildInputs;
 
     shellHook = ''
-      echo -e "\033[1;35m====================================================\033[0m"
-      echo -e "\033[1;35m     ${productName} Nix Native Hardened Development Shell \033[0m"
-      echo -e "\033[1;35m====================================================\033[0m"
-      echo -e "Host System: \033[32m${pkgs.system}\033[0m"
-      echo -e "Hardened Target: \033[32m${language}-${version}\033[0m"
-      echo
- 
-
-      # Source transient credentials broker from the Flake store path!
       if [ -f "${self}/lib/credential-broker.sh" ]; then
         source "${self}/lib/credential-broker.sh"
+        install_credential_broker_trap
       fi
     '' + shellHook;
   };

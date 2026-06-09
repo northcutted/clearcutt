@@ -6,9 +6,9 @@ Inspect:
 
 - `AGENTS.md`
 - `.agents/skills/*/SKILL.md`
-- `.agent/lessons_learned.md`
-- `.agent/active_context.md`
-- `.agent/runbooks/`
+- `.agents/context/lessons_learned.md`
+- `.agents/context/active_context.md`
+- `.agents/runbooks/`
 - `.codex/config.toml`
 - `.codex/rules/`
 - `.github/codex/prompts/`
@@ -20,7 +20,7 @@ Report only actionable findings. Prioritize:
 - instructions that cause broad searches, unnecessary builds, or noisy logs;
 - generated or ignored paths treated as source of truth;
 - missing fixture-backed validation guidance;
-- conflicts between `.agent/lessons_learned.md`, `AGENTS.md`, and skills.
+- conflicts between `.agents/context/lessons_learned.md`, `AGENTS.md`, and skills.
 
 For each finding include:
 

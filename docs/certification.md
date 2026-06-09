@@ -16,8 +16,8 @@ metadata:
 spec:
   base:
     allowedImages:
-      - java25-distroless
-      - python3.15-slim
+      - java21-distroless
+      - node22-slim
     requireDigestPinned: true
     requireKnownBase: true
   supplyChain:

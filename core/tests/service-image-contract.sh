@@ -124,16 +124,21 @@ for dirpath, _, files in os.walk(root):
                 name = name[2:]
             name = name.rstrip("/")
             if member.isdir() and name in expected:
-                found[name] = member.mode
+                found[name] = (member.mode, member.uid, member.gid)
 
 for rel in expected:
-    mode = found.get(rel)
-    if mode is None:
+    metadata = found.get(rel)
+    if metadata is None:
         raise SystemExit(f"{service}: expected writable data directory /{rel} in image layers")
+    mode, uid, gid = metadata
+    if uid != 10001 or gid != 10001:
+        raise SystemExit(f"{service}: expected data directory /{rel} owner 10001:10001, got {uid}:{gid}")
     if mode & 0o222 == 0:
         raise SystemExit(f"{service}: expected writable data directory /{rel}, got mode {mode:o}")
+    if mode & 0o002 != 0:
+        raise SystemExit(f"{service}: data directory /{rel} must not be world-writable, got mode {mode:o}")
 
-print(f"{service}: writable data directory contract passed")
+print(f"{service}: rootless data directory contract passed")
 PY
 fi
 

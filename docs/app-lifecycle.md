@@ -46,7 +46,7 @@ Supported base families:
 | Core/static | `coreLTS-dev`, `coreLTS-slim`, `coreLTS-distroless` |
 | Java | `java21-*`, `java25-*` |
 | Node.js | `node22-*`, `node24-*` |
-| Python | `python3.15-*` |
+| Python | `python3.15-*` (preview lifecycle) |
 | Go | `go1.25-*`, `go1.26-*` |
 | .NET | `dotnet8-*`, `dotnet10-*` |
 | Rust | `rust1.95-*` |
@@ -54,6 +54,10 @@ Supported base families:
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
+
+Preview lifecycle lines such as `python3.15-*` are suitable for validation and
+early adoption. Production policies with `allowPreview: false` should use active
+runtime lines until the catalog lifecycle for that line moves to active.
 
 The sections below are live/generated-catalog examples. A clean clone only
 proves the Java 21 fixture path; run `./clearcutt --catalog
@@ -169,6 +173,8 @@ bundled into one artifact, use a Containerfile and certify the finished image.
 ### Python 3.15
 
 Package the application as a zipapp, PEX, or shiv artifact.
+Python 3.15 is currently a preview lifecycle line, so catalog gates require
+`--allow-preview` or a policy that explicitly allows preview bases.
 
 ```bash
 python -m pip install --upgrade build pex
@@ -311,6 +317,28 @@ clearcutt app build \
   --entrypoint '["/workspace/worker"]' \
   --executable \
   --image "$APP_IMAGE"
+```
+
+---
+
+## Rebuild Predicate Verification
+
+Platform owners can emit a rebuild predicate before attaching release evidence.
+The verifier resolves the image ref, downloads or parses SLSA/in-toto
+provenance, checks out the pinned source commit, runs `nix build`, pulls the
+published registry archive, and compares ordered layer digests. If layers
+differ, `--diffoscope-out` records the detailed local mismatch report.
+
+```bash
+clearcutt verify rebuild \
+  ghcr.io/acme/clearcutt/clearcutt-java21:v0.2.2-distroless \
+  --target java21-distroless \
+  --rebuild \
+  --pull-registry-archive \
+  --require-digest-match \
+  --require-layer-match \
+  --diffoscope-out rebuild.diff.txt \
+  --output-predicate
 ```
 
 ---

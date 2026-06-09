@@ -17,35 +17,44 @@ This example shows the two ways to adopt ClearCutt under that constraint.
 ## Path A — Graft the runtime onto your mandated base (no migration)
 
 A ClearCutt runtime is a self-contained, `RPATH`/`RUNPATH`-bound `/nix/store`
-closure. Nothing in it resolves host `/lib` or `/usr/lib` paths. That means you
-can copy the closure straight onto your mandated base **without modifying any
-OS layer** — the sanctioned agents, package manager, and host config all
-survive untouched.
+closure. The graft is declared in [`flake.nix`](./flake.nix), which passes the
+mandated base image into `clearcutt.lib.graftOntoBase`:
 
-See [`Dockerfile`](./Dockerfile). The core of it is a single layer:
-
-```dockerfile
-FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless AS clearcutt
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
-
-# Bring the hardened runtime closure onto the mandated base. No /lib, /usr,
-# or /etc/passwd from the base is overwritten.
-COPY --from=clearcutt /nix /nix
-RUN runtime_bin="$(find /nix/store -maxdepth 3 -type f -path '*/bin/java' | head -n1)"; \
-    ln -sf "$runtime_bin" /usr/local/bin/java && /usr/local/bin/java -version
-USER 10001:10001
-ENTRYPOINT ["/usr/local/bin/java"]
+```nix
+overlayImage = clearcutt.lib.graftOntoBase {
+  inherit system;
+  fromImage = mandatedBase;
+  runtime = "java21";
+  tier = "distroless";
+  name = "acme-java21-ubi";
+  tag = "latest";
+};
 ```
 
-Build it:
+Before building, replace the placeholder base digest and Nix fetch hash in
+`flake.nix`. Then build the grafted image archive:
 
 ```bash
-docker build \
-  --build-arg BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.4 \
-  --build-arg CLEARCUTT_RUNTIME=ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless \
-  -t my-org/java21-on-ubi:latest \
-  examples/base-image-overlay
+nix build .#packages.x86_64-linux.overlayImage
 ```
+
+Generate the offline closure-equivalence predicate before promotion:
+
+```bash
+clearcutt overlay verify \
+  --runtime-archive clearcutt-runtime.tar \
+  --grafted-archive result \
+  --runtime-ref ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless@sha256:<runtime-digest> \
+  --grafted-ref ghcr.io/acme/java21-ubi:latest@sha256:<grafted-digest> \
+  --target java21-distroless \
+  --output-predicate > closure-equivalence.intoto.json
+```
+
+The predicate type is
+`https://clearcutt.dev/attestations/closure-equivalence/v1`. It proves the
+materialized `/nix/store` runtime bytes in the grafted image match the source
+ClearCutt runtime archive. It does not prove anything about the inherited base
+OS layer.
 
 > [!IMPORTANT]
 > **Honest trade-off.** Path A keeps your mandated base, so you also keep that
@@ -55,10 +64,10 @@ docker build \
 > site to compare the resulting CVE posture against the from-scratch images.
 
 > [!NOTE]
-> **Updating runtimes independently of the OS.** Because the runtime lives
-> entirely under `/nix/store`, you bump the language version by re-pointing
-> `CLEARCUTT_RUNTIME` at a newer tag and rebuilding — the mandated base layer
-> (and its agents) never has to change. That's the anti-migration-tax payoff.
+> **Updating runtimes independently of the OS.** Because the runtime is declared
+> as a ClearCutt runtime line, you bump the language version by changing
+> `runtime` or `tier` in `flake.nix` and rebuilding. The mandated base layer
+> and its agents can remain fixed.
 
 ---
 
@@ -89,8 +98,8 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 | Base OS mandate | **Satisfied** (keeps sanctioned base) | Requires exception / waiver |
 | Monitoring/security agents in base | Preserved | Re-attach separately |
 | Attack surface | Base OS + runtime | Runtime only (smallest) |
-| Distroless zero-utility guarantee | ❌ inherits base shell/utils | ✅ |
-| Runtime updates without OS change | ✅ re-point `/nix` closure | ✅ new tag |
+| Distroless zero-utility guarantee | No, inherits base shell/utils | Yes |
+| Runtime updates without OS change | Yes, rebuild grafted runtime closure | Yes, use a new tag |
 | Recommended when | You can't change the base today | You want maximum hardening |
 
 Path A is the low-friction on-ramp; Path B is the destination. Many teams start

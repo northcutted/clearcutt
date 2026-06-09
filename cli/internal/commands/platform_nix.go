@@ -188,7 +188,7 @@ func buildNixClientConfig(cfg fleet.Config) string {
 	return strings.Join([]string{
 		"experimental-features = nix-command flakes",
 		"accept-flake-config = true",
-		"allow-import-from-derivation = true",
+		"sandbox = true",
 		"substituters = " + strings.Join(uniqueStrings(substituters), " "),
 		"trusted-public-keys = " + strings.Join(uniqueStrings(publicKeys), " "),
 		"connect-timeout = 5",

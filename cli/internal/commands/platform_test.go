@@ -570,10 +570,14 @@ func TestPlatformSetupNixWritesConfigAndGithubEnv(t *testing.T) {
 			"https://nix-cache.acme.example",
 			"acme-cache-1:abc123",
 			"experimental-features = nix-command flakes",
+			"sandbox = true",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("%s missing %q:\n%s", path, want, text)
 			}
+		}
+		if strings.Contains(text, "allow-import-from-derivation") {
+			t.Fatalf("%s should not enable import-from-derivation globally:\n%s", path, text)
 		}
 	}
 	ghRaw, err := os.ReadFile(ghEnv)
