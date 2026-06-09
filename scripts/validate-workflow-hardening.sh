@@ -38,16 +38,19 @@ fixed_exists() {
   fi
 }
 
-if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go; then
+if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go |
+  grep -v -E 'generator_container_slsa3\.yml@v[0-9]+\.[0-9]+\.[0-9]+'; then
   flag "workflow and composite action references must be pinned to immutable SHAs"
 fi
 
-if search_regex 'slsaBuilder: .*@v[0-9]|SLSABuilder:[[:space:]]+".*@v[0-9]|generator_container_slsa3\.yml@v[0-9]' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
-  flag "release.slsaBuilder and generated SLSA builder refs must be pinned to the reviewed reusable workflow SHA"
+# SLSA's reusable container generator is the exception to SHA pinning: upstream
+# requires a full vX.Y.Z tag and fails when the workflow is referenced by hash.
+if search_regex 'slsaBuilder: .*@[0-9a-f]{40}|SLSABuilder:[[:space:]]+".*@[0-9a-f]{40}|generator_container_slsa3\.yml@[0-9a-f]{40}' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
+  flag "SLSA generator refs must use the upstream-required full version tag"
 fi
 
-if ! regex_exists 'slsaBuilder: .+@[0-9a-f]{40}' clearcutt.fleet.yaml; then
-  flag "release.slsaBuilder is missing a 40-character commit SHA"
+if ! regex_exists 'slsaBuilder: .+@v[0-9]+\.[0-9]+\.[0-9]+' clearcutt.fleet.yaml; then
+  flag "release.slsaBuilder is missing an upstream-required full version tag"
 fi
 
 deploy_site_block="$(
