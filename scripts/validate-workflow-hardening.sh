@@ -8,15 +8,45 @@ flag() {
   fail=1
 }
 
-if rg --hidden --no-ignore -n 'uses:\s+[^#[:space:]]+@(v[0-9]+|main|master)(\s|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go; then
+search_regex() {
+  local pattern="$1"
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg --hidden --no-ignore -n -e "$pattern" "$@"
+  else
+    grep -R -n -E -e "$pattern" "$@"
+  fi
+}
+
+regex_exists() {
+  local pattern="$1"
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -q -e "$pattern" "$@"
+  else
+    grep -q -E -e "$pattern" "$@"
+  fi
+}
+
+fixed_exists() {
+  local pattern="$1"
+  shift
+  if command -v rg >/dev/null 2>&1; then
+    rg -q --fixed-strings -- "$pattern" "$@"
+  else
+    grep -q -F -e "$pattern" "$@"
+  fi
+}
+
+if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go; then
   flag "workflow and composite action references must be pinned to immutable SHAs"
 fi
 
-if rg --hidden --no-ignore -n 'slsaBuilder: .*@v[0-9]|SLSABuilder:\s+".*@v[0-9]|generator_container_slsa3\.yml@v[0-9]' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
+if search_regex 'slsaBuilder: .*@v[0-9]|SLSABuilder:[[:space:]]+".*@v[0-9]|generator_container_slsa3\.yml@v[0-9]' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
   flag "release.slsaBuilder and generated SLSA builder refs must be pinned to the reviewed reusable workflow SHA"
 fi
 
-if ! rg -q 'slsaBuilder: .+@[0-9a-f]{40}' clearcutt.fleet.yaml; then
+if ! regex_exists 'slsaBuilder: .+@[0-9a-f]{40}' clearcutt.fleet.yaml; then
   flag "release.slsaBuilder is missing a 40-character commit SHA"
 fi
 
@@ -45,7 +75,7 @@ for required in \
   "cosign verify-blob" \
   "--certificate-identity"
 do
-  if ! rg -q --fixed-strings -- "$required" .github/actions/certify-app/action.yml; then
+  if ! fixed_exists "$required" .github/actions/certify-app/action.yml; then
     flag "certify-app action must verify downloaded ClearCutt CLI assets with '$required'"
   fi
 done
