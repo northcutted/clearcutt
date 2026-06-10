@@ -249,3 +249,67 @@ func TestVerifyRebuildDownloadsProvenanceWhenDigestComesFromSubject(t *testing.T
 		t.Fatalf("unexpected downloaded provenance predicate: %#v", predicate)
 	}
 }
+
+func TestVerifyRebuildDigestNormalizationAndDiffoscopeBranches(t *testing.T) {
+	if got := normalizeGitURI(" git+https://github.com/acme/repo.git@refs/heads/main "); got != "https://github.com/acme/repo" {
+		t.Fatalf("unexpected https git URI normalization: %q", got)
+	}
+	if got := normalizeGitURI("git@github.com:acme/repo.git"); got != "https://github.com/acme/repo" {
+		t.Fatalf("unexpected ssh git URI normalization: %q", got)
+	}
+	if got := normalizeGitURI("   "); got != "" {
+		t.Fatalf("blank git URI should normalize to empty, got %q", got)
+	}
+
+	for name, tc := range map[string]struct {
+		value any
+		want  string
+	}{
+		"sha256":          {map[string]any{"sha256": "abc123"}, "sha256:abc123"},
+		"prefixed-sha1":   {map[string]any{"sha1": "sha1:def456"}, "sha1:def456"},
+		"git-commit":      {map[string]any{"gitCommit": "feedface"}, "gitCommit:feedface"},
+		"sorted-fallback": {map[string]any{"z": "last", "a": "first"}, "a:first"},
+		"non-map":         {"sha256:abc123", ""},
+		"empty":           {map[string]any{"sha256": " "}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := rebuildDigest(tc.value); got != tc.want {
+				t.Fatalf("rebuildDigest() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if got := firstRebuildDigestValue(map[string]any{"sha256": "sha256:abc123"}, "sha256"); got != "abc123" {
+		t.Fatalf("unexpected first digest value: %q", got)
+	}
+
+	root := t.TempDir()
+	var calls []string
+	oldCapture := captureExternalOutput
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		calls = append(calls, c.Name+" "+strings.Join(c.Args, " "))
+		if strings.Contains(strings.Join(c.Args, " "), "--html") {
+			if err := os.WriteFile(filepath.Join(root, "report.html"), []byte("diff"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return "", errors.New("diffoscope exited non-zero after writing report")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { captureExternalOutput = oldCapture })
+
+	if err := runDiffoscope("left.tar", "right.tar", filepath.Join(root, "report.html")); err != nil {
+		t.Fatalf("html diffoscope report should tolerate non-zero exit after writing output: %v", err)
+	}
+	if err := runDiffoscope("left.tar", "right.tar", filepath.Join(root, "report.txt")); err != nil {
+		t.Fatalf("text diffoscope report should succeed: %v", err)
+	}
+	flat := strings.Join(calls, "\n")
+	for _, want := range []string{
+		"diffoscope --html " + filepath.Join(root, "report.html") + " left.tar right.tar",
+		"diffoscope --text " + filepath.Join(root, "report.txt") + " left.tar right.tar",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Fatalf("missing diffoscope call %q in:\n%s", want, flat)
+		}
+	}
+}

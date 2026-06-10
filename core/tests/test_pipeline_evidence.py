@@ -12,6 +12,7 @@ CORE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PIPELINE = CORE_ROOT / "pipeline" / "pipeline.sh"
 CREDENTIAL_BROKER = CORE_ROOT / "lib" / "credential-broker.sh"
 BUILD_FLEET_NIX = CORE_ROOT / "lib" / "build-fleet.nix"
+VERIFY_SH = CORE_ROOT / "tests" / "verify.sh"
 
 
 class PipelineEvidenceTests(unittest.TestCase):
@@ -249,6 +250,16 @@ class DockerToolsAssemblyTests(unittest.TestCase):
         self.assertEqual(source.count("fakeRootCommands"), 2)
         self.assertIn("fakeRootCommands = ownAppWorkspace;", source)
         self.assertIn("${ownDataDirs dataDirs}", source)
+
+
+class GatingSuiteTests(unittest.TestCase):
+    def test_g4_smoke_targets_resolve_fleet_config_from_core_cwd(self):
+        source = VERIFY_SH.read_text(encoding="utf-8")
+
+        self.assertIn("find_fleet_config()", source)
+        self.assertIn('"../clearcutt.fleet.yaml"', source)
+        self.assertIn('--fleet-config "$fleet_config"', source)
+        self.assertIn('fleet_config="$(find_fleet_config || true)"', source)
 
 
 if __name__ == "__main__":

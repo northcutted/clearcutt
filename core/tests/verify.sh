@@ -80,6 +80,20 @@ g2_target_package() {
   printf '%s\n' "${CLEARCUTT_G2_TARGET_PACKAGE:-bash-interactive}"
 }
 
+find_fleet_config() {
+  if [[ -n "${CLEARCUTT_FLEET_CONFIG:-}" && -f "${CLEARCUTT_FLEET_CONFIG}" ]]; then
+    printf '%s\n' "$CLEARCUTT_FLEET_CONFIG"
+    return 0
+  fi
+  for candidate in "clearcutt.fleet.yaml" "../clearcutt.fleet.yaml"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 write_g2_known_good_closure() {
   local output_file="$1"
   local image_ref
@@ -126,7 +140,12 @@ representative_smoke_targets() {
   local cli
   cli="$(find_clearcutt_cli || true)"
   if [[ -n "$cli" ]]; then
-    "$cli" --format json matrix export --source fleet --github-actions --matrix release |
+    local fleet_config
+    fleet_config="$(find_fleet_config || true)"
+    if [[ -z "$fleet_config" ]]; then
+      return 1
+    fi
+    "$cli" --format json matrix export --source fleet --fleet-config "$fleet_config" --github-actions --matrix release |
       python3 -c '
 import json
 import sys
