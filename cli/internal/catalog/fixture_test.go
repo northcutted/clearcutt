@@ -91,6 +91,30 @@ func TestDevCatalogFixtureLoadAndValidation(t *testing.T) {
 	}
 }
 
+func TestResultStatusSatisfiesPolicy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status            string
+		productionAllowed bool
+		productionTier    bool
+		want              bool
+	}{
+		"passed-production":       {status: "passed", productionAllowed: true, productionTier: true, want: true},
+		"passed-non-production":   {status: " passed ", productionAllowed: false, productionTier: false, want: true},
+		"warning-dev":             {status: "warning", productionAllowed: false, productionTier: false, want: true},
+		"warning-production":      {status: "warning", productionAllowed: true, productionTier: true, want: false},
+		"warning-production-tier": {status: "warning", productionAllowed: false, productionTier: true, want: false},
+		"failed-dev":              {status: "failed", productionAllowed: false, productionTier: false, want: false},
+		"empty-dev":               {status: "", productionAllowed: false, productionTier: false, want: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := catalog.TestResultStatusSatisfiesPolicy(tc.status, tc.productionAllowed, tc.productionTier)
+			if got != tc.want {
+				t.Fatalf("TestResultStatusSatisfiesPolicy(%q, %t, %t) = %t, want %t", tc.status, tc.productionAllowed, tc.productionTier, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestListFiltersAndJSON(t *testing.T) {
 	catalogPath := filepath.Join("..", "testdata", "catalog")
 

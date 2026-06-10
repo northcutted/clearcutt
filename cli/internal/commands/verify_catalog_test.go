@@ -161,6 +161,38 @@ func TestReleaseEvidenceSummaryRecomputesWhenMissing(t *testing.T) {
 	}
 }
 
+func TestWarningTestResultsSatisfyOnlyNonProductionCatalogEvidence(t *testing.T) {
+	rel := &catalog.ReleaseEntry{
+		Lifecycle:       catalog.Lifecycle{Status: "preview", Support: "preview", ProductionAllowed: false},
+		RuntimeContract: catalog.RuntimeContract{ProductionTier: false},
+		Architectures: []catalog.ArchPayload{
+			{Arch: "amd64", SBOM: catalog.SBOMInfo{PackageCount: 1}, TestResults: &catalog.TestResultsInfo{Status: "warning"}, Vulnerabilities: &catalog.VulnerabilitiesInfo{}},
+			{Arch: "arm64", SBOM: catalog.SBOMInfo{PackageCount: 1}, TestResults: &catalog.TestResultsInfo{Status: "warning"}, Vulnerabilities: &catalog.VulnerabilitiesInfo{}},
+		},
+	}
+
+	evidence := releaseEvidenceSummary(rel)
+	if !evidence.Tests || evidence.PassedTestArchCount != 2 {
+		t.Fatalf("non-production warning test results should satisfy catalog evidence: %#v", evidence)
+	}
+	if service := serviceEvidenceSummary(catalog.ReleaseEntry(*rel)); !service.Tests || service.PassedTestArchCount != 2 {
+		t.Fatalf("non-production warning service evidence should satisfy catalog evidence: %#v", service)
+	}
+
+	rel.RuntimeContract.ProductionTier = true
+	evidence = releaseEvidenceSummary(rel)
+	if evidence.Tests || evidence.PassedTestArchCount != 0 {
+		t.Fatalf("production-tier warning test results should not satisfy catalog evidence: %#v", evidence)
+	}
+
+	rel.RuntimeContract.ProductionTier = false
+	rel.Lifecycle.ProductionAllowed = true
+	evidence = releaseEvidenceSummary(rel)
+	if evidence.Tests || evidence.PassedTestArchCount != 0 {
+		t.Fatalf("production-allowed warning test results should not satisfy catalog evidence: %#v", evidence)
+	}
+}
+
 func TestVerifyCatalogRawHelperBranches(t *testing.T) {
 	failures := []string{}
 	failFor := func(id, msg string) { failures = append(failures, id+": "+msg) }

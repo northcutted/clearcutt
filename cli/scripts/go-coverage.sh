@@ -68,7 +68,9 @@ awk -v module="$module_path" '
       printf "%06.2f\t%s\t%s\n", pct, location, $2
     }
   }
-' "$text_report" | sort -n | head -20 > "$low_report"
+' "$text_report" | sort -n > "${low_report}.sorted"
+head -20 "${low_report}.sorted" > "$low_report"
+rm -f "${low_report}.sorted"
 
 if awk -v total="$total_coverage" -v min="$min_coverage" 'BEGIN { exit !(total + 0 >= min + 0) }'; then
   gate_status="PASS"

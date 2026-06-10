@@ -179,7 +179,7 @@ func evidenceManifestReleaseForRecord(record *catalog.ImageRecord, release catal
 	}
 	row.Missing = missingEvidenceChannels(row.Channels)
 	for _, arch := range release.Architectures {
-		testPassed := arch.TestResults != nil && arch.TestResults.Status == "passed"
+		testPassed := arch.TestResults != nil && catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, release.Lifecycle.ProductionAllowed, release.RuntimeContract.ProductionTier)
 		row.Architectures = append(row.Architectures, evidenceManifestArchitecture{
 			Arch:            arch.Arch,
 			OS:              arch.OS,
