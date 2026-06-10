@@ -41,9 +41,10 @@ func newAppBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Assemble a prebuilt artifact onto a ClearCutt base and push the app image",
-		Long: `Lays a single prebuilt artifact (e.g. app.jar or a static binary) onto a ClearCutt
-base image as one deterministic OCI layer, stamps the application-lifecycle labels
-that make the image rebasable, and pushes it — all without a Docker daemon or Nix.
+		Long: `Lays one prebuilt artifact (a file, or a publish directory such as .NET output)
+onto a ClearCutt base image as one deterministic OCI layer, stamps the
+application-lifecycle labels that make the image rebasable, and pushes it — all
+without a Docker daemon or Nix.
 
 The --base may be a catalog id (resolved to a digest-pinned reference through the
 catalog) or an explicit registry reference. The entrypoint must be JSON exec form.
@@ -63,8 +64,8 @@ Example:
 	f.StringVar(&appBuildOpts.base, "base", "", "ClearCutt base image: catalog id (e.g. java25-distroless) or a registry reference")
 	f.StringVar(&appBuildOpts.baseID, "base-id", "", "Override the base catalog id stamped into labels (when --base is a raw reference)")
 	f.StringVar(&appBuildOpts.baseVersion, "base-version", "", "Override the base version stamped into labels")
-	f.StringVar(&appBuildOpts.artifact, "artifact", "", "Path to the prebuilt artifact to embed (e.g. target/app.jar)")
-	f.StringVar(&appBuildOpts.dest, "dest", "", "Absolute path the artifact lands at inside the image (default /workspace/<artifact-name>)")
+	f.StringVar(&appBuildOpts.artifact, "artifact", "", "Path to the prebuilt file or directory to embed (e.g. target/app.jar or out/)")
+	f.StringVar(&appBuildOpts.dest, "dest", "", "Absolute path the artifact lands at inside the image (default /workspace/<artifact-name>; directories expand under this path)")
 	f.StringVar(&appBuildOpts.entrypoint, "entrypoint", "", `OCI entrypoint in JSON exec form, e.g. '["java","-jar","/workspace/app.jar"]'`)
 	f.StringVar(&appBuildOpts.cmd, "cmd", "", "Optional OCI cmd in JSON exec form")
 	f.StringVar(&appBuildOpts.workdir, "workdir", "", "Optional working directory inside the image")

@@ -300,6 +300,7 @@ trap write_e2e_report_nested EXIT
 ARTIFACT_FILE=""
 ENTRYPOINT_JSON=""
 EXECUTABLE_FLAG=""
+DEST_PATH=""
 
 cd "$WORK_DIR"
 
@@ -354,15 +355,26 @@ EOF
     
   dotnet)
     dotnet new console -n DotnetApp --no-restore
+    cat <<EOF > DotnetApp/DotnetApp.csproj
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+EOF
     cat <<EOF > DotnetApp/Program.cs
 using System;
 Console.WriteLine("Hello from .NET E2E! Version: " + Environment.Version);
 EOF
-    # Publish self-contained single-file executable (relies on base image FHS symlinks for glibc and C++ runtime)
-    dotnet publish DotnetApp/DotnetApp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o out
-    ARTIFACT_FILE="${WORK_DIR}/out/DotnetApp"
-    ENTRYPOINT_JSON='["/workspace/DotnetApp"]'
-    EXECUTABLE_FLAG="--executable"
+    # Publish the framework-dependent output directory so distroless runs through
+    # the ClearCutt dotnet runtime instead of a runner-built native apphost.
+    dotnet publish DotnetApp/DotnetApp.csproj -c Release -f net8.0 --self-contained false -p:UseAppHost=false -o out
+    ARTIFACT_FILE="${WORK_DIR}/out"
+    DEST_PATH="/workspace"
+    ENTRYPOINT_JSON='["dotnet","/workspace/DotnetApp.dll"]'
     ;;
     
   rust)
@@ -422,6 +434,9 @@ BUILD_ARGS=(
   "--image" "$APP_REF"
   "--format" "json"
 )
+if [ -n "$DEST_PATH" ]; then
+  BUILD_ARGS+=("--dest" "$DEST_PATH")
+fi
 if [ -n "$EXECUTABLE_FLAG" ]; then
   BUILD_ARGS+=("$EXECUTABLE_FLAG")
 fi
@@ -785,7 +800,7 @@ case "$STACK" in
     COVERAGE_NOTES="Successfully verified compiled Go static application packaging on Go 1.25 Slim base image. Swapped base layers cleanly to Go 1.25 Distroless, and verified executable static binary launching natively. Note: Static binaries retain build-time compiler runtimes; base rebase guarantees secure underlying system libraries and CA certificate layers."
     ;;
   dotnet)
-    COVERAGE_NOTES="Successfully verified C# .NET console application packaging on .NET 8 Slim base image. Swapped base layers cleanly to .NET 8 Distroless, and successfully verified live self-contained single-file binary execution under the glibc/C++ FHS dynamic library loader layers inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
+    COVERAGE_NOTES="Successfully verified C# .NET framework-dependent publish directory packaging on .NET 8 Slim base image. Swapped base layers cleanly to .NET 8 Distroless, preserved the publish directory as one deterministic app layer, and successfully verified live execution through the ClearCutt dotnet runtime inside Docker. Cosign signature gates were mechanically validated via standard wrappers."
     ;;
   rust)
     COVERAGE_NOTES="Successfully verified Rust static binary application packaging on Rust 1.95 Slim base image. Swapped base layers cleanly to Rust 1.95 Distroless base image (swapping from diagnostic/shell container to hardened productionDistroless, demonstrating security posture upgrades). Verified launching under hardened distroless boundary."

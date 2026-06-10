@@ -5,14 +5,15 @@ to build once, sign the application payload, and later move that payload onto a
 patched ClearCutt base without recompiling.
 
 The important boundary is simple: `clearcutt app build` packages one prebuilt
-artifact file into one OCI layer. That layer is preserved byte-for-byte during
-`clearcutt app rebase`; the base layers underneath it are swapped only after the
+artifact into one OCI layer. The artifact can be a single file or a publish
+directory; either way, that one app layer is preserved byte-for-byte during
+`clearcutt app rebase`. The base layers underneath it are swapped only after the
 CLI verifies runtime compatibility and the developer signature over the source
 image.
 
-If your service needs a whole publish directory, runtime package installation,
-or multiple sidecar files inside the image, keep using a normal Containerfile
-and run `clearcutt certify` until directory artifact support exists.
+If your service needs runtime package installation or custom image assembly,
+keep using a normal Containerfile and run `clearcutt certify` on the finished
+image.
 
 For deployment shapes after certification, see
 [`examples/oci-deployment/docker-compose.yml`](../examples/oci-deployment/docker-compose.yml)
@@ -26,7 +27,8 @@ itself.
 
 - `app build` is daemonless and registry-direct. It needs registry credentials
   but no Docker daemon and no Nix installation.
-- The artifact is a single file placed at `--dest`.
+- The artifact is a file or directory. File artifacts land at `--dest`; directory
+  artifacts expand under `--dest`.
 - Native binaries should pass `--executable` so the file lands with mode `0755`.
 - `--entrypoint` and `--cmd` use OCI JSON exec form. Do not rely on a shell in
   `distroless`.
@@ -218,37 +220,29 @@ For Go 1.26, use `go1.26-distroless` and `clearcutt-go1.26`.
 
 ### .NET 8 or .NET 10
 
-`app build` needs one artifact file. For .NET, use a single-file publish that
-does not require sidecar files.
+For .NET, use a framework-dependent publish directory and enter through the
+runtime in the ClearCutt base. The publish directory is still packaged as one
+deterministic app layer, so rebase preserves it byte-for-byte.
 
 ```bash
 dotnet publish src/Payments.Api/Payments.Api.csproj \
   -c Release \
-  -r linux-x64 \
+  -f net8.0 \
   --self-contained false \
-  -p:PublishSingleFile=true \
-  -p:PublishTrimmed=true \
   -o out
-
-mkdir -p dist
-cp out/Payments.Api dist/payments-api
 
 export BASE_ID="dotnet8-distroless"
 export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
-  --artifact dist/payments-api \
-  --dest /workspace/payments-api \
-  --entrypoint '["/workspace/payments-api"]' \
-  --executable \
+  --artifact out \
+  --dest /workspace \
+  --entrypoint '["dotnet","/workspace/Payments.Api.dll"]' \
   --image "$APP_IMAGE"
 ```
 
-If your framework-dependent publish output still needs `.deps.json`,
-`.runtimeconfig.json`, or other sidecar files, use a Containerfile and certify
-that image instead. For .NET 10, use `dotnet10-distroless` and
-`clearcutt-dotnet10`.
+For .NET 10, use `-f net10.0`, `dotnet10-distroless`, and `clearcutt-dotnet10`.
 
 ### Rust 1.95
 
