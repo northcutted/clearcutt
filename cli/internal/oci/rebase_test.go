@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -48,6 +49,10 @@ func TestBuildAppPinsIndexBaseAndStampsArtifactLayer(t *testing.T) {
 		ArtifactPath: artifact,
 		DestPath:     "/workspace/app.jar",
 		Entrypoint:   []string{"java", "-jar", "/workspace/app.jar"},
+		Cmd:          []string{"--serve"},
+		WorkingDir:   "/workspace",
+		User:         "65532:65532",
+		Executable:   true,
 		TargetRef:    appRef,
 	})
 	if err != nil {
@@ -74,6 +79,15 @@ func TestBuildAppPinsIndexBaseAndStampsArtifactLayer(t *testing.T) {
 	if got := cfg.Config.Labels[LabelRebasable]; got != "true" {
 		t.Errorf("rebasable label = %q", got)
 	}
+	if got := strings.Join(cfg.Config.Cmd, " "); got != "--serve" {
+		t.Errorf("cmd = %q", got)
+	}
+	if got := cfg.Config.WorkingDir; got != "/workspace" {
+		t.Errorf("working dir = %q", got)
+	}
+	if got := cfg.Config.User; got != "65532:65532" {
+		t.Errorf("user = %q", got)
+	}
 
 	layers := imageLayers(t, app)
 	appLayer := layers[len(layers)-1]
@@ -83,6 +97,156 @@ func TestBuildAppPinsIndexBaseAndStampsArtifactLayer(t *testing.T) {
 	}
 	if got := readFileFromLayer(t, appLayer, "workspace/app.jar"); string(got) != "hello from the app" {
 		t.Fatalf("app layer file content = %q", string(got))
+	}
+	if got := readLayerHeaders(t, appLayer)["workspace/app.jar"].Mode; got != 0o755 {
+		t.Fatalf("app layer mode = %#o, want 0755", got)
+	}
+}
+
+func TestBuildAppSupportsDirectoryArtifacts(t *testing.T) {
+	client, host := testRegistry(t)
+
+	base := testBaseImage(t, 151, 2, v1.Platform{OS: "linux", Architecture: "amd64"})
+	baseRef := host + "/bases/dotnet:v1.0.0"
+	if _, err := client.PushImage(baseRef, base); err != nil {
+		t.Fatalf("push base: %v", err)
+	}
+
+	publishDir := filepath.Join(t.TempDir(), "publish")
+	if err := os.MkdirAll(filepath.Join(publishDir, "config"), 0o755); err != nil {
+		t.Fatalf("create publish dir: %v", err)
+	}
+	files := map[string]string{
+		"DotnetApp.dll":                 "dll bytes",
+		"DotnetApp.runtimeconfig.json":  `{"runtimeOptions":{}}`,
+		"DotnetApp.deps.json":           `{"runtimeTarget":{}}`,
+		"config/appsettings.Production": "strict",
+	}
+	for rel, data := range files {
+		if err := os.WriteFile(filepath.Join(publishDir, rel), []byte(data), 0o600); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	appRef := host + "/apps/dotnet:1.0.0"
+	_, err := client.BuildApp(BuildOptions{
+		BaseRef:      baseRef,
+		BaseID:       "dotnet8-distroless",
+		BaseVersion:  "v1.0.0",
+		ArtifactPath: publishDir,
+		DestPath:     "/workspace",
+		Entrypoint:   []string{"dotnet", "/workspace/DotnetApp.dll"},
+		TargetRef:    appRef,
+	})
+	if err != nil {
+		t.Fatalf("BuildApp: %v", err)
+	}
+
+	app, err := client.PullImage(appRef)
+	if err != nil {
+		t.Fatalf("pull app: %v", err)
+	}
+	cfg, err := app.ConfigFile()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	if got := strings.Join(cfg.Config.Entrypoint, " "); got != "dotnet /workspace/DotnetApp.dll" {
+		t.Fatalf("entrypoint = %q", got)
+	}
+
+	layers := imageLayers(t, app)
+	appLayer := layers[len(layers)-1]
+	for rel, want := range files {
+		got := readFileFromLayer(t, appLayer, filepath.ToSlash(filepath.Join("workspace", rel)))
+		if string(got) != want {
+			t.Fatalf("%s content = %q, want %q", rel, string(got), want)
+		}
+	}
+}
+
+func TestArtifactLayerDirectoryModesAndDeterminism(t *testing.T) {
+	publishDir := filepath.Join(t.TempDir(), "publish")
+	if err := os.MkdirAll(filepath.Join(publishDir, "bin"), 0o755); err != nil {
+		t.Fatalf("create publish dir: %v", err)
+	}
+	files := map[string]struct {
+		content string
+		mode    os.FileMode
+	}{
+		"app.dll":       {content: "dll", mode: 0o600},
+		"config.json":   {content: "{}", mode: 0o644},
+		"bin/tool":      {content: "tool", mode: 0o755},
+		"bin/helper.sh": {content: "helper", mode: 0o700},
+	}
+	for rel, file := range files {
+		if err := os.WriteFile(filepath.Join(publishDir, rel), []byte(file.content), file.mode); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	layer, err := artifactLayer(publishDir, "/workspace", false, types.DockerLayer)
+	if err != nil {
+		t.Fatalf("artifactLayer: %v", err)
+	}
+	again, err := artifactLayer(publishDir, "/workspace", false, types.DockerLayer)
+	if err != nil {
+		t.Fatalf("artifactLayer again: %v", err)
+	}
+	diffID, err := layer.DiffID()
+	if err != nil {
+		t.Fatalf("diff id: %v", err)
+	}
+	againDiffID, err := again.DiffID()
+	if err != nil {
+		t.Fatalf("again diff id: %v", err)
+	}
+	if diffID != againDiffID {
+		t.Fatalf("directory artifact layer is not deterministic:\nfirst %s\nagain %s", diffID, againDiffID)
+	}
+
+	headers := readLayerHeaders(t, layer)
+	for _, dir := range []string{"workspace", "workspace/bin"} {
+		hdr, ok := headers[dir]
+		if !ok {
+			t.Fatalf("missing directory header %s", dir)
+		}
+		if hdr.Typeflag != tar.TypeDir || hdr.Mode != 0o755 {
+			t.Fatalf("%s header type/mode = %c %#o", dir, hdr.Typeflag, hdr.Mode)
+		}
+	}
+	for rel, want := range map[string]int64{
+		"workspace/app.dll":       0o644,
+		"workspace/config.json":   0o644,
+		"workspace/bin/tool":      0o755,
+		"workspace/bin/helper.sh": 0o755,
+	} {
+		hdr, ok := headers[rel]
+		if !ok {
+			t.Fatalf("missing file header %s", rel)
+		}
+		if hdr.Typeflag != tar.TypeReg || hdr.Mode != want || hdr.ModTime.Unix() != 0 || hdr.Uid != 0 || hdr.Gid != 0 {
+			t.Fatalf("%s normalized header = type %c mode %#o mtime %s uid %d gid %d", rel, hdr.Typeflag, hdr.Mode, hdr.ModTime, hdr.Uid, hdr.Gid)
+		}
+	}
+}
+
+func TestArtifactLayerRejectsDirectorySymlinksAndInvalidDestinations(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("target"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "link")); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+	if _, err := artifactLayer(dir, "/workspace", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("expected directory symlink error, got %v", err)
+	}
+	if _, err := artifactLayer(target, "   ", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "invalid destination path") {
+		t.Fatalf("expected whitespace destination error, got %v", err)
+	}
+	if _, err := artifactLayer(target, ".", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "invalid destination path") {
+		t.Fatalf("expected dot destination error, got %v", err)
 	}
 }
 
@@ -347,6 +511,13 @@ func TestOCIBuildHelperBranches(t *testing.T) {
 	if _, err := artifactLayer(t.TempDir()+"/missing", "/app", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "failed to read artifact") {
 		t.Fatalf("expected missing artifact error, got %v", err)
 	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(artifact, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+	if _, err := artifactLayer(link, "/app", false, types.DockerLayer); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("expected symlink artifact error, got %v", err)
+	}
 	if mt, err := appLayerMediaType(testBaseImage(t, 602, 1, v1.Platform{OS: "linux", Architecture: "amd64"})); err != nil || mt != types.DockerLayer {
 		t.Fatalf("expected docker layer media type, got %s err=%v", mt, err)
 	}
@@ -523,6 +694,28 @@ func readFileFromLayer(t *testing.T, layer v1.Layer, name string) []byte {
 	}
 	t.Fatalf("layer did not contain %s", name)
 	return nil
+}
+
+func readLayerHeaders(t *testing.T, layer v1.Layer) map[string]tar.Header {
+	t.Helper()
+	rc, err := layer.Uncompressed()
+	if err != nil {
+		t.Fatalf("uncompressed layer: %v", err)
+	}
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	headers := map[string]tar.Header{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("read layer tar: %v", err)
+		}
+		headers[hdr.Name] = *hdr
+	}
+	return headers
 }
 
 func stringSlicesEqual(a, b []string) bool {

@@ -34,7 +34,7 @@ export function getImageMetadata(
   const devImage = `${fullName}:${tag}-dev`;
   const runtimeImage = `${fullName}:${tag}-${tierId}`;
   const nixAttr = getNixAttr(languageId, languageVersion);
-  const flakeRef = `github:${githubRepoFromImageRef(fullName)}/${tag}`;
+  const flakeRef = `github:${githubRepoFromImageRef(fullName)}/${tag}?dir=core`;
 
   // 1. GENERATE TIER GUARANTEES AND DESCRIPTION COPY
   let description = '';
@@ -761,37 +761,45 @@ pkgs.dockerTools.buildImage {
       break;
   }
 
-  let binName = 'app';
-  if (languageId === 'python') binName = 'python3';
-  else if (languageId === 'node') binName = 'node';
-  else if (languageId === 'java') binName = 'java';
-  else if (languageId === 'go') binName = 'main';
-  else if (languageId === 'dotnet') binName = 'dotnet';
-  else if (languageId === 'rust') binName = 'myapp';
-  else if (languageId === 'cc') binName = 'myapp';
+  const runtimeId = languageId === 'core' ? 'coreLTS' : `${languageId}${languageVersion}`;
+  const ubiExample = `{
+  description = "ClearCutt ${runtimeId} grafted onto a mandated base";
 
-  const ubiExample = `# Stage 1: Pull the ClearCutt secure runtime OCI image to extract its store
-FROM ${runtimeImage} AS clearcutt
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    clearcutt.url = "${flakeRef}";
+  };
 
-# Stage 2: Graft the runtime onto your mandated base OS (Red Hat UBI, AL2023, Ubuntu)
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+  outputs = { self, nixpkgs, clearcutt }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs { inherit system; };
+      mandatedBase = pkgs.dockerTools.pullImage {
+        imageName = "registry.access.redhat.com/ubi9/ubi-minimal";
+        imageDigest = "sha256:REPLACE_WITH_PINNED_BASE_DIGEST";
+        sha256 = "sha256-REPLACE_WITH_NIX_PREFETCH_DOCKER_HASH";
+      };
+    in {
+      packages.\${system}.overlayImage = clearcutt.lib.graftOntoBase {
+        inherit system;
+        fromImage = mandatedBase;
+        runtime = "${runtimeId}";
+        tier = "${tierId}";
+        name = "acme-${runtimeId}-ubi";
+        tag = "${tag}";
+      };
+    };
+}
 
-# Copy the immutable Nix store closure (leaves base OS layers and agents intact)
-COPY --from=clearcutt /nix /nix
-
-# Stabilize the runtime path behind /usr/local/bin so ENTRYPOINTs survive store bumps
-RUN set -eux; \\
-    runtime_bin="$(find /nix/store -maxdepth 3 -type f -path '*/bin/${binName}' | head -n1)"; \\
-    test -n "$runtime_bin"; \\
-    ln -sf "$runtime_bin" /usr/local/bin/${binName}; \\
-    /usr/local/bin/${binName} --version || /usr/local/bin/${binName} -version || true
-
-# Set workspace and run as ClearCutt's secure non-root user (UID 10001)
-WORKDIR /app
-COPY . .
-USER 10001:10001
-
-ENTRYPOINT ["/usr/local/bin/${binName}"]`;
+# Build: nix build .#packages.x86_64-linux.overlayImage
+# Then prove the grafted runtime is byte-identical to the native runtime:
+# clearcutt overlay verify \\
+#   --runtime-archive clearcutt-${runtimeId}.tar \\
+#   --grafted-archive result \\
+#   --runtime-ref ${runtimeImage}@sha256:... \\
+#   --grafted-ref ghcr.io/acme/${runtimeId}-ubi:${tag}@sha256:... \\
+#   --target ${runtimeId}-${tierId} \\
+#   --output-predicate`;
 
   return {
     description,

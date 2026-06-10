@@ -272,7 +272,8 @@ debugging Astro components. For reproducible site validation, prefer
 The repo-scoped Codex setup lives in:
 
 - `.codex/config.toml` for shared local defaults.
-- `.codex/agents/` for read-only custom reviewers.
+- `.agents/context/` for committed instruction sources and the ignored per-run context file.
+- `.agents/reviewers/` for read-only custom reviewers.
 - `.codex/rules/` for command approval guardrails.
 - `.agents/skills/` for reusable ClearCutt workflows.
 - `.github/codex/prompts/` for GitHub Action, PR review, CI triage, and automation prompt templates.
@@ -298,7 +299,7 @@ The loop is:
 2. Classify where the lesson belongs:
    - `AGENTS.md` for mandatory repo-wide behavior.
    - `.agents/skills/*/SKILL.md` for repeatable task workflows.
-   - `.agent/lessons_learned.md` for durable repo pitfalls.
+   - `.agents/context/lessons_learned.md` for durable repo pitfalls.
    - `docs/analysis/` for audit-only findings or owner review.
    - Codex Memories for local user preference or historical context.
    - `.codex/rules/` for mechanical command guardrails.
@@ -313,7 +314,7 @@ Token efficiency is part of the retrospective. Check whether the agent:
 - ran broad validation when a focused command would prove the change;
 - relied on generated or stale catalog data and had to redo work;
 - spawned subagents for work that was not read-heavy or parallelizable;
-- kept obsolete context in `.agent/active_context.md` instead of moving it to a
+- kept obsolete context in `.agents/context/active_context.md` instead of moving it to a
   runbook or memory.
 
 Self-improvement outputs should be owner-reviewable. Agents may propose changes

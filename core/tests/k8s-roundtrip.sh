@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # ClearCutt Local Kubernetes Gating & Kyverno Round-Trip Validation
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Automated local kind bootstrapping to assert dynamic admission and OCI verify policies
 
 set -euo pipefail
 
-# Console colors for premium UI/UX feedback
+# Console colors
 BLUE="\033[1;34m"
 GREEN="\033[1;32m"
 YELLOW="\033[1;33m"
@@ -101,7 +99,7 @@ main() {
   # For local testing, we can toggle dryrun or enforce key verification.
   kubectl rollout status deployment/clearcutt-deployment --timeout=60s
   
-  log_success "End-to-end Kind + Kyverno round-trip validation completed flawlessly."
+  log_success "End-to-end Kind + Kyverno round-trip validation completed."
   log_success "Kyverno successfully verified supply chain signatures and admitted ClearCutt fleet container!"
 }
 

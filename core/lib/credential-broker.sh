@@ -1,20 +1,90 @@
 #!/usr/bin/env bash
 # ClearCutt Transient Enterprise Proxy Credential Broker
-# Author: Eddie Northcutt
 # Zero-configuration enterprise package management gateway router
 
 # Set isolation workspace path
 AUTH_CACHE_DIR="$PWD/.nix-enterprise-auth-cache"
 
+broker_verbose() {
+  [[ "${CLEARCUTT_BROKER_VERBOSE:-0}" == "1" ]]
+}
+
+broker_log() {
+  local message="$1"
+  local active="${__CLEARCUTT_BROKER_ACTIVE:-0}"
+  if broker_verbose || [[ "$active" == "1" ]]; then
+    echo -e "$message"
+  fi
+}
+
+cleanup_credential_broker() {
+  local active="${__CLEARCUTT_BROKER_ACTIVE:-0}"
+  unset NPM_CONFIG_USERCONFIG
+  unset NETRC
+  unset PIP_INDEX_URL
+  unset GRADLE_OPTS
+  unset MAVEN_ARGS
+  unset __CLEARCUTT_BROKER_ACTIVE
+
+  if [[ "$active" != "1" ]]; then
+    return 0
+  fi
+
+  echo -e "\n\033[1;31m[ClearCutt Broker]\033[0m Cleaning session environment hooks and wiping active memory cache..."
+  if [[ -d "$AUTH_CACHE_DIR" ]]; then
+    rm -rf "$AUTH_CACHE_DIR"
+  fi
+  echo -e "\033[1;32m[ClearCutt Broker]\033[0m Session credentials destroyed. Guardrails verified."
+}
+
+__clearcutt_current_trap_command() {
+  local signal="$1"
+  local spec
+  spec="$(trap -p "$signal" || true)"
+  if [[ -z "$spec" ]]; then
+    return 0
+  fi
+  local command="${spec#trap -- \'}"
+  command="${command%\' $signal}"
+  if [[ "$command" == "$spec" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$command"
+}
+
+__clearcutt_run_chained_trap() {
+  local previous="$1"
+  cleanup_credential_broker
+  if [[ -n "$previous" ]]; then
+    eval "$previous"
+  fi
+}
+
+install_credential_broker_trap() {
+  if [[ "${__CLEARCUTT_BROKER_TRAP_INSTALLED:-}" == "1" ]]; then
+    return 0
+  fi
+  __CLEARCUTT_BROKER_PREVIOUS_EXIT_TRAP="$(__clearcutt_current_trap_command EXIT)"
+  __CLEARCUTT_BROKER_PREVIOUS_INT_TRAP="$(__clearcutt_current_trap_command INT)"
+  __CLEARCUTT_BROKER_PREVIOUS_TERM_TRAP="$(__clearcutt_current_trap_command TERM)"
+  export __CLEARCUTT_BROKER_TRAP_INSTALLED=1
+  trap '__clearcutt_run_chained_trap "$__CLEARCUTT_BROKER_PREVIOUS_EXIT_TRAP"' EXIT
+  trap '__clearcutt_run_chained_trap "$__CLEARCUTT_BROKER_PREVIOUS_INT_TRAP"' INT
+  trap '__clearcutt_run_chained_trap "$__CLEARCUTT_BROKER_PREVIOUS_TERM_TRAP"' TERM
+}
+
 # Helper for secure environment setup
 init_credential_broker() {
   # Intercept required environment variables
   if [[ -z "$ENTERPRISE_MIRROR_URL" ]] || [[ -z "$ENTERPRISE_MIRROR_USER" ]] || [[ -z "$ENTERPRISE_MIRROR_TOKEN" ]]; then
-    echo -e "\033[1;33m[ClearCutt Broker]\033[0m Enterprise mirror credentials not fully set. Bypassing broker setup."
-    echo -e "  To activate, define: \033[36mENTERPRISE_MIRROR_URL\033[0m, \033[36mENTERPRISE_MIRROR_USER\033[0m, and \033[36mENTERPRISE_MIRROR_TOKEN\033[0m"
+    if broker_verbose; then
+      echo -e "\033[1;33m[ClearCutt Broker]\033[0m Enterprise mirror credentials not fully set. Bypassing broker setup."
+      echo -e "  To activate, define: \033[36mENTERPRISE_MIRROR_URL\033[0m, \033[36mENTERPRISE_MIRROR_USER\033[0m, and \033[36mENTERPRISE_MIRROR_TOKEN\033[0m"
+    fi
     return 0
   fi
 
+  export __CLEARCUTT_BROKER_ACTIVE=1
   echo -e "\033[1;32m[ClearCutt Broker]\033[0m Enterprise credentials detected. Materializing secure proxy routes..."
 
   # Create isolated credentials storage workspace
@@ -26,7 +96,7 @@ init_credential_broker() {
     mkdir -p .git/info
     if ! grep -q ".nix-enterprise-auth-cache" .git/info/exclude 2>/dev/null; then
       echo ".nix-enterprise-auth-cache/" >> .git/info/exclude
-      echo -e "\033[1;32m[ClearCutt Broker]\033[0m Added .nix-enterprise-auth-cache/ to local git exclusion list."
+      broker_log "\033[1;32m[ClearCutt Broker]\033[0m Added .nix-enterprise-auth-cache/ to local git exclusion list."
     fi
   fi
 
@@ -137,30 +207,6 @@ EOF
   # Export gradle initialization parameter
   export GRADLE_OPTS="-I $AUTH_CACHE_DIR/init.gradle"
   echo -e "  \033[32m✔\033[0m Java Maven/Gradle routed -> \033[36m\$MAVEN_ARGS\033[0m & \033[36m\$GRADLE_OPTS\033[0m"
-
-  # ----------------------------------------------------
-  # 4. Cleanup and Exit Guardrails
-  # ----------------------------------------------------
-  # Register trap to clean up workspace session environment variables
-  cleanup_credential_broker() {
-    echo -e "\n\033[1;31m[ClearCutt Broker]\033[0m Cleaning session environment hooks and wiping active memory cache..."
-    unset NPM_CONFIG_USERCONFIG
-    unset NETRC
-    unset PIP_INDEX_URL
-    unset GRADLE_OPTS
-    unset MAVEN_ARGS
-    
-    # Delete the temporary session cache directory
-    # Note: Secure dd overwriting represents security theater on modern filesystems (COW, SSDs, journaling)
-    # as physical flash sectors are not guaranteed to be zeroed immediately.
-    if [[ -d "$AUTH_CACHE_DIR" ]]; then
-      rm -rf "$AUTH_CACHE_DIR"
-    fi
-    echo -e "\033[1;32m[ClearCutt Broker]\033[0m Session credentials destroyed. Guardrails verified."
-  }
-
-  # Register exit traps to automatically trigger cleanup upon shell exit or cancellation
-  trap cleanup_credential_broker EXIT INT TERM
 }
 
 # Run setup

@@ -5,14 +5,15 @@ to build once, sign the application payload, and later move that payload onto a
 patched ClearCutt base without recompiling.
 
 The important boundary is simple: `clearcutt app build` packages one prebuilt
-artifact file into one OCI layer. That layer is preserved byte-for-byte during
-`clearcutt app rebase`; the base layers underneath it are swapped only after the
+artifact into one OCI layer. The artifact can be a single file or a publish
+directory; either way, that one app layer is preserved byte-for-byte during
+`clearcutt app rebase`. The base layers underneath it are swapped only after the
 CLI verifies runtime compatibility and the developer signature over the source
 image.
 
-If your service needs a whole publish directory, runtime package installation,
-or multiple sidecar files inside the image, keep using a normal Containerfile
-and run `clearcutt certify` until directory artifact support exists.
+If your service needs runtime package installation or custom image assembly,
+keep using a normal Containerfile and run `clearcutt certify` on the finished
+image.
 
 For deployment shapes after certification, see
 [`examples/oci-deployment/docker-compose.yml`](../examples/oci-deployment/docker-compose.yml)
@@ -26,7 +27,8 @@ itself.
 
 - `app build` is daemonless and registry-direct. It needs registry credentials
   but no Docker daemon and no Nix installation.
-- The artifact is a single file placed at `--dest`.
+- The artifact is a file or directory. File artifacts land at `--dest`; directory
+  artifacts expand under `--dest`.
 - Native binaries should pass `--executable` so the file lands with mode `0755`.
 - `--entrypoint` and `--cmd` use OCI JSON exec form. Do not rely on a shell in
   `distroless`.
@@ -46,7 +48,7 @@ Supported base families:
 | Core/static | `coreLTS-dev`, `coreLTS-slim`, `coreLTS-distroless` |
 | Java | `java21-*`, `java25-*` |
 | Node.js | `node22-*`, `node24-*` |
-| Python | `python3.15-*` |
+| Python | `python3.15-*` (preview lifecycle) |
 | Go | `go1.25-*`, `go1.26-*` |
 | .NET | `dotnet8-*`, `dotnet10-*` |
 | Rust | `rust1.95-*` |
@@ -54,6 +56,10 @@ Supported base families:
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
+
+Preview lifecycle lines such as `python3.15-*` are suitable for validation and
+early adoption. Production policies with `allowPreview: false` should use active
+runtime lines until the catalog lifecycle for that line moves to active.
 
 The sections below are live/generated-catalog examples. A clean clone only
 proves the Java 21 fixture path; run `./clearcutt --catalog
@@ -169,6 +175,8 @@ bundled into one artifact, use a Containerfile and certify the finished image.
 ### Python 3.15
 
 Package the application as a zipapp, PEX, or shiv artifact.
+Python 3.15 is currently a preview lifecycle line, so catalog gates require
+`--allow-preview` or a policy that explicitly allows preview bases.
 
 ```bash
 python -m pip install --upgrade build pex
@@ -212,37 +220,29 @@ For Go 1.26, use `go1.26-distroless` and `clearcutt-go1.26`.
 
 ### .NET 8 or .NET 10
 
-`app build` needs one artifact file. For .NET, use a single-file publish that
-does not require sidecar files.
+For .NET, use a framework-dependent publish directory and enter through the
+runtime in the ClearCutt base. The publish directory is still packaged as one
+deterministic app layer, so rebase preserves it byte-for-byte.
 
 ```bash
 dotnet publish src/Payments.Api/Payments.Api.csproj \
   -c Release \
-  -r linux-x64 \
+  -f net8.0 \
   --self-contained false \
-  -p:PublishSingleFile=true \
-  -p:PublishTrimmed=true \
   -o out
-
-mkdir -p dist
-cp out/Payments.Api dist/payments-api
 
 export BASE_ID="dotnet8-distroless"
 export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:v0.2.2-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
-  --artifact dist/payments-api \
-  --dest /workspace/payments-api \
-  --entrypoint '["/workspace/payments-api"]' \
-  --executable \
+  --artifact out \
+  --dest /workspace \
+  --entrypoint '["dotnet","/workspace/Payments.Api.dll"]' \
   --image "$APP_IMAGE"
 ```
 
-If your framework-dependent publish output still needs `.deps.json`,
-`.runtimeconfig.json`, or other sidecar files, use a Containerfile and certify
-that image instead. For .NET 10, use `dotnet10-distroless` and
-`clearcutt-dotnet10`.
+For .NET 10, use `-f net10.0`, `dotnet10-distroless`, and `clearcutt-dotnet10`.
 
 ### Rust 1.95
 
@@ -311,6 +311,28 @@ clearcutt app build \
   --entrypoint '["/workspace/worker"]' \
   --executable \
   --image "$APP_IMAGE"
+```
+
+---
+
+## Rebuild Predicate Verification
+
+Platform owners can emit a rebuild predicate before attaching release evidence.
+The verifier resolves the image ref, downloads or parses SLSA/in-toto
+provenance, checks out the pinned source commit, runs `nix build`, pulls the
+published registry archive, and compares ordered layer digests. If layers
+differ, `--diffoscope-out` records the detailed local mismatch report.
+
+```bash
+clearcutt verify rebuild \
+  ghcr.io/acme/clearcutt/clearcutt-java21:v0.2.2-distroless \
+  --target java21-distroless \
+  --rebuild \
+  --pull-registry-archive \
+  --require-digest-match \
+  --require-layer-match \
+  --diffoscope-out rebuild.diff.txt \
+  --output-predicate
 ```
 
 ---

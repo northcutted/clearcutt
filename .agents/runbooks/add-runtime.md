@@ -6,8 +6,7 @@ This runbook guides you through adding a new target language runtime or updating
 
 ## 1. Locate the Central Registry
 
-All language specifications, runtime attributes, package targets, and transformers are declared in:
-👉 **[core/lib/registry.nix](file:///Users/eddie/Development/clearcutt-images/core/lib/registry.nix)**
+All language specifications, runtime attributes, package targets, and transformers are declared in `core/lib/registry.nix`.
 
 ---
 

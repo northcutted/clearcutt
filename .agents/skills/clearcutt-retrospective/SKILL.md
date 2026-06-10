@@ -12,7 +12,7 @@ Use this skill to learn from mistakes without bloating repo instructions.
 - Do not silently rewrite repo policy after a mistake.
 - Produce an owner-reviewable retrospective first.
 - Promote only small, evidence-backed lessons.
-- Keep mandatory rules in `AGENTS.md`, repeatable workflows in `.agents/skills/`, durable repo pitfalls in `.agent/lessons_learned.md`, mechanical guardrails in `.codex/rules/`, and audit-only notes in `docs/analysis/`.
+- Keep mandatory rules in `AGENTS.md`, repeatable workflows in `.agents/skills/`, durable repo pitfalls in `.agents/context/lessons_learned.md`, mechanical guardrails in `.codex/rules/`, and audit-only notes in `docs/analysis/`.
 - Use Codex Memories for local user preference or historical context, not mandatory team rules.
 
 ## Workflow
@@ -38,7 +38,7 @@ Why did the agent do it?
 What small instruction would have prevented it?
 
 ## Promotion Target
-AGENTS.md, .agents/skills, .agent/lessons_learned.md, .codex/rules, docs/analysis, or Codex Memories?
+AGENTS.md, .agents/skills, .agents/context/lessons_learned.md, .codex/rules, docs/analysis, or Codex Memories?
 
 ## Token Efficiency Impact
 What context, command, log, or validation waste happened, and what smaller path should be used next time?
@@ -64,6 +64,6 @@ Exact minimal file changes, or "none" if the lesson should remain a note.
 For instruction-only changes:
 
 ```bash
-rg -n "[[:blank:]]$" AGENTS.md .agent .agents .github/codex .codex || true
-git diff --check -- AGENTS.md .agent .agents .github/codex .codex
+rg -n "[[:blank:]]$" AGENTS.md .agents .github/codex .codex || true
+git diff --check -- AGENTS.md .agents .github/codex .codex
 ```

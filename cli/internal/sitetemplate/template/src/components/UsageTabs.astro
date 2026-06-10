@@ -156,7 +156,7 @@ const nixAttr =
     : `clearcutt${cap(image.language.id)}${image.language.version.replace(/\./g, '')}`;
 
 const nixFlake = `{
-  inputs.clearcutt.url = "github:${image.registry.replace('ghcr.io/', '')}/${release.tag}";
+  inputs.clearcutt.url = "github:${image.registry.replace('ghcr.io/', '')}/${release.tag}?dir=core";
   outputs = { self, nixpkgs, clearcutt }: {
     ${isService ? `packages.x86_64-linux.${image.id} = clearcutt.packages.x86_64-linux.${image.id};` : `devShells.x86_64-linux.default = let
       pkgs = import nixpkgs {
@@ -409,7 +409,7 @@ const nixFlake = `{
             <p class="text-xs text-ink-300 leading-relaxed">
               If your organization mandates a certified base OS (like Red Hat UBI, Amazon Linux, or Ubuntu Pro) for compliance, you can stack ClearCutt's RPATH-bound <code class="font-mono text-accent-soft">/nix/store</code> closure directly on top without modifying base layers or bundled agents.
             </p>
-            <CopyBlock language="dockerfile" code={metadata.ubiExample} label="Dockerfile.overlay" />
+            <CopyBlock language="nix" code={metadata.ubiExample} label="flake.overlay.nix" />
           </div>
           <div data-panel-id="nix-shell" data-panel-active="false">
             <CopyBlock language="nix" code={metadata.nixExample} label="flake.nix" />

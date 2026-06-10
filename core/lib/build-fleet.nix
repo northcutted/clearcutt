@@ -1,6 +1,4 @@
-# ClearCutt Modular Fleet Base Image Compiler
-# Designed by: Eddie Northcutt
-# Paradigm: Declarative Nix Base Image Injection (Anti-Migration Tax)
+# ClearCutt modular fleet base image compiler.
 
 { pkgs ? import <nixpkgs> {}
 , platformMetadata ? import ./platform-metadata.nix
@@ -24,7 +22,7 @@ let
 
   # Define static rootless account structures
   passwdContents = ''
-    root:x:0:0:root:/root:/bin/sh
+    root:x:0:0:root:/root:/sbin/nologin
     ${username}:x:${uid}:${gid}:${productName} Secure App User:/app:/sbin/nologin
   '';
 
@@ -43,13 +41,8 @@ let
     chmod 1777 $out/tmp
   '';
 
-  appDir = pkgs.runCommand "cc-app-dir" {} ''
-    mkdir -p $out/app
-    # Set permissions so the rootless appuser can read/write inside their workspace
-    chmod 755 $out/app
-  '';
-
-  # Compile standard FHS dynamic linker symlinks to support running FHS dynamic binaries natively
+  # Compile standard FHS dynamic linker symlinks for non-distroless compatibility
+  # tiers. Distroless omits these and relies only on store-bound RPATH/RUNPATH.
   lib64Symlink = pkgs.runCommand "lib64-symlink" {} ''
     mkdir -p $out/lib64 $out/lib
     if [ -f ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
@@ -59,7 +52,7 @@ let
       ln -s ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
     fi
     
-    # Symlink core libraries to both /lib and /lib64 for complete architecture robustness
+    # Symlink core libraries to both /lib and /lib64 for FHS compatibility.
     for dir in lib lib64; do
       mkdir -p $out/$dir
       ln -s ${pkgs.glibc}/lib/libc.so.6 $out/$dir/libc.so.6
@@ -100,17 +93,24 @@ let
     passwdFile
     groupFile
     tmpDir
-    appDir
-    lib64Symlink
   ];
 
-  commonEnv = [
+  baseEnv = [
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
     "HOME=/app"
     "TMPDIR=/tmp"
     "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
   ];
+
+  fhsCompatibilityEnv = [
+    "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
+  ];
+
+  imageContentsForTier = tier:
+    baseContents ++ pkgs.lib.optionals (tier != "distroless") [ lib64Symlink ];
+
+  envForTier = tier:
+    baseEnv ++ pkgs.lib.optionals (tier != "distroless") fhsCompatibilityEnv;
 
   splitNixAttrPath = path:
     pkgs.lib.filter (segment: segment != "") (pkgs.lib.splitString "." path);
@@ -137,15 +137,25 @@ let
       value = {};
     }) ports);
 
-  mkdirDataDirs = dataDirs:
+  prepareDataDirs = dataDirs:
     pkgs.lib.concatMapStringsSep "\n" (dir: ''
       mkdir -p ".${dir}"
-      # Prefer rootless ownership for services such as Postgres that enforce
-      # PGDATA permissions. Keep the fallback writable for fakeroot/build
-      # environments that cannot persist numeric chown metadata.
-      chown ${uid}:${gid} ".${dir}" 2>/dev/null || true
-      chmod 0777 ".${dir}"
+      chmod 0750 ".${dir}"
     '') dataDirs;
+
+  ownDataDirs = dataDirs:
+    pkgs.lib.concatMapStringsSep "\n" (dir: ''
+      chown ${uid}:${gid} ".${dir}"
+    '') dataDirs;
+
+  prepareAppWorkspace = ''
+    mkdir -p app
+    chmod 0755 app
+  '';
+
+  ownAppWorkspace = ''
+    chown ${uid}:${gid} app
+  '';
 
   postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
     set -euo pipefail
@@ -213,7 +223,7 @@ in
     langPkgs = registry.resolveForTier { inherit language version tier; };
     tierPkgs = resolveTierPackages { inherit tier; };
 
-    allContents = baseContents ++ tierPkgs ++ langPkgs ++ extraPackages;
+    allContents = (imageContentsForTier tier) ++ tierPkgs ++ langPkgs ++ extraPackages;
     sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
     vendor = platformMetadata.vendor or "ClearCutt";
     authors = platformMetadata.authors or "ClearCutt maintainers";
@@ -227,7 +237,8 @@ in
       "org.opencontainers.image.version" = version;
       "org.opencontainers.image.vendor" = vendor;
       "org.opencontainers.image.authors" = authors;
-      "org.opencontainers.image.licenses" = "Apache-2.0";
+      "org.opencontainers.image.licenses" = "NOASSERTION";
+      "dev.clearcutt.recipe.license" = "Apache-2.0";
       "org.opencontainers.image.ref.name" = tier;
     };
 
@@ -235,7 +246,7 @@ in
     defaultConfig = {
       User = "${uid}:${gid}";
       WorkingDir = "/app";
-      Env = commonEnv;
+      Env = envForTier tier;
       Labels = ociLabels;
     };
 
@@ -252,7 +263,9 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
+      ${prepareAppWorkspace}
     '';
+    fakeRootCommands = ownAppWorkspace;
     config = mergedConfig;
   };
 
@@ -269,7 +282,7 @@ in
     servicePkg = resolvePackageCandidate (service.packageCandidates or [])
       "No Nix package candidate is available for service ${service.id}";
     servicePkgs = [ pkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
-    allContents = baseContents ++ servicePkgs;
+    allContents = baseContents ++ [ lib64Symlink ] ++ servicePkgs;
     sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
     vendor = platformMetadata.vendor or "ClearCutt";
     authors = platformMetadata.authors or "ClearCutt maintainers";
@@ -292,7 +305,8 @@ in
       "org.opencontainers.image.version" = service.version;
       "org.opencontainers.image.vendor" = vendor;
       "org.opencontainers.image.authors" = authors;
-      "org.opencontainers.image.licenses" = "Apache-2.0";
+      "org.opencontainers.image.licenses" = "NOASSERTION";
+      "dev.clearcutt.recipe.license" = "Apache-2.0";
       "org.opencontainers.image.ref.name" = "service";
       "dev.clearcutt.image.kind" = "service";
       "dev.clearcutt.service.id" = service.id;
@@ -303,7 +317,7 @@ in
     defaultConfig = {
       User = "${uid}:${gid}";
       WorkingDir = "/app";
-      Env = commonEnv ++ serviceEnv;
+      Env = baseEnv ++ fhsCompatibilityEnv ++ serviceEnv;
       Labels = ociLabels;
     }
     // pkgs.lib.optionalAttrs (servicePorts != []) {
@@ -328,8 +342,13 @@ in
       cp ${passwdFile}/etc/passwd etc/passwd
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
+      ${prepareAppWorkspace}
       ${serviceRuntimeCommands}
-      ${mkdirDataDirs dataDirs}
+      ${prepareDataDirs dataDirs}
+    '';
+    fakeRootCommands = ''
+      ${ownAppWorkspace}
+      ${ownDataDirs dataDirs}
     '';
     config = mergedConfig;
   };

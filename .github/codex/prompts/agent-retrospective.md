@@ -14,7 +14,7 @@ Why did the agent do it?
 What small instruction would have prevented it?
 
 ## Promotion Target
-Choose one: `AGENTS.md`, `.agents/skills/*`, `.agent/lessons_learned.md`, `.codex/rules`, `docs/analysis`, or Codex Memories.
+Choose one: `AGENTS.md`, `.agents/skills/*`, `.agents/context/lessons_learned.md`, `.codex/rules`, `docs/analysis`, or Codex Memories.
 
 ## Token Efficiency Impact
 What context, command, log, or validation waste happened? What smaller path should be used next time?

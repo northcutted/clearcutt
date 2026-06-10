@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestRunOverlayGenerate(t *testing.T) {
 
 			files := []string{
 				"clearcutt.overlay.yaml",
-				"Containerfile",
+				"flake.nix",
 				"README.md",
 				"Makefile",
 				"tests/smoke.sh",
@@ -61,6 +62,38 @@ func TestRunOverlayGenerate(t *testing.T) {
 				if _, err := os.Stat(filepath.Join(tmpDir, file)); err != nil {
 					t.Errorf("expected file %q was not generated for %s: %v", file, tc.runtime, err)
 				}
+			}
+			flake, err := os.ReadFile(filepath.Join(tmpDir, "flake.nix"))
+			if err != nil {
+				t.Fatalf("read generated flake: %v", err)
+			}
+			for _, needle := range []string{
+				"clearcutt.lib.graftOntoBase",
+				`clearcutt.url = "github:northcutted/clearcutt?dir=core"`,
+				`runtime = "` + tc.runtime + `"`,
+				`fromImage = mandatedBase`,
+			} {
+				if !strings.Contains(string(flake), needle) {
+					t.Fatalf("generated flake missing %q:\n%s", needle, flake)
+				}
+			}
+			makefile, err := os.ReadFile(filepath.Join(tmpDir, "Makefile"))
+			if err != nil {
+				t.Fatalf("read generated Makefile: %v", err)
+			}
+			if !strings.Contains(string(makefile), "GRAFTED_REF ?= $(IMAGE_NAME)@sha256:REPLACE_WITH_GRAFTED_IMAGE_DIGEST") {
+				t.Fatalf("generated Makefile missing grafted digest placeholder:\n%s", makefile)
+			}
+			smoke, err := os.ReadFile(filepath.Join(tmpDir, "tests", "smoke.sh"))
+			if err != nil {
+				t.Fatalf("read generated smoke.sh: %v", err)
+			}
+			expectedSmokeNeedle := "/nix/store/*/bin/"
+			if tc.runtime == "coreLTS" {
+				expectedSmokeNeedle = "test -d /nix/store"
+			}
+			if strings.Contains(string(smoke), "/usr/local/bin") || !strings.Contains(string(smoke), expectedSmokeNeedle) {
+				t.Fatalf("generated smoke should inspect the grafted Nix store, got:\n%s", smoke)
 			}
 		})
 	}

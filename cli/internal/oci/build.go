@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,14 +18,14 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-// BuildOptions describes a `clearcutt app build`: lay a single prebuilt artifact on
+// BuildOptions describes a `clearcutt app build`: lay one prebuilt artifact on
 // top of a ClearCutt base image as one deterministic layer, stamp the lifecycle
 // labels, and push the result.
 type BuildOptions struct {
 	BaseRef      string   // registry reference of the ClearCutt base image
 	BaseID       string   // catalog id (e.g. java25-distroless), stamped into a label
 	BaseVersion  string   // base version (e.g. v0.6.2), stamped into a label
-	ArtifactPath string   // local file embedded into the app layer
+	ArtifactPath string   // local file or directory embedded into the app layer
 	DestPath     string   // absolute path the artifact lands at inside the image
 	Entrypoint   []string // OCI entrypoint (JSON-exec form)
 	Cmd          []string // optional OCI cmd
@@ -165,38 +167,38 @@ func appLayerMediaType(base v1.Image) (types.MediaType, error) {
 	return types.DockerLayer, nil
 }
 
-// artifactLayer builds a single-file, reproducible tar layer placing artifactPath at
-// destPath inside the image. The tar header is normalized (epoch mtime, uid/gid 0) so
-// identical inputs always yield an identical layer digest.
+// artifactLayer builds a reproducible tar layer placing artifactPath at destPath
+// inside the image. Directories are expanded under destPath while preserving a
+// single OCI app layer. Tar headers are normalized (epoch mtime, uid/gid 0) so
+// identical inputs always yield identical layer digests.
 func artifactLayer(artifactPath, destPath string, executable bool, mt types.MediaType) (v1.Layer, error) {
-	data, err := os.ReadFile(artifactPath)
+	if strings.TrimSpace(destPath) == "" {
+		return nil, fmt.Errorf("invalid destination path %q", destPath)
+	}
+	name := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(destPath)), "/")
+	if name == "" || name == "." {
+		return nil, fmt.Errorf("invalid destination path %q", destPath)
+	}
+
+	info, err := os.Lstat(artifactPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read artifact %q: %w", artifactPath, err)
 	}
-	name := strings.TrimPrefix(filepath.ToSlash(destPath), "/")
-	if name == "" {
-		return nil, fmt.Errorf("invalid destination path %q", destPath)
-	}
-	mode := int64(0o644)
-	if executable {
-		mode = 0o755
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("artifact %q is a symbolic link; only regular files and directories are supported", artifactPath)
 	}
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	hdr := &tar.Header{
-		Name:     name,
-		Mode:     mode,
-		Size:     int64(len(data)),
-		Typeflag: tar.TypeReg,
-		ModTime:  time.Unix(0, 0).UTC(),
-		Uid:      0,
-		Gid:      0,
+	if info.IsDir() {
+		err = writeDirectoryArtifact(tw, artifactPath, name)
+	} else if info.Mode().IsRegular() {
+		err = writeFileArtifact(tw, artifactPath, name, info, executable, false)
+	} else {
+		err = fmt.Errorf("artifact %q is not a regular file or directory", artifactPath)
 	}
-	if err := tw.WriteHeader(hdr); err != nil {
-		return nil, err
-	}
-	if _, err := tw.Write(data); err != nil {
+	if err != nil {
+		_ = tw.Close()
 		return nil, err
 	}
 	if err := tw.Close(); err != nil {
@@ -208,4 +210,90 @@ func artifactLayer(artifactPath, destPath string, executable bool, mt types.Medi
 		func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(contents)), nil },
 		tarball.WithMediaType(mt),
 	)
+}
+
+func writeDirectoryArtifact(tw *tar.Writer, root, destName string) error {
+	var entries []string
+	if err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		entries = append(entries, p)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to walk artifact directory %q: %w", root, err)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		relI, _ := filepath.Rel(root, entries[i])
+		relJ, _ := filepath.Rel(root, entries[j])
+		return filepath.ToSlash(relI) < filepath.ToSlash(relJ)
+	})
+
+	for _, src := range entries {
+		info, err := os.Lstat(src)
+		if err != nil {
+			return fmt.Errorf("failed to read artifact entry %q: %w", src, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("artifact entry %q is a symbolic link; only regular files and directories are supported", src)
+		}
+		rel, err := filepath.Rel(root, src)
+		if err != nil {
+			return err
+		}
+		name := destName
+		if rel != "." {
+			name = path.Join(destName, filepath.ToSlash(rel))
+		}
+
+		switch {
+		case info.IsDir():
+			if err := writeHeader(tw, &tar.Header{
+				Name:     name,
+				Mode:     0o755,
+				Typeflag: tar.TypeDir,
+			}); err != nil {
+				return err
+			}
+		case info.Mode().IsRegular():
+			if err := writeFileArtifact(tw, src, name, info, false, true); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("artifact entry %q is not a regular file or directory", src)
+		}
+	}
+	return nil
+}
+
+func writeFileArtifact(tw *tar.Writer, src, name string, info os.FileInfo, forceExecutable, preserveExecutable bool) error {
+	mode := int64(0o644)
+	if forceExecutable || (preserveExecutable && info.Mode().Perm()&0o111 != 0) {
+		mode = 0o755
+	}
+	hdr := &tar.Header{
+		Name:     name,
+		Mode:     mode,
+		Size:     info.Size(),
+		Typeflag: tar.TypeReg,
+	}
+	if err := writeHeader(tw, hdr); err != nil {
+		return err
+	}
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open artifact %q: %w", src, err)
+	}
+	defer f.Close()
+	_, err = io.Copy(tw, f)
+	return err
+}
+
+func writeHeader(tw *tar.Writer, hdr *tar.Header) error {
+	hdr.ModTime = time.Unix(0, 0).UTC()
+	hdr.Uid = 0
+	hdr.Gid = 0
+	hdr.Uname = ""
+	hdr.Gname = ""
+	return tw.WriteHeader(hdr)
 }

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # ClearCutt G2 Closure Diff Validation Script
-# Author: Eddie Northcutt
-# Paradigm: Deterministic Dependency Cascade Gating (G2)
 
 set -euo pipefail
 
@@ -16,11 +14,15 @@ log_warn() { echo -e "${YELLOW}[G2 Gate] ⚠ $1${RESET}"; }
 log_pass() { echo -e "${GREEN}[G2 Gate] ✔ PASS: $1${RESET}"; }
 log_fail() { echo -e "${RED}[G2 Gate] ✘ FAIL: $1${RESET}" >&2; exit 1; }
 
+escape_ere() {
+  printf '%s' "$1" | sed -e 's/[][(){}.^$*+?|\\/]/\\&/g'
+}
+
 # Source Nix environment if available to keep commands accessible
 if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
   source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-elif [ -f /Users/eddie/.nix-profile/etc/profile.d/nix.sh ]; then
-  source /Users/eddie/.nix-profile/etc/profile.d/nix.sh
+elif [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  source "$HOME/.nix-profile/etc/profile.d/nix.sh"
 fi
 
 if [[ $# -lt 3 ]]; then
@@ -63,10 +65,19 @@ fi
 
 log_info "Analyzing closure differences for target package: $TARGET_PKG..."
 
-# Find target package new store path in the new closure
-TARGET_NEW_PATH=$(grep -E "/nix/store/[a-z0-9]+-${TARGET_PKG}(-[0-9.]+)?$" "$NEW_LIST" | head -n 1 || true)
+escaped_target="$(escape_ere "$TARGET_PKG")"
+
+store_path_for_package() {
+  local closure_file="$1"
+  grep -E "/nix/store/[a-z0-9]+-${escaped_target}(-[0-9][^/]*)?$" "$closure_file" | head -n 1 || true
+}
+
+# Find target package new store path in the new closure. The fallback is still
+# boundary-based, but never substring-based: target "core" must not match
+# coreutils, corepack, or other unrelated package names.
+TARGET_NEW_PATH=$(store_path_for_package "$NEW_LIST")
 if [[ -z "$TARGET_NEW_PATH" ]]; then
-  TARGET_NEW_PATH=$(grep -i "$TARGET_PKG" "$NEW_LIST" | head -n 1 || true)
+  TARGET_NEW_PATH=$(grep -E "/nix/store/[a-z0-9]+-[^/]*(^|[^[:alnum:]])${escaped_target}([^[:alnum:]]|$)" "$NEW_LIST" | head -n 1 || true)
 fi
 
 if [[ -z "$TARGET_NEW_PATH" ]]; then

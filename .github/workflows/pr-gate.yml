@@ -1,6 +1,4 @@
 # ClearCutt Hardened Fleets Pull Request Gating Workflow
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Hermetic Build, SBOM Generation, & CVE Scan Gating (No Registry Access)
 
 name: ClearCutt PR Gating
 
@@ -8,14 +6,11 @@ on:
   pull_request:
     branches:
       - main
-    # Skip the fleet matrix for PRs that can't affect build output.
-    paths-ignore:
-      - '.gitignore'
-      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
   statuses: write # Allows the ClearCutt build gate to report pass/fail status back to the SCM
 
 # Cancel superseded PR runs — the latest push is the only one anyone cares about.
@@ -24,8 +19,80 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changed Surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      fleet: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.fleet }}
+      service: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.service }}
+      site: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.site }}
+      integration: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.integration }}
+      go: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.go }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Classify changed paths
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        id: filter
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        with:
+          filters: |
+            fleet:
+              - 'core/**'
+              - 'clearcutt.fleet.yaml'
+              - 'schemas/**'
+              - '.github/actions/setup-nix/action.yml'
+              - '.github/workflows/pr-gate.yml'
+              - 'cli/cmd/**'
+              - 'cli/go.*'
+              - 'cli/internal/commands/fleet*.go'
+              - 'cli/internal/commands/matrix*.go'
+              - 'cli/internal/commands/platform*.go'
+              - 'cli/internal/fleet/**'
+            service:
+              - 'core/**'
+              - 'clearcutt.fleet.yaml'
+              - 'schemas/**'
+              - 'examples/service-images/**'
+              - '.github/actions/setup-nix/action.yml'
+              - '.github/workflows/pr-gate.yml'
+              - 'cli/cmd/**'
+              - 'cli/go.*'
+              - 'cli/internal/catalogbuild/**'
+              - 'cli/internal/commands/service*.go'
+              - 'cli/internal/commands/catalog_*.go'
+              - 'cli/internal/fleet/**'
+            site:
+              - 'site/**'
+              - 'cli/internal/sitetemplate/**'
+              - 'cli/internal/testdata/**'
+              - 'cli/internal/commands/catalog_site.go'
+              - 'docs/site-generator.md'
+              - '.github/workflows/pr-gate.yml'
+            integration:
+              - 'core/**'
+              - 'cli/**'
+              - 'clearcutt.fleet.yaml'
+              - 'schemas/**'
+              - '.github/actions/setup-nix/action.yml'
+              - '.github/workflows/pr-gate.yml'
+            go:
+              - 'AGENTS.md'
+              - 'README.md'
+              - 'docs/**'
+              - 'schemas/**'
+              - 'scripts/**'
+              - 'cli/**'
+              - '.agents/**'
+              - '.github/actions/**'
+              - '.github/workflows/**'
+              - '.github/copilot-instructions.md'
+
   fleet-matrix:
     name: Resolve Fleet Matrix
+    needs: [changes]
+    if: ${{ needs.changes.outputs.fleet == 'true' || needs.changes.outputs.service == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       release_matrix: ${{ steps.matrix.outputs.release_matrix }}
@@ -62,7 +129,8 @@ jobs:
 
   validate-matrix:
     name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [fleet-matrix]
+    needs: [changes, fleet-matrix]
+    if: ${{ needs.changes.outputs.fleet == 'true' }}
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 60
     strategy:
@@ -94,7 +162,10 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
+          # Fleet image derivations are shaped by flake inputs, lib helpers,
+          # registry/service metadata, and CVE overlays. Keep cache keys broad
+          # enough that package graph changes do not restore stale prefixes.
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
@@ -120,7 +191,8 @@ jobs:
 
   validate-service-images:
     name: Validate Service Image (${{ matrix.service }})
-    needs: [fleet-matrix]
+    needs: [changes, fleet-matrix]
+    if: ${{ needs.changes.outputs.service == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -151,7 +223,9 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-service-x86_64-linux-${{ hashFiles('core/flake.lock', 'core/lib/service-extensions.nix', 'core/overlays/**') }}
+          # Service image closures also depend on shared lib/build helpers, not
+          # just service-extensions.nix.
+          primary-key: nix-service-x86_64-linux-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-service-x86_64-linux-
 
       - name: Install Sigstore Cosign
@@ -179,6 +253,8 @@ jobs:
 
   site-ci:
     name: Catalog Site Service Fixture
+    needs: [changes]
+    if: ${{ needs.changes.outputs.site == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -230,6 +306,8 @@ jobs:
 
   integration-checks:
     name: Run Verification Gating Suite
+    needs: [changes]
+    if: ${{ needs.changes.outputs.integration == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -260,7 +338,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
+          primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
 
       # Required for structure tests and patchelf inside the suite
@@ -272,6 +350,8 @@ jobs:
 
   go-ci:
     name: Go Lint, Build, Test & Drift Guard
+    needs: [changes]
+    if: ${{ needs.changes.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -349,3 +429,89 @@ jobs:
             done
           done
           echo "Drift guard check PASSED!"
+
+  pr-gate-summary:
+    name: PR Gate Summary
+    needs:
+      - changes
+      - fleet-matrix
+      - validate-matrix
+      - validate-service-images
+      - site-ci
+      - integration-checks
+      - go-ci
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize required gate jobs
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/pr-gate-summary.py" <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          changes = needs.get("changes", {})
+          outputs = changes.get("outputs") or {}
+
+          def enabled(name):
+              return str(outputs.get(name, "")).lower() == "true"
+
+          selected = {
+              "fleet-matrix": enabled("fleet") or enabled("service"),
+              "validate-matrix": enabled("fleet"),
+              "validate-service-images": enabled("service"),
+              "site-ci": enabled("site"),
+              "integration-checks": enabled("integration"),
+              "go-ci": enabled("go"),
+          }
+
+          lines = [
+              "# PR Gate Summary",
+              "",
+              "## Path Filters",
+              "",
+              "| Surface | Selected |",
+              "| --- | --- |",
+          ]
+          for name in ["fleet", "service", "site", "integration", "go"]:
+              lines.append(f"| `{name}` | `{enabled(name)}` |")
+
+          lines.extend([
+              "",
+              "## Job Results",
+              "",
+              "| Job | Expected | Result |",
+              "| --- | --- | --- |",
+          ])
+
+          failures = []
+          changes_result = changes.get("result")
+          lines.append(f"| `changes` | `success` | `{changes_result}` |")
+          if changes_result != "success":
+              failures.append(f"changes={changes_result}")
+
+          for name, is_selected in selected.items():
+              result = (needs.get(name) or {}).get("result")
+              expected = "success" if is_selected else "skipped"
+              lines.append(f"| `{name}` | `{expected}` | `{result}` |")
+              if is_selected and result != "success":
+                  failures.append(f"{name}={result} (selected)")
+              elif not is_selected and result in {"failure", "cancelled"}:
+                  failures.append(f"{name}={result} (not selected)")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as summary:
+                  summary.write("\n".join(lines) + "\n")
+          else:
+              print("\n".join(lines))
+
+          if failures:
+              print("Required PR gate contract failed:", ", ".join(failures), file=sys.stderr)
+              sys.exit(1)
+          PY
+          python3 "$RUNNER_TEMP/pr-gate-summary.py"

@@ -6,7 +6,7 @@ Every agent MUST respect and preserve the following design decisions, constraint
 
 ## 1. Nix hermetic overlay isolation
 
-* **RPATH / RUNPATH Isolation:** Run-times (Java, Node.js, Python, etc.) compiled by our Nix image factory are bound strictly to Nix store subpaths. They perform execution in isolation from the host filesystem's `/lib` or `/usr/lib`. This preserves security but assumes downstream applications have no hard dependencies on external host-operating system libraries outside the Nix store closure.
+* **RPATH / RUNPATH Isolation:** Distroless run-times compiled by the Nix image factory must resolve dynamic libraries from Nix store subpaths and must not ship `/lib` or `/lib64` fallback shims. Slim, dev, and service tiers may retain documented FHS compatibility shims for downstream binaries; do not describe those tiers as the strict dynamic-linkage boundary.
 * **Mac OS Cross-Compilation Constraint:** You can run development shells on macOS, but **cross-compiling runtimes (like Java JDK, Node, .NET) from macOS to Linux target layers via Nix `pkgsCross` is unstable and unsupported**. Production matrix builds MUST be built on native Linux (e.g., standard Linux VM or CI runner).
 
 ---

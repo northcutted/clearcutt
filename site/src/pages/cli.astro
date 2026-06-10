@@ -122,7 +122,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
             Runs catalog and release-evidence checks. The image gate checks catalog-record evidence flags, smoke test status, active support lifecycles, and vulnerability thresholds; release-evidence verifies a published OCI ref with registry-side Cosign and SLSA checks.
           </p>
-          <CopyBlock language="shell" code={`# Enforce catalog policy gates locally on a fixture image\nclearcutt --catalog cli/internal/testdata/catalog verify image java21-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --require-provenance \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --allow-preview\n\n# Verify published OCI release evidence against Cosign + SLSA\nclearcutt verify release-evidence \\\n  --ref ${registryBase}/${java25ImageName}:${imageReleaseTag}-distroless \\\n  --repo ${ownerRepo} \\\n  --workflow-identity "https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main"\n\n# Validate local catalog structure and schemas\nclearcutt --catalog cli/internal/testdata/catalog catalog validate\n\n# Check generated-catalog evidence completeness\nclearcutt --catalog ./dist/catalog verify catalog`} />
+          <CopyBlock language="shell" code={`# Enforce catalog policy gates locally on a fixture image\nclearcutt --catalog cli/internal/testdata/catalog verify image java21-distroless \\\n  --require-signature \\\n  --require-sbom \\\n  --require-provenance \\\n  --max-critical 0 \\\n  --max-high 3 \\\n  --allow-preview\n\n# Verify published OCI release evidence against Cosign + SLSA\nclearcutt verify release-evidence \\\n  --ref ${registryBase}/${java25ImageName}:${imageReleaseTag}-distroless \\\n  --repo ${ownerRepo} \\\n  --workflow-identity "https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main"\n\n# Verify a local rebuild against published layers\nclearcutt verify rebuild ${registryBase}/${java21ImageName}:${imageReleaseTag}-distroless \\\n  --target java21-distroless \\\n  --rebuild \\\n  --pull-registry-archive \\\n  --require-digest-match \\\n  --require-layer-match \\\n  --diffoscope-out rebuild.diff.txt \\\n  --output-predicate\n\n# Validate local catalog structure and schemas\nclearcutt --catalog cli/internal/testdata/catalog catalog validate\n\n# Check generated-catalog evidence completeness\nclearcutt --catalog ./dist/catalog verify catalog`} />
         </div>
 
         <!-- certify -->
@@ -167,13 +167,13 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <!-- overlay -->
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-6 space-y-4">
           <div class="space-y-1">
-            <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">overlay generate</span>
+            <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">overlay generate / verify</span>
             <h3 class="font-bold text-base text-ink-50">Nix Overlay Scaffolder</h3>
           </div>
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
-            Generates self-contained Nix multi-stage grafting workspaces to overlay ClearCutt runtimes onto enterprise-mandated base images. Includes Makefile, Containerfile, smoke tests, and GitHub Actions pipelines.
+            Generates flake-backed grafting workspaces to overlay ClearCutt runtimes onto enterprise-mandated base images. The verifier emits an offline in-toto predicate proving the grafted image preserves the runtime <code>/nix/store</code> closure bytes.
           </p>
-          <CopyBlock language="shell" code={`# Scaffold Java 25 UBI9 graft workspace\nclearcutt overlay generate \\\n  --runtime java25 \\\n  --tier distroless \\\n  --base registry.access.redhat.com/ubi9/ubi-minimal \\\n  --output my-java25-overlay/`} />
+          <CopyBlock language="shell" code={`# Scaffold Java 21 UBI9 graft workspace\nclearcutt overlay generate \\\n  --runtime java21 \\\n  --tier slim \\\n  --base registry.access.redhat.com/ubi9/ubi-minimal@sha256:... \\\n  --runtime-ref ${registryBase}/${java21ImageName}:${imageReleaseTag}-slim@sha256:... \\\n  --image ghcr.io/acme/java21-ubi:${imageReleaseTag} \\\n  --output my-java21-overlay/\n\n# Emit an offline closure-equivalence predicate\nclearcutt overlay verify \\\n  --runtime-archive clearcutt-java21.tar \\\n  --grafted-archive my-java21-overlay/result \\\n  --runtime-ref ${registryBase}/${java21ImageName}:${imageReleaseTag}-slim@sha256:... \\\n  --grafted-ref ghcr.io/acme/java21-ubi:${imageReleaseTag}@sha256:... \\\n  --target java21-slim \\\n  --output-predicate`} />
         </div>
 
         <!-- conformance -->
@@ -243,7 +243,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
         <div class="pt-4 border-t border-ink-800/40">
           <h3 class="text-xs uppercase tracking-wider text-ink-300 font-bold mb-1">2. Certification Policy YAML (`certification-policy.yaml`)</h3>
           <p class="text-xs text-ink-400 mb-2">Enforces downstream OCI compliance gates dynamically inside GHA workflows or local audits using <code>certify</code>:</p>
-          <CopyBlock language="yaml" code={`apiVersion: clearcutt.dev/v1\nkind: CertificationPolicy\nmetadata:\n  name: production-hardening-contract\nspec:\n  base:\n    allowedImages:\n      - "java25-distroless"\n      - "python3.15-slim"\n    requireDigestPinned: true\n    requireKnownBase: true\n  supplyChain:\n    requireSignature: true\n    requireProvenance: true\n    requireSbom: true\n    minimumSlsaLevel: 3\n  runtime:\n    requireNonRoot: true\n    forbidShell: true\n    forbidPackageManagers: true\n    forbidDevTier: true\n  lifecycle:\n    allowPreview: false\n    allowDeprecated: false\n    allowExperimental: false\n  vulnerabilities:\n    maxCritical: 0\n    maxHigh: 3\n    allowExceptions: true\n    exceptionFile: "exceptions.yaml"`} />
+          <CopyBlock language="yaml" code={`apiVersion: clearcutt.dev/v1\nkind: CertificationPolicy\nmetadata:\n  name: production-hardening-contract\nspec:\n  base:\n    allowedImages:\n      - "java21-distroless"\n      - "node22-slim"\n    requireDigestPinned: true\n    requireKnownBase: true\n  supplyChain:\n    requireSignature: true\n    requireProvenance: true\n    requireSbom: true\n    minimumSlsaLevel: 3\n  runtime:\n    requireNonRoot: true\n    forbidShell: true\n    forbidPackageManagers: true\n    forbidDevTier: true\n  lifecycle:\n    allowPreview: false\n    allowDeprecated: false\n    allowExperimental: false\n  vulnerabilities:\n    maxCritical: 0\n    maxHigh: 3\n    allowExceptions: true\n    exceptionFile: "exceptions.yaml"`} />
         </div>
 
         <div class="pt-4 border-t border-ink-800/40">

@@ -51,6 +51,15 @@ docker save "$APP_IMAGE" -o my-app.tar
   --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_IMAGE:TAG \
   --repo YOUR_ORG/YOUR_REPO \
   --workflow-identity 'https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main'
+
+./clearcutt verify rebuild ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java21:TAG-distroless \
+  --target java21-distroless \
+  --rebuild \
+  --pull-registry-archive \
+  --require-digest-match \
+  --require-layer-match \
+  --diffoscope-out rebuild.diff.txt \
+  --output-predicate
 ```
 
 ## Platform Owner Commands
@@ -69,6 +78,22 @@ docker save "$APP_IMAGE" -o my-app.tar
 ./clearcutt service validate --all
 ./clearcutt service build postgres16 --system x86_64-linux
 ./clearcutt service smoke postgres16 --engine docker
+
+./clearcutt overlay generate \
+  --runtime java21 \
+  --tier slim \
+  --base registry.access.redhat.com/ubi9/ubi-minimal@sha256:... \
+  --runtime-ref ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java21:TAG-slim@sha256:... \
+  --image ghcr.io/YOUR_ORG/java21-ubi:TAG \
+  --output overlays/java21-ubi
+
+./clearcutt overlay verify \
+  --runtime-archive clearcutt-java21.tar \
+  --grafted-archive overlays/java21-ubi/result \
+  --runtime-ref ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java21:TAG-slim@sha256:... \
+  --grafted-ref ghcr.io/YOUR_ORG/java21-ubi:TAG@sha256:... \
+  --target java21-slim \
+  --output-predicate
 ```
 
 ## Policy And Remediation Commands

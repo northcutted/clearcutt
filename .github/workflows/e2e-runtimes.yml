@@ -1,6 +1,5 @@
 # ClearCutt Hardened Fleets Heavy End-to-End (E2E) Runtime Lifecycle Tests
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Heavy Parallelized Strategy-Matrix Container Build, Run, Rebase, and Verify
+# Heavy runtime build, run, rebase, and verification workflow.
 
 name: ClearCutt E2E Runtimes
 
@@ -68,7 +67,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-e2e-${{ runner.os }}-${{ matrix.language }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
+          primary-key: nix-e2e-${{ runner.os }}-${{ matrix.language }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-e2e-${{ runner.os }}-${{ matrix.language }}-
 
       - name: Install Cosign & Skopeo Natively

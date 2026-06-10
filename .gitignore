@@ -17,6 +17,12 @@ result
 build-outputs/*
 core/build-outputs/*
 .claude/*
+
+# Harness-generated AI rule files. Source lives under .agents/context/.
+.claudeprompt
+.cursorrules
+.windsurfrules
+
 /clearcutt
 /cli/clearcutt
 cli/coverage.out
@@ -24,7 +30,9 @@ cli/coverage.txt
 cli/coverage.html
 cli/coverage-packages.txt
 cli/coverage-low-functions.txt
-.agent/active_context.md
+
+# Local per-run agent state. Keep .agents/context/active_context.example.md committed.
+.agents/context/active_context.md
 
 # Accidental nested output roots created when commands run from cli/.
 # The canonical project roots are /site, /examples, /docs, and /core.

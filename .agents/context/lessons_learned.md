@@ -7,12 +7,12 @@ This persistent ledger records critical repository-specific constraints, environ
 ## 1. Nix & Build Constraints
 
 ### macOS Cross-Compilation Failure
-* **Context:** Nix native development shells run perfectly on macOS. However, trying to compile standard target runtime matrix tiers (like Java JDK, Node runtimes, ASP.NET) from macOS to Linux target OCI layers via `pkgsCross` is unstable and fails.
+* **Context:** Nix native development shells run on macOS. However, trying to compile standard target runtime matrix tiers (like Java JDK, Node runtimes, ASP.NET) from macOS to Linux target OCI layers via `pkgsCross` is unstable and fails.
 * **Lesson:** Do not write or test macOS cross-compilation targets in `flake.nix` for production container builds. Standard target closures must be compiled on native Linux (VMs or CI runners).
 
 ### macOS `make` xcrun architecture mismatch
 * **Context:** Running `make agent-sync` on macOS hosts can crash with `xcrun: error: unable to load libxcrun` due to local Xcode arm64/arm64e compiler toolchain mismatches.
-* **Lesson:** When Apple's `xcrun` wrapper fails, bypass `make` and run the script directly: `bash .agent/sync.sh`.
+* **Lesson:** When Apple's `xcrun` wrapper fails, bypass `make` and run the script directly: `bash .agents/sync.sh`.
 
 ---
 
@@ -52,7 +52,7 @@ This persistent ledger records critical repository-specific constraints, environ
 
 ### Promote Lessons Deliberately
 * **Context:** Agent guidance can become stale or too large if every mistake is appended to persistent instructions.
-* **Lesson:** Capture repeated mistakes with the `clearcutt-retrospective` skill, then promote only small, evidence-backed lessons to the right surface: `AGENTS.md` for mandatory rules, `.agents/skills/` for repeatable workflows, `.agent/lessons_learned.md` for durable repo pitfalls, `.codex/rules/` for mechanical guardrails, and Codex Memories for local preference or historical context.
+* **Lesson:** Capture repeated mistakes with the `clearcutt-retrospective` skill, then promote only small, evidence-backed lessons to the right surface: `AGENTS.md` for mandatory rules, `.agents/skills/` for repeatable workflows, `.agents/context/lessons_learned.md` for durable repo pitfalls, `.codex/rules/` for mechanical guardrails, and Codex Memories for local preference or historical context.
 
 ### Token Efficiency Is A Quality Gate
 * **Context:** Broad searches, stale context, oversized logs, unnecessary full builds, and duplicated instruction files waste tokens and hide the useful signal.

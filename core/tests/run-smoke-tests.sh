@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # ClearCutt G4 Language Runtime Smoke Test Runner
-# Author: Eddie Northcutt
-# Paradigm: Post-Build Functional Verification (G4)
 
 set -euo pipefail
 

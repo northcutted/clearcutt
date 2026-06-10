@@ -65,6 +65,59 @@ func TestAppBuildCommandBuildsRebasableImage(t *testing.T) {
 	}
 }
 
+func TestAppBuildCommandAcceptsDirectoryArtifact(t *testing.T) {
+	client, host := commandTestRegistry(t)
+	restoreOCIClient(t, client)
+
+	base := commandTestImage(t, 611)
+	baseRef := host + "/bases/dotnet:v1.0.0"
+	if _, err := client.PushImage(baseRef, base); err != nil {
+		t.Fatalf("push base: %v", err)
+	}
+	publishDir := filepath.Join(t.TempDir(), "out")
+	if err := os.MkdirAll(publishDir, 0o755); err != nil {
+		t.Fatalf("create publish dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(publishDir, "DotnetApp.dll"), []byte("dll"), 0o600); err != nil {
+		t.Fatalf("write dll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(publishDir, "DotnetApp.runtimeconfig.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write runtimeconfig: %v", err)
+	}
+
+	appRef := host + "/apps/dotnet:1.0.0"
+	stdout, err := runCLI(t, "app", "build",
+		"--base", baseRef,
+		"--base-id", "dotnet8-distroless",
+		"--base-version", "v1.0.0",
+		"--artifact", publishDir,
+		"--dest", "/workspace",
+		"--entrypoint", `["dotnet","/workspace/DotnetApp.dll"]`,
+		"--image", appRef,
+		"--format", "json")
+	if err != nil {
+		t.Fatalf("app build command failed: %v\n%s", err, stdout)
+	}
+	var result AppBuildResult
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("unmarshal app build output: %v\n%s", err, stdout)
+	}
+	if result.Image != appRef || result.BaseID != "dotnet8-distroless" {
+		t.Fatalf("unexpected app build result: %+v", result)
+	}
+	app, err := client.PullImage(appRef)
+	if err != nil {
+		t.Fatalf("pull app: %v", err)
+	}
+	cfg, err := app.ConfigFile()
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	if got := strings.Join(cfg.Config.Entrypoint, " "); got != "dotnet /workspace/DotnetApp.dll" {
+		t.Fatalf("entrypoint = %q", got)
+	}
+}
+
 func TestEmitAppBuildResultTableAndYAMLBranches(t *testing.T) {
 	var buf bytes.Buffer
 	oldOut := out

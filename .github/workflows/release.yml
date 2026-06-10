@@ -1,6 +1,4 @@
 # ClearCutt Hardened Fleets Unified Release Workflow
-# Brand Owner & Principal Architect: Eddie Northcutt
-# Paradigm: Environment-Gated Continuous Delivery with Automated OIDC Signing & SLSA L3 Provenance
 
 name: ClearCutt Release
 
@@ -182,7 +180,9 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/overlays/**') }}
+          # Fleet image derivations are shaped by flake inputs, shared lib
+          # helpers, registry metadata, and CVE overlays.
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
@@ -291,7 +291,7 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-service-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/service-extensions.nix', 'core/overlays/**') }}
+          primary-key: nix-service-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-service-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign

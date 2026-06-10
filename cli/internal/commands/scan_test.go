@@ -225,6 +225,52 @@ exit 7
 	}
 }
 
+func TestScanKEVCatalogLoaderBranches(t *testing.T) {
+	if ptr := strPtrOrNil(""); ptr != nil {
+		t.Fatalf("empty string should not produce pointer: %v", *ptr)
+	}
+	if ptr := strPtrOrNil("2026.06.09"); ptr == nil || *ptr != "2026.06.09" {
+		t.Fatalf("expected string pointer, got %v", ptr)
+	}
+
+	catalog, status, version := loadScanKEVCatalog("")
+	if catalog != nil || status != "unavailable" || version != nil {
+		t.Fatalf("blank KEV path should be unavailable, got catalog=%v status=%q version=%v", catalog, status, version)
+	}
+
+	missingPath := filepath.Join(t.TempDir(), "missing-kev.json")
+	catalog, status, version = loadScanKEVCatalog(missingPath)
+	if catalog != nil || status != "unavailable" || version != nil {
+		t.Fatalf("missing KEV path should be unavailable, got catalog=%v status=%q version=%v", catalog, status, version)
+	}
+
+	invalidPath := filepath.Join(t.TempDir(), "invalid-kev.json")
+	writeTestFile(t, invalidPath, []byte(`not-json`))
+	catalog, status, version = loadScanKEVCatalog(invalidPath)
+	if catalog != nil || status != "unavailable" || version != nil {
+		t.Fatalf("invalid KEV path should be unavailable, got catalog=%v status=%q version=%v", catalog, status, version)
+	}
+
+	validPath := filepath.Join(t.TempDir(), "kev.json")
+	writeTestFile(t, validPath, []byte(`{
+  "catalogVersion": "2026.06.09",
+  "count": 1,
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2026-0001",
+      "vendorProject": "Python",
+      "product": "Python",
+      "knownRansomwareCampaignUse": "Known",
+      "dateAdded": "2026-06-09"
+    }
+  ]
+}`))
+	catalog, status, version = loadScanKEVCatalog(validPath)
+	if catalog == nil || status != "available" || version == nil || *version != "2026.06.09" || catalog.Count != 1 {
+		t.Fatalf("valid KEV path should load catalog, got catalog=%#v status=%q version=%v", catalog, status, version)
+	}
+}
+
 func TestScanStrictModeFailsWhenGrypeMissing(t *testing.T) {
 	t.Setenv("GRYPE_BIN", filepath.Join(t.TempDir(), "missing-grype"))
 	stdout, err := runCLI(t, "scan", "--mode", "release", "--sbom-dir", t.TempDir())
