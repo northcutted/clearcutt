@@ -233,7 +233,7 @@ func releaseEvidenceSummary(rel *catalog.ReleaseEntry) catalog.EvidenceSummary {
 		}
 		if arch.TestResults != nil {
 			testArch++
-			if arch.TestResults.Status == "passed" {
+			if catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, rel.Lifecycle.ProductionAllowed, rel.RuntimeContract.ProductionTier) {
 				passedTestArch++
 			}
 		}

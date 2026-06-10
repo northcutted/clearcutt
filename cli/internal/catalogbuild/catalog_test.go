@@ -561,6 +561,39 @@ func TestBuildServiceImageRecordFoldsReleaseEvidence(t *testing.T) {
 	}
 }
 
+func TestWarningTestResultsSatisfyOnlyNonProductionEvidence(t *testing.T) {
+	release := &gatherReleaseEntry{
+		Lifecycle:       Lifecycle{Status: "preview", Support: "preview", ProductionAllowed: false},
+		RuntimeContract: RuntimeContract{ProductionTier: false},
+		Architectures: []gatherArchPayload{
+			{Arch: "amd64", SBOM: gatherSBOMInfo{PackageCount: 1}, TestResults: &TestResults{Status: "warning"}, Vulnerabilities: rawJSONPtr(`{}`)},
+			{Arch: "arm64", SBOM: gatherSBOMInfo{PackageCount: 1}, TestResults: &TestResults{Status: "warning"}, Vulnerabilities: rawJSONPtr(`{}`)},
+		},
+	}
+	evidence := releaseEvidenceFromGather(release)
+	if !evidence.Tests || evidence.PassedTestArchCount != 2 {
+		t.Fatalf("non-production warning test results should satisfy evidence: %#v", evidence)
+	}
+
+	release.RuntimeContract.ProductionTier = true
+	evidence = releaseEvidenceFromGather(release)
+	if evidence.Tests || evidence.PassedTestArchCount != 0 {
+		t.Fatalf("production-tier warning test results should not satisfy evidence: %#v", evidence)
+	}
+
+	release.RuntimeContract.ProductionTier = false
+	release.Lifecycle.ProductionAllowed = true
+	evidence = releaseEvidenceFromGather(release)
+	if evidence.Tests || evidence.PassedTestArchCount != 0 {
+		t.Fatalf("production-allowed warning test results should not satisfy evidence: %#v", evidence)
+	}
+}
+
+func rawJSONPtr(value string) *json.RawMessage {
+	raw := json.RawMessage(value)
+	return &raw
+}
+
 func TestEnrichmentAttestationShapeOmitsReleaseAssetURL(t *testing.T) {
 	raw, err := json.Marshal(Enrichment{
 		Attestations: []EnrichmentAttestation{{

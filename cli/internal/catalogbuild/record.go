@@ -177,7 +177,7 @@ func releaseEvidenceFromGather(rel *gatherReleaseEntry) catalog.EvidenceSummary 
 		}
 		if arch.TestResults != nil {
 			testArch++
-			if arch.TestResults.Status == "passed" {
+			if catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, rel.Lifecycle.ProductionAllowed, rel.RuntimeContract.ProductionTier) {
 				passedTestArch++
 			}
 		}
@@ -208,7 +208,7 @@ func SummarizeImageForIndex(img ImageRecord) ImageSummary {
 	for _, arch := range latestRel.Architectures {
 		arches = append(arches, arch.Arch)
 		totalPackages += arch.SBOM.PackageCount
-		if arch.TestResults == nil || arch.TestResults.Status != "passed" {
+		if arch.TestResults == nil || !catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, latestRel.Lifecycle.ProductionAllowed, latestRel.RuntimeContract.ProductionTier) {
 			passed = false
 		}
 		if arch.vulnInfo != nil {

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 const (
@@ -270,6 +271,21 @@ type TestResultsInfo struct {
 type AssertionInfo struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+}
+
+// TestResultStatusSatisfiesPolicy returns whether a release test result should
+// satisfy the catalog test-evidence channel. Production-capable targets must
+// pass cleanly; non-production targets may emit warning when a non-blocking
+// vulnerability policy records advisory findings.
+func TestResultStatusSatisfiesPolicy(status string, productionAllowed, productionTier bool) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "passed":
+		return true
+	case "warning":
+		return !productionAllowed && !productionTier
+	default:
+		return false
+	}
 }
 
 // VulnerabilitiesInfo maps scanner vulnerability details.

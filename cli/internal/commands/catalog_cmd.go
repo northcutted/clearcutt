@@ -440,7 +440,7 @@ func serviceCatalogSummary(record catalog.ImageRecord) catalog.CatalogImageSumma
 	for _, arch := range latest.Architectures {
 		architectures = append(architectures, arch.Arch)
 		totalPackages += arch.SBOM.PackageCount
-		if arch.TestResults == nil || arch.TestResults.Status != "passed" {
+		if arch.TestResults == nil || !catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, latest.Lifecycle.ProductionAllowed, latest.RuntimeContract.ProductionTier) {
 			passed = false
 		}
 	}
@@ -565,7 +565,7 @@ func serviceEvidenceSummary(release catalog.ReleaseEntry) catalog.EvidenceSummar
 		}
 		if arch.TestResults != nil {
 			testArch++
-			if arch.TestResults.Status == "passed" {
+			if catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, release.Lifecycle.ProductionAllowed, release.RuntimeContract.ProductionTier) {
 				passedTestArch++
 			}
 		}
