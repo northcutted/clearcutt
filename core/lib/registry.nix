@@ -32,7 +32,7 @@ let
     } ''
       mkdir -p "$out"
       cp -a ${pkg}/. "$out/"
-      find "$out" -type f -exec chmod u+w '{}' +
+      chmod -R u+w "$out"
       find "$out" -type f -exec remove-references-to ${removeTargets} '{}' +
     '';
 
