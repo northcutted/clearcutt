@@ -23,6 +23,19 @@ let
     in
     if foundPath != null then lib.attrByPath foundPath null pkgs else null;
 
+  stripRuntimeReferences = { pkg, references, suffix ? "clearcutt-runtime" }:
+    let
+      removeTargets = lib.concatMapStringsSep " " (ref: "-t ${ref}") references;
+    in
+    pkgs.runCommand "${pkg.name}-${suffix}" {
+      nativeBuildInputs = [ pkgs.removeReferencesTo ];
+    } ''
+      mkdir -p "$out"
+      cp -a ${pkg}/. "$out/"
+      find "$out" -type f -exec chmod u+w '{}' +
+      find "$out" -type f -exec remove-references-to ${removeTargets} '{}' +
+    '';
+
   # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes.
   # symlinkJoin materializes a new store path whose bin/ and lib/ entries are
   # symlinks into the upstream nodejs derivation; postBuild then unlinks the
@@ -52,25 +65,32 @@ let
     };
 
     java = let
-      # Production tiers (slim/distroless) ship a JRE/headless runtime instead
-      # of the full JDK that `raw` resolves for the dev tier. The full JDK
-      # drags the desktop stack (gtk+3, cups, alsa-lib, dbus) plus compiler
-      # entry points (javac, jshell) into images that should only run
-      # bytecode. Candidate order, probed against the locked nixpkgs input:
-      #   1. temurin-jre-bin-<v>  — a true JRE: no javac/jshell, no X11/print
-      #      stack (verified present for 21 and 25 in the locked input; no
-      #      zulu JRE attr exists there).
-      #   2. jdk<v>_headless      — headless OpenJDK for forks pinned to a
-      #      nixpkgs without the Temurin JRE; drops the desktop libraries but
-      #      still carries the compiler tools.
-      #   3. openjdk<v>_headless  — legacy alias of the same.
-      javaProductionRuntime = javaVersion: [
-        (getPkg [
-          [ "temurin-jre-bin-${javaVersion}" ]
-          [ "jdk${javaVersion}_headless" ]
-          [ "openjdk${javaVersion}_headless" ]
-        ] "No Java ${javaVersion} JRE/headless production runtime (temurin-jre-bin-${javaVersion}, jdk${javaVersion}_headless, openjdk${javaVersion}_headless) is available in this nixpkgs version")
-      ];
+      # Production tiers build a JRE-shaped runtime from the headless OpenJDK.
+      # Temurin/Semeru binary JREs in the locked nixpkgs carry shell-bearing
+      # launcher wrappers or desktop/printing closures (cups -> avahi -> bash).
+      # `jre*_minimal` normally links against the full JDK; overriding its JDK
+      # inputs to the headless JDK keeps the runtime shell-free while jlink still
+      # emits a JRE output without javac/jshell entry points. ALL-MODULE-PATH is
+      # intentionally broader than java.base so general Java services keep the
+      # standard headless runtime modules instead of a toy minimal subset.
+      javaProductionRuntime = javaVersion:
+        let
+          minimalJre = getPkg [
+            [ "jre${javaVersion}_minimal" ]
+          ] "No Java ${javaVersion} jre${javaVersion}_minimal builder is available in this nixpkgs version";
+          headlessJdk = getPkg [
+            [ "jdk${javaVersion}_headless" ]
+            [ "openjdk${javaVersion}_headless" ]
+          ] "No Java ${javaVersion} headless JDK is available in this nixpkgs version";
+          buildHeadlessJdk = lib.attrByPath [ "buildPackages" "jdk${javaVersion}_headless" ] headlessJdk pkgs;
+        in
+        [
+          (minimalJre.override {
+            jdk = headlessJdk;
+            jdkOnBuild = buildHeadlessJdk;
+            modules = [ "ALL-MODULE-PATH" ];
+          })
+        ];
     in {
       versions = {
         "21" = {
@@ -125,7 +145,7 @@ let
       };
     };
 
-    python = {
+    python = let
       # Distroless override evaluation (2026-06): python3Minimal exists in the
       # locked nixpkgs (python3-minimal-3.13.13) but was deliberately NOT
       # adopted as a distrolessOverride:
@@ -135,23 +155,35 @@ let
       #     wheels, and most real services break out of the box;
       #   * it tracks the 3.13 sources only, so it could never serve the
       #     3.14/3.15 lines and would silently downgrade interpreters.
-      # The distroless python tier therefore intentionally ships the full
-      # python3xx runtime. Revisit if nixpkgs grows per-version minimal attrs
-      # that keep ssl/sqlite.
+      # Instead, distroless keeps the per-version full interpreter but strips
+      # the stale bash store references that live in config/helper scripts such
+      # as pythonX.Y-config, install-sh, makesetup, and ctypes test helpers.
+      # The interpreter and ssl/sqlite/readline runtime references are retained.
+      pythonDistrolessRuntime = py: [
+        (stripRuntimeReferences {
+          pkg = py;
+          references = [ pkgs.bash ];
+          suffix = "distroless-runtime";
+        })
+      ];
+    in {
       versions = {
         "3.13" = {
           overlayName = "clearcuttPython313";
-          raw = [ (getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python313" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python313" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.14" = {
           overlayName = "clearcuttPython314";
-          raw = [ (getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.15" = {
           overlayName = "clearcuttPython315";
-          raw = [ (getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python315" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python315" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
       };

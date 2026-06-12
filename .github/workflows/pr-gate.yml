@@ -181,12 +181,18 @@ jobs:
             --tier "${{ matrix.tier }}" \
             --core-dir core
 
-      # Upload the validated SBOM JSON as an artifact for audit checking
-      - name: Upload Local SBOM Artifact
+      # Upload local evidence even when a gate fails so reviewers can inspect
+      # the exact SBOM, Grype findings, and structured predicate.
+      - name: Upload Local Evidence Artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          name: evidence-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: |
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.grype.json
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
+          if-no-files-found: ignore
           retention-days: 7
 
   validate-service-images:
