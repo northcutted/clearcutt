@@ -172,8 +172,14 @@ jobs:
           # Fleet image derivations are shaped by flake inputs, lib helpers,
           # registry/service metadata, and CVE overlays. Keep cache keys broad
           # enough that package graph changes do not restore stale prefixes.
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-${{ matrix.system }}-
+          # The key is per matrix leg: with a shared key only the FIRST
+          # successful job saves, so every other leg's runtime stack (java,
+          # node, python...) would rebuild cold on every run whenever the CVE
+          # overlays diverge from upstream binary caches.
+          primary-key: nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
+            nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -238,9 +244,12 @@ jobs:
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           # Service image closures also depend on shared lib/build helpers, not
-          # just service-extensions.nix.
-          primary-key: nix-service-x86_64-linux-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-service-x86_64-linux-
+          # just service-extensions.nix. Per-service key for the same reason as
+          # validate-matrix: a shared key is only saved by the first success.
+          primary-key: nix-service-x86_64-linux-${{ matrix.service }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-service-x86_64-linux-${{ matrix.service }}-
+            nix-service-x86_64-linux-
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
