@@ -3,16 +3,12 @@
 
 name: ClearCutt E2E Runtimes
 
+# On pull requests this suite runs as part of the ClearCutt PR Gating
+# workflow (pr-gate.yml calls it via workflow_call) so reviewers watch a
+# single workflow; workflow_dispatch remains for manual runs.
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'core/**'
-      - 'cli/**'
-      - 'Makefile'
-      - '.github/workflows/e2e-runtimes.yml'
+  workflow_call:
 
 # contents: read is all this suite needs. The E2E lifecycle tests never touch
 # GHCR or Sigstore: core/tests/e2e-runtimes.sh pushes to a throwaway local
@@ -22,9 +18,10 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+# No workflow-level concurrency here: inside a workflow_call, github.workflow
+# resolves to the CALLING workflow's name, so a group declared here would
+# collide with the PR gate's own group and cancel the parent run. The caller
+# provides cancel-in-progress semantics for PRs.
 
 jobs:
   e2e-lifecycle-matrix:

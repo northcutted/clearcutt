@@ -75,8 +75,10 @@ jobs:
               - 'cli/**'
               - 'clearcutt.fleet.yaml'
               - 'schemas/**'
+              - 'Makefile'
               - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
+              - '.github/workflows/e2e-runtimes.yml'
             go:
               - 'AGENTS.md'
               - 'README.md'
@@ -443,6 +445,17 @@ jobs:
           done
           echo "Drift guard check PASSED!"
 
+  e2e-runtimes:
+    name: E2E Runtimes
+    needs: [changes]
+    # The heavy lifecycle suite shares the integration surface (core/cli/fleet
+    # config); it ran as a standalone pull_request workflow before being
+    # folded into this gate so PRs surface one workflow.
+    if: ${{ needs.changes.outputs.integration == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e-runtimes.yml
+
   pr-gate-summary:
     name: PR Gate Summary
     needs:
@@ -453,6 +466,7 @@ jobs:
       - site-ci
       - integration-checks
       - go-ci
+      - e2e-runtimes
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -480,6 +494,7 @@ jobs:
               "site-ci": enabled("site"),
               "integration-checks": enabled("integration"),
               "go-ci": enabled("go"),
+              "e2e-runtimes": enabled("integration"),
           }
 
           lines = [
