@@ -33,6 +33,7 @@ type scanFlags struct {
 	all         bool
 	kevFile     string
 	concurrency int
+	grypeConfig string
 }
 
 var scanOpts scanFlags
@@ -67,6 +68,7 @@ in catalog mode it is best-effort.`,
 	cmd.Flags().BoolVar(&scanOpts.all, "all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached tag (overrides --depth)")
 	cmd.Flags().StringVar(&scanOpts.kevFile, "kev-file", os.Getenv("KEV_FILE"), "Optional CISA KEV catalog JSON file for known-exploited enrichment")
 	cmd.Flags().IntVar(&scanOpts.concurrency, "concurrency", 0, "Parallel grype workers (0 = CPU count or $SCAN_CONCURRENCY)")
+	cmd.Flags().StringVar(&scanOpts.grypeConfig, "grype-config", os.Getenv("GRYPE_CONFIG"), "Grype config file with the fleet ignore rules (default: core/.grype.yaml when present)")
 	return cmd
 }
 
@@ -232,6 +234,27 @@ func runScan() error {
 	strict := scanStrictModes[scanOpts.mode]
 	grypeBin := envOr("GRYPE_BIN", "grype")
 	grypeOpts := strings.Fields(os.Getenv("GRYPE_OPTS"))
+
+	// Pass the fleet suppression config explicitly: grype only auto-discovers
+	// .grype.yaml from its working directory, and this command runs from the
+	// repo root (catalog build, release gate), not from core/. Without -c the
+	// published catalog would keep reporting CVEs that the gate has already
+	// remediated-and-suppressed via core/.grype.yaml.
+	grypeConfig := strings.TrimSpace(scanOpts.grypeConfig)
+	explicitConfig := grypeConfig != ""
+	if !explicitConfig {
+		grypeConfig = filepath.Join("core", ".grype.yaml")
+	}
+	if _, err := os.Stat(grypeConfig); err == nil {
+		grypeOpts = append([]string{"-c", grypeConfig}, grypeOpts...)
+		scanLogf("grype config: %s", grypeConfig)
+	} else if explicitConfig {
+		msg := fmt.Sprintf("[scan] grype config %s not found.", grypeConfig)
+		if strict {
+			return fmt.Errorf("%s", msg)
+		}
+		scanWarnf("grype config %s not found.", grypeConfig)
+	}
 
 	if _, err := exec.LookPath(grypeBin); err != nil {
 		msg := fmt.Sprintf("[scan] %s not on PATH - install Grype to enable CVE reporting.", grypeBin)
