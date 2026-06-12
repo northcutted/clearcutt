@@ -3,6 +3,68 @@
 This page is a compact map of the current CLI surface. It is not a replacement
 for `clearcutt --help`; use help output for the final flag contract.
 
+## Exit Codes
+
+The CLI distinguishes "the gate said no" from "the gate could not run":
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Command succeeded; all requested checks passed. |
+| `1` | Operational error: bad flags or arguments, IO failure, missing catalog data, or required tooling not available. |
+| `2` | Policy gate failed: a verification, conformance, certification, exception, or threshold check evaluated and rejected the input. |
+
+Exit code 2 applies to the gating commands — `verify image`, `verify catalog`,
+`verify rebuild`, `verify release-evidence`, `conformance run`, `certify`, and
+`exceptions validate` — plus the other check-list gates (`catalog validate`,
+`overlay verify`, `platform status`, `runtime validate`, `service validate`,
+`app diff-base`, `app rebase`). CI `run:` steps fail on any non-zero code, so
+existing workflow gates keep working; scripts that need to branch on "policy
+failure vs broken pipeline" can now test the code directly:
+
+```text
+clearcutt verify image <id> ...; case $? in
+  0) deploy ;;
+  2) block release: policy gate rejected the image ;;
+  *) investigate: verification could not run ;;
+esac
+```
+
+## Output Formats
+
+The global `--format` flag accepts `table` (default), `json`, or `yaml`.
+Unknown values are rejected before the command runs. The gating commands above
+emit a common machine-readable shape for `--format json|yaml`: an overall
+`status` (`pass` or `fail`) plus a `checks` array of
+`{id, status, message}` objects, with data on stdout and human commentary on
+stderr.
+
+## Install
+
+Releases ship cross-compiled binaries (`clearcutt-<os>-<arch>` for
+`darwin`/`linux`/`windows` on `amd64`/`arm64`), a keyless Sigstore signature
+bundle per binary (`<binary>.sig`, produced by `cosign sign-blob --bundle` in
+the release workflow), and a `SHA256SUMS.txt` manifest. Download a binary and
+its `.sig` bundle from the
+[latest release](https://github.com/northcutted/clearcutt/releases/latest)
+and verify before use:
+
+```bash
+cosign verify-blob \
+  --bundle clearcutt-linux-amd64.sig \
+  --certificate-identity 'https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  clearcutt-linux-amd64
+
+chmod +x clearcutt-linux-amd64
+./clearcutt-linux-amd64 --catalog cli/internal/testdata/catalog list
+```
+
+The identity is exact, not a pattern: releases run only from
+`refs/heads/main`, and the same string is pinned as
+`release.workflowIdentity` in `clearcutt.fleet.yaml` and passed to
+`clearcutt verify release-evidence --workflow-identity`. Build from source
+(below) when contributing.
+
 ## Build
 
 ```bash

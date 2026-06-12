@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 
-Status: historical audit snapshot. The readiness verdicts and P0/P1 blocker language in this file describe the repo before the post-audit hardening pass. For the current branch state, use `docs/analysis/post-hardening-readiness.md`.
+Status: historical audit snapshot. The readiness verdicts and P0/P1 blocker language in this file describe the repo before the post-audit hardening pass. For the current branch state, start with `docs/analysis/README.md`.
 
 Scope: read-only product, technical, documentation, site, CLI, release, and trust audit. This report synthesizes independent reviews from `product_strategist`, `platform_engineer`, `app_developer`, `security_auditor`, `cli_reviewer`, `catalog_site_reviewer`, `release_engineer`, `docs_architect`, `competitive_reviewer`, and `brutal_skeptic`, plus local command and file checks. No product files were changed.
 

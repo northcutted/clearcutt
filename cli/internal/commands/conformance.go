@@ -33,6 +33,16 @@ type ConformanceCheck struct {
 	Message string `json:"message"`
 }
 
+// ConformanceResponse is the standardized check-list payload emitted for
+// --format json|yaml, mirroring VerifyResponse from `verify image`. The legacy
+// ConformanceReport shape (assertions, passed/failed) remains the default
+// stdout form and the --output file format.
+type ConformanceResponse struct {
+	Status        string              `json:"status"` // pass or fail
+	ExpectRuntime string              `json:"expectRuntime"`
+	Checks        []VerifyCheckResult `json:"checks"`
+}
+
 func NewConformanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "conformance",
@@ -258,9 +268,32 @@ func runConformanceSuite() error {
 			return fmt.Errorf("failed to write conformance report file: %w", err)
 		}
 		if !GlobalOpts.Quiet {
-			fmt.Fprintf(out, "Successfully generated runtime conformance report file: %s\n", conformanceOpts.output)
+			// When --format json|yaml owns stdout, keep human commentary on stderr.
+			confirmation := out
+			if structuredFormat() {
+				confirmation = errOut
+			}
+			fmt.Fprintf(confirmation, "Successfully generated runtime conformance report file: %s\n", conformanceOpts.output)
 		}
-	} else {
+	}
+
+	switch {
+	case structuredFormat():
+		response := ConformanceResponse{
+			Status:        "pass",
+			ExpectRuntime: conformanceOpts.expectRuntime,
+			Checks:        make([]VerifyCheckResult, 0, len(checks)),
+		}
+		if hasFailures {
+			response.Status = "fail"
+		}
+		for _, check := range checks {
+			response.Checks = append(response.Checks, VerifyCheckResult{ID: check.Name, Status: check.Status, Message: check.Message})
+		}
+		if err := printStructured(response); err != nil {
+			return err
+		}
+	case conformanceOpts.output == "":
 		out.Write(reportData)
 		fmt.Fprintln(out)
 	}

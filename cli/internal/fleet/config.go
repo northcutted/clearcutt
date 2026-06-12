@@ -335,6 +335,8 @@ func DefaultConfig(owner, repo string) Config {
 				"java25",
 				"node22",
 				"node24",
+				"python3.13",
+				"python3.14",
 				"python3.15",
 				"go1.25",
 				"go1.26",

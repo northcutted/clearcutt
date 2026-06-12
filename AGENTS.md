@@ -215,6 +215,14 @@ Core remediation tests:
 cd core && python3 -m unittest tests/test_remediation_pipeline.py
 ```
 
+Nix eval checks on this host:
+
+```bash
+source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+nix --extra-experimental-features 'nix-command flakes' flake show ./core 2>&1 | head -50
+nix --extra-experimental-features 'nix-command flakes' eval ./core#packages.x86_64-linux.java21-distroless.name
+```
+
 Use the smallest relevant command set. Do not run broad Nix or release
 pipelines unless the task requires them.
 

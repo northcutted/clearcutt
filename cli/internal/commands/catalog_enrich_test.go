@@ -72,15 +72,40 @@ func TestCatalogEnrichCommandUsesCachedRecordsOffline(t *testing.T) {
 
 func TestCatalogEnrichmentArchitectureFromImageAndIndex(t *testing.T) {
 	amd64 := commandTestImage(t, 101)
+	manifest, err := amd64.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var layerSum int64
+	for _, layer := range manifest.Layers {
+		layerSum += layer.Size
+	}
+	if layerSum == 0 {
+		t.Fatal("test image has no layer bytes")
+	}
 	arch, err := enrichmentArchitecture("amd64", 1234, amd64)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if arch.Arch != "amd64" || arch.Size == nil || *arch.Size != 1234 || len(arch.Layers) == 0 || len(arch.Labels) == 0 {
-		t.Fatalf("unexpected single architecture enrichment: %#v", arch)
+	if arch.Arch != "amd64" || arch.Size == nil || *arch.Size != layerSum || len(arch.Layers) == 0 || len(arch.Labels) == 0 {
+		t.Fatalf("expected image size %d (compressed layer sum): %#v", layerSum, arch)
+	}
+	if arch.ManifestDescriptorSize == nil || *arch.ManifestDescriptorSize != 1234 {
+		t.Fatalf("expected manifest descriptor size 1234: %#v", arch)
 	}
 	if arch.Digest != nil {
 		t.Fatalf("direct architecture helper should not set descriptor digest: %#v", arch)
+	}
+
+	noDesc, err := enrichmentArchitecture("amd64", 0, amd64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noDesc.Size == nil || *noDesc.Size != layerSum {
+		t.Fatalf("expected layer-sum image size without descriptor: %#v", noDesc)
+	}
+	if noDesc.ManifestDescriptorSize != nil {
+		t.Fatalf("expected no manifest descriptor size when descriptor is absent: %#v", noDesc)
 	}
 
 	arm64 := commandTestImage(t, 202)
@@ -94,6 +119,12 @@ func TestCatalogEnrichmentArchitectureFromImageAndIndex(t *testing.T) {
 	}
 	if len(arches) != 2 || arches[0].Digest == nil || arches[1].Digest == nil {
 		t.Fatalf("expected two indexed architecture enrichments with digests: %#v", arches)
+	}
+	if arches[0].ManifestDescriptorSize == nil || *arches[0].ManifestDescriptorSize != 111 {
+		t.Fatalf("expected first indexed enrichment to carry descriptor size 111: %#v", arches[0])
+	}
+	if arches[0].Size == nil || *arches[0].Size != layerSum {
+		t.Fatalf("expected first indexed enrichment image size %d: %#v", layerSum, arches[0])
 	}
 
 	imageArches, err := enrichmentArchitectures(&oci.Resolved{Image: amd64})

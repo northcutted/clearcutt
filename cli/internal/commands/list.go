@@ -72,7 +72,7 @@ func runList() error {
 	case "yaml", "yml":
 		return output.PrintYAML(out, filtered)
 	default:
-			// Render the default table view.
+		// Render the default table view.
 		tp := output.NewTablePrinter(
 			"IMAGE",
 			"RUNTIME",

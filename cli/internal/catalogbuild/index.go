@@ -79,6 +79,13 @@ func BuildIndex(owner, repo, registryBase, generatedAt string, releases []Releas
 	schemaVersion := catalog.CatalogIndexSchemaVersion
 	if hasV2Image {
 		schemaVersion = catalog.CatalogIndexSchemaVersionV2
+		// The v2 index schema requires kind on every image summary; runtime
+		// records never carry one, so default them explicitly.
+		for i := range summaries {
+			if summaries[i].Kind == "" {
+				summaries[i].Kind = "runtime"
+			}
+		}
 	}
 	return Index{
 		SchemaVersion: schemaVersion,
@@ -90,7 +97,7 @@ func BuildIndex(owner, repo, registryBase, generatedAt string, releases []Releas
 		LatestTag:     latestTag,
 		Releases:      releaseSummaries,
 		Languages:     languageList(),
-		Tiers:         tierList(),
+		Tiers:         tierList(images),
 		Images:        summaries,
 	}
 }
@@ -112,11 +119,19 @@ func languageList() []Language {
 	return out
 }
 
-func tierList() []Tier {
-	out := make([]Tier, 0, len(gatherTierOrder))
+func tierList(images []ImageRecord) []Tier {
+	out := make([]Tier, 0, len(gatherTierOrder)+1)
 	for _, id := range gatherTierOrder {
 		tier := gatherTiers[id]
 		out = append(out, Tier{ID: id, Name: tier.Name, Blurb: tier.Blurb})
+	}
+	// Service images reference tier "service"; surface it in the index tier
+	// list so every images[].tier resolves against tiers[].
+	for _, img := range images {
+		if img.Kind == "service" {
+			out = append(out, serviceTier)
+			break
+		}
 	}
 	return out
 }

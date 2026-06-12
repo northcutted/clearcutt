@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -243,15 +244,48 @@ func ensureRawEvidenceDirs(outDir string) error {
 	return nil
 }
 
+// generatorIdentity resolves the version and commit stamped into generated
+// catalog indexes. The ldflags-injected Version always wins; the commit falls
+// back to the VCS metadata Go embeds into binaries built from a git checkout,
+// so a plain `go build` still records real provenance.
+func generatorIdentity() (version, commit string) {
+	info, _ := debug.ReadBuildInfo()
+	return generatorIdentityFromBuildInfo(Version, info)
+}
+
+func generatorIdentityFromBuildInfo(version string, info *debug.BuildInfo) (string, string) {
+	commit := "unknown"
+	if info != nil {
+		revision := ""
+		modified := false
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				revision = setting.Value
+			case "vcs.modified":
+				modified = setting.Value == "true"
+			}
+		}
+		if revision != "" {
+			commit = revision
+			if modified {
+				commit += "-dirty"
+			}
+		}
+	}
+	return catalogbuild.FirstNonEmptyStr(version, "dev"), commit
+}
+
 func stampCatalogIndexMetadata(outDir string) error {
 	index, err := catalog.LoadCatalogIndex(outDir)
 	if err != nil {
 		return err
 	}
+	generatorVersion, generatorCommit := generatorIdentity()
 	index.Generator = &catalog.CatalogGenerator{
 		Name:    "clearcutt",
-		Version: catalogbuild.FirstNonEmptyStr(Version, "dev"),
-		Commit:  "unknown",
+		Version: generatorVersion,
+		Commit:  generatorCommit,
 	}
 	index.Source = &catalog.CatalogSource{
 		Owner:        index.Owner,
@@ -366,7 +400,28 @@ func appendServiceCatalogRecords(outDir string, cfg fleet.Config) error {
 		fmt.Fprintf(out, "[generate] wrote service %s\n", service.ID)
 	}
 	index.SchemaVersion = catalog.CatalogIndexSchemaVersionV2
+	// The v2 index schema requires kind on every image summary; pre-existing
+	// runtime summaries never carry one, so default them explicitly.
+	for i := range index.Images {
+		if index.Images[i].Kind == "" {
+			index.Images[i].Kind = "runtime"
+		}
+	}
+	ensureServiceTierEntry(index)
 	return writeJSONFile(filepath.Join(outDir, "index.json"), index)
+}
+
+// ensureServiceTierEntry appends the service tier to the index tier list when
+// it is missing. Gather-built indexes already carry it (catalogbuild.tierList
+// adds it whenever service images are present), but this generate path can
+// synthesize service summaries into an index whose gather pass saw none.
+func ensureServiceTierEntry(index *catalog.CatalogIndex) {
+	for _, tier := range index.Tiers {
+		if tier.ID == "service" {
+			return
+		}
+	}
+	index.Tiers = append(index.Tiers, catalog.TierInfo{ID: "service", Name: "Service", Blurb: "Platform-owned service image"})
 }
 
 func serviceCatalogRecordFromExisting(cfg fleet.Config, service fleet.ServiceImage, existing catalog.ImageRecord) catalog.ImageRecord {

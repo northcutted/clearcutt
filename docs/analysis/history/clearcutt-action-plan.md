@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 
-Status: historical audit-derived backlog snapshot. Several P0/P1 items in this file have since been implemented, softened, or superseded by the post-audit hardening pass. For the current readiness state and superseded blocker list, use `docs/analysis/post-hardening-readiness.md`.
+Status: historical audit-derived backlog snapshot. Several P0/P1 items in this file have since been implemented, softened, or superseded by the post-audit hardening pass. For the current readiness state and superseded blocker list, start with `docs/analysis/README.md`.
 
 Purpose: phase the work needed before serious human feedback. This is an audit-derived plan only. It does not implement product changes.
 

@@ -14,10 +14,13 @@ on:
       - 'Makefile'
       - '.github/workflows/e2e-runtimes.yml'
 
+# contents: read is all this suite needs. The E2E lifecycle tests never touch
+# GHCR or Sigstore: core/tests/e2e-runtimes.sh pushes to a throwaway local
+# registry (localhost:5001, skopeo --dest-tls-verify=false) and asserts
+# signing behavior with a mock cosign stub (MOCK_COSIGN), so packages: write
+# and id-token: write must not be re-added here.
 permissions:
   contents: read
-  packages: write
-  id-token: write # Required for keyless OIDC Cosign signing checks
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}

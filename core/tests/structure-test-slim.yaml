@@ -20,6 +20,9 @@ fileExistenceTests:
   - name: 'Tmp Directory'
     path: '/tmp'
     shouldExist: true
+    # Sticky + world-writable: TMPDIR points here, and store-path layers
+    # cannot provide this mode (canonicalization strips it).
+    permissions: 'dtrwxrwxrwx'
   - name: 'Passwd File'
     path: '/etc/passwd'
     shouldExist: true
@@ -35,6 +38,15 @@ fileExistenceTests:
   - name: 'Sh Shell'
     path: '/bin/sh'
     shouldExist: true
+  - name: 'Npm Package Manager Absence'
+    path: '/bin/npm'
+    shouldExist: false
+  - name: 'Npx Package Runner Absence'
+    path: '/bin/npx'
+    shouldExist: false
+  - name: 'Corepack Package Manager Absence'
+    path: '/bin/corepack'
+    shouldExist: false
 
 fileContentTests:
   - name: 'Passwd Root User'

@@ -104,7 +104,13 @@ func validateCatalogDirectory(catalogPath string) catalogValidationReport {
 		addError("index.json: %v", err)
 	}
 
+	schemaValidator, err := catalog.NewSchemaValidator()
+	if err != nil {
+		addError("embedded JSON schemas: %v", err)
+	}
+
 	validateIndexSchemaVersion(index, catalogValidateOpts.schemaVersion, addError)
+	validateFileAgainstSchema(schemaValidator, catalogPath, "index.json", indexSchemaFile(index.SchemaVersion), addError)
 
 	seen := map[string]bool{}
 	for i, summary := range index.Images {
@@ -125,10 +131,12 @@ func validateCatalogDirectory(catalogPath string) catalogValidationReport {
 		}
 		report.ImageCount++
 		validateImageSchemaVersion(record, catalogValidateOpts.schemaVersion, addError)
+		validateFileAgainstSchema(schemaValidator, catalogPath, filepath.Join("images", summary.ID+".json"), imageRecordSchemaFile(record.SchemaVersion), addError)
 		validateCatalogRecord(catalogPath, index, summary, record, addError, addWarning)
 	}
 	validateNoOrphanImageRecords(catalogPath, seen, addError)
 	validateEvidenceManifest(catalogPath, catalogValidateOpts.schemaVersion, addError)
+	validateEvidenceManifestSchema(schemaValidator, catalogPath, addError)
 
 	report.finish()
 	return report
@@ -153,6 +161,64 @@ func validateNoOrphanImageRecords(catalogPath string, indexed map[string]bool, a
 			addError("images/%s: image record is not referenced by index.json", entry.Name())
 		}
 	}
+}
+
+// indexSchemaFile resolves the embedded JSON Schema for a declared index
+// schemaVersion. Indexes that omit schemaVersion are held to the v1 contract;
+// unknown versions return "" so the structural unsupported-version error stays
+// the single signal.
+func indexSchemaFile(schemaVersion string) string {
+	if schemaVersion == "" {
+		schemaVersion = catalog.CatalogIndexSchemaVersion
+	}
+	if file, ok := catalog.SchemaFileForVersion(schemaVersion); ok {
+		return file
+	}
+	return ""
+}
+
+// imageRecordSchemaFile mirrors indexSchemaFile for images/*.json records.
+func imageRecordSchemaFile(schemaVersion string) string {
+	if schemaVersion == "" {
+		schemaVersion = catalog.ImageRecordSchemaVersion
+	}
+	switch schemaVersion {
+	case catalog.ImageRecordSchemaVersion, catalog.ImageRecordSchemaVersionV2:
+		file, _ := catalog.SchemaFileForVersion(schemaVersion)
+		return file
+	}
+	return ""
+}
+
+// validateFileAgainstSchema validates a raw catalog file against an embedded
+// JSON Schema and reports each violation with file and JSON-pointer detail.
+func validateFileAgainstSchema(validator *catalog.SchemaValidator, catalogPath, relPath, schemaFile string, addError func(string, ...any)) {
+	if validator == nil || schemaFile == "" {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(catalogPath, relPath))
+	if err != nil {
+		addError("%s: %v", relPath, err)
+		return
+	}
+	violations, err := validator.Validate(schemaFile, data)
+	if err != nil {
+		addError("%s: schema %s: %v", relPath, schemaFile, err)
+		return
+	}
+	for _, violation := range violations {
+		addError("%s: schema %s: at %s", relPath, schemaFile, violation)
+	}
+}
+
+// validateEvidenceManifestSchema schema-validates evidence-manifest.json when
+// present; absence is handled by validateEvidenceManifest.
+func validateEvidenceManifestSchema(validator *catalog.SchemaValidator, catalogPath string, addError func(string, ...any)) {
+	if _, err := os.Stat(filepath.Join(catalogPath, evidenceManifestFilename)); err != nil {
+		return
+	}
+	schemaFile, _ := catalog.SchemaFileForVersion(catalog.EvidenceManifestSchemaVersion)
+	validateFileAgainstSchema(validator, catalogPath, evidenceManifestFilename, schemaFile, addError)
 }
 
 func validateEvidenceManifest(catalogPath, requestedSchema string, addError func(string, ...any)) {

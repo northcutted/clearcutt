@@ -27,6 +27,15 @@ var validCatalogSupport = map[string]bool{
 	"unsupported": true,
 }
 
+// VerifyCatalogResponse is the structured payload for --format json|yaml,
+// mirroring the check-list shape of VerifyResponse from `verify image`.
+type VerifyCatalogResponse struct {
+	Status        string              `json:"status"` // pass or fail
+	LatestTag     string              `json:"latestTag"`
+	ImagesChecked int                 `json:"imagesChecked"`
+	Checks        []VerifyCheckResult `json:"checks"`
+}
+
 type rawCatalogIndex struct {
 	Images []rawCatalogSummary `json:"images"`
 }
@@ -88,8 +97,10 @@ func runVerifyCatalog() error {
 	}
 	strict := !verifyCatalogOpts.lenientEvidence
 
-	var failures []string
-	failFor := func(id, msg string) { failures = append(failures, fmt.Sprintf("%s: %s", id, msg)) }
+	var failures []VerifyCheckResult
+	failFor := func(id, msg string) {
+		failures = append(failures, VerifyCheckResult{ID: id, Status: "fail", Message: msg})
+	}
 	checked := 0
 
 	for i := range index.Images {
@@ -198,21 +209,47 @@ func runVerifyCatalog() error {
 	}
 
 	if checked == 0 {
-		failures = append(failures, fmt.Sprintf("no images are published for latest tag %s", index.LatestTag))
-	}
-
-	if len(failures) > 0 {
-		fmt.Fprintf(errOut, "[catalog-verify] %d catalog data issue(s):\n", len(failures))
-		for _, failure := range failures {
-			fmt.Fprintf(errOut, "- %s\n", failure)
-		}
-		return ErrCheckFailed
+		failFor("catalog.index", fmt.Sprintf("no images are published for latest tag %s", index.LatestTag))
 	}
 
 	scope := "complete signature, provenance, SBOM, test, and scan evidence"
 	if !strict {
 		scope = "complete SBOM/scan coverage and internally consistent evidence summaries"
 	}
+
+	if structuredFormat() {
+		response := VerifyCatalogResponse{
+			Status:        "pass",
+			LatestTag:     index.LatestTag,
+			ImagesChecked: checked,
+			Checks:        failures,
+		}
+		if len(failures) == 0 {
+			response.Checks = []VerifyCheckResult{{
+				ID:      "catalog.evidence",
+				Status:  "pass",
+				Message: fmt.Sprintf("%d latest images have %s", checked, scope),
+			}}
+		} else {
+			response.Status = "fail"
+		}
+		if err := printStructured(response); err != nil {
+			return err
+		}
+		if len(failures) > 0 {
+			return ErrCheckFailed
+		}
+		return nil
+	}
+
+	if len(failures) > 0 {
+		fmt.Fprintf(errOut, "[catalog-verify] %d catalog data issue(s):\n", len(failures))
+		for _, failure := range failures {
+			fmt.Fprintf(errOut, "- %s: %s\n", failure.ID, failure.Message)
+		}
+		return ErrCheckFailed
+	}
+
 	fmt.Fprintf(out, "[catalog-verify] ok: %d latest images have %s.\n", checked, scope)
 	return nil
 }

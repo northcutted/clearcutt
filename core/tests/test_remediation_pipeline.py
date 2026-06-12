@@ -193,6 +193,38 @@ echo '{"matches":[]}'
         with self.assertRaisesRegex(ValueError, "postPatch"):
             draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
 
+    def test_version_bump_recipe_rejects_patch_append(self):
+        recipe = {
+            "route": "version_bump",
+            "package_attribute": "zlib",
+            "fixed_version": "1.3.2",
+            "overlay_expression": (
+                'zlib = prev.zlib.overrideAttrs (old: { '
+                'version = "1.3.2"; '
+                'patches = (old.patches or []) ++ [ ./fix.patch ]; '
+                "});"
+            ),
+        }
+
+        with self.assertRaisesRegex(ValueError, "version_bump recipes may set only"):
+            draft_agent.validate_recipe(recipe, "zlib", "CVE-2026-12345")
+
+    def test_fetchpatch_recipe_rejects_source_replacement(self):
+        recipe = {
+            "route": "fetchpatch",
+            "package_attribute": "openssl",
+            "patch_url": "https://github.com/openssl/openssl/commit/abc.patch",
+            "overlay_expression": (
+                'openssl = prev.openssl.overrideAttrs (old: { '
+                'src = prev.fetchurl { url = "https://example.invalid/openssl.tar.gz"; sha256 = "sha256-abc"; }; '
+                'patches = (old.patches or []) ++ [ ./fix.patch ]; '
+                "});"
+            ),
+        }
+
+        with self.assertRaisesRegex(ValueError, "fetchpatch recipes may set only"):
+            draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
     def test_recipe_can_target_nix_attribute_that_differs_from_scanned_package(self):
         recipe = {
             "route": "version_bump",

@@ -53,6 +53,35 @@ if ! regex_exists 'slsaBuilder: .+@v[0-9]+\.[0-9]+\.[0-9]+' clearcutt.fleet.yaml
   flag "release.slsaBuilder is missing an upstream-required full version tag"
 fi
 
+# GitHub-context expansion inside run: scripts is a script-injection vector:
+# untrusted event payload fields are pasted into shell code by the templater.
+# Pass them through the step's env: block instead. Line-based heuristic: track
+# run: block scalars by indentation and flag github.event expansion inside.
+run_injection="$(
+  awk '
+    function indent(line) { match(line, /^[[:space:]]*/); return RLENGTH }
+    /^[[:space:]]*(-[[:space:]]+)?run:/ {
+      in_run = 1
+      run_indent = indent($0)
+      if ($0 ~ /\$[{][{][[:space:]]*github\.event\./) printf "%s:%d:%s\n", FILENAME, FNR, $0
+      next
+    }
+    in_run {
+      if (NF > 0 && indent($0) <= run_indent) { in_run = 0; next }
+      if ($0 ~ /\$[{][{][[:space:]]*github\.event\./) printf "%s:%d:%s\n", FILENAME, FNR, $0
+    }
+  ' .github/workflows/*.yml .github/actions/*/action.yml
+)"
+
+if [ -n "$run_injection" ]; then
+  echo "$run_injection" >&2
+  flag "run: scripts must not expand \${{ github.event.* }}; hoist values into the step env: block"
+fi
+
+if search_regex 'go-version:[[:space:]]' .github/workflows .github/actions; then
+  flag "setup-go steps must use go-version-file: 'cli/go.mod' instead of a hardcoded go-version"
+fi
+
 deploy_site_block="$(
   awk '
     /^  deploy-site:/ {capture=1}

@@ -2,12 +2,12 @@
 
 Date: 2026-06-08
 
-Status: current follow-up note for the post-audit hardening branch. This file supersedes readiness verdicts and unresolved P0/P1 blocker language in the 2026-06-07 analysis snapshots:
+Status: historical follow-up note for the post-audit hardening branch. The current analysis landing page is `docs/analysis/README.md`. This file superseded readiness verdicts and unresolved P0/P1 blocker language in the 2026-06-07 analysis snapshots:
 
-- `docs/analysis/clearcutt-audit.md`
-- `docs/analysis/clearcutt-action-plan.md`
-- `docs/analysis/decisions-needed.md`
-- `docs/analysis/critical-path-0-review.md`
+- `docs/analysis/history/clearcutt-audit.md`
+- `docs/analysis/history/clearcutt-action-plan.md`
+- `docs/analysis/history/decisions-needed.md`
+- `docs/analysis/history/critical-path-0-review.md`
 
 Those files remain useful as historical audit inputs and backlog context, but their original "not ready" and "needs minor fixes" verdicts should not be read as the current branch state.
 

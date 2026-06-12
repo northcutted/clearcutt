@@ -4,6 +4,8 @@ This demo path is designed for a clean checkout. Steps marked "fixture-backed"
 use committed catalog data. Steps marked "live" require a fork, registry, or
 local container tooling.
 
+![Terminal demo of the fixture-backed ClearCutt path](images/demo.gif)
+
 ## 1. Explain The Project
 
 ```bash
@@ -57,16 +59,19 @@ go -C cli run ./cmd/clearcutt catalog site build \
 Expected readout: static HTML renders from fixture catalog data, including
 service records and image detail pages.
 
+Fixture-backed portal screenshots:
+
+![Catalog matrix generated from the mixed fixture catalog](images/catalog-matrix.png)
+
+![java21-distroless evidence section generated from the mixed fixture catalog](images/java21-distroless-evidence.png)
+
 ## 5. Live Trust Walkthrough
 
 Use [trust/evidence-walkthrough.md](trust/evidence-walkthrough.md) after a fork
-has published at least one release. Capture screenshots of:
-
-- docs front door role routing,
-- CLI fixture-backed `verify image`,
-- catalog homepage owner/registry/source snapshot,
-- one image detail page evidence section,
-- app template README or generated workflow.
+has published at least one release. The fixture screenshots above prove local
+rendering and catalog wiring; a fork owner should additionally compare them with
+the live Pages site for that fork's current registry, OIDC subject, signatures,
+SBOMs, provenance, scans, tests, and exception records.
 
 ## Feedback Questions
 

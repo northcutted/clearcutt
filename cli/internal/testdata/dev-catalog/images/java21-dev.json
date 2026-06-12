@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "clearcutt.catalog.image/v1",
   "id": "java21-dev",
   "language": {
     "id": "java",
@@ -16,13 +17,19 @@
   "lifecycle": {
     "status": "active",
     "support": "lts",
-    "productionAllowed": false
+    "productionAllowed": false,
+    "deprecatedAt": null,
+    "eolAt": null,
+    "reason": null
   },
   "runtimeContract": {
     "user": "10001",
     "workingDir": "/app",
     "shellPresent": true,
     "packageManagerPresent": true,
+    "caCertificatesPresent": true,
+    "timezoneDataPresent": true,
+    "defaultEntrypoint": "/usr/local/bin/java",
     "productionTier": false
   },
   "releases": [
@@ -33,18 +40,38 @@
       "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "architectures": [],
       "attestations": [],
-      "assetUrls": {},
+      "assetUrls": {
+        "sbom": {},
+        "provenance": null,
+        "testResults": {},
+        "digest": null
+      },
       "lifecycle": {
         "status": "active",
         "support": "lts",
-        "productionAllowed": false
+        "productionAllowed": false,
+        "deprecatedAt": null,
+        "eolAt": null,
+        "reason": null
       },
       "runtimeContract": {
         "user": "10001",
         "workingDir": "/app",
         "shellPresent": true,
         "packageManagerPresent": true,
+        "caCertificatesPresent": true,
+        "timezoneDataPresent": true,
+        "defaultEntrypoint": "/usr/local/bin/java",
         "productionTier": false
+      },
+      "exceptions": {
+        "total": 0,
+        "expired": 0,
+        "active": 0,
+        "acceptedRisk": 0,
+        "noFixAvailable": 0,
+        "falsePositive": 0,
+        "inheritedFromBase": 0
       }
     }
   ]

@@ -14,6 +14,15 @@ let
     if foundPath != null then lib.attrByPath foundPath null pkgs
     else throw errorMsg;
 
+  # Like getPkg, but resolves to null instead of throwing so a version spec can
+  # express "use the preferred attr when this nixpkgs has it, otherwise fall
+  # back to an in-registry transformation" without aborting evaluation.
+  getPkgOrNull = paths:
+    let
+      foundPath = lib.findFirst (path: lib.hasAttrByPath path pkgs) null paths;
+    in
+    if foundPath != null then lib.attrByPath foundPath null pkgs else null;
+
   # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes.
   # symlinkJoin materializes a new store path whose bin/ and lib/ entries are
   # symlinks into the upstream nodejs derivation; postBuild then unlinks the
@@ -42,37 +51,93 @@ let
       };
     };
 
-    java = {
+    java = let
+      # Production tiers (slim/distroless) ship a JRE/headless runtime instead
+      # of the full JDK that `raw` resolves for the dev tier. The full JDK
+      # drags the desktop stack (gtk+3, cups, alsa-lib, dbus) plus compiler
+      # entry points (javac, jshell) into images that should only run
+      # bytecode. Candidate order, probed against the locked nixpkgs input:
+      #   1. temurin-jre-bin-<v>  — a true JRE: no javac/jshell, no X11/print
+      #      stack (verified present for 21 and 25 in the locked input; no
+      #      zulu JRE attr exists there).
+      #   2. jdk<v>_headless      — headless OpenJDK for forks pinned to a
+      #      nixpkgs without the Temurin JRE; drops the desktop libraries but
+      #      still carries the compiler tools.
+      #   3. openjdk<v>_headless  — legacy alias of the same.
+      javaProductionRuntime = javaVersion: [
+        (getPkg [
+          [ "temurin-jre-bin-${javaVersion}" ]
+          [ "jdk${javaVersion}_headless" ]
+          [ "openjdk${javaVersion}_headless" ]
+        ] "No Java ${javaVersion} JRE/headless production runtime (temurin-jre-bin-${javaVersion}, jdk${javaVersion}_headless, openjdk${javaVersion}_headless) is available in this nixpkgs version")
+      ];
+    in {
       versions = {
         "21" = {
           overlayName = "clearcuttJava21";
           raw = [ (getPkg [ [ "zulu21" ] [ "temurin-bin-21" ] [ "jdk21" ] [ "openjdk21" ] ] "Java 21 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
+          slimOverride = javaProductionRuntime "21";
+          distrolessOverride = javaProductionRuntime "21";
         };
         "25" = {
           overlayName = "clearcuttJava25";
           raw = [ (getPkg [ [ "zulu25" ] [ "temurin-bin-25" ] [ "jdk25" ] [ "openjdk25" ] ] "Java 25 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
+          slimOverride = javaProductionRuntime "25";
+          distrolessOverride = javaProductionRuntime "25";
         };
       };
     };
 
-    node = {
+    node = let
+      # `raw` stays the full nodejs attr: it feeds the dev tier and the
+      # -native packages, which need npm. Production tiers prefer upstream's
+      # nodejs-slim_<v> (built with enableNpm = false — no npm/npx/corepack
+      # and no bundled npm module tree to scan), and fall back to removeNpm
+      # over the full attr on nixpkgs revisions without a slim build, so the
+      # fallback never silently re-ships npm.
+      nodeProductionRuntime = nodeVersion: rawPkgs:
+        let
+          slimPkg = getPkgOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
+        in
+        if slimPkg != null then [ slimPkg ] else map removeNpm rawPkgs;
+      nodeRaw22 = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+      nodeRaw24 = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+    in {
       versions = {
         "22" = {
           overlayName = "clearcuttNode22";
-          raw = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+          raw = nodeRaw22;
+          slimOverride = nodeProductionRuntime "22" nodeRaw22;
+          distrolessOverride = nodeProductionRuntime "22" nodeRaw22;
+          # Kept as the final resolveForTier fallback for forks whose registry
+          # forks drop the overrides while pinned to an older nixpkgs.
           useRemoveNpm = true;
         };
         "24" = {
           overlayName = "clearcuttNode24";
-          raw = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+          raw = nodeRaw24;
+          slimOverride = nodeProductionRuntime "24" nodeRaw24;
+          distrolessOverride = nodeProductionRuntime "24" nodeRaw24;
           useRemoveNpm = true;
         };
       };
     };
 
     python = {
+      # Distroless override evaluation (2026-06): python3Minimal exists in the
+      # locked nixpkgs (python3-minimal-3.13.13) but was deliberately NOT
+      # adopted as a distrolessOverride:
+      #   * it is built with withMinimalDeps = true, which disables OpenSSL,
+      #     sqlite, expat, mpdecimal, and readline — so the `ssl`, `sqlite3`,
+      #     and `pyexpat` stdlib modules are missing and HTTPS, pip-installed
+      #     wheels, and most real services break out of the box;
+      #   * it tracks the 3.13 sources only, so it could never serve the
+      #     3.14/3.15 lines and would silently downgrade interpreters.
+      # The distroless python tier therefore intentionally ships the full
+      # python3xx runtime. Revisit if nixpkgs grows per-version minimal attrs
+      # that keep ssl/sqlite.
       versions = {
         "3.13" = {
           overlayName = "clearcuttPython313";

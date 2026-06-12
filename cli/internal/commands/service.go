@@ -75,6 +75,10 @@ the generated Nix extension stays an implementation detail.`,
 		Short: "Add a service image to clearcutt.fleet.yaml",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default paths write into the repo root's fleet config and core/
+			// tree even when scaffolding from a subdirectory.
+			resolveRepoRootDefault(cmd, "fleet-config", &serviceOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &serviceOpts.coreDir)
 			return runServiceScaffold(args[0])
 		},
 	}
@@ -110,6 +114,9 @@ the generated Nix extension stays an implementation detail.`,
 		Short: "Validate service image config and generated backend extension",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate the same root-level files service scaffold writes.
+			resolveRepoRootDefault(cmd, "fleet-config", &serviceOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &serviceOpts.coreDir)
 			id := ""
 			if len(args) == 1 {
 				id = args[0]
@@ -638,6 +645,14 @@ func serviceFunctionalSmokeProfileFor(template string) (serviceFunctionalSmokePr
 			Name:     "valkey",
 			Probe:    []string{"valkey-cli", "-h", "127.0.0.1", "-p", "6379", "PING"},
 			Attempts: 20,
+			Delay:    time.Second,
+		}, true
+	case "postgres":
+		// Attempts match the entrypoint's own 30-second readiness window.
+		return serviceFunctionalSmokeProfile{
+			Name:     "postgres",
+			Probe:    []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432"},
+			Attempts: 30,
 			Delay:    time.Second,
 		}, true
 	default:

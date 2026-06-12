@@ -178,6 +178,9 @@ func evidenceManifestReleaseForRecord(record *catalog.ImageRecord, release catal
 		VEX:             vexChannelStatus(record.ID, release.Tag, release.Exceptions),
 	}
 	row.Missing = missingEvidenceChannels(row.Channels)
+	// evidence-manifest.v1.schema.json types architectures as an array, so
+	// releases without architectures must serialize as [] rather than null.
+	row.Architectures = []evidenceManifestArchitecture{}
 	for _, arch := range release.Architectures {
 		testPassed := arch.TestResults != nil && catalog.TestResultStatusSatisfiesPolicy(arch.TestResults.Status, release.Lifecycle.ProductionAllowed, release.RuntimeContract.ProductionTier)
 		row.Architectures = append(row.Architectures, evidenceManifestArchitecture{

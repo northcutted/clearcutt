@@ -15,7 +15,9 @@ case "$service" in
     expected_entrypoint="/bin/clearcutt-postgres-entrypoint"
     expected_env="PGDATA=/var/lib/postgresql/data"
     data_dirs=("/var/lib/postgresql/data")
-    command_only="true"
+    # Functional smoke boots the real entrypoint and waits for pg_isready,
+    # which exercises the writable-/tmp contract (`postgres -k /tmp`).
+    command_only="false"
     ;;
   valkey8)
     expected_port="6379/tcp"
@@ -92,6 +94,14 @@ require(entrypoint == [expected_entrypoint], f"{service}: expected Entrypoint {[
 env = set(config.get("Env") or [])
 if expected_env:
     require(expected_env in env, f"{service}: expected env {expected_env}, got {sorted(env)}")
+
+# Production service images must never set LD_LIBRARY_PATH: glibc resolves
+# DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, so a global FHS LD_LIBRARY_PATH
+# outranks the store-bound RUNPATH on every Nix binary in the image.
+require(
+    not any(entry.startswith("LD_LIBRARY_PATH=") for entry in env),
+    f"{service}: service image must not bake LD_LIBRARY_PATH into its OCI config, got {sorted(env)}",
+)
 
 labels = config.get("Labels") or {}
 require(labels.get("dev.clearcutt.image.kind") == "service", f"{service}: missing service kind label")

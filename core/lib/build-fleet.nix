@@ -1,13 +1,14 @@
 # ClearCutt modular fleet base image compiler.
+#
+# `pkgs` is required: a `<nixpkgs>` channel fallback would silently build
+# images from the host channel instead of the locked, CVE-remediated input.
 
-{ pkgs ? import <nixpkgs> {}
+{ pkgs
 , platformMetadata ? import ./platform-metadata.nix
+, registry ? import ./registry.nix { inherit pkgs; }
 }:
 
 let
-  # Import centralized language and runtime registry
-  registry = import ./registry.nix { inherit pkgs; };
-
   # Injected user configurations for secure, rootless compliance
   uid = "10001";
   gid = "10001";
@@ -34,12 +35,6 @@ let
   # Static rootless system configuration derivations
   passwdFile = pkgs.writeTextDir "etc/passwd" passwdContents;
   groupFile = pkgs.writeTextDir "etc/group" groupContents;
-
-  # Isolated filesystem workspaces with optimized permissions
-  tmpDir = pkgs.runCommand "cc-tmp-dir" {} ''
-    mkdir -p $out/tmp
-    chmod 1777 $out/tmp
-  '';
 
   # Compile standard FHS dynamic linker symlinks for non-distroless compatibility
   # tiers. Distroless omits these and relies only on store-bound RPATH/RUNPATH.
@@ -92,7 +87,6 @@ let
   baseContents = [
     passwdFile
     groupFile
-    tmpDir
   ];
 
   baseEnv = [
@@ -102,6 +96,16 @@ let
     "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
   ];
 
+  # Dev-tier-only FHS escape hatch. glibc resolves libraries in the order
+  # DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, and Nix-built binaries carry
+  # their store-bound dependencies in DT_RUNPATH — so a global
+  # LD_LIBRARY_PATH pointing at /lib:/lib64 outranks the hermetic store
+  # resolution on every binary in the image, which is exactly the drift
+  # class the RPATH/interpreter gate exists to prevent. Production tiers
+  # (slim/distroless) and service images therefore never set it; foreign
+  # FHS binaries in slim/service images are still covered by the
+  # /lib,/lib64 loader symlinks (lib64Symlink), which sit on the dynamic
+  # loader's default search path without overriding DT_RUNPATH.
   fhsCompatibilityEnv = [
     "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
   ];
@@ -110,7 +114,7 @@ let
     baseContents ++ pkgs.lib.optionals (tier != "distroless") [ lib64Symlink ];
 
   envForTier = tier:
-    baseEnv ++ pkgs.lib.optionals (tier != "distroless") fhsCompatibilityEnv;
+    baseEnv ++ pkgs.lib.optionals (tier == "dev") fhsCompatibilityEnv;
 
   splitNixAttrPath = path:
     pkgs.lib.filter (segment: segment != "") (pkgs.lib.splitString "." path);
@@ -151,6 +155,15 @@ let
   prepareAppWorkspace = ''
     mkdir -p app
     chmod 0755 app
+  '';
+
+  # /tmp must be created here rather than as a store-path layer: Nix store
+  # canonicalization strips write and sticky bits, so a `chmod 1777` store
+  # directory lands read-only (0555) in the image — breaking every workload
+  # pointed at it by TMPDIR and the postgres entrypoint's `-k /tmp` socket.
+  prepareTmpWorkspace = ''
+    mkdir -p tmp
+    chmod 1777 tmp
   '';
 
   ownAppWorkspace = ''
@@ -254,7 +267,7 @@ in
     mergedConfig = pkgs.lib.recursiveUpdate defaultConfig extraConfig;
 
   in
-  pkgs.dockerTools.buildLayeredImage {
+  (pkgs.dockerTools.buildLayeredImage {
     inherit name tag fromImage maxLayers;
     contents = allContents;
     extraCommands = ''
@@ -264,9 +277,15 @@ in
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
       ${prepareAppWorkspace}
+      ${prepareTmpWorkspace}
     '';
     fakeRootCommands = ownAppWorkspace;
     config = mergedConfig;
+  }) // {
+    # Exposed for the flake's closure-purity checks: the exact package set
+    # layered into the image, so `nix flake check` can run closureInfo over
+    # it without unpacking the OCI tarball.
+    clearcuttContents = allContents;
   };
 
   buildServiceImage = {
@@ -317,7 +336,10 @@ in
     defaultConfig = {
       User = "${uid}:${gid}";
       WorkingDir = "/app";
-      Env = baseEnv ++ fhsCompatibilityEnv ++ serviceEnv;
+      # Service images are production surfaces: no LD_LIBRARY_PATH (see
+      # fhsCompatibilityEnv above); the /lib,/lib64 symlinks remain for
+      # foreign FHS binaries.
+      Env = baseEnv ++ serviceEnv;
       Labels = ociLabels;
     }
     // pkgs.lib.optionalAttrs (servicePorts != []) {
@@ -343,6 +365,7 @@ in
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
       ${prepareAppWorkspace}
+      ${prepareTmpWorkspace}
       ${serviceRuntimeCommands}
       ${prepareDataDirs dataDirs}
     '';
