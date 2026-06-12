@@ -30,7 +30,9 @@ jobs:
   e2e-lifecycle-matrix:
     name: E2E Lifecycle (${{ matrix.language }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Warm-cache runs finish in minutes; sized for cold-cache rebuilds after
+    # a CVE overlay or flake.lock change invalidates the nix cache key.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
