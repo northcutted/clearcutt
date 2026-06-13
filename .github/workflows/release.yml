@@ -191,6 +191,9 @@ jobs:
           # helpers, registry metadata, and CVE overlays.
           primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -300,6 +303,9 @@ jobs:
         with:
           primary-key: nix-service-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-service-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

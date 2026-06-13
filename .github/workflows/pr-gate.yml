@@ -182,6 +182,9 @@ jobs:
           restore-prefixes-first-match: |
             nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
             nix-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -252,6 +255,9 @@ jobs:
           restore-prefixes-first-match: |
             nix-service-x86_64-linux-${{ matrix.service }}-
             nix-service-x86_64-linux-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -366,6 +372,9 @@ jobs:
         with:
           primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       # Required for structure tests and patchelf inside the suite
       - name: Install Cosign & Gating Tools
