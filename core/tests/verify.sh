@@ -625,6 +625,31 @@ test_distroless_boundaries() {
   fi
 
   log_pass "Distroless closure purity verified across the full /nix/store closure."
+
+  # Runtime-patch completeness (the CVE keystone): walk the SHIPPED closure
+  # of both the slim and distroless tiers — slim ships the openssl-linked
+  # runtime too — and fail if any openssl/sqlite store path is below the
+  # committed floor (tests/runtime-dep-floor.json). Default-deny, so a stock
+  # 3.6.2 or an unpatched older major is a hard failure here, not a silent
+  # ship. Same image archives that the purity gate already consumes.
+  local slim_tar="build-outputs/coreLTS-slim.tar.gz"
+  if [ ! -f "$slim_tar" ]; then
+    log_info "Slim image tarball not found for runtime-cve gate. Invoking build runner..."
+    local slim_link="build-outputs/coreLTS-slim-link"
+    nix build ".#coreLTS-slim" --out-link "$slim_link" --extra-experimental-features "nix-command flakes" --accept-flake-config
+    cp -L "$slim_link" "$slim_tar"
+    rm -f "$slim_link"
+  fi
+
+  log_info "Walking slim + distroless /nix/store closures for unpatched openssl/sqlite (floor: tests/runtime-dep-floor.json)..."
+  if ! python3 ./tests/closure-cve-check.py "$slim_tar" --floor ./tests/runtime-dep-floor.json; then
+    log_fail "Slim runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
+  fi
+  if ! python3 ./tests/closure-cve-check.py "$build_tar" --floor ./tests/runtime-dep-floor.json; then
+    log_fail "Distroless runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
+  fi
+
+  log_pass "Runtime-patch completeness verified: slim + distroless ship only patched openssl/sqlite."
 }
 
 # ----------------------------------------------------
