@@ -26,6 +26,9 @@
       # images, grafted images, brokered shells, and exported overlays must
       # all resolve from the same remediated package set.
       cveRemediationOverlay = import ./overlays/cve-remediation.nix;
+      # Build-toolchain fixes for packages the CVE rebinds force from source
+      # (e.g. p11-kit's sandbox-flaky test); see overlays/toolchain-ci-fixes.nix.
+      toolchainFixesOverlay = import ./overlays/toolchain-ci-fixes.nix;
       nixpkgsConfig = {
         # `allowUnfree` is required for JDKs (Zulu/Oracle) and a few fonts.
         # `allowBroken` was removed: it let Nix produce binaries from
@@ -37,7 +40,7 @@
       importRemediatedNixpkgs = system: import nixpkgs {
         inherit system;
         config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay ];
+        overlays = [ cveRemediationOverlay toolchainFixesOverlay ];
       };
 
       perSystem = system:
@@ -203,6 +206,7 @@
       # runtimes the fleet images ship.
       overlays.default = nixpkgs.lib.composeManyExtensions [
         cveRemediationOverlay
+        toolchainFixesOverlay
         (final: prev:
           let
             helpers = import ./lib/nix-native.nix { inherit self; pkgs = prev; };
