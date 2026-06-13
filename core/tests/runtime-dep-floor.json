@@ -1,0 +1,7 @@
+{
+  "comment": "Runtime-patch completeness floor: minimum acceptable versions for CVE-remediated deps that ship inside a production image closure. Default-deny — any openssl/sqlite store path below these floors fails the runtime-cve gate, which also catches nixpkgs' unpatched older majors (openssl_3_5=3.5.6, openssl_3=3.0.20, stock openssl 3.6.2, stock sqlite 3.51.2). Single source of truth for closure-cve-check.py. Sourced from the CVE evidence files: core/overlays/cve/cve-2026-34182-openssl.evidence.json (fixedVersion 3.6.3) and core/overlays/cve/cve-2026-11822-sqlite.evidence.json (fixedVersion 3.53.2). When a new fixed release lands, bump the minVersion here and in the evidence JSON together.",
+  "deps": [
+    {"name": "openssl", "minVersion": "3.6.3"},
+    {"name": "sqlite", "minVersion": "3.53.2"}
+  ]
+}
