@@ -274,6 +274,31 @@ certify_target() {
     fi
   fi
 
+  # C1.6. Runtime-patch completeness gate: the CVE keystone. For any runtime
+  # target that ships the openssl-linked runtime (slim + distroless — dev is
+  # non-blocking and intentionally stock), walk the SHIPPED closure of the
+  # built archive and fail if any openssl/sqlite store path is below the
+  # committed floor (tests/runtime-dep-floor.json). Default-deny, so a stock
+  # 3.6.2 or an unpatched older major is a hard failure, never a silent ship.
+  # Mirrors the closurePurity predicate and the verify.sh / flake-check gates.
+  local runtime_patch_status="skipped"
+  local runtime_patch_bool="null"
+  if [[ "$target_kind" == "runtime" && ( "$tier" == "slim" || "$tier" == "distroless" ) ]]; then
+    local pipeline_dir
+    pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    log_info "Executing runtime-patch completeness gate (unpatched openssl/sqlite below floor) on $tier target..."
+    if python3 "$pipeline_dir/../tests/closure-cve-check.py" "$uncompressed_tar" \
+      --floor "$pipeline_dir/../tests/runtime-dep-floor.json"; then
+      runtime_patch_status="passed"
+      runtime_patch_bool="true"
+      log_success "Runtime-patch completeness gate passed: shipped closure carries only patched openssl/sqlite."
+    else
+      runtime_patch_status="failed"
+      runtime_patch_bool="false"
+      log_error "Runtime-patch completeness gate failed: shipped closure carries an unpatched openssl/sqlite below the floor."
+    fi
+  fi
+
   rm -f "$uncompressed_tar" 2>/dev/null || true
 
   # C2. Generate structured test results predicate
@@ -282,6 +307,9 @@ certify_target() {
   local aggregate_inputs=("passed" "passed" "$grype_assertion_status")
   if [[ "$closure_purity_status" != "skipped" ]]; then
     aggregate_inputs+=("$closure_purity_status")
+  fi
+  if [[ "$runtime_patch_status" != "skipped" ]]; then
+    aggregate_inputs+=("$runtime_patch_status")
   fi
   test_results_status="$(aggregate_assertion_status "${aggregate_inputs[@]}")"
   local policy_blocking="true"
@@ -305,6 +333,7 @@ certify_target() {
   "tier": "$tier",
   "status": "$test_results_status",
   "closurePurity": $closure_purity_bool,
+  "runtimePatchComplete": $runtime_patch_bool,
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "policy": {
     "blocking": $policy_blocking,
@@ -333,6 +362,10 @@ certify_target() {
     {
       "name": "Closure Purity (distroless boundary)",
       "status": "$closure_purity_status"
+    },
+    {
+      "name": "Runtime-Patch Completeness (CVE floor)",
+      "status": "$runtime_patch_status"
     }
   ]
 }
@@ -342,6 +375,9 @@ EOF
     return "$grype_exit"
   fi
   if [[ "$closure_purity_status" == "failed" ]]; then
+    return 1
+  fi
+  if [[ "$runtime_patch_status" == "failed" ]]; then
     return 1
   fi
 
