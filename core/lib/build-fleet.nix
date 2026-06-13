@@ -4,8 +4,9 @@
 # images from the host channel instead of the locked, CVE-remediated input.
 
 { pkgs
+, runtimePkgs ? pkgs
 , platformMetadata ? import ./platform-metadata.nix
-, registry ? import ./registry.nix { inherit pkgs; }
+, registry ? import ./registry.nix { pkgs = runtimePkgs; }
 }:
 
 let
@@ -40,23 +41,23 @@ let
   # tiers. Distroless omits these and relies only on store-bound RPATH/RUNPATH.
   lib64Symlink = pkgs.runCommand "lib64-symlink" {} ''
     mkdir -p $out/lib64 $out/lib
-    if [ -f ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
-      ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+    if [ -f ${runtimePkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
+      ln -s ${runtimePkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
     fi
-    if [ -f ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
-      ln -s ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
+    if [ -f ${runtimePkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
+      ln -s ${runtimePkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
     fi
     
     # Symlink core libraries to both /lib and /lib64 for FHS compatibility.
     for dir in lib lib64; do
       mkdir -p $out/$dir
-      ln -s ${pkgs.glibc}/lib/libc.so.6 $out/$dir/libc.so.6
-      ln -s ${pkgs.glibc}/lib/libm.so.6 $out/$dir/libm.so.6
-      ln -s ${pkgs.glibc}/lib/libdl.so.2 $out/$dir/libdl.so.2
-      ln -s ${pkgs.glibc}/lib/libpthread.so.0 $out/$dir/libpthread.so.0
-      ln -s ${pkgs.glibc}/lib/librt.so.1 $out/$dir/librt.so.1
-      ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/$dir/libstdc++.so.6
-      ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/$dir/libgcc_s.so.1
+      ln -s ${runtimePkgs.glibc}/lib/libc.so.6 $out/$dir/libc.so.6
+      ln -s ${runtimePkgs.glibc}/lib/libm.so.6 $out/$dir/libm.so.6
+      ln -s ${runtimePkgs.glibc}/lib/libdl.so.2 $out/$dir/libdl.so.2
+      ln -s ${runtimePkgs.glibc}/lib/libpthread.so.0 $out/$dir/libpthread.so.0
+      ln -s ${runtimePkgs.glibc}/lib/librt.so.1 $out/$dir/librt.so.1
+      ln -s ${runtimePkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/$dir/libstdc++.so.6
+      ln -s ${runtimePkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/$dir/libgcc_s.so.1
     done
   '';
 
@@ -64,21 +65,21 @@ let
   resolveTierPackages = { tier }:
     if tier == "dev" then
       [
-        pkgs.coreutils
-        pkgs.bashInteractive
-        pkgs.git
-        pkgs.curl
-        pkgs.cacert
+        runtimePkgs.coreutils
+        runtimePkgs.bashInteractive
+        runtimePkgs.git
+        runtimePkgs.curl
+        runtimePkgs.cacert
       ]
     else if tier == "slim" then
       [
-        pkgs.bash
-        pkgs.busybox
-        pkgs.cacert
+        runtimePkgs.bash
+        runtimePkgs.busybox
+        runtimePkgs.cacert
       ]
     else if tier == "distroless" then
       [
-        pkgs.cacert
+        runtimePkgs.cacert
       ]
     else
       throw "Unsupported lifecycle tier: ${tier}";
@@ -93,7 +94,7 @@ let
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     "HOME=/app"
     "TMPDIR=/tmp"
-    "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+    "SSL_CERT_FILE=${runtimePkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
   ];
 
   # Dev-tier-only FHS escape hatch. glibc resolves libraries in the order
@@ -119,7 +120,7 @@ let
   splitNixAttrPath = path:
     pkgs.lib.filter (segment: segment != "") (pkgs.lib.splitString "." path);
 
-  getPkg = attrPath: pkgs.lib.attrByPath attrPath null pkgs;
+  getPkg = attrPath: pkgs.lib.attrByPath attrPath null runtimePkgs;
 
   resolvePackageCandidate = candidates: errorMessage:
     let
@@ -170,7 +171,7 @@ let
     chown ${uid}:${gid} app
   '';
 
-  postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
+  postgresEntrypoint = runtimePkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
     set -euo pipefail
     export PGDATA="''${PGDATA:-/var/lib/postgresql/data}"
     if [ -d "$PGDATA" ] && [ ! -O "$PGDATA" ] && [ ! -s "$PGDATA/PG_VERSION" ]; then
@@ -214,7 +215,7 @@ let
 
   serviceTemplatePackages = service:
     if service.template == "postgres" then
-      [ postgresEntrypoint pkgs.bash pkgs.coreutils ]
+      [ postgresEntrypoint runtimePkgs.bash runtimePkgs.coreutils ]
     else
       [];
 
@@ -300,7 +301,7 @@ in
   let
     servicePkg = resolvePackageCandidate (service.packageCandidates or [])
       "No Nix package candidate is available for service ${service.id}";
-    servicePkgs = [ pkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
+    servicePkgs = [ runtimePkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
     allContents = baseContents ++ [ lib64Symlink ] ++ servicePkgs;
     sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
     vendor = platformMetadata.vendor or "ClearCutt";
@@ -313,7 +314,7 @@ in
     serviceRuntimeCommands =
       if service.template == "postgres" then ''
         mkdir -p bin
-        ln -sf ${pkgs.bash}/bin/bash bin/sh
+        ln -sf ${runtimePkgs.bash}/bin/bash bin/sh
       '' else "";
 
     ociLabels = {

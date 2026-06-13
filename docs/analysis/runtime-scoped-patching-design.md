@@ -1,9 +1,10 @@
 # Design: Runtime-Scoped CVE Patching
 
-Status: design intake (2026-06-13). Validated by eval-grounded investigation;
-not yet implemented. Goal: make a CVE patch rebuild only what **ships** in
-images, not the entire build toolchain — so patching stops being a 5-hour cold
-world-rebuild and the warm-cache seeding ritual goes away.
+Status: implemented on `refactor/runtime-scoped-patching` (2026-06-13).
+Validated by eval-grounded investigation and focused local checks. Goal: make a
+CVE patch rebuild only what **ships** in images, not the entire build toolchain
+— so patching stops being a 5-hour cold world-rebuild and the warm-cache
+seeding ritual goes away.
 
 ## Problem (recap)
 

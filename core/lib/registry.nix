@@ -1,27 +1,33 @@
 # ClearCutt Declarative Language & Runtime Registry
 
-{ pkgs }:
+{ pkgs
+, dotnetPkgs ? pkgs
+}:
 
 let
   lib = pkgs.lib;
 
   # Safe package resolution helper
   # Loops through paths to find the first existing attribute, throwing a clean error if none exist
-  getPkg = paths: errorMsg:
+  getPkgFrom = packageSet: paths: errorMsg:
     let
-      foundPath = lib.findFirst (path: lib.hasAttrByPath path pkgs) null paths;
+      foundPath = lib.findFirst (path: lib.hasAttrByPath path packageSet) null paths;
     in
-    if foundPath != null then lib.attrByPath foundPath null pkgs
+    if foundPath != null then lib.attrByPath foundPath null packageSet
     else throw errorMsg;
+
+  getPkg = getPkgFrom pkgs;
 
   # Like getPkg, but resolves to null instead of throwing so a version spec can
   # express "use the preferred attr when this nixpkgs has it, otherwise fall
   # back to an in-registry transformation" without aborting evaluation.
-  getPkgOrNull = paths:
+  getPkgOrNullFrom = packageSet: paths:
     let
-      foundPath = lib.findFirst (path: lib.hasAttrByPath path pkgs) null paths;
+      foundPath = lib.findFirst (path: lib.hasAttrByPath path packageSet) null paths;
     in
-    if foundPath != null then lib.attrByPath foundPath null pkgs else null;
+    if foundPath != null then lib.attrByPath foundPath null packageSet else null;
+
+  getPkgOrNull = getPkgOrNullFrom pkgs;
 
   # Zero out store-path references INSIDE the package's own derivation.
   # Copy-and-strip wrappers (runCommand + cp) do not work for this: the copy
@@ -136,6 +142,9 @@ let
           minimalJre = getPkg [
             [ "jre${javaVersion}_minimal" ]
           ] "No Java ${javaVersion} jre${javaVersion}_minimal builder is available in this nixpkgs version";
+          # OpenJDK's generic builder does not expose openssl/sqlite override
+          # arguments. The runtime completeness gate is the source of truth for
+          # whether the jlink'd production closure retains those libraries.
           headlessJdk = getPkg [
             [ "jdk${javaVersion}_headless" ]
             [ "openjdk${javaVersion}_headless" ]
@@ -185,6 +194,9 @@ let
       # the derivation itself. If a future nixpkgs decouples pkgs.icu from the
       # icu node links against, the strip becomes a no-op and the purity gate
       # surfaces it again rather than failing silently.
+      patchNode = nodePkg: nodePkg.override {
+        openssl = pkgs.clearcuttCveOpenssl;
+      };
       nodeProductionRuntime = nodeVersion: rawPkgs:
         let
           slimPkg = getPkgOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
@@ -193,7 +205,7 @@ let
             references = [ (pkgs.icu.dev or pkgs.icu) pkg.stdenv.shell ];
           };
         in
-        if slimPkg != null then [ (severShellChain slimPkg) ] else map removeNpm rawPkgs;
+        if slimPkg != null then [ (severShellChain (patchNode slimPkg)) ] else map (pkg: removeNpm (patchNode pkg)) rawPkgs;
       nodeRaw22 = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
       nodeRaw24 = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
     in {
@@ -247,19 +259,22 @@ let
         "3.13" = {
           overlayName = "clearcuttPython313";
           raw = let py = getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version"; in [ py ];
-          distrolessOverride = let py = getPkg [ [ "python313" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "clearcuttCvePython313" ] ] "Patched Python 3.13 runtime is not available") ];
+          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython313" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python313" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.14" = {
           overlayName = "clearcuttPython314";
           raw = let py = getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version"; in [ py ];
-          distrolessOverride = let py = getPkg [ [ "python314" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "clearcuttCvePython314" ] ] "Patched Python 3.14 runtime is not available") ];
+          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.15" = {
           overlayName = "clearcuttPython315";
           raw = let py = getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version"; in [ py ];
-          distrolessOverride = let py = getPkg [ [ "python315" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "clearcuttCvePython315" ] ] "Patched Python 3.15 runtime is not available") ];
+          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython315" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python315" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
       };
@@ -284,15 +299,15 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8";
-          raw = [ (getPkg [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkg [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkg [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10";
-          raw = [ (getPkg [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkg [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkg [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
         };
       };
     };
@@ -302,11 +317,11 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8Runtime";
-          raw = [ (getPkg [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10Runtime";
-          raw = [ (getPkg [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
       };
     };

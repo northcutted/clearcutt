@@ -29,7 +29,6 @@ type fleetFlags struct {
 	sourceRef           string
 	sourceBranch        string
 	archiveReleaseNotes bool
-	includeBuildDeps    bool
 }
 
 type externalCommand struct {
@@ -93,7 +92,6 @@ GitHub Release finalization.`,
 	publishCacheCmd.Flags().StringVar(&fleetOpts.system, "system", "", "Nix system to cache, for example x86_64-linux (required)")
 	publishCacheCmd.Flags().StringVar(&fleetOpts.language, "language", "", "Fleet language/runtime target, for example node24 (required)")
 	publishCacheCmd.Flags().StringVar(&fleetOpts.tier, "tier", "", "Fleet tier: dev, slim, or distroless (required)")
-	publishCacheCmd.Flags().BoolVar(&fleetOpts.includeBuildDeps, "include-build-deps", false, "Also push the target's realized build-closure (toolchain: openssl, p11-kit, pytest-xdist, etc.), not just the image runtime closure. Used by the warm-cache seeding workflow so cold PR legs substitute the toolchain instead of rebuilding it.")
 	_ = publishCacheCmd.MarkFlagRequired("system")
 	_ = publishCacheCmd.MarkFlagRequired("language")
 	_ = publishCacheCmd.MarkFlagRequired("tier")
@@ -320,26 +318,6 @@ func runFleetPublishCache() error {
 		return err
 	}
 
-	// Optionally push the full realized build-closure (the toolchain used to
-	// BUILD the image — openssl, sqlite, python, p11-kit, pytest-xdist, mypy,
-	// meson, glib...). The CVE overlays give these store hashes that miss
-	// cache.nixos.org, so without this they are rebuilt from source on every
-	// cold PR leg (and their sandbox-flaky tests break legs). Best-effort: a
-	// partial push still warms what it can, so failures here only warn.
-	if fleetOpts.includeBuildDeps {
-		// The image's own build closure (openssl, sqlite, python, glib...).
-		if err := pushBuildClosure(cfg, installable, secretPath, cacheStore, env); err != nil {
-			fmt.Fprintf(out, "[fleet] warning: image build-closure cache push incomplete: %v\n", err)
-		}
-		// The default dev shell's closure, where the gate actually runs the
-		// build: this is where skopeo -> p11-kit and the scan toolchain live,
-		// which are NOT in the image build closure.
-		devShell := fmt.Sprintf(`.#devShells.%s.default`, fleetOpts.system)
-		if err := pushBuildClosure(cfg, devShell, secretPath, cacheStore, env); err != nil {
-			fmt.Fprintf(out, "[fleet] warning: dev-shell build-closure cache push incomplete: %v\n", err)
-		}
-	}
-
 	if err := waitForSignedNarinfo(r2Endpoint, cache.Bucket, narinfoKey, cache.SigningKeyName, env); err != nil {
 		return err
 	}
@@ -348,82 +326,6 @@ func runFleetPublishCache() error {
 		fmt.Fprintf(out, "[fleet] warning: %v\n", err)
 	}
 	return nil
-}
-
-// pushBuildClosure signs and pushes the realized build-closure of an arbitrary
-// flake installable (an image package or a dev shell) to the binary cache. It
-// resolves the .drv, queries its requisites with --include-outputs (the
-// realized build dependencies), drops .drv paths, and signs+copies the rest in
-// batches to stay under ARG_MAX. The installable must already be realized
-// locally (e.g. by `fleet certify-target`, which builds the image inside the
-// dev shell) so the build closure is present in the store.
-func pushBuildClosure(cfg fleet.Config, installable, secretPath, cacheStore string, env []string) error {
-	drvArgs := append([]string{
-		"path-info", "--derivation",
-		"--extra-experimental-features", "nix-command flakes",
-		"--accept-flake-config",
-	}, nixClientOptionArgs(cfg)...)
-	drvArgs = append(drvArgs, installable)
-	drvRaw, err := captureExternalOutput(externalCommand{Name: "nix", Args: drvArgs, Dir: fleetOpts.coreDir})
-	if err != nil {
-		return err
-	}
-	drv := strings.TrimSpace(drvRaw)
-	if drv == "" {
-		return fmt.Errorf("nix path-info --derivation returned no .drv for %s", installable)
-	}
-
-	reqRaw, err := captureExternalOutput(externalCommand{
-		Name: "nix-store",
-		Args: []string{"--query", "--requisites", "--include-outputs", drv},
-		Dir:  fleetOpts.coreDir,
-	})
-	if err != nil {
-		return err
-	}
-	var paths []string
-	for _, line := range strings.Split(strings.TrimSpace(reqRaw), "\n") {
-		p := strings.TrimSpace(line)
-		if p == "" || strings.HasSuffix(p, ".drv") {
-			continue
-		}
-		paths = append(paths, p)
-	}
-	if len(paths) == 0 {
-		return nil
-	}
-	fmt.Fprintf(out, "[fleet] pushing %d build-closure paths for %s\n", len(paths), installable)
-
-	// Batch so the argument list stays well under ARG_MAX; a failing batch is
-	// logged and skipped rather than aborting the whole closure push.
-	const batchSize = 200
-	var firstErr error
-	for start := 0; start < len(paths); start += batchSize {
-		end := start + batchSize
-		if end > len(paths) {
-			end = len(paths)
-		}
-		chunk := paths[start:end]
-		signArgs := append([]string{"store", "sign", "--key-file", secretPath}, chunk...)
-		if err := runExternalCommand(externalCommand{Name: "nix", Args: signArgs, Dir: fleetOpts.coreDir}); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			fmt.Fprintf(out, "[fleet] warning: signing build-closure batch failed, skipping: %v\n", err)
-			continue
-		}
-		copyArgs := append([]string{
-			"copy", "--extra-experimental-features", "nix-command flakes", "--accept-flake-config",
-			"--to", cacheStore,
-		}, chunk...)
-		if err := runExternalCommand(externalCommand{Name: "nix", Args: copyArgs, Dir: fleetOpts.coreDir, Env: env}); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			fmt.Fprintf(out, "[fleet] warning: copying build-closure batch failed, skipping: %v\n", err)
-		}
-	}
-	return firstErr
 }
 
 func runFleetAssembleTarget() error {

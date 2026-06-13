@@ -134,14 +134,10 @@ jobs:
     needs: [changes, fleet-matrix]
     if: ${{ needs.changes.outputs.fleet == 'true' }}
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    # Warm-cache jobs finish in minutes; the cap only binds when a CVE
-    # overlay or flake.lock change invalidates the nix cache key and a leg
-    # has to rebuild the package graph from openssl up before its cache is
-    # seeded. During the 2026-06 openssl/sqlite remediation rebuild, 60m and
-    # then 180m killed every leg before any could seed a cache; a cold leg
-    # is effectively a world rebuild on a 4-core runner. GitHub's hard job
-    # limit is 6h, so 330m is the practical ceiling.
-    timeout-minutes: 330
+    # Runtime-scoped CVE patching keeps shared build tooling on upstream
+    # caches. Keep enough room for runtime-specific source builds without
+    # treating every overlay bump as a full toolchain rebuild.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
@@ -182,9 +178,6 @@ jobs:
           restore-prefixes-first-match: |
             nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
             nix-${{ matrix.system }}-
-          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
-          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
-          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -218,8 +211,9 @@ jobs:
     needs: [changes, fleet-matrix]
     if: ${{ needs.changes.outputs.service == 'true' }}
     runs-on: ubuntu-latest
-    # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
-    timeout-minutes: 330
+    # See validate-matrix: runtime-scoped patches should not rebuild the shared
+    # toolchain, but service packages can still be substantial.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.service_image_matrix) }}
@@ -255,9 +249,6 @@ jobs:
           restore-prefixes-first-match: |
             nix-service-x86_64-linux-${{ matrix.service }}-
             nix-service-x86_64-linux-
-          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
-          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
-          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -340,8 +331,9 @@ jobs:
     needs: [changes]
     if: ${{ needs.changes.outputs.integration == 'true' }}
     runs-on: ubuntu-latest
-    # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
-    timeout-minutes: 330
+    # See validate-matrix: this still runs the broad local gate, but should not
+    # need a world-rebuild budget for CVE overlay changes.
+    timeout-minutes: 180
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -372,9 +364,6 @@ jobs:
         with:
           primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
-          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
-          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
-          gc-max-store-size-linux: 5000000000
 
       # Required for structure tests and patchelf inside the suite
       - name: Install Cosign & Gating Tools

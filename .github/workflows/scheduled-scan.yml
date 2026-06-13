@@ -231,17 +231,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Persist /nix/store between runs. Without this every cold runner has to
-      # re-fetch the unpatched base closure from R2 even when nothing in the
-      # flake.lock, shared build helpers, or CVE overlays changed.
+      # Persist /nix/store between runs so unchanged runtime and scanner
+      # closures do not need to be fetched again on every scheduled run.
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
-          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
-          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
-          gc-max-store-size-linux: 5000000000
 
       - name: Run Go Remediation Dispatcher
         timeout-minutes: 30
