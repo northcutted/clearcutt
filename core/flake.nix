@@ -320,6 +320,18 @@
       # (tests/closure-purity-allowlist.txt) as the verify.sh image gate, so
       # a residual finding is consciously accepted rather than silently
       # weakening the gate. Add coverage by appending to closurePurityTargets.
+      #
+      # Runtime-patch completeness gate (the security keystone of
+      # runtime-scoped CVE patching). For each representative image — slim AND
+      # distroless, because the slim tier also ships the openssl-linked runtime
+      # — closureInfo materializes the SHIPPED runtime closure of the image's
+      # contents (never a .drv build closure: under runtime-scoped patching the
+      # build-time openssl is intentionally stock, so a build-graph walk would
+      # false-positive). tests/closure-cve-check.py then fails the build if any
+      # store path is an openssl/sqlite below the committed floor in
+      # tests/runtime-dep-floor.json — default-deny, so stock 3.6.2 and the
+      # unpatched older majors (openssl_3_5, openssl_3) are caught too. Add
+      # coverage by appending to runtimePatchTargets.
       checks = forLinuxSystems (system:
         let
           checkPkgs = import nixpkgs { inherit system; };
@@ -327,6 +339,16 @@
             "coreLTS-distroless"
             "node22-distroless"
             "java21-distroless"
+            "python3.13-distroless"
+          ];
+          runtimePatchTargets = [
+            "coreLTS-slim"
+            "coreLTS-distroless"
+            "node22-slim"
+            "node22-distroless"
+            "java21-slim"
+            "java21-distroless"
+            "python3.13-slim"
             "python3.13-distroless"
           ];
           mkClosurePurityCheck = attrName:
@@ -343,10 +365,27 @@
                 --allowlist ${./tests/closure-purity-allowlist.txt}
               touch $out
             '';
+          mkRuntimePatchCheck = attrName:
+            let
+              image = self.packages.${system}.${attrName};
+              closure = checkPkgs.closureInfo { rootPaths = image.clearcuttContents; };
+            in
+            checkPkgs.runCommand "runtime-patch-completeness-${attrName}"
+              {
+                nativeBuildInputs = [ checkPkgs.python3 ];
+              } ''
+              python3 ${./tests/closure-cve-check.py} \
+                --store-paths ${closure}/store-paths \
+                --floor ${./tests/runtime-dep-floor.json}
+              touch $out
+            '';
         in
-        nixpkgs.lib.genAttrs
+        (nixpkgs.lib.genAttrs
           (map (target: "closure-purity-${target}") closurePurityTargets)
-          (name: mkClosurePurityCheck (nixpkgs.lib.removePrefix "closure-purity-" name))
+          (name: mkClosurePurityCheck (nixpkgs.lib.removePrefix "closure-purity-" name)))
+        // (nixpkgs.lib.genAttrs
+          (map (target: "runtime-patch-completeness-${target}") runtimePatchTargets)
+          (name: mkRuntimePatchCheck (nixpkgs.lib.removePrefix "runtime-patch-completeness-" name)))
       );
     };
 }
