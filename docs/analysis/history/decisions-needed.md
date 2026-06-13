@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 
-Status: historical owner-decision snapshot. Several recommended choices in this file have now been applied in the post-audit hardening pass, including leading with forkable platform kit/reference implementation, using a fixture-backed first proof path, qualifying top-level evidence claims, and documenting `verify image` as a catalog policy gate. For the current branch state, use `docs/analysis/post-hardening-readiness.md`.
+Status: historical owner-decision snapshot. Several recommended choices in this file have now been applied in the post-audit hardening pass, including leading with forkable platform kit/reference implementation, using a fixture-backed first proof path, qualifying top-level evidence claims, and documenting `verify image` as a catalog policy gate. For the current branch state, start with `docs/analysis/README.md`.
 
 These are owner-level decisions that should be made before implementation work expands. Leaving them unresolved will keep producing drift between product story, docs, site, CLI, workflows, and trust claims.
 

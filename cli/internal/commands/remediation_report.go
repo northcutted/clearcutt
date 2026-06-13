@@ -193,20 +193,29 @@ func remediationDraftResults(summaryDir string) RemediationDraftResults {
 
 var overlayAssignmentRe = regexp.MustCompile(`(?m)^  ([A-Za-z_][A-Za-z0-9_'.-]*)\s*=`)
 
+// Kept in sync with DANGEROUS_OVERRIDE_ATTRS in core/scripts/cve-draft-agent.py.
 var disallowedOverlayAttrs = []string{
 	"prePatch",
 	"postPatch",
+	"patchPhase",
+	"unpackPhase",
 	"preConfigure",
 	"configurePhase",
 	"preBuild",
 	"buildPhase",
 	"postBuild",
+	"buildCommand",
 	"preInstall",
 	"installPhase",
 	"postInstall",
+	"preFixup",
+	"fixupPhase",
+	"postFixup",
 	"checkPhase",
 	"installCheckPhase",
 	"shellHook",
+	"setupHook",
+	"builder",
 }
 
 func runRemediationValidateOverlays() error {
@@ -240,7 +249,9 @@ func runRemediationValidateOverlays() error {
 		}
 		if status != "manual_accepted" {
 			for _, attr := range disallowedOverlayAttrs {
-				if regexp.MustCompile(`(?m)\b` + regexp.QuoteMeta(attr) + `\s*=`).MatchString(text) {
+				// Also match the quoted key form ("postInstall" = ...), which
+				// Nix applies identically to the bareword assignment.
+				if regexp.MustCompile(`(?m)["']?\b` + regexp.QuoteMeta(attr) + `\b["']?\s*=`).MatchString(text) {
 					problems = append(problems, fmt.Sprintf("%s: disallowed generated remediation hook %s", path, attr))
 				}
 			}

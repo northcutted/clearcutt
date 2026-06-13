@@ -317,6 +317,92 @@ test_agent_sandbox_isolation() {
 }
 
 # ----------------------------------------------------
+# 1.7. Registry ↔ Fleet Config Runtime Line Drift Gate
+# ----------------------------------------------------
+test_registry_fleet_alignment() {
+  log_section "Governance Gate: Registry ↔ Fleet Config Runtime Line Alignment"
+
+  local fleet_config
+  if ! fleet_config="$(find_fleet_config)"; then
+    log_fail "Fleet config (clearcutt.fleet.yaml) not found; cannot verify registry↔fleet alignment."
+  fi
+
+  # The flake exposes the registry's language×version matrix as lib.runtimeLines,
+  # already mirroring the image-matrix exclusions (dotnet-runtime is virtual,
+  # core+LTS concatenates to coreLTS). Diffing that list against
+  # matrix.languages makes silent registry↔governance drift impossible.
+  log_info "Evaluating registry runtime lines via flake output lib.runtimeLines..."
+  local registry_lines
+  if ! registry_lines=$(nix eval ".#lib.runtimeLines" --json --extra-experimental-features "nix-command flakes" --accept-flake-config); then
+    log_fail "Could not evaluate .#lib.runtimeLines from the core flake."
+  fi
+  log_info "Registry runtime lines: ${registry_lines}"
+
+  log_info "Diffing against matrix.languages in ${fleet_config}..."
+  local drift_report=""
+  local drift_status=0
+  drift_report=$(python3 - "$fleet_config" "$registry_lines" <<'PY'
+import json
+import sys
+
+fleet_path, registry_json = sys.argv[1], sys.argv[2]
+registry_lines = set(json.loads(registry_json))
+
+# Minimal indentation-walk of the governance-owned fleet config: pull the
+# scalar list entries under matrix.languages without requiring PyYAML.
+fleet_lines = []
+in_matrix = in_languages = False
+for raw in open(fleet_path, encoding="utf-8"):
+    line = raw.rstrip("\n")
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    if not line.startswith(" "):
+        in_matrix = stripped == "matrix:"
+        in_languages = False
+        continue
+    indent = len(line) - len(line.lstrip(" "))
+    if in_matrix and indent == 2:
+        in_languages = stripped == "languages:"
+        continue
+    if in_matrix and in_languages and stripped.startswith("- "):
+        fleet_lines.append(stripped[2:].strip().strip('"').strip("'"))
+
+fleet = set(fleet_lines)
+if not fleet:
+    print("PARSE_ERROR no matrix.languages entries found in fleet config")
+    sys.exit(1)
+
+registry_only = sorted(registry_lines - fleet)
+fleet_only = sorted(fleet - registry_lines)
+print("REGISTRY_ONLY=" + (",".join(registry_only) or "-"))
+print("FLEET_ONLY=" + (",".join(fleet_only) or "-"))
+sys.exit(2 if registry_only or fleet_only else 0)
+PY
+  ) || drift_status=$?
+
+  if [[ "$drift_status" -eq 1 ]]; then
+    log_fail "Registry↔fleet drift gate could not parse matrix.languages: ${drift_report}"
+  fi
+
+  local registry_only fleet_only
+  registry_only=$(printf '%s\n' "$drift_report" | sed -n 's/^REGISTRY_ONLY=//p')
+  fleet_only=$(printf '%s\n' "$drift_report" | sed -n 's/^FLEET_ONLY=//p')
+
+  if [[ "$drift_status" -ne 0 ]]; then
+    if [[ "$registry_only" != "-" ]]; then
+      log_warn "Runtime lines built by lib/registry.nix but absent from matrix.languages (orphaned, ungoverned builds): ${registry_only}"
+    fi
+    if [[ "$fleet_only" != "-" ]]; then
+      log_warn "Runtime lines declared in matrix.languages but absent from lib/registry.nix (unbuildable policy entries): ${fleet_only}"
+    fi
+    log_fail "Registry and fleet config runtime lines have drifted. Align lib/registry.nix with clearcutt.fleet.yaml matrix.languages."
+  fi
+
+  log_pass "Registry runtime lines and fleet matrix.languages are fully aligned."
+}
+
+# ----------------------------------------------------
 # 2. OCI Image Config & Rootless Metadata Verification
 # ----------------------------------------------------
 test_rootless_boundaries() {
@@ -353,6 +439,8 @@ test_rootless_boundaries() {
   user_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('User', ''))")
   local wdir_val
   wdir_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('WorkingDir', ''))")
+  local ld_library_path_val
+  ld_library_path_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(next((e for e in d.get('config', {}).get('Env', []) if e.startswith('LD_LIBRARY_PATH=')), ''))")
 
   chmod -R +w "$tmp_unpack" 2>/dev/null || true
   rm -rf "$tmp_unpack"
@@ -366,6 +454,16 @@ test_rootless_boundaries() {
     log_fail "Metadata WorkingDir mismatch. Got: '$wdir_val', Expected: '/app'"
   fi
   log_pass "Hardcoded rootless working directory mapped: $wdir_val"
+
+  # Production tiers must not bake LD_LIBRARY_PATH into the OCI config: glibc
+  # resolves DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, so a global FHS
+  # LD_LIBRARY_PATH outranks the store-bound RUNPATH on every Nix binary —
+  # the exact drift class the RPATH gate exists to prevent. Only the dev tier
+  # keeps it as a foreign-binary convenience.
+  if [[ -n "$ld_library_path_val" ]]; then
+    log_fail "Production image $target_image bakes '$ld_library_path_val' into its OCI config; only the dev tier may set LD_LIBRARY_PATH."
+  fi
+  log_pass "Production OCI config carries no LD_LIBRARY_PATH override."
 }
 
 # ----------------------------------------------------
@@ -512,7 +610,21 @@ test_distroless_boundaries() {
     log_fail "Distroless environment contains interactive shell utilities or coreutils!"
   fi
 
-  log_pass "Distroless boundaries verified. Zero-shell and zero-utility footprint active."
+  log_pass "Distroless FHS boundaries verified. Zero-shell and zero-utility footprint active."
+
+  # Closure-level purity: the FHS checks above only see /bin and /usr/bin,
+  # but every store path's bin/ is reachable via PATH-less absolute
+  # invocation and shows up in SBOMs. Walk the layer tars (header modes
+  # survive non-root extraction) for shells, package managers, and
+  # setuid/setgid files anywhere in the image. Residual findings can be
+  # consciously accepted in tests/closure-purity-allowlist.txt with a
+  # one-line reason — never by weakening this gate.
+  log_info "Walking /nix/store closure for shells, package managers, and setuid/setgid files..."
+  if ! python3 ./tests/closure-purity-check.py "$build_tar" --allowlist ./tests/closure-purity-allowlist.txt; then
+    log_fail "Distroless closure purity violated: the /nix/store closure ships shells, package managers, or setuid/setgid files (see findings above)."
+  fi
+
+  log_pass "Distroless closure purity verified across the full /nix/store closure."
 }
 
 # ----------------------------------------------------
@@ -523,10 +635,14 @@ test_native_nix_integration() {
 
   log_info "Verifying Nix Native Overlays default compiler outputs..."
   local overlay_check
+  # Evaluate against the flake's locked nixpkgs input, not the host <nixpkgs>
+  # channel: the gate must certify the pinned package set consumers get.
   overlay_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
     let
       flake = builtins.getFlake (toString ./.);
-      pkgs = import <nixpkgs> {
+      pkgs = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
         overlays = [ flake.overlays.default ];
       };
     in
@@ -537,6 +653,35 @@ test_native_nix_integration() {
     log_fail "Nix Native Overlay failed to evaluate clearcuttJava21 and clearcuttDotnet8Runtime attributes."
   fi
   log_pass "Nix Native overlays default evaluated successfully."
+
+  log_info "Verifying CVE remediation flows through overlays.default..."
+  local remediation_check
+  # For every attribute the CVE barrel overrides, applying overlays.default
+  # must change the derivation relative to plain nixpkgs. Passes vacuously
+  # when overlays/cve/ is empty; attr names are read without forcing values.
+  remediation_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
+    let
+      flake = builtins.getFlake (toString ./.);
+      base = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
+      };
+      patched = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
+        overlays = [ flake.overlays.default ];
+      };
+      overrideNames = builtins.attrNames (flake.overlays.cveRemediation base base);
+      changed = name:
+        !(base ? ${name}) || patched.${name}.drvPath != base.${name}.drvPath;
+    in
+      builtins.all changed overrideNames
+  ')
+
+  if [[ "$remediation_check" != "true" ]]; then
+    log_fail "overlays.default does not apply the CVE remediation overlay: a remediated package evaluated identical to plain nixpkgs."
+  fi
+  log_pass "CVE remediation overlay verified through overlays.default."
 
   log_info "Verifying Nix Native lib.mkHardenedShell generator..."
   local shell_check
@@ -743,6 +888,7 @@ main() {
   
   test_credential_broker
   test_agent_sandbox_isolation
+  test_registry_fleet_alignment
   test_rootless_boundaries
   test_dynamic_binary_headers
   test_distroless_boundaries

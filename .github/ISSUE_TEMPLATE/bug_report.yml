@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a defect in the ClearCutt factory, CLI, portal, docs, or workflows.
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      description: Which part of the repo does this affect?
+      options:
+        - core (Nix image factory)
+        - cli (Go CLI)
+        - site (Astro portal)
+        - docs
+        - workflows (.github)
+        - other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: cli-version
+    attributes:
+      label: CLI version
+      description: Output of `clearcutt --version`. Write `n/a` if the bug does not involve the CLI.
+      placeholder: clearcutt version v0.9.8
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or workflow runs, ideally from a clean clone.
+      placeholder: |
+        1. go -C cli build -o ../clearcutt ./cmd/clearcutt
+        2. ./clearcutt ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error output. This is rendered as shell, no backticks needed.
+      render: shell
+    validations:
+      required: false

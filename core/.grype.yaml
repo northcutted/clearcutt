@@ -1,0 +1,14 @@
+# Scanner suppressions for findings that are patched in the ClearCutt Nix
+# package set before upstream version metadata changes. Keep these entries
+# narrow and pair each one with an overlay evidence file under overlays/cve/.
+ignore:
+  - vulnerability: CVE-2026-7210
+    package:
+      name: python
+      version: 3.13.13
+      type: UnknownPackage
+  - vulnerability: CVE-2026-7210
+    package:
+      name: python
+      version: 3.14.4
+      type: UnknownPackage

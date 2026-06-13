@@ -1,5 +1,26 @@
 {
+  "schemaVersion": "clearcutt.catalog.index/v1",
   "generatedAt": "2026-05-29T20:00:00Z",
+  "generator": {
+    "name": "clearcutt",
+    "version": "test",
+    "commit": "fixture"
+  },
+  "source": {
+    "owner": "test-owner",
+    "repo": "test-repo",
+    "repoUrl": "https://github.com/test-owner/test-repo",
+    "registryBase": "ghcr.io/test-owner/test-repo"
+  },
+  "summary": {
+    "imageCount": 1,
+    "releaseCount": 1,
+    "signedCount": 1,
+    "provenanceCount": 1,
+    "sbomCount": 1,
+    "scanCount": 1,
+    "passingCount": 1
+  },
   "owner": "test-owner",
   "repo": "test-repo",
   "repoUrl": "https://github.com/test-owner/test-repo",

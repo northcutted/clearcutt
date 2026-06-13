@@ -81,6 +81,11 @@ var gatherTiers = map[string]gatherTierDef{
 	"distroless": {Name: "Distroless", Blurb: "Hardened tier — no shells, no coreutils, runtime only."},
 }
 
+// serviceTier is the compatibility tier every service image carries. It is
+// appended to the index tiers list whenever the catalog contains service
+// images so images[].tier always resolves against tiers[].
+var serviceTier = Tier{ID: "service", Name: "Service", Blurb: "Platform-owned service image"}
+
 type Language struct {
 	ID          string  `json:"id"`
 	DisplayName string  `json:"displayName"`
@@ -128,17 +133,18 @@ type gatherReleaseEntry struct {
 }
 
 type gatherArchPayload struct {
-	Arch            string                       `json:"arch"`
-	OS              string                       `json:"os"`
-	ImageDigest     *string                      `json:"imageDigest"`
-	ImageSize       *int64                       `json:"imageSize"`
-	LayerCount      *int                         `json:"layerCount"`
-	Layers          []json.RawMessage            `json:"layers"`
-	Labels          json.RawMessage              `json:"labels"`
-	SBOM            gatherSBOMInfo               `json:"sbom"`
-	TestResults     *TestResults                 `json:"testResults"`
-	Vulnerabilities *json.RawMessage             `json:"vulnerabilities,omitempty"`
-	vulnInfo        *catalog.VulnerabilitiesInfo `json:"-"`
+	Arch                   string                       `json:"arch"`
+	OS                     string                       `json:"os"`
+	ImageDigest            *string                      `json:"imageDigest"`
+	ImageSize              *int64                       `json:"imageSize"`
+	ManifestDescriptorSize *int64                       `json:"manifestDescriptorSize,omitempty"`
+	LayerCount             *int                         `json:"layerCount"`
+	Layers                 []json.RawMessage            `json:"layers"`
+	Labels                 json.RawMessage              `json:"labels"`
+	SBOM                   gatherSBOMInfo               `json:"sbom"`
+	TestResults            *TestResults                 `json:"testResults"`
+	Vulnerabilities        *json.RawMessage             `json:"vulnerabilities,omitempty"`
+	vulnInfo               *catalog.VulnerabilitiesInfo `json:"-"`
 }
 
 type gatherSBOMInfo struct {

@@ -1,0 +1,996 @@
+{
+  "summary": "Multi-dimension review of ClearCutt: Nix, hardening, supply chain, DX, showcase, hygiene — with adversarial verification",
+  "agentCount": 18,
+  "logs": [
+    "Fanning out 6 dimension reviewers across the repo",
+    "image-hardening: 9 findings (3 critical/high to verify)",
+    "cli-dx: 13 findings (0 critical/high to verify)",
+    "supply-chain-ci: 7 findings (0 critical/high to verify)",
+    "showcase-docs: 8 findings (2 critical/high to verify)",
+    "schemas-consistency: 12 findings (3 critical/high to verify)",
+    "nix-architecture: 12 findings (3 critical/high to verify)",
+    "Running completeness critic over all dimension results"
+  ],
+  "result": {
+    "dimensions": [
+      {
+        "dimension": "nix-architecture",
+        "strengths": [
+          "Flake hygiene is genuinely strong: a single pinned input (core/flake.nix:6-8, locked to rev a0991c8 in core/flake.lock), no flake-utils dependency (hand-rolled `forAllSystems = nixpkgs.lib.genAttrs systems`), zero IFD anywhere in core/lib/, and deterministic image output (no `created` override on dockerTools.buildLayeredImage, so images get the reproducible epoch timestamp by default).",
+          "The per-CVE overlay barrel is elegant, sound Nix (core/overlays/cve-remediation.nix): one self-contained overlay file per CVE under core/overlays/cve/, discovered with `builtins.readDir` (pure under flakes), with documented alphabetical conflict semantics ('later-loaded file wins') and a machine-readable .evidence.json sitting next to each overlay (core/overlays/cve/cve-2026-7210-python315.{nix,evidence.json}). Atomic writes and single-file rollback in core/scripts/cve-draft-agent.py:180-219 back the design claims.",
+          "The registry abstraction (core/lib/registry.nix) is well-factored: candidate-path fallback resolution via `getPkg [ [\"zulu21\"] [\"temurin-bin-21\"] [\"jdk21\"] ... ]`, per-tier overrides (`slimOverride`/`distrolessOverride` for dotnet), and `omitInProduction` correctly keeps compiler toolchains (go/rust/cc) out of slim/distroless images — confirmed by published SBOMs and run-smoke-tests.sh negative assertions (cargo/gcc absent in slim).",
+          "Fork modularity is real, not aspirational: product identity is isolated in core/lib/platform-metadata.nix and consumed everywhere with `platformMetadata.x or \"default\"` fallbacks; CLI-scaffolded extension seams (core/lib/runtime-extensions.nix merged via `lib.recursiveUpdate`, core/lib/service-extensions.nix consumed as data) let a fork add runtimes/services without touching flake internals.",
+          "`lib.graftOntoBase` (core/flake.nix:197-262) is a great downstream story — graft a ClearCutt runtime onto a mandated enterprise base (`fromImage`), with runtime-string parsing (`java21`, `python3.15`), strict argument hygiene via filterAttrs, and a worked example with clearly-marked pinned-digest placeholders in examples/base-image-overlay/flake.nix.",
+          "Security engineering depth in the surrounding tooling: pipeline.sh:135-157 hard-refuses to mint local cosign keys under GITHUB_ACTIONS; core/scripts/agent-sandbox.sh runs LLM-touched builds under `env -i` with a throwaway HOME, and core/tests/verify.sh actually tests that isolation; cve-draft-agent.py enforces a deny-list of dangerous override phases (DANGEROUS_OVERRIDE_ATTRS) and rejects comment-only 'fixes' before any LLM output is accepted.",
+          "The G2 closure-diff gate (core/tests/verify-closure-diff.sh) is a rarely-seen control done carefully: boundary-safe ERE matching (explicitly avoids 'core' matching coreutils/corepack), explained-dependency-cascade logic, and verify.sh even asserts the gate rejects an unexplained package addition (verify.sh:677-684).",
+          "Service images have real contracts: service-image-contract.sh asserts OCI User/WorkingDir/ExposedPorts/Entrypoint/labels and rootless dataDir ownership (10001:10001, not world-writable) straight from the layer tars, and buildServiceImage's extraCommands/fakeRootCommands split in core/lib/build-fleet.nix:339-352 correctly uses the only mechanism (in-builder tar under fakeroot) that preserves ownership."
+        ],
+        "wowIdeas": [
+          "Make the 'zero-shell distroless' claim machine-enforced and publicly verifiable: a `checks.<system>.distroless-purity` flake check that walks each distroless image's store closure (the logic already exists in core/tests/nix-store-closure-from-image.py) and fails on bash/coreutils/shell paths — then publish the pass/fail as a badge per image on the Astro catalog. No competitor (chainguard/distroless) exposes closure-level proofs like this.",
+          "jlink-minimized Java tier: add a `clearcutt runtime minimize` command that runs jdeps over an app jar and emits a registry `distrolessOverride` built with `pkgs.jre_minimal { modules = [...] }`. It would shrink java distroless from a full GUI'd JDK closure (gtk/cups/alsa today) to a ~40-60MB headless runtime and turns the current biggest weakness into the headline demo.",
+          "Publish the per-CVE overlay + evidence pairs as a subscribable remediation feed: the one-file-per-CVE format under core/overlays/cve/ with paired .evidence.json is already perfectly cherry-pickable — expose a JSON/RSS feed from the site so forks can `clearcutt remediation pull CVE-2026-XXXX` and import the exact validated overlay file with its evidence chain. Across forks this becomes a community remediation exchange, which is a genuinely novel open-source story.",
+          "Hermetic pipeline via `apps`: expose `apps.<system>.pipeline` wrapping core/pipeline/pipeline.sh with syft/grype/skopeo/cosign pinned from the same flake.lock, so `nix run .#pipeline -- java21-distroless` reproduces the release gate bit-for-bit on any machine — eliminating the current dependence on whatever scanner versions happen to be on PATH and making 'reproduce our evidence locally' a one-liner in the README.",
+          "Assemble the multi-arch OCI image index in Nix instead of `crane index append` in CI: a small derivation that combines the per-arch buildLayeredImage outputs into an OCI layout makes even the manifest list reproducible from the lock, closing the last non-Nix step between `nix build` and the signed artifact — a strong differentiator for the supply-chain story (SLSA provenance could then attest a fully Nix-derived subject)."
+        ],
+        "verifiedFindings": [
+          {
+            "title": "Every image ships a root-owned, non-writable /tmp — the `chmod 1777` is silently destroyed by Nix store canonicalization, and the postgres service image cannot start because of it",
+            "severity": "critical",
+            "files": [
+              "core/lib/build-fleet.nix:39-42",
+              "core/lib/build-fleet.nix:101",
+              "core/lib/build-fleet.nix:160-200",
+              "core/tests/structure-test-distroless.yaml:20-22"
+            ],
+            "detail": "core/lib/build-fleet.nix builds /tmp as a store path: `tmpDir = pkgs.runCommand \"cc-tmp-dir\" {} ''mkdir -p $out/tmp; chmod 1777 $out/tmp''`. Nix store canonicalization strips write/sticky bits — empirically verified by building this exact derivation against the project's pinned nixpkgs: the result is `dr-xr-xr-x` (0555). nixpkgs' stream_layered_image.py packs store paths with `tar.gettarinfo(filename)` (on-disk modes preserved), and the customisation layer's symlinkJoin recreates the dir at 0755 root:root — either way /tmp is unwritable by the image's `User = \"10001:10001\"`. Meanwhile baseEnv bakes `\"TMPDIR=/tmp\"` into every image (build-fleet.nix:101), actively pointing all workloads at the broken dir, and the postgres entrypoint hardcodes `postgres ... -k /tmp` (build-fleet.nix:173) for its Unix socket, so the postgres16 service image fails at startup with a lock-file permission error. Nothing catches this: structure tests only assert `/tmp` `shouldExist: true`, and service smoke tests run `--command-only` (`postgres --version`), never the entrypoint.",
+            "recommendation": "Drop `tmpDir` from `baseContents` and create /tmp in `extraCommands` instead — `mkdir -p tmp && chmod 1777 tmp` — which is packed inside the builder before canonicalization (the same mechanism that already makes `prepareDataDirs`'s `chmod 0750` and `fakeRootCommands`' chown work). Then strengthen core/tests/structure-test-*.yaml to assert /tmp permissions (`permissions: 'dtrwxrwxrwx'`) and add a service smoke path that actually boots the postgres entrypoint once.",
+            "effort": "low",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every factual claim checks out. (1) core/lib/build-fleet.nix:39-42 builds tmpDir exactly as quoted, and I reproduced the canonicalization empirically against the project's pinned nixpkgs (core/flake.nix -> nixpkgs-unstable, locked rev): the built store path's tmp dir is dr-xr-xr-x (0555) — chmod 1777 silently destroyed. (2) In the pinned nixpkgs (pkgs/build-support/docker/default.nix:1070-1100), the customisation layer symlinkJoins contents (lndir recreates the dir at 0755), then fakeroot-tars it with on-disk modes, so the image's /tmp is 0755 root:root; stream_layered_image.py packs store layers with tar.gettarinfo (modes preserved) — either way unwritable by the configured User 10001:10001. (3) baseEnv bakes TMPDIR=/tmp (line 101) into every base and service image. (4) The postgres entrypoint hardcodes `-k /tmp` (line 172, within the cited range), so postgres cannot create its socket lock file as uid 10001 and the postgres16 image fails on a plain `docker run`. (5) No test catches it: structure tests (distroless lines 20-22, and slim) only assert /tmp shouldExist; core/tests/service-image-contract.sh passes --command-only for postgres16 (smoke = `postgres --version` etc. per clearcutt.fleet.yaml:104-107), and even without that flag, cli/internal/commands/service.go:634-646 defines a functional boot profile only for the valkey template (which doesn't need /tmp), so the postgres entrypoint is never booted anywhere in CI. (6) The recommended fix mechanism is sound — extraCommands/fakeRootCommands run inside the customisation-layer builder before canonicalization, the same path that makes prepareDataDirs' chmod 0750 and the chown work. Partial mitigations exist but don't refute the finding: examples/oci-deployment/docker-compose.yml mounts tmpfs /tmp:mode=1777, and the k8s/openshift examples mount emptyDir over /tmp — but those cover only app-image deployments, not the postgres service image (examples/service-images/README.md documents `docker` smoke with no /tmp mount), and the in-image 1777 intent still silently fails. Severity nuance: the postgres16 service is lifecycle `preview` with productionAllowed: false, and documented app deployments mask the issue, so \"critical\" is arguable — \"high\" may be fairer — but the core defect (DOA service image, broken TMPDIR in every image, zero test coverage) is real as stated."
+            }
+          },
+          {
+            "title": "'Distroless' images contain bash (and for Java, a full GUI/print/sound stack) in their store closures — the zero-shell promise is only enforced at FHS paths",
+            "severity": "high",
+            "files": [
+              "core/lib/registry.nix:45-58",
+              "core/tests/verify.sh:493-515",
+              "core/tests/structure-test-distroless.yaml:32-43",
+              "site/src/data/sboms/v0.14.1/java21-distroless-amd64.sbom.json",
+              "site/src/data/sboms/v0.14.1/node22-distroless-amd64.sbom.json",
+              "site/src/data/sboms/v0.14.1/python3.13-distroless-amd64.sbom.json"
+            ],
+            "detail": "The published v0.14.1 SBOMs show java21-distroless contains `bash`, `coreutils`, `gtk+3`, `cairo`, `cups`, `alsa-lib`, `avahi`, `dbus`, `fontconfig` (110 packages — the non-headless OpenJDK closure); node22-distroless contains `bash`, `coreutils`, `gnugrep`; python3.13-distroless contains `bash`. So a fully functional shell exists at `/nix/store/<hash>-bash-*/bin/bash` inside images marketed as 'Distroless Zero-Utility'. All existing gates check only FHS paths: verify.sh's `problematic_paths=(\"bin/sh\" \"bin/bash\" ...)` and structure-test-distroless.yaml's `path: '/bin/bash' shouldExist: false` pass while the shell remains reachable by store path. The Java tier additionally carries the JDK's GUI dependency tree — exactly the CVE surface (cups, gtk, dbus) this product exists to eliminate, and a large size cost.",
+            "recommendation": "Use headless/minimal runtimes for production tiers in core/lib/registry.nix: add `distrolessOverride`/`slimOverride` entries for Java using `jdk21_headless`/`openjdk21_headless` (or a jlink-built `jre_minimal`), and consider `python3Minimal` for python distroless. Then make the claim machine-enforced: extend test_distroless_boundaries to walk `/nix/store/*/bin/{sh,bash,ash}` in the extracted layers (tests/nix-store-closure-from-image.py already extracts store roots), and fail the gate when a shell or coreutils path appears in any distroless closure.",
+            "effort": "medium",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every cited fact checks out. core/lib/registry.nix:45-58 selects a full non-headless JDK (zulu21/temurin/jdk21) with no distrolessOverride (the override mechanism exists and is used for .NET at lines 116/122, so the fix is actionable as described). The v0.14.1 SBOMs are syft-1.44.0 scans of the built docker-archive (core/pipeline/pipeline.sh:225), so they reflect actual image contents: java21-distroless-amd64 has exactly 110 packages including bash, coreutils, gtk+3, cairo, cups, alsa-lib, avahi, dbus, fontconfig; node22-distroless has bash/coreutils/gnugrep; python3.13-distroless has bash. Syft's binary cataloger confirms the executable itself is present (\"acquired package info from the following paths: /nix/store/gik3rh1vz2jlgnifb9dh6vc6sxwwz9jj-bash-5.3p9/bin/bash\"), and that exact path is published on the site. All gates are FHS-only: verify.sh's problematic_paths (line 495, within cited 493-515) and structure-test-distroless.yaml:32-43 check /bin and /usr/bin only; run-smoke-tests.sh resolves `sh` via PATH which excludes store bin dirs; no SBOM deny-list exists in pr-gate.yml/release.yml. The repo's own docs (.agents/context/architecture.md:16) promise \"exactly zero interactive shells or coreutils\" in distroless, which the published SBOMs contradict. High severity is justified: the zero-shell guarantee is the product's core differentiator, a working bash sits at a publicly disclosed store path inside every cited distroless image, and the Java tier carries the full GUI/print/sound dependency tree (cups, gtk, dbus, avahi) as added CVE surface. nix-store-closure-from-image.py exists at core/tests/ and supports the recommended enforcement approach."
+            }
+          },
+          {
+            "title": "CVE remediation overlay is not applied on two of the three public Nix consumption surfaces — overlays.default and lib.mkHardenedShell hand out unpatched runtimes",
+            "severity": "high",
+            "files": [
+              "core/flake.nix:182-186",
+              "core/flake.nix:189-195",
+              "core/flake.nix:208-217",
+              "core/lib/nix-native.nix:43-45"
+            ],
+            "detail": "The flake's own images get `overlays = [ (import ./overlays/cve-remediation.nix) ]` (flake.nix:36-38), and `graftOntoBase` re-applies it (flake.nix:214-216). But `lib.mkHardenedShell` imports nixpkgs bare: `pkgs = import nixpkgs { inherit system; };` — no cve-remediation overlay and no `allowUnfree` (which the project's own comment at flake.nix:29 says JDKs need). And `overlays.default` resolves the registry against `prev` (`helpers.overlay` in nix-native.nix returns attrs built from un-overlaid `pkgs = prev`), so a downstream applying ClearCutt's overlay to stock nixpkgs gets e.g. `clearcuttPython315` WITHOUT the CVE-2026-7210 bump that core/overlays/cve/cve-2026-7210-python315.nix applies to the flake's own images. The cve-remediation overlay is also not exported as a flake output at all, so downstreams cannot even opt in. The evidence-backed remediation story silently stops at the image boundary.",
+            "recommendation": "In `lib.mkHardenedShell`, import nixpkgs with the same `config.allowUnfree` and `overlays = [ (import ./overlays/cve-remediation.nix) ]` used by `perSystem` and `graftOntoBase`. Export the remediation overlay (`overlays.cveRemediation = import ./overlays/cve-remediation.nix;`) and compose it into `overlays.default` (apply cve overlay first, then resolve registry attrs from `final`), documenting the ordering. Add a verify.sh assertion that a remediated package attr resolved through overlays.default carries the patched version.",
+            "effort": "low",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Verified against /Users/eddie/Development/clearcutt-images/core/flake.nix, core/lib/nix-native.nix, core/lib/registry.nix, core/overlays/cve-remediation.nix, core/overlays/cve/cve-2026-7210-python315.nix, and core/tests/verify.sh. Every load-bearing claim holds: the cve-remediation overlay is applied at exactly two sites (perSystem hostPkgs, flake.nix:36-38, and graftOntoBase, flake.nix:214-216); lib.mkHardenedShell (flake.nix:192) imports nixpkgs bare with no overlay and no allowUnfree, despite the project's own comment at flake.nix:29-34 saying allowUnfree is required for JDKs; overlays.default (flake.nix:182-186) passes pkgs = prev into nix-native.nix, whose overlay (line 45) returns attrs prebuilt from that un-overlaid pkgs, so clearcuttPython315 resolves prev.python315 without the CVE-2026-7210 override (and resolving from prev also means downstream overrides on final never propagate). No flake output exports the remediation overlay (outputs are only packages, devShells, overlays.default, lib). I searched for mitigating controls and found none: verify.sh's test_native_nix_integration only asserts the overlay attrs evaluate non-null and a mkHardenedShell drvPath exists — no version assertion; `clearcutt remediation validate-overlays` validates overlay file syntax/evidence, not export composition; docs never instruct downstreams to compose the cve overlay; the scan workflows cover images only. Two minor overstatements that do not change the verdict: (a) \"downstreams cannot even opt in\" is slightly too strong — they could import overlays/cve-remediation.nix directly from the flake's source tree, just not via any supported output; (b) the allowUnfree gap is asserted from the repo's own comment, and verify.sh successfully instantiates a java21 mkHardenedShell without allowUnfree, so its practical breakage is unproven. Severity high is justified in context: nix-native.nix:44 explicitly promises downstreams a \"verified package matrix\", the product's stated purpose is CVE-aware runtimes, and the failure is silent and structural — every current and future remediation is skipped on two of the three public consumption surfaces (today's concrete delta is the single Python 3.15 CVE-2026-7210 bump)."
+            }
+          }
+        ],
+        "unverifiedFindings": [
+          {
+            "title": "removeNpm works only by accident of nixpkgs internals — a future nodejs refactor silently re-ships npm in production tiers with no test to catch it",
+            "severity": "medium",
+            "files": [
+              "core/lib/registry.nix:17-32",
+              "core/lib/registry.nix:60-73"
+            ],
+            "detail": "`removeNpm` symlinkJoins the `nodejs_22` attr and `rm`s `bin/npm`, `bin/npx`, `bin/corepack`, `lib/node_modules/{npm,corepack}`. This currently yields an npm-free closure (verified: v0.14.1 node22-slim SBOM contains only `nodejs-slim 22.22.3`, no npm) — but ONLY because the pinned nixpkgs defines `nodejs_22 = symlinkJoin { paths = [ nodejs-slim nodejs-slim.npm nodejs-slim.corepack ]; }` and lndir duplicates the inner symlinks, so deleting the npm symlinks drops the npm output from the closure. With a monolithic nodejs derivation (e.g. the registry's own fallback candidate `nodejs-22_x`, or older/other nixpkgs revisions where npm lives inside `$out`), the symlinkJoin's surviving symlinks still reference the full npm-bearing store path, and `slim`/`distroless` images would ship npm at `/nix/store/...-nodejs-22.x/bin/npm` while the comment claims 'the production tiers ship the bare `node` binary only'. No structure test or smoke test asserts npm/corepack absence.",
+            "recommendation": "Resolve `nodejs-slim_22`/`nodejs-slim_24` directly in the candidate list (`getPkg [ [ \"nodejs-slim_22\" ] [ \"nodejs_22\" ] ... ]`) — it exists in the pinned nixpkgs and is structurally npm-free — keeping removeNpm only as a fallback transformation. Add `fileExistenceTests` for `/bin/npm`, `/bin/npx`, `/bin/corepack` (shouldExist: false) to the slim structure test, and a closure-level npm absence assertion alongside the distroless shell check.",
+            "effort": "low"
+          },
+          {
+            "title": "perSystem is evaluated twice per system and registry.nix is instantiated three times per pkgs — avoidable eval-time redundancy in a 4-system matrix",
+            "severity": "medium",
+            "files": [
+              "core/flake.nix:173-179",
+              "core/flake.nix:47",
+              "core/lib/build-fleet.nix:9",
+              "core/lib/nix-native.nix:7"
+            ],
+            "detail": "Flake outputs call `perSystem` independently for packages and devShells: `packages = (forLinuxSystems (system: let p = perSystem system; in ...)) // ...` and `devShells = forAllSystems (system: (perSystem system).devShells);`. Nix does not memoize function application, so each system pays for `import nixpkgs { ... overlays = [ cve-remediation ] }` plus full registry/matrix construction twice. Separately, `import ./registry.nix { inherit pkgs; }` is performed three times against the same pkgs (flake.nix:47, build-fleet.nix:9, nix-native.nix:7), re-running every `getPkg` candidate probe each time. None of this is incorrect, but for a showcase flake it doubles eval cost and memory for `nix flake show`/CI evaluation.",
+            "recommendation": "Bind the per-system evaluation once: `let evaluated = forAllSystems perSystem; in { packages = nixpkgs.lib.genAttrs linuxSystems (s: evaluated.${s}.imagePackages // evaluated.${s}.nativePackages) // ...; devShells = nixpkgs.lib.mapAttrs (_: v: v.devShells) evaluated; }`. Thread the already-imported `registry` into build-fleet.nix and nix-native.nix as an argument (`import ./lib/build-fleet.nix { inherit pkgs registry; }`) with the current self-import kept as a default.",
+            "effort": "low"
+          },
+          {
+            "title": "Two sources of truth for the runtime matrix with live drift: registry.nix builds python 3.13/3.14 that clearcutt.fleet.yaml no longer certifies",
+            "severity": "medium",
+            "files": [
+              "core/lib/registry.nix:75-93",
+              "clearcutt.fleet.yaml:23-35"
+            ],
+            "detail": "core/lib/registry.nix declares python `\"3.13\"`, `\"3.14\"`, and `\"3.15\"`, and core/flake.nix derives its package matrix from the registry (`versions = builtins.mapAttrs (lang: spec: builtins.attrNames spec.versions) registry.languages`), so `python3.13-slim`/`python3.14-*` are buildable flake outputs. But clearcutt.fleet.yaml's `matrix.languages` lists only `python3.15` — the governance config, release matrix, and admission story no longer cover two runtime lines the flake still exposes (and which prior releases shipped: v0.14.1 SBOMs include python3.13/3.14 images). For a kit whose pitch is 'declare the fleet in clearcutt.fleet.yaml', the Nix registry silently disagreeing with the fleet file undermines the evidence chain: a fork can `nix build .#python3.13-distroless` an image that no policy, scan cadence, or catalog entry governs.",
+            "recommendation": "Make clearcutt.fleet.yaml the single source: either have `clearcutt runtime scaffold` (which already owns runtime-extensions.nix) generate/prune the built-in version set, or add a CI consistency gate that diffs `registry.languages` against `matrix.languages` and fails on orphaned runtime lines. At minimum delete the python 3.13/3.14 entries or re-add them to the fleet matrix.",
+            "effort": "medium"
+          },
+          {
+            "title": "The remediation 'semantic cache' can never hit in CI, and the tracked core/overlays/patch-cache.json is dead",
+            "severity": "medium",
+            "files": [
+              "core/overlays/patch-cache.json",
+              "core/scripts/cve-draft-agent.py:23-26",
+              "core/scripts/cve-draft-agent.py:934-981",
+              ".github/workflows/cve-patch-agent.yml"
+            ],
+            "detail": "cve-draft-agent.py defines `PATCH_CACHE_PATH = os.path.join(\"build-outputs\", \"remediation\", \"patch-cache.json\")` — a path under `build-outputs/`, which .gitignore excludes (`build-outputs/*`, `core/build-outputs/*`) and which .github/workflows/cve-patch-agent.yml never persists (its only caches are Go modules and the Nix store). So the elaborate cache fast-path (check_patch_cache → validate → rebuild → branch, ~50 lines at lines 934-981) starts from an empty cache on every ephemeral runner and is effectively dead code in CI. Meanwhile the repo tracks `core/overlays/patch-cache.json` (`{\"entries\": {}, \"schema\": 2}`), a path no code reads — grep shows the only `patch-cache` references are the agent (build-outputs path) and its tests (tmpdir path). It looks like the cache was moved out of overlays/ without deleting the old file.",
+            "recommendation": "Pick one: (a) persist the real cache across runs with actions/cache keyed on grype DB epoch + flake.lock rev, or (b) move PATCH_CACHE_PATH back to the tracked overlays/patch-cache.json so verified recipes land in the PR alongside the overlay (the schema-2 format is already commit-friendly). Either way, delete whichever file is left dead.",
+            "effort": "low"
+          },
+          {
+            "title": "k8s-roundtrip.sh crashes with 'command not found' on its cluster-reuse path: log_warn is called but never defined",
+            "severity": "medium",
+            "files": [
+              "core/tests/k8s-roundtrip.sh:45"
+            ],
+            "detail": "The script defines `log_info`, `log_success`, and `log_error` only, but line 45 runs `log_warn \"Kind cluster ${CLUSTER_NAME} already exists. Reusing...\"`. Under `set -euo pipefail`, the undefined function exits the script with status 127 — precisely in the branch meant to gracefully reuse an existing cluster, so every second invocation of the round-trip test on the same machine dies before doing anything. (Every other script in core/tests/ and core/scripts/ defines log_warn; this is the one omission.)",
+            "recommendation": "Add `log_warn() { echo -e \"${YELLOW}[ClearCutt K8s] ⚠ $1${RESET}\"; }` next to the other loggers in core/tests/k8s-roundtrip.sh, and run shellcheck over core/tests/ in CI (SC2218/command-not-found class issues are exactly what it catches).",
+            "effort": "low"
+          },
+          {
+            "title": "Structure tests and smoke runner hardcode upstream branding, breaking the fork story the platform metadata layer exists to serve",
+            "severity": "low",
+            "files": [
+              "core/tests/structure-test-slim.yaml:47",
+              "core/tests/structure-test-distroless.yaml:65",
+              "core/lib/build-fleet.nix:24-27",
+              "core/tests/run-smoke-tests.sh:53"
+            ],
+            "detail": "build-fleet.nix writes the passwd GECOS from fork metadata: `${username}:x:${uid}:${gid}:${productName} Secure App User:...`, but both structure tests assert the literal `\".*appuser:x:10001:10001:ClearCutt Secure App User:/app:/sbin/nologin.*\"` — a fork that sets `branding.productName` in clearcutt.fleet.yaml fails its own structure gates. Similarly run-smoke-tests.sh hardcodes `IMAGE_TAG=$(echo \"clearcutt-${LANG}-${VER}:${TIER}\" ...)` while pipeline.sh carefully derives the prefix from platform-metadata.nix (`platform_image_prefix()`, pipeline.sh:74-91). These are the only fork seams in core/ that contradict the otherwise consistent `platformMetadata.x or default` pattern.",
+            "recommendation": "Have `clearcutt platform init` regenerate the structure-test YAMLs (they are small templates), or relax the GECOS assertion to `appuser:x:10001:10001:.*:/app:/sbin/nologin`. In run-smoke-tests.sh, accept the prefix via `${CLEARCUTT_IMAGE_PREFIX:-clearcutt}` like service-image-contract.sh already does (line 158).",
+            "effort": "low"
+          },
+          {
+            "title": "Overlay/lib eval checks in verify.sh are impure: they validate against the host's <nixpkgs> channel instead of the locked input",
+            "severity": "low",
+            "files": [
+              "core/tests/verify.sh:526-539",
+              "core/tests/verify.sh:543-553"
+            ],
+            "detail": "test_native_nix_integration evaluates `pkgs = import <nixpkgs> { overlays = [ flake.overlays.default ]; }` — `<nixpkgs>` resolves via the machine's NIX_PATH/channel, so the overlay is validated against an arbitrary nixpkgs that can differ from core/flake.lock (and the check fails outright on hosts with no channel configured). The repo is otherwise scrupulous about pinning; this is the one eval that escapes the lock.",
+            "recommendation": "Use the flake's own input: `let flake = builtins.getFlake (toString ./.); pkgs = import flake.inputs.nixpkgs { system = builtins.currentSystem; overlays = [ flake.overlays.default ]; }; in ...`. Same change for the mkHardenedShell drvPath check.",
+            "effort": "low"
+          },
+          {
+            "title": "Nix polish: impure <nixpkgs> default arg, empty throw messages, no-op rm in extraCommands, and an unimplemented recipe route",
+            "severity": "low",
+            "files": [
+              "core/lib/build-fleet.nix:3",
+              "core/lib/build-fleet.nix:260-267",
+              "core/lib/registry.nix:80-90",
+              "core/scripts/cve-draft-agent.py:28",
+              ".gitignore"
+            ],
+            "detail": "Assorted small wrinkles: (1) build-fleet.nix's default `{ pkgs ? import <nixpkgs> {} }` is an impure fallback that fails under pure eval — it is always overridden in practice, so the default is misleading; (2) registry.nix python devExtra uses `getPkg [ [ \"python313\" ] ] \"\"` — an empty throw message if the attr is missing; (3) the `rm -f etc/passwd etc/group` in extraCommands is a no-op (extraCommands starts from the symlinkJoin scratch dir; the cp that follows is what does the work — the rm IS needed to replace the lndir symlinks, but the comment-free pairing reads as confusion and deserves a comment); (4) `ALLOWED_RECIPE_ROUTES` includes `\"nixpkgs_input_update\"` but no resolver or executor implements that route — validate_recipe accepts it from an LLM yet still demands a package-attribute overlay_expression, making the route name a dead misnomer; (5) `__pycache__/`, `*.pyc`, and `.DS_Store` are absent from the repo .gitignore — they are kept out of this checkout only by the maintainer's personal ~/.gitignore_global, so any contributor without a global ignore will stage them (core/tests/__pycache__/ and core/scripts/__pycache__/ already exist on disk).",
+            "recommendation": "Drop the `<nixpkgs>` default (make pkgs required), give the python devExtra getPkg calls real error strings, comment the rm/cp passwd dance, remove `nixpkgs_input_update` from ALLOWED_RECIPE_ROUTES until implemented, and add `__pycache__/`, `*.pyc`, `.DS_Store` to .gitignore.",
+            "effort": "low"
+          },
+          {
+            "title": "No flake checks/formatter outputs — the impressive gate suite is invisible to `nix flake check`",
+            "severity": "suggestion",
+            "files": [
+              "core/flake.nix:172-263",
+              "core/tests/verify.sh"
+            ],
+            "detail": "The flake exposes only `packages`, `devShells`, `overlays`, and `lib`. All verification lives in bash (core/tests/verify.sh, 765 lines) and is invoked manually or by CI scripts, so `nix flake check` — the first thing a Nix-literate reviewer runs — reports nothing. Pure, fast invariants are already sitting there: registry/matrix eval coherence, overlay attr presence (replacing the impure check in verify.sh:526), structure assertions on image config JSON (config.User/WorkingDir are pure derivation outputs), and nixfmt/statix/deadnix linting of core/lib/.",
+            "recommendation": "Add `checks.<system>` wiring the cheap eval-level invariants (overlay attrs resolve, registry versions match clearcutt.fleet.yaml, cve overlay files parse) plus `formatter = pkgs.nixfmt-rfc-style`, keeping the heavy OCI gates in verify.sh. This is high showcase value for low effort: `nix flake check` becomes a one-command credibility demo.",
+            "effort": "medium"
+          }
+        ]
+      },
+      {
+        "dimension": "image-hardening",
+        "strengths": [
+          "Numeric non-root identity is real and triple-verified: core/lib/build-fleet.nix:246-251 bakes User=\"10001:10001\", WorkingDir=/app into the OCI config with /sbin/nologin shells for both root and appuser in the static passwd (build-fleet.nix:24-32), and it is asserted in core/tests/structure-test-{slim,distroless}.yaml metadataTest, core/tests/verify.sh test_rootless_boundaries, and core/tests/service-image-contract.sh:83-84. Kubernetes runAsNonRoot works without a manifest UID because the USER is numeric.",
+          "Distroless tier genuinely omits the FHS dynamic-linkage escape hatches: imageContentsForTier/envForTier (core/lib/build-fleet.nix:109-113) drop both the /lib,/lib64 glibc symlinks and LD_LIBRARY_PATH for distroless only, and verify.sh test_dynamic_binary_headers (lines 374-457) enforces that every ELF interpreter and RPATH entry resolves inside /nix/store. Setuid binaries are impossible by construction since Nix store canonicalization strips mode bits.",
+          "Production tiers actively strip package managers and toolchains, with tests that assert the absence: removeNpm deletes npm/npx/corepack and their module trees from slim/distroless Node (core/lib/registry.nix:22-32), go/rust/cc set omitInProduction (registry.nix:97-159), dotnet has explicit slimOverride/distrolessOverride runtime-only packages (registry.nix:110-125), and core/tests/run-smoke-tests.sh:96-127 fails the gate if rustc/gcc/shells reappear in slim/distroless.",
+          "Service image rootless writability is tested against the actual layer tars, not just config: core/tests/service-image-contract.sh:106-142 walks every layer.tar, asserting declared dataDirs exist, are owned 10001:10001, are owner-writable, and are NOT world-writable — wired into both pr-gate.yml:243 and release.yml:321.",
+          "The e2e suite proves the rebase trust boundary mathematically: core/tests/e2e-runtimes.sh:594-645 asserts byte-for-byte layer-swap invariants (base layers replaced, app layer digest preserved) and re-executes real workloads on the distroless tier per language, then runs `clearcutt certify` offline against the rebased archive.",
+          "Supply-chain hygiene in the release path is showcase-grade: GitHub Actions pinned by full SHA, slsa-verifier download verified by sha256 (release.yml:765-767), a hard guard refusing local cosign key generation under CI (core/pipeline/pipeline.sh:135-143), and an unusually well-reasoned comment block explaining the OCI-media-type + cosign v3 bundle design (pipeline.sh:325-345).",
+          "docs/security-model.md is refreshingly honest: explicit non-claims (no FIPS, overlay images do not inherit the distroless guarantee, service data-dir caveat, CVE-agent drafts are untrusted), and the license boundary (image=NOASSERTION vs recipe=Apache-2.0, security-model.md:39-42) is exactly right and rare to see done correctly."
+        ],
+        "wowIdeas": [
+          "Hardening-conformance attestation per digest: pipeline.sh already writes a structured test-results predicate and attaches SBOM/provenance attestations — extend that predicate with the structure-test, shell-absence, RPATH, and setuid-scan results per tier and attach it via the existing cosign v3 bundle flow, then render a 'Hardening verified' badge per image on the Astro catalog. No competitor (distroless, Chainguard) ships machine-verifiable hardening conformance as a signed attestation on the digest itself.",
+          "A `clearcutt certify --closure` mode that walks every layer (including /nix/store paths) asserting zero shells, zero package managers, and zero setuid/world-writable files — turning the Nix-canonicalization guarantee into recorded, queryable evidence and closing the FHS-only blind spot in one feature that doubles as a marketing artifact ('prove your vendor's distroless claim against ours').",
+          "jlink-minimized Java runtime line (registry.nix distrolessOverride) with closure-size and CVE-count deltas vs the full JDK shown side-by-side on the catalog site — a visceral demo of why a declarative Nix registry beats Dockerfile-based base images: one attribute change, fleet-wide minimization, with the SBOM diff to prove it.",
+          "Single-source runtime-hardening contract: a `hardening:` block in clearcutt.fleet.yaml that generates (a) the example Deployment securityContext, (b) the Kyverno/Gatekeeper policy bundle, and (c) OCI annotations on the published index (e.g. dev.clearcutt.hardening.readonly-rootfs=expected) so admission policy can verify the image's own declared runtime expectations — the 'repository is the control plane' story made literal.",
+          "Fix-then-flex the /tmp finding: after moving /tmp into extraCommands, add a 'runs everywhere' demo to docs/demo.md — `docker run` postgres16 standalone with zero flags (currently impossible) plus the same image under readOnlyRootFilesystem with emptyDir — showing the images are hardened AND ergonomic out of the box."
+        ],
+        "verifiedFindings": [
+          {
+            "title": "/tmp ships read-only in every image: chmod 1777 is silently stripped by Nix store canonicalization",
+            "severity": "high",
+            "files": [
+              "core/lib/build-fleet.nix:39-42",
+              "core/lib/build-fleet.nix:101",
+              "core/lib/build-fleet.nix:172",
+              "core/tests/structure-test-distroless.yaml:20-22"
+            ],
+            "detail": "build-fleet.nix creates /tmp via a contents derivation: `tmpDir = pkgs.runCommand \"cc-tmp-dir\" {} ''mkdir -p $out/tmp; chmod 1777 $out/tmp''`. Nix store canonicalization strips all mode bits to 0555/0444 — I verified empirically on this machine: building that exact derivation yields `dr-xr-xr-x` for $out/tmp, and the symlinkJoin used by dockerTools' customisation layer recreates it as a root-owned 0755 dir. So every image sets `TMPDIR=/tmp` (baseEnv, line 101) pointing at a directory UID 10001 cannot write. Concrete breakage: the postgres entrypoint hardcodes `-k /tmp` for its unix socket (line 172), so `docker run clearcutt-postgres16` fails on the lock file — and this is never caught because service-image-contract.sh runs postgres16 smoke as `--command-only` (line 18 `command_only=\"true\"`). The structure tests only assert /tmp `shouldExist: true` with no permission check, and the k8s/OpenShift examples mask the bug by mounting emptyDir at /tmp. The comment 'Isolated filesystem workspaces with optimized permissions' is currently false.",
+            "recommendation": "Create /tmp in `extraCommands` exactly like the (working) app-workspace pattern already in the same file: add `mkdir -p tmp && chmod 1777 tmp` next to prepareAppWorkspace (permissions set in extraCommands/fakeRootCommands DO persist into the layer tar — proven by the dataDirs contract test). Delete the dead tmpDir derivation, and add `permissions: 'dtrwxrwxrwx'` assertions for /tmp to both structure-test yamls. Also flip postgres16 smoke to a real startup test so the socket path is exercised.",
+            "effort": "low",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every factual claim verified, including empirically. (1) /Users/eddie/Development/clearcutt-images/core/lib/build-fleet.nix lines 39-42, 101, and 172 contain exactly the quoted tmpDir derivation, TMPDIR=/tmp baseEnv entry, and `-k /tmp` postgres socket flag. (2) Rebuilding the exact derivation with nix-build on this machine yields dr-xr-xr-x (0555) for $out/tmp — Nix store canonicalization strips the 1777. (3) Decisively, the actual shipped artifact build-outputs/coreLTS-distroless.tar.gz has `./tmp` recorded in its customisation layer tar as mode 0755 uid=0 gid=0, exactly the \"root-owned 0755 dir\" the reviewer claimed, unwritable by the configured User 10001:10001. (4) core/tests/service-image-contract.sh line 18 sets command_only=\"true\" for postgres16, and cli/internal/commands/service.go shows the finding actually understates the gap: smoke commands run with --entrypoint overridden, and serviceFunctionalSmokeProfileFor only defines a startup probe for the \"valkey\" template, so the postgres entrypoint is never executed even without --command-only. (5) Both structure-test yamls assert /tmp shouldExist with no permissions field. (6) I searched for mitigating controls: a `clearcutt conformance run` command does check tmp_writable (conformance.go:95-102) but no CI workflow runs it inside built images; the k8s/OpenShift examples mount emptyDir at /tmp and examples/oci-deployment/docker-compose.yml mounts tmpfs with mode=1777 — these mask rather than fix, confirming the finding. The e2e tests only run hello-world prints that never touch TMPDIR. Caveats on severity: postgres16 is lifecycle \"preview\" with productionAllowed: false, and all documented deployment paths mount over /tmp, so high vs medium-high is debatable — but for a hardened-image product whose docs (docs/enterprise-adoption.md) advertise writable /tmp, shipping every image with an unwritable baked-in TMPDIR and a service image that cannot start under plain `docker run` justifies high. I did not execute the postgres container itself (requires a Linux nix build), but the failure chain (uid 10001 creating /tmp/.s.PGSQL.5432.lock in a 0755 root-owned dir) is deterministic. The recommendation is sound: app/dataDirs permissions set in extraCommands/fakeRootCommands persist in the customisation layer tar, as the dataDirs contract check in service-image-contract.sh enforces in CI."
+            }
+          },
+          {
+            "title": "The 'distroless = shell-free' claim is only verified at FHS paths and only for a subset of images; a shell inside /nix/store is invisible to every gate",
+            "severity": "high",
+            "files": [
+              "cli/internal/certify/archive.go:252-258",
+              "core/tests/verify.sh:325",
+              "core/tests/verify.sh:383",
+              "core/tests/verify.sh:495-499",
+              "docs/security-model.md:19-20",
+              ".github/workflows/release.yml:321"
+            ],
+            "detail": "docs/security-model.md claims '`distroless` tier is verified by conformance/certification checks to be shell-free, package-manager-free'. Enforcement reality: (1) every shell/package-manager scan matches only FHS paths — certify's ScanLayerForRuntimeTools switch lists `\"bin/sh\", \"bin/bash\", ... \"usr/bin/zsh\"` and apk/apt/dnf paths; verify.sh problematic_paths is the same list; structure-test-distroless.yaml checks /bin and /usr/bin only. ClearCutt images put ALL payload under /nix/store, so if any language runtime's closure pulls in bash (e.g. a makeWrapper script in a JDK/dotnet derivation), it ships at /nix/store/<hash>-bash-*/bin/bash and no gate notices — the `docker run image sh -c` smoke check also relies on PATH lookup and misses it. (2) Coverage: structure tests, the rootless metadata check, and the RPATH gate run only against coreLTS-slim/coreLTS-distroless (verify.sh lines 325, 383, 465-467); release.yml runs only pipeline.sh (build/SBOM/grype) plus the service contract — the actually-published java/node/python/dotnet distroless artifacts get no shell-absence, UID, or RPATH conformance check at release time.",
+            "recommendation": "Two cheap, high-leverage fixes: (a) extend ScanLayerForRuntimeTools and verify.sh to flag basenames {sh,bash,ash,zsh,dash,busybox} and package managers anywhere in a layer, including nix/store/*/bin/*, with an allowlist for slim/dev; (b) run the (already tier-templated) container-structure-test per matrix target in the release build job — the tarball is already on disk in pipeline.sh, so it is one extra step before the skopeo push, and record it in the existing test-results predicate so the catalog shows per-digest conformance evidence.",
+            "effort": "medium",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every cited fact checks out. (1) FHS-only scanning confirmed in all four gates: cli/internal/certify/archive.go:252-258 exact-matches only \"bin/sh...usr/bin/zsh\" and FHS package-manager paths (and misses dash/busybox even there); core/tests/verify.sh:495-499 uses the same FHS list with [-f/-L] checks against the extracted root; core/tests/structure-test-distroless.yaml shell checks are /bin/bash, /bin/sh, /bin|usr/bin/ls|cat only; core/tests/run-smoke-tests.sh runs `docker run ... sh -c` which resolves via the image PATH (core/lib/build-fleet.nix:99 sets PATH to FHS dirs only), so a shell at /nix/store/<hash>-bash/bin/bash would evade all of them. No compensating Nix control exists: zero hits for disallowedReferences/allowedReferences/disallowedRequisites repo-wide, and build-fleet.nix distroless tier merely omits bash/busybox from contents while including the full unconstrained language closure (registry.nix) under /nix/store. (2) Coverage claims confirmed: verify.sh hardcodes coreLTS-slim at lines 325/383 and coreLTS-distroless at 465, structure tests (lines 599-608) run only on those two targets; release.yml's publish-matrix runs `clearcutt fleet publish-target` which (fleet.go:216) just invokes core/pipeline/pipeline.sh (build, syft SBOM, grype, sign/push — no structure/shell/UID/RPATH checks), plus service-image-contract.sh at release.yml:321 for services only. docs/security-model.md:19 makes exactly the quoted \"verified... shell-free\" claim. One nuance the finding omits: .github/workflows/e2e-runtimes.yml does run `clearcutt certify` per language (java/node/python/dotnet/etc.) against each distroless base, including a non-root UID check — but it triggers only on PRs/dispatch (not at release), and its shell scan is the same FHS-blind ScanLayerForRuntimeTools, so the central blind spot stands. Caveat on severity: the bash-in-closure scenario is plausible (e.g. wrapper scripts in dotnet/JDK derivations) but not demonstrated in any currently published image — this is a documented-assurance-vs-enforcement gap, so high is defensible for a product whose value is verified claims, though medium-high would also be fair absent a shown store-path shell."
+            }
+          },
+          {
+            "title": "Flagship OpenShift 'production blueprint' deploys an image that cannot start, and its verification steps are impossible on a distroless image",
+            "severity": "high",
+            "files": [
+              "examples/openshift-deployment/deployment.yaml:41",
+              "examples/openshift-deployment/README.md:45-54",
+              "core/lib/build-fleet.nix:246-251"
+            ],
+            "detail": "deployment.yaml runs `image: ghcr.io/northcutted/clearcutt/clearcutt-corelts:distroless` with no pod `command:`. buildFleetImage's defaultConfig sets only User/WorkingDir/Env/Labels — no Entrypoint or Cmd — and coreLTS-distroless contains zero executables (registry.nix:186-187 returns [] for core; distroless tierPkgs is just cacert). The pod therefore fails at container-create with 'no command specified' and the Deployment can never reach Ready. The README then instructs `oc exec -it deployment/clearcutt-openshift -- id` with expected output `uid=1000070000(appuser)`: there is no `id` binary (or any binary) in the image, and even if there were, UID 1000070000 has no /etc/passwd entry (only 10001 maps to appuser), so the shown output is fabricated. For a 'wow-factor' showcase, the one OpenShift artifact a Red Hat shop will try first fails on `oc apply`. By contrast examples/k8s-deployment correctly deploys an app image built on the base.",
+            "recommendation": "Mirror the k8s example: deploy an app image (e.g. the java template output) on the distroless base, or use the slim tier with an explicit `command: [\"bash\",\"-c\",\"sleep infinity\"]` and say so. Rewrite the verification section honestly: `oc get pod -o jsonpath='{.status...}'` for the assigned UID plus `oc debug` with an ephemeral image, and correct the `id` output to the nameless `uid=1000070000 gid=0(root)` form.",
+            "effort": "low",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every claim checks out. examples/openshift-deployment/deployment.yaml:41 deploys ghcr.io/northcutted/clearcutt/clearcutt-corelts:distroless with no pod command/args anywhere in the manifest. core/lib/build-fleet.nix:246-251 confirms buildFleetImage's defaultConfig sets only User/WorkingDir/Env/Labels (Entrypoint/Cmd only exist in buildServiceImage), and core/flake.nix builds the matrix images with no extraConfig, so the published image config has no Entrypoint or Cmd. core/lib/registry.nix:186-187 returns [] for language \"core\" and the distroless tierPkgs list in build-fleet.nix:84-87 is [pkgs.cacert] only; the shipped catalog SBOM (cli/site/src/data/catalog/images/coreLTS-distroless.json, v0.10.2) corroborates this — 8 packages, all libraries/certs (glibc, gcc libs, libidn2, libunistring, nss-cacert, xgcc), zero executables. A pod with no image Entrypoint/Cmd and no pod command fails at container create (CRI \"no command specified\"), so the Deployment can never become Ready. README.md:45-54 does instruct `oc exec -it deployment/clearcutt-openshift -- id` with expected output `uid=1000070000(appuser) gid=0(root)`: there is no id binary (or any binary) in the image, and build-fleet.nix:24-27 maps appuser only to UID 10001 in /etc/passwd, so even with binaries the named-UID output is impossible — the documented output is fabricated. The contrast claim also holds: examples/k8s-deployment deploys an app image (ghcr.io/acme/payments-api:1.0.0, documented as built from java21-distroless). No mitigating control exists: nothing in CI, tests, or scripts validates or caveats the OpenShift example, and docs/decisions.md cites it as the canonical OpenShift pattern. Only caveat on severity: this is an example/docs defect, not a vulnerability in shipped images, but \"high\" is defensible given the file presents itself as a production blueprint that fails on first `oc apply` and documents unverifiable output."
+            }
+          }
+        ],
+        "unverifiedFindings": [
+          {
+            "title": "Baked-in LD_LIBRARY_PATH in slim/dev/service images overrides DT_RUNPATH, weakening the store-bound linkage guarantee the RPATH gate certifies",
+            "severity": "medium",
+            "files": [
+              "core/lib/build-fleet.nix:105-107",
+              "core/lib/build-fleet.nix:113",
+              "core/lib/build-fleet.nix:320",
+              "docs/security-model.md:36-38"
+            ],
+            "detail": "fhsCompatibilityEnv sets `LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64` globally in every slim, dev, and service image. The glibc search order is DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, and modern Nix binaries carry DT_RUNPATH — so this env var takes precedence over the store-bound RUNPATH for every platform binary in those tiers. Today /lib only holds curated glibc/libstdc++ symlinks (lib64Symlink, lines 46-66), but any downstream layer that drops a same-named .so into /usr/lib or /lib silently hijacks library resolution for the entire runtime — precisely the class of drift the verify.sh RPATH gate ('RPATH references non-hermetic path') exists to prevent. security-model.md §2.1 acknowledges these are 'compatibility tiers' but does not state that the env var actively outranks RUNPATH. It is also unnecessary for the stated goal: FHS-oriented foreign binaries find /lib/ld-linux + /lib/libc.so.6 through default loader paths without LD_LIBRARY_PATH.",
+            "recommendation": "Drop LD_LIBRARY_PATH from baseEnv for slim/service tiers (keep the /lib,/lib64 symlinks — they alone provide FHS compatibility via the loader's default search), or gate it behind an explicit fleet-schema opt-in like `compatibility: fhs-loose`. At minimum document the precedence consequence in security-model.md §2.1 and add a structure-test assertion that distroless has no LD_LIBRARY_PATH (currently untested).",
+            "effort": "medium"
+          },
+          {
+            "title": "Java 'distroless' ships the full JDK — javac, jar, jdb and the jshell REPL — because java has no distrolessOverride",
+            "severity": "medium",
+            "files": [
+              "core/lib/registry.nix:45-57",
+              "core/lib/registry.nix:110-125"
+            ],
+            "detail": "registry.nix gives dotnet careful tier overrides (`slimOverride` = aspnetcore runtime, `distrolessOverride` = base runtime) but java's spec has only `raw = [ zulu21/temurin-bin-21/jdk21 ]` with `devExtra` for build tools — so resolveForTier returns the complete JDK for slim AND distroless. A 'distroless' java image therefore contains the compiler toolchain (javac, jlink, jmod, jar) and jshell, an interactive REPL that functions as a living-off-the-land interpreter even with no /bin/sh present. This contradicts distroless norms (upstream gcr.io distroless/java and Chainguard JRE images ship runtime-only) and inflates the closure/CVE surface the catalog advertises.",
+            "recommendation": "Add `distrolessOverride` (and arguably `slimOverride`) for java 21/25 pointing at a JRE package (nixpkgs has temurin-jre-bin-21 / zulu JRE attrs; fall back through the same getPkg candidate list pattern already used). For the wow factor, offer a jlink-minimized runtime line and show the closure-size delta on the catalog site.",
+            "effort": "medium"
+          },
+          {
+            "title": "OCI label metadata understates the supply-chain story: version label is the language version, and there is no revision/created traceability on the image config",
+            "severity": "medium",
+            "files": [
+              "core/lib/build-fleet.nix:232-243",
+              "core/pipeline/pipeline.sh:460-462",
+              ".github/workflows/release.yml:478-524"
+            ],
+            "detail": "ociLabels sets `org.opencontainers.image.version = version` — i.e. \"21\" for java21 — while the artifact actually released is e.g. v1.2.3-distroless; `VERSION_TAG` is exported in pipeline.sh but never reaches the image. There is no `org.opencontainers.image.revision` (git SHA) and no `org.opencontainers.image.created` label (buildLayeredImage defaults creation to the 1970 epoch for reproducibility, which is fine, but nothing at release time records when/from-what the digest was published on the image itself). Auditors inspecting a digest with `docker inspect`/`crane config` — without fetching attestations — get a base-image story with no source revision or release version. `org.opencontainers.image.source` is set, which is good, but it points at the repo, not the commit.",
+            "recommendation": "Do not inject the git SHA into the Nix build (it would break reproducibility and cache hits). Instead, in the existing assemble-multiarch job where `crane index append` already runs, add `crane mutate --annotation org.opencontainers.image.revision=$GITHUB_SHA --annotation org.opencontainers.image.version=$VERSION_TAG --annotation org.opencontainers.image.created=$(date -u ...)` on the assembled index before cosign signs it — annotations land on the signed subject without rebuilding layers.",
+            "effort": "low"
+          },
+          {
+            "title": "Slim tier ships the full default busybox applet set, expanding living-off-the-land surface beyond the 'minimal shell' story",
+            "severity": "low",
+            "files": [
+              "core/lib/build-fleet.nix:78-83",
+              "core/tests/structure-test-slim.yaml:31-37"
+            ],
+            "detail": "resolveTierPackages for slim returns `[ pkgs.bash pkgs.busybox pkgs.cacert ]`. nixpkgs' default busybox build enables the broad applet set — including network tooling like wget, nc, telnet and an httpd — which is considerably more attacker-useful tooling than the documented intent of 'retaining an interactive shell' (security-model.md:20). The slim structure test asserts bash/sh exist but nothing constrains what else busybox contributes.",
+            "recommendation": "Override busybox with a trimmed applet config (busybox.override { extraConfig = ''CONFIG_WGET n\\nCONFIG_NC n\\nCONFIG_TELNET n\\nCONFIG_HTTPD n''; }) or replace it with a curated coreutils subset, and add structure-test absence assertions for /bin/nc and /bin/wget on slim so the boundary is enforced, not incidental.",
+            "effort": "medium"
+          },
+          {
+            "title": "Postgres service image silently re-introduces /bin/sh and coreutils into a 'hardened' service image without surfacing it as evidence",
+            "severity": "low",
+            "files": [
+              "core/lib/build-fleet.nix:202-206",
+              "core/lib/build-fleet.nix:294-298",
+              "docs/security-model.md:88"
+            ],
+            "detail": "serviceTemplatePackages adds `pkgs.bash pkgs.coreutils` for the postgres template and serviceRuntimeCommands creates `ln -sf ${pkgs.bash}/bin/bash bin/sh` — legitimate, since initdb shells out — but the image is labeled 'Hardened ClearCutt service image' and nothing in the service contract, catalog record, or security-model documents that this specific service tier contains an interactive shell at /bin/sh (security-model.md §3 covers data dirs but not the shell). A fork owner flipping postgres16 to productionAllowed: true gets a shell-bearing image admitted under policies tuned for shell-free images.",
+            "recommendation": "Document the shell presence per service template (a `containsShell: true` field in the service spec/catalog record would make it queryable evidence), and have service-image-contract.sh assert the expected shell state per template so it is a declared contract rather than an implementation detail.",
+            "effort": "low"
+          },
+          {
+            "title": "No declarative OCI-config hardening knobs in the fleet schema: no healthcheck, stopSignal, or per-image config surface",
+            "severity": "suggestion",
+            "files": [
+              "schemas/clearcutt-fleet.schema.json:305-400",
+              "core/lib/build-fleet.nix:317-331",
+              "clearcutt.fleet.yaml:86-153"
+            ],
+            "detail": "The service schema exposes ports/dataDirs/env/entrypoint/cmd/smoke/lifecycle, but nothing maps to OCI `Config.Healthcheck` or `Config.StopSignal`, and the runtime matrix exposes no hardening config at all (buildFleetImage's extraConfig exists in Nix but is unreachable from clearcutt.fleet.yaml). Concretely: the postgres image already ships pg_isready (smoke list, clearcutt.fleet.yaml:104-107) yet has no HEALTHCHECK, and postgres's docker convention of StopSignal=SIGINT (fast shutdown) is unexpressed, so SIGTERM triggers smart shutdown and risks kill-after-grace data races. Capabilities/seccomp/no-new-privileges correctly cannot live in image config — but ClearCutt's differentiator is 'declared once in fleet.yaml, enforced everywhere', and today the runtime-hardening expectations live only in copy-paste example manifests.",
+            "recommendation": "Add optional `healthcheck: {test, interval, retries}`, `stopSignal`, and `labels` to the service entry schema, plumbed through service-extensions.nix into buildServiceImage's defaultConfig; add a top-level `hardening:` block (e.g. expectedRuntime: {readOnlyRootFilesystem, dropCapabilities, seccompProfile}) that `clearcutt policy` compiles into the generated Kyverno/Gatekeeper bundles and the example Deployment manifests — one declaration, enforced at both build and admission.",
+            "effort": "high"
+          }
+        ]
+      },
+      {
+        "dimension": "supply-chain-ci",
+        "strengths": [
+          "dc329fd is CORRECT, not a regression. The SLSA `slsa-github-generator/.github/workflows/generator_container_slsa3.yml` reusable workflow MUST be referenced by an immutable semver tag (`@v2.1.0`), never a commit SHA — the generator reads its own ref to set the builder ID in the provenance and `slsa-verifier` validates that builder version, so a SHA-pinned ref fails verification. The commit correctly reverts the SHA to `@v2.1.0` in `.github/workflows/release.yml:716`, `clearcutt.fleet.yaml:43`, and `cli/internal/fleet/config.go:355`, AND updates `scripts/validate-workflow-hardening.sh:41-54` to enforce the exact inverse rule (everything else SHA-pinned, SLSA generator must be a full vX.Y.Z tag). This is exactly per SLSA generator docs.",
+          "Every third-party action across all 7 workflows is pinned to a full 40-char commit SHA with a `# vX` trailing comment (e.g. `actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2`, `sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6`, `nix-community/cache-nix-action@7df957e...`), and `scripts/validate-workflow-hardening.sh` is wired into `pr-gate.yml:378` (`go-ci`) to fail the build on any drift. This is enforced, not aspirational.",
+          "Least-privilege permissions are applied per-job rather than at the top level. `release.yml` declares `contents: read, actions: read` globally and only escalates where needed: `id-token: write` + `packages: write` only on publish/assemble jobs, `attestations: write` only on the two `assemble-*-multiarch` jobs, `contents: write` only on `release-gate` (tagging) and `finalize-release`. The release tag push sits behind `environment: production` (`release.yml:73`) for manual approval.",
+          "Signing/verification is fully keyless OIDC with exact-identity constraints. `verify_release_evidence.go` deliberately uses `--certificate-identity` (exact, not `-regexp`) and `sign/cosign.go:139-148` `validateIdentity()` refuses empty/`.*`/`.+`/`https://github.com/.*` signer identities. The `certify-app` action (`action.yml:104-113`) and the release verify step both hard-fail when policy requires attestation but no concrete signer identity is supplied. The release runs a full closed-loop: sign → attest SBOM/test-results → SLSA L3 provenance → `verify-release-evidence` (cosign + slsa-verifier + `gh attestation verify`) before finalizing.",
+          "Strong separation of automated-patching privilege. `scheduled-scan.yml` cron runs with top-level `contents: read` and only scans/plans; AI patch drafting is gated behind a separate `draft-patches` job that requires `workflow_dispatch` + the `draft_patches` boolean input (`if: github.event_name == 'workflow_dispatch' && inputs.draft_patches`). The agent opens only DRAFT PRs (`remediation_run.go` `gh pr create ... --draft`), never auto-merges, refuses non-`cve-remediation/*` branches (`openRemediationPR`), and uses `--force-with-lease` against the exact fetched remote tip.",
+          "The CVE-patch agent has real recipe guardrails: `validate_recipe()` in `cve-draft-agent.py:317-344` constrains the LLM to an allowlist of routes (`version_bump`, `fetchpatch`, `nixpkgs_input_update`), requires the overlay to actually assign the package attribute, requires real source/patch/advisory evidence (not comment-only 'CVE verified' text), and validates by rebuilding the affected targets and re-scanning with Grype to confirm the CVE/package pair is actually gone (`verify_expected_remediations_removed`). The agent runs inside `agent-sandbox.sh` which `exec env -i` scrubs the process environment and gives an empty `$HOME`.",
+          "The `certify-app` composite action bootstraps trust correctly: it downloads the ClearCutt CLI from releases, verifies it with `cosign verify-blob` against the pinned release-workflow identity and OIDC issuer BEFORE executing it (`action.yml:54-60`), and cross-checks `SHA256SUMS.txt`. `validate-workflow-hardening.sh:75-84` enforces that those exact verification primitives stay present."
+        ],
+        "wowIdeas": [
+          "Ship a first-class Nix-closure SBOM as the authoritative evidence: generate SPDX/CycloneDX directly from the derivation graph (`nix path-info -r --json` over the image attr, or sbomnix), attest it with cosign, and render a side-by-side 'Nix closure vs syft scan' diff in the catalog site to visibly prove the Nix-derived manifest is complete where heuristic scanning has gaps. This is a concrete, demonstrable superiority no Dockerfile-based competitor can match.",
+          "Add a one-command, reproducible 'verify everything' experience: a `clearcutt attest verify <image>` that runs the exact cosign + slsa-verifier + `gh attestation verify` sequence from verify_release_evidence.go locally and prints a green/red evidence matrix (signature, SBOM, test-results, SLSA L3 provenance, GitHub-native provenance). The release pipeline already produces all of it; surfacing it as a single end-user command is pure DX upside.",
+          "Turn the CVE-patch agent into a closed-loop showcase: publish each automated remediation's evidence (route taken, validation targets rebuilt, before/after Grype deltas from `verify_expected_remediations_removed`, model/tier used) as a signed OpenVEX + a catalog 'remediation timeline' page, so reviewers can audit exactly how a CVE was driven to zero — and harden the agent to an allowlist Nix AST validator so the demo is also provably safe.",
+          "Add a SLSA/admission self-test gate: since `clearcutt.fleet.yaml` already declares the Kyverno admission policy (`requireSlsa`, `requireSbom`, `requireSignature`, `requireDigest`, `denyDevTier`), run a kind+Kyverno job in CI that admits a freshly-released slim/distroless image and rejects a dev-tier/unsigned one, producing a badge that proves the published evidence actually satisfies the shipped admission policy end-to-end."
+        ],
+        "verifiedFindings": [],
+        "unverifiedFindings": [
+          {
+            "title": "SBOM is syft-scanned from the final OCI tarball, not derived from the Nix closure — the platform's biggest provenance opportunity is left on the table",
+            "severity": "medium",
+            "files": [
+              "core/pipeline/pipeline.sh:224-231",
+              "core/flake.nix:157"
+            ],
+            "detail": "Despite being a Nix image factory where every store path and its complete dependency closure is known exactly, the SBOM is produced by heuristic scanning of the built tarball: `syft \"docker-archive:$uncompressed_tar\" -o spdx-json > \"$sbom_path\"` (pipeline.sh:225). syft re-discovers packages by pattern-matching file contents inside the image, which both misses build-time/closure components that aren't recognizable as packages and mis-attributes versions — for a hardened, Nix-built fleet this is strictly weaker than the ground truth Nix already has. A Nix-derived SBOM (from `nix path-info --recursive --json` / the derivation graph) would enumerate the exact closure with cryptographic store-path identity. The SBOM is correctly attested (cosign `attest spdxjson` in fleet.go:362 and `actions/attest-sbom` in release.yml:531), so the distribution mechanics are sound — only the source of truth is heuristic.",
+            "recommendation": "Add a Nix-closure-derived SPDX/CycloneDX generator (e.g. drive `nix path-info -r --json` over the image derivation, or integrate `sbomnix`/`nix-sbom`) and attest THAT as the authoritative SBOM, optionally keeping the syft scan as a secondary cross-check. This turns a generic syft scan into a provably-complete closure manifest and is a headline differentiator for a Nix-based hardened-image kit.",
+            "effort": "high"
+          },
+          {
+            "title": "e2e-runtimes.yml grants `packages: write` and `id-token: write` on a pull_request-triggered workflow that never pushes to a real registry or signs with real OIDC",
+            "files": [
+              ".github/workflows/e2e-runtimes.yml:17-21",
+              "core/tests/e2e-runtimes.sh:135-143",
+              "core/tests/e2e-runtimes.sh:568-589"
+            ],
+            "severity": "medium",
+            "detail": "The workflow runs `on: pull_request` and declares `permissions: packages: write, id-token: write` with the comment \"Required for keyless OIDC Cosign signing checks.\" But the e2e script only ever talks to a throwaway local registry (`REGISTRY_HOST=\"localhost:5001\"`, `skopeo copy --dest-tls-verify=false ... docker://localhost:...`) and signs with a stub (`MOCK_COSIGN` echoing args and exiting 0, passed via `--cosign-path \"$MOCK_COSIGN\"`). No step pushes to ghcr.io or requests a real OIDC token. PR-triggered workflows are the highest-risk surface for token misuse, so granting write/id-token scopes that are provably unused violates least privilege and weakens the showcase's own hardening story.",
+            "recommendation": "Drop both `packages: write` and `id-token: write` from e2e-runtimes.yml (leave only `contents: read`). The local-registry + mock-cosign design already proves the lifecycle offline; if a future variant truly needs OIDC, scope it to a dedicated `workflow_dispatch`-only job.",
+            "effort": "low"
+          },
+          {
+            "title": "workflow_dispatch inputs are interpolated directly into run-block shell instead of via env, creating script-injection sinks",
+            "severity": "low",
+            "files": [
+              ".github/workflows/release.yml:58",
+              "cve-patch-agent.yml:117-121",
+              ".github/actions/certify-app/action.yml:65-81"
+            ],
+            "detail": "Several run blocks splice `${{ github.event.inputs.* }}` (and action inputs) straight into shell text rather than passing them through `env:`. Examples: `release.yml:58` `CUSTOM_INPUT=\"${{ github.event.inputs.custom_version }}\"`; `cve-patch-agent.yml:117-121` passes `${{ github.event.inputs.package_name }}` / `cve_id` directly as CLI args in the open-PR step; `certify-app/action.yml` interpolates `${{ inputs.image }}` into `docker pull`/`docker save`. A value like `v1; curl evil|sh` would execute. Mitigating factors keep this low: `workflow_dispatch` requires repo write access, and the cve-patch-agent's actual agent step already correctly routes inputs through an `env:` block (cve-patch-agent.yml:92-105). It remains a latent injection sink and an inconsistency the showcase shouldn't model.",
+            "recommendation": "Move every untrusted interpolation into an `env:` mapping and reference `\"$VAR\"` in the script (the pattern already used for the agent step). For composite-action inputs, bind them to env vars at the step level rather than interpolating into the command line.",
+            "effort": "low"
+          },
+          {
+            "title": "The CVE-patch agent's dangerous-attribute denylist is incomplete — a hostile/hallucinated overlay can run arbitrary code via build phases it doesn't block",
+            "severity": "medium",
+            "files": [
+              "core/scripts/cve-draft-agent.py:29-43",
+              "core/scripts/cve-draft-agent.py:333-335"
+            ],
+            "detail": "`validate_recipe()` rejects a hardcoded `DANGEROUS_OVERRIDE_ATTRS` set (`prePatch`, `postPatch`, `preConfigure`, `configurePhase`, `preBuild`, `buildPhase`, `postBuild`, `preInstall`, `installPhase`, `postInstall`, `checkPhase`, `installCheckPhase`, `shellHook`). This is a denylist, and it omits several attributes that also execute arbitrary shell during a Nix build: `unpackPhase`, `patchPhase`, `fixupPhase`, `preFixup`, `postFixup`, `setupHook`, `preCheck`, `postCheck`, `buildCommand`, and additions to `nativeBuildInputs`. An LLM (steered by a prompt-injected advisory body, since the agent feeds scanner/advisory text into the model) could emit `postFixup = \"...\";` and pass validation. Blast radius is bounded — the Nix build runs with `sandbox = true` (no network, isolated as nixbld) and the overlay lands only in a draft PR that needs human review plus the full matrix CI before merge — so this is contained rather than critical, but a denylist on a supply-chain-sensitive code path is the wrong default.",
+            "recommendation": "Invert to an allowlist: for `version_bump` only permit `version`/`src` (fetchurl with a sha256), and for `fetchpatch` only permit appending to `patches` via `prev.fetchpatch { url; sha256; }`. Reject any overlay whose AST assigns attributes outside that closed set, rather than enumerating forbidden ones.",
+            "effort": "medium"
+          },
+          {
+            "title": "Credential broker writes the enterprise token into a Maven mirror with `<mirrorOf>*</mirrorOf>`, sending the secret to every resolved repository",
+            "severity": "low",
+            "files": [
+              "core/lib/credential-broker.sh:159-187"
+            ],
+            "detail": "`init_credential_broker()` generates `settings.xml` with `<mirror><id>enterprise-mirror</id><url>${ENTERPRISE_MIRROR_URL}</url><mirrorOf>*</mirrorOf></mirror>` and a matching `<server>` carrying `${ENTERPRISE_MIRROR_TOKEN}`. `mirrorOf=*` forces ALL Maven repository requests through the enterprise mirror with the credential attached, so any plugin/POM that resolves a repo whose id is `enterprise-mirror` (or any repo, since all are mirrored) receives the token. Files are created `chmod 600` in a `.gitignore`d cache and torn down by the EXIT/INT/TERM trap, so the scoping is otherwise reasonable; the concern is the broad `*` mirror routing the secret to potentially untrusted upstreams the mirror proxies. Same broad scoping applies to the Gradle `init.gradle` which rewrites every `MavenArtifactRepository` URL and attaches credentials.",
+            "recommendation": "Scope `<mirrorOf>` to `external:*` (or an explicit allowlist) so already-authenticated/internal repos aren't double-credentialed, and document that `ENTERPRISE_MIRROR_URL` must be a trusted proxy. Consider matching the npm/pip pattern of host-scoped auth rather than wildcard mirroring.",
+            "effort": "low"
+          },
+          {
+            "title": "OpenRouter model slots are all overridden to a non-routable \"openrouter/free\" placeholder in CI, so the agent's documented tiered-model fallback never actually exercises a real model",
+            "severity": "low",
+            "files": [
+              ".github/workflows/cve-patch-agent.yml:103-105",
+              ".github/workflows/scheduled-scan.yml:248-250",
+              "core/scripts/cve-draft-agent.py:1017-1019"
+            ],
+            "detail": "Both AI workflows set `OPENROUTER_FREE_MODEL`, `OPENROUTER_PAID_MODEL`, and `OPENROUTER_FALLBACK_MODEL` all to the literal `\"openrouter/free\"`. The Python defaults imply a real tiered design (`paid_model` default `google/gemini-2.5-flash`, fallback `anthropic/claude-3.5-haiku` at cve-draft-agent.py:1018-1019), but the workflow flattens all three to one string that is not a valid OpenRouter model slug (real free models look like `meta-llama/llama-3.1-8b-instruct:free`). The free/paid/fallback escalation loop (`attempt < max_attempts` picks free, then paid, then fallback) collapses to the same target, and the call likely errors at the API. For a showcase, the headline 'tiered AI remediation' is effectively inert in the shipped config.",
+            "recommendation": "Set the three env vars to real, distinct OpenRouter model slugs (or drive them from `clearcutt.fleet.yaml` like the other remediation params) so the documented free→paid→fallback escalation actually runs, and add a fast preflight that fails clearly if a configured model slug is unknown.",
+            "effort": "low"
+          },
+          {
+            "title": "`assemble-multiarch` attests per-arch SBOMs against the multi-arch index digest, conflating single-arch package sets with the index subject",
+            "severity": "low",
+            "files": [
+              ".github/workflows/release.yml:530-544",
+              "cli/internal/commands/fleet.go:360-371"
+            ],
+            "detail": "In `assemble-multiarch`, both `Attest amd64 SBOM` and `Attest arm64 SBOM` use the same `subject-digest: ${{ steps.resolve-digest.outputs.digest }}` (the OCI image index digest), each pointing at an arch-specific `*.sbom.json`. Likewise `fleet assemble-target` runs `cosign attest --type spdxjson` for each system's SBOM against the rolling index tag. The result is two SBOM attestations on one index subject describing different single-arch closures, with no subject linkage to the per-arch child manifest digests. A consumer verifying `--type spdxjson` against the index gets two SBOMs and cannot tell which applies to the platform they pulled. Not a trust hole (signer identity is verified) but it muddies the evidence story this project is selling.",
+            "recommendation": "Attest each per-arch SBOM against that architecture's child manifest digest (resolvable via `crane manifest`/`crane digest <index> --platform`), or emit a single merged multi-arch SBOM whose components are tagged by platform and attest that one document against the index.",
+            "effort": "medium"
+          }
+        ]
+      },
+      {
+        "dimension": "cli-dx",
+        "strengths": [
+          "Error-message quality is best-in-class for a Go CLI: the missing-catalog error (cli/internal/catalog/load.go:30) explains what was looked for and lists three concrete recovery commands; unknown-image errors append \"run `clearcutt list` to see available image ids\" (load.go:73); overwrite refusals say \"pass --force to overwrite\" (cli/internal/commands/app_template.go:571-583). Verified live — every error tested was actionable.",
+          "The grouped root help (cli/internal/commands/root.go:45-52) turns 23 top-level commands into a readable product map (Platform Kit / Catalog & Release Evidence / Catalog Discovery / App Team Workflow / Governance Gates / Security Operations), and a dedicated test (cli/internal/commands/commandtree_test.go) renders --help for every command in the tree to catch cobra group mis-registration — a failure mode `go build` cannot detect.",
+          "Executable-docs drift gate: scripts/validate-doc-commands.sh (wired into .github/workflows/pr-gate.yml:376) greps eleven docs for known-stale command shapes AND asserts live `clearcutt ... --help` output still contains documented flags. Docs that bit-rot fail the PR gate. This is rare and genuinely showcase-grade.",
+          "Fixture-first onboarding works exactly as written: README's `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` was traced and executed successfully from a clean tree; three committed fixture catalogs (cli/internal/testdata/{catalog,dev-catalog,mixed-catalog}) make list/inspect/verify/dev all provable offline with zero credentials.",
+          "The test story is enforced, not aspirational: pr-gate.yml runs cli/scripts/go-coverage.sh with COVERAGE_MIN=85.0, publishes per-package coverage and a lowest-covered-functions table to GITHUB_STEP_SUMMARY, and the full `go test ./...` suite passes in ~8s using a runCLI harness (cli/internal/commands/helpers_test.go) that exercises real flag parsing through NewRootCmd.",
+          "The fork story holds up under code inspection: `platform init` (cli/internal/commands/platform.go:75-196) rewrites fleet config, platform-kit doc, Nix metadata, and four app templates, then localizes consumer examples in-place with a carefully ordered strings.Replacer that preserves comments and skips the clearcutt.dev dialect; `platform status` then runs 29 named wiring checks (verified live: clean pass table, --format json works) so a fork can prove it is wired before its first release.",
+          "Git hygiene is clean despite a messy local tree: git ls-files confirms no committed binaries, no coverage artifacts, no .DS_Store, and the .gitignore documents the rationale for every block (including why cosign key caches must never land in git).",
+          "Role-routed docs front door (docs/README.md, mirrored in README.md): each persona gets one first document and one copy-pasteable first command, and docs/demo.md gives reviewers an honest fixture-backed vs live-proof distinction with /tmp output paths that avoid dirtying the checkout."
+        ],
+        "wowIdeas": [
+          "Signed-binary quickstart that dogfoods the trust story: the release workflow already publishes cosign-signed CLI binaries for 6 platforms with SHA256SUMS (.github/workflows/release.yml:370-417). A 3-command README opener — download binary, `cosign verify-blob --bundle` it against the release workflow identity, then use it to `verify image` — would let a security reviewer experience the entire evidence chain in under a minute with no Go toolchain.",
+          "`clearcutt doctor`: a first-contact command that turns docs/README.md's role table into the CLI itself — detect repo root, check go/nix/docker/cosign/npm availability and versions, report which fixture catalogs are present, and print the role-appropriate next command. The PlatformStatusCheck pass/fail table model in platform.go is already the perfect rendering primitive.",
+          "Expose the CLI as a flake app: core/flake.nix already exports packages and devShells; adding the Go CLI via buildGoModule would make `nix run github:ORG/REPO -- list --catalog ...` a zero-install demo path and give forks a reproducible CLI build channel alongside the image fleet.",
+          "Publish a composite GitHub Action (`clearcutt-verify-action`) wrapping `verify image` / `verify release-evidence` with the distinct exit codes and JSON output proposed above, emitting GitHub annotations per failed check — app teams could adopt the governance gate by adding 5 lines of workflow YAML, which is the natural growth loop for a forkable platform kit.",
+          "Turn the doc-drift gate into a generic published tool: validate-doc-commands.sh's pattern (assert docs against live --help output) is the most distinctive DX idea in the repo; generalizing it to a `clearcutt docs verify --bin ./clearcutt --docs docs/` subcommand would both harden forks' customized docs and make a great standalone showcase blog post.",
+          "Shell-completion + man-page release assets: cobra already generates completions (`clearcutt completion`), but nothing documents or packages them; attaching generated completions and man pages to releases (and mentioning them in the install section) is an hour of work that makes the CLI feel finished."
+        ],
+        "verifiedFindings": [],
+        "unverifiedFindings": [
+          {
+            "title": "Invalid --format values are silently ignored and fall back to table output",
+            "severity": "medium",
+            "files": [
+              "cli/internal/commands/root.go:37",
+              "cli/internal/commands/list.go:69-74",
+              "cli/internal/commands/platform.go:255-264"
+            ],
+            "detail": "The global flag is declared as a free-form string: `StringVar(&GlobalOpts.Format, \"format\", \"table\", \"Output formatting format: table, json, or yaml\")` and every consumer dispatches with `switch strings.ToLower(GlobalOpts.Format) { case \"json\": ... case \"yaml\", \"yml\": ... default: /* table */ }`. Verified live: `clearcutt list --format jsno` prints the human table and exits 0. A CI pipeline doing `clearcutt ... --format json | jq` with a typo gets a confusing downstream jq parse error instead of a CLI error. (Also note the help string itself stutters: \"Output formatting format\".)",
+            "recommendation": "Validate the flag once in a `PersistentPreRunE` on the root command (accept table|json|yaml|yml, return `unknown --format %q (expected table, json, or yaml)` otherwise), or register it via a custom pflag.Value enum type. Fix the \"Output formatting format\" help text at the same time.",
+            "effort": "low"
+          },
+          {
+            "title": "Global --format is accepted everywhere but silently ignored by over half the commands, including 3 of 4 verify subcommands",
+            "severity": "medium",
+            "files": [
+              "cli/internal/commands/verify_catalog.go",
+              "cli/internal/commands/verify_rebuild.go",
+              "cli/internal/commands/verify_release_evidence.go",
+              "cli/internal/commands/conformance.go",
+              "cli/internal/commands/exceptions.go",
+              "cli/internal/commands/scan.go"
+            ],
+            "detail": "`--format` is a persistent root flag, so it parses successfully on every command, but 27 of 47 non-test command files never read `GlobalOpts.Format` (grep for `GlobalOpts.Format` matches only 20 files). Verified live: `clearcutt verify catalog --catalog cli/internal/testdata/catalog --format json` prints the plain-text line `[catalog-verify] ok: 1 latest images have complete signature, provenance, SBOM, test, and scan evidence.` and exits 0. Meanwhile `verify image --format json` returns a proper `{status, image, tag, checks[]}` document. For a governance CLI whose pitch is CI/CD gating, the inconsistency inside the same `verify` namespace (image honors it; catalog, rebuild, release-evidence do not) is the sharpest DX edge in the tool.",
+            "recommendation": "Prioritize structured output for the gating family: give `verify catalog`, `verify rebuild`, `verify release-evidence`, `conformance`, and `exceptions validate` the same check-list JSON shape that `verify image` and `platform status` already emit (`VerifyResponse`/`PlatformStatus` are reusable models). For action commands where table/json genuinely doesn't apply, return an explicit error when a non-default --format is passed instead of ignoring it.",
+            "effort": "medium"
+          },
+          {
+            "title": "cwd-relative path defaults make the README-promoted `go -C cli run` invocation litter `cli/` with nested site/core/docs/examples trees — .gitignore codifies the bug instead of fixing it",
+            "severity": "medium",
+            "files": [
+              ".gitignore:38-42",
+              "cli/internal/commands/root.go:36",
+              "cli/internal/commands/catalog_enrich.go:59",
+              "cli/internal/commands/scan.go:64",
+              "cli/internal/commands/platform.go:55"
+            ],
+            "detail": "Defaults are resolved against the process cwd: `--catalog` defaults to `site/src/data/catalog` (root.go:36), `catalog enrich --out-dir` defaults to `site/src/data/enrichment`, `scan --out-dir` to `site/src/data/vulnerabilities`, `platform init --output` to `.`. README's blessed entry point is `go -C cli run ./cmd/clearcutt ...`, which sets cwd to `cli/`, so any default-path command run that way writes into `cli/site/...`, `cli/core/...`, etc. The maintainers know: .gitignore contains `# Accidental nested output roots created when commands run from cli/.` followed by `/cli/site/`, `/cli/examples/`, `/cli/docs/`, `/cli/core/`, and all four phantom directories currently exist in this working tree (`cli/site/src`, `cli/core/lib`, `cli/docs/platform-kit.md`, `cli/examples/clearcutt-template-*`). New contributors who mix the two documented invocation styles (`go -C cli run` vs `./clearcutt` from root) will silently read/write different catalogs.",
+            "recommendation": "Resolve defaults against a discovered repo root instead of cwd: walk up from cwd looking for `go.work`/`clearcutt.fleet.yaml` (the fleet config is a perfect marker) and prefix default paths with it; alternatively, when cwd's basename is `cli` and a default site/core path is about to be created, fail with a hint to run from the repo root. Then delete the four .gitignore band-aid entries and the phantom dirs.",
+            "effort": "medium"
+          },
+          {
+            "title": "Published releases ship cosign-signed, version-stamped CLI binaries for 6 platforms, but no onboarding doc offers them — every documented path requires Go 1.26 and build-from-source",
+            "severity": "medium",
+            "files": [
+              ".github/workflows/release.yml:370-417",
+              "README.md:47-59",
+              "docs/cli-reference.md:6-11",
+              "docs/getting-started.md:16-27"
+            ],
+            "detail": "release.yml cross-compiles `clearcutt-{darwin,linux,windows}-{amd64,arm64}` with `-ldflags=\"-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION\"`, keylessly signs each blob (`cosign sign-blob --yes ... --bundle`), and publishes SHA256SUMS — yet README's \"First Proof From A Clean Clone\", docs/cli-reference.md \"Build\", and docs/getting-started.md all start with `go -C cli build -o ../clearcutt ./cmd/clearcutt`. A security reviewer or app developer without a Go 1.26 toolchain has no documented way to get the CLI, even though signed artifacts already exist. This is a missed showcase moment: verifying the CLI binary itself with cosign before using it to verify images is the project's own trust story, dogfooded.",
+            "recommendation": "Add an \"Install\" section to README.md and docs/cli-reference.md: `gh release download` (or curl) the platform binary + `.sig` bundle, `cosign verify-blob --bundle ... --certificate-identity 'https://github.com/<org>/<repo>/.github/workflows/release.yml@refs/heads/main' --certificate-oidc-issuer https://token.actions.githubusercontent.com`, then run the fixture-backed first-proof commands. Keep build-from-source as the contributor path.",
+            "effort": "low"
+          },
+          {
+            "title": "`make test` is not clean-clone safe and CONTRIBUTING.md actively undermines make as the entry point",
+            "severity": "medium",
+            "files": [
+              "Makefile:15-25",
+              "Makefile:51",
+              "CONTRIBUTING.md:56"
+            ],
+            "detail": "`test: cli-vet cli-test site-typecheck site-build core-remediation-tests`, but `site-typecheck`/`site-build` are bare `cd site && npm run ...` with no dependency on `site-install` (`npm ci`), so `make test` on a fresh clone dies at the Astro typecheck with missing node_modules. CONTRIBUTING.md then hedges: \"On some macOS hosts, `make` can fail before recipes run because of local Xcode tooling. The direct commands above are the preferred contributor path.\" — so the repo ships a Makefile and simultaneously tells contributors not to rely on it. `make test` also omits the doc-drift gate (`scripts/validate-doc-commands.sh`), gofmt, and the 85% coverage gate that pr-gate.yml enforces, so a local green `make test` does not predict a green PR. The result is four competing entry points (make targets, `go -C cli run`, `cd cli && go ...`, and a gitignored `.claude` verify script) with none marked canonical.",
+            "recommendation": "Make `site-typecheck`/`site-build` depend on a `site/node_modules/.package-lock.json` sentinel target that runs `npm ci`; add a `make check` target that mirrors the pr-gate go-ci job exactly (vet, gofmt check, `cli/scripts/go-coverage.sh`, `scripts/validate-doc-commands.sh ./clearcutt`); state in CONTRIBUTING.md that `make check` is the one canonical pre-PR command and demote the rest to alternatives.",
+            "effort": "low"
+          },
+          {
+            "title": "Agent/contributor runbook points at a gitignored script and ships a Cobra skeleton that does not compile against the actual architecture",
+            "severity": "medium",
+            "files": [
+              ".agents/runbooks/cli-development.md:37-49",
+              ".agents/runbooks/cli-development.md:98",
+              ".gitignore:18",
+              "cli/internal/commands/root.go:54-91"
+            ],
+            "detail": "The runbook's mandatory Step B says: \"Run the unified verification script ... `./.claude/skills/test-clearcutt/scripts/verify.sh`\" — but `.gitignore` line 18 ignores `.claude/*` and `git ls-files` confirms nothing under `.claude/` is tracked, so the canonical \"Ecosystem Smoke Gating\" does not exist in a clean clone or any fork. Worse, the \"Example Cobra Subcommand Skeleton\" uses `func init() { ... rootCmd.AddCommand(myCmd) }` against a package-level `rootCmd` that does not exist; the real pattern is `NewXCmd()` constructors registered inside `NewRootCmd()` (root.go uses `add(\"group\", NewXCmd())`). Copying the runbook verbatim produces code that fails to compile — exactly the drift this repo's own doc-gate philosophy exists to prevent, in the `.agents/` directory the project showcases as its AI-assisted contribution story.",
+            "recommendation": "Commit the verify script into the repo (e.g., `scripts/verify-ecosystem.sh`) and have the local skill call it, then update the runbook reference; rewrite the skeleton to the `NewMyCmd() *cobra.Command` constructor + `root.go` registration pattern, and mention the `commandtree_test.go` help-render guard new commands must pass.",
+            "effort": "low"
+          },
+          {
+            "title": "Committed gofmt violation, and the \"Go Lint\" CI job runs no formatter or linter",
+            "severity": "low",
+            "files": [
+              "cli/internal/commands/list.go:75",
+              ".github/workflows/pr-gate.yml:370"
+            ],
+            "detail": "`gofmt -l .` in cli/ flags `internal/commands/list.go` — line 75 has a mis-indented comment (`\\t\\t\\t// Render the default table view.` inside a `default:` case). The pr-gate job is literally named \"Go Lint, Build, Test & Drift Guard\" but its only static check is `go vet ./...`; there is no gofmt or golangci-lint step, so unformatted code merges silently. The .agents runbook even tells contributors \"If formatting checks fail (gofmt)...\" — describing a gate that does not exist.",
+            "recommendation": "Run `gofmt -w internal/commands/list.go`, then add a CI step `test -z \"$(gofmt -l .)\"` (or adopt golangci-lint with gofmt+govet enabled) in the go-ci job so the job name matches reality.",
+            "effort": "low"
+          },
+          {
+            "title": "--output means four different things; out/out-dir/work-dir variants drift, and `platform status --output` names a read-only input directory",
+            "severity": "low",
+            "files": [
+              "cli/internal/commands/platform.go:55",
+              "cli/internal/commands/platform.go:69",
+              "cli/internal/commands/catalog_cmd.go:102",
+              "cli/internal/commands/catalog_enrich.go:59",
+              "cli/internal/commands/remediation.go:216",
+              "cli/internal/commands/remediation_report.go:38",
+              "scripts/validate-doc-commands.sh:98"
+            ],
+            "detail": "Across the command surface there are 14 `--output` flags (usually a write directory), 3 `--out-dir`, 2 `--out`, and 2 `--work-dir`. The worst case is `platform status --output` = \"Repository root to inspect\" — an output flag on a read-only command — which README/docs route every platform owner through (`platform status --output \"$PWD\"`). The confusion is proven in-repo: validate-doc-commands.sh has a dedicated drift rule (`check_absent \"platform status --output .. --fleet-config ...\"`) added specifically because documenting this flag wrong is easy.",
+            "recommendation": "Rename `platform init/status --output` to `--root` (keep `--output` as a hidden deprecated alias for one release), and converge `--out`/`--out-dir` onto `--output` with deprecated aliases. A small table in docs/cli-reference.md stating the flag-naming conventions (--output writes, --catalog reads, --root anchors) would lock it in.",
+            "effort": "medium"
+          },
+          {
+            "title": "Browse surface duplicated: `catalog inspect` is a hidden alias of `inspect`, `diff` and `catalog diff` reuse one verb for different semantics, and there is no `catalog list`",
+            "severity": "low",
+            "files": [
+              "cli/internal/commands/catalog_inspect.go:5-16",
+              "cli/internal/commands/catalog_cmd.go:48-56",
+              "cli/internal/commands/diff.go",
+              "cli/internal/commands/catalog_diff.go"
+            ],
+            "detail": "`newCatalogInspectCmd` simply calls `runInspect(args[0])` — byte-identical behavior to top-level `inspect`, but neither help text says they are the same command, and the pair share the package-global `inspectOpts`. Meanwhile top-level `diff` compares two versioned releases of one image while `catalog diff` compares two catalog directories — same verb, different semantics — and `list` has no `catalog list` counterpart, so the symmetry a user might infer does not hold.",
+            "recommendation": "Make aliasing explicit: either register the same *cobra.Command in both places with `Short: \"Alias of clearcutt inspect\"`, or drop `catalog inspect` with a deprecation notice. Rename `catalog diff` to something self-describing like `catalog diff-dirs` or clarify both Short strings (\"compare two releases of one image\" vs \"compare two generated catalog directories\").",
+            "effort": "low"
+          },
+          {
+            "title": "All failures exit 1: CI cannot distinguish a policy-gate failure from an operational error",
+            "severity": "suggestion",
+            "files": [
+              "cli/cmd/clearcutt/main.go:11-21",
+              "cli/internal/commands/io.go:13"
+            ],
+            "detail": "main.go already special-cases the sentinel: `if !errors.Is(err, commands.ErrCheckFailed) { fmt.Fprintf(os.Stderr, ...) }; os.Exit(1)`. Fifteen gating commands return `ErrCheckFailed`, so the distinction between \"the image failed policy\" and \"the catalog file was unreadable\" exists in-process but is flattened to exit code 1 at the boundary. CI consumers (the project's core audience) cannot tell a gate verdict from a crashed tool without parsing stderr.",
+            "recommendation": "Map `ErrCheckFailed` to a documented distinct exit code (e.g., 1 = checks failed, 2 = usage/operational error, matching conftest/OPA conventions), document it in docs/cli-reference.md, and add a drift-script `help_contains` style assertion. The sentinel plumbing makes this a ~5 line change in main.go.",
+            "effort": "low"
+          },
+          {
+            "title": "Hardcoded `cliReleaseTag = 'v0.10.2'` in the site CLI page is a manual version pin outside the doc-drift gate",
+            "severity": "low",
+            "files": [
+              "site/src/pages/cli.astro:34",
+              "cli/internal/sitetemplate/template/src/pages/cli.astro",
+              "scripts/validate-doc-commands.sh:97"
+            ],
+            "detail": "`const cliReleaseTag = 'v0.10.2';` is hand-maintained in both the live site page and the embedded sitetemplate copy. The doc-drift gate only bans one historical bad pin in markdown docs (`check_absent \"v0.11.1\" \"documented ClearCutt release pins must point at a published release\"`), so the Astro pages' pinned tag can silently fall behind actual releases — a known drift class in this repo (local tags reach v0.9.8 while the page pins v0.10.2).",
+            "recommendation": "Derive the tag from catalog data like the page already does for `imageReleaseTag` (`index?.latestTag`), falling back to a single source-of-truth constant; or extend validate-doc-commands.sh to assert the two cli.astro pins match a version recorded in one place.",
+            "effort": "low"
+          },
+          {
+            "title": "No self-contained contributor environment: core devShell omits Go/Node, and the repo that ships devcontainers for app teams has none for itself",
+            "severity": "suggestion",
+            "files": [
+              "core/flake.nix:145-169",
+              "cli/go.mod:3",
+              "examples/clearcutt-template-go/.devcontainer/devcontainer.json"
+            ],
+            "detail": "The default devShell's buildInputs are git, curl, patchelf, cosign, trivy, grype, syft, skopeo, container-structure-test — image-gating tools only. A contributor still needs Go 1.26 (bleeding-edge per cli/go.mod), Node for site/, and Python 3 for core tests, each installed out-of-band. Every app template ships a `.devcontainer/devcontainer.json` pinned to a ClearCutt dev image, but the platform repo itself has no root devcontainer or all-in-one shell, so the \"clone and be productive\" promise depends on four separately installed toolchains.",
+            "recommendation": "Add `hostPkgs.go`, `hostPkgs.nodejs`, and `hostPkgs.python3` to the default devShell (or add a `devShells.contrib`), and/or commit a root `.devcontainer` so `nix develop ./core` or one container is the single onboarding step CONTRIBUTING.md can point at.",
+            "effort": "low"
+          },
+          {
+            "title": "`platform init --force` clobbers fork customizations with no preview",
+            "severity": "suggestion",
+            "files": [
+              "cli/internal/commands/platform.go:75-127",
+              "cli/internal/commands/app_template.go:571-583",
+              "FORKING.md:25-30"
+            ],
+            "detail": "FORKING.md tells fork owners to run `./clearcutt platform init --owner YOUR_ORG --repo YOUR_REPO --force` on first setup. `writeGeneratedFile` with force=true unconditionally overwrites `clearcutt.fleet.yaml`, `docs/platform-kit.md`, `core/lib/platform-metadata.nix`, and all four app template trees. A fork operator who re-runs init later (e.g., after a registry rename) silently destroys any local edits to those generated files; `localizeConsumerExamples` is careful to edit examples in place, but the generated files get full rewrites. There is no --dry-run or diff mode.",
+            "recommendation": "Add `--dry-run` that prints the would-write/would-localize file list (the function already accumulates `written`/`localized` slices, so this is mostly a write-suppression flag), and have non-dry runs print a one-line warning when overwriting a file that differs from the generated content.",
+            "effort": "low"
+          }
+        ]
+      },
+      {
+        "dimension": "showcase-docs",
+        "strengths": [
+          "Real, independently verifiable evidence is committed and live, not fixture theater: site/src/data/catalog/ holds the generated v0.10.2 catalog with Rekor transparency log indexes (e.g. transparencyLogIndex 1749384161 with a search.sigstore.dev link in site/src/data/catalog/images/java21-distroless.json), GitHub Actions run URLs, per-arch SBOMs (syft-1.44.0, 120 packages with purl+CPE), grype findings with dbBuiltAt and KEV status, and GitHub Release asset URLs for raw SBOM/provenance/test JSON. The portal serves machine-readable evidence at /catalog/evidence-manifest.json and /catalog/images/<id>.json (verified live, HTTP 200). A skeptical reviewer can run the cosign/gh-attestation commands the docs print and cross-check the catalog record — exactly the differentiation claim made in docs/alternatives.md ('inspectable evidence surfaces rather than opaque trust').",
+          "Docs are CI-tested, not aspirational: scripts/validate-doc-commands.sh (invoked at .github/workflows/pr-gate.yml:376) executes command snippets from README.md and 10 docs against the built CLI. My own spot-check of 10 cross-references (verify rebuild flags in cli/internal/commands/verify_rebuild.go:144-156, platform status --output/--fleet-config in platform.go:54-69, catalog build --scan-depth in catalog_build.go:40, dev --devcontainer/--print in dev.go:77-82, exceptions --fail-on-expired-exceptions, vex --tag, graftOntoBase in core/flake.nix:197, agent-sandbox.sh, OPENROUTER_API_KEY in cve-patch-agent.yml:93, CLEARCUTT_G2_* in core/tests/verify.sh) found zero drift, and a link-check of all relative doc links found zero dead links. The README 'First Proof' commands actually run green from a clean clone.",
+          "Claim discipline is unusually rigorous for an OSS security project: docs/audit-findings.md is a formal claims register ('safe core claims' vs 'claims requiring caveats'), docs/homepage-audit.md audits homepage copy against reality, site/src/pages/limitations.astro documents eight concrete boundaries (RPATH leakage, fail-closed admission risk, OpenShift runAsGroup:0, credential exposure on build nodes), and the verify-image-vs-verify-release-evidence distinction (catalog gate vs registry-side crypto) is held consistently across README.md:61-64, docs/concepts/mental-model.md:54-60, and docs/trust/evidence-walkthrough.md.",
+          "docs/trust/cve-agent-threat-model.md is a genuinely good agent threat model: it treats advisory prose as prompt-injection-capable input, names the sandbox (core/scripts/agent-sandbox.sh — exists), requires validate-overlays + build/scan proof + human merge authority, and lists explicit non-claims. AI patch drafting is correctly opt-in (workflow_dispatch + OPENROUTER_API_KEY secret in .github/workflows/cve-patch-agent.yml).",
+          "Deep engineering hygiene that deserves marketing: the Astro portal is embedded into the Go binary via go:generate with a drift test (cli/internal/sitetemplate/sitetemplate.go — 'TestEmbeddedTemplateMatchesSite drift test fails if it falls out of sync'), so one binary scaffolds a complete evidence portal; the closure-equivalence in-toto predicate (https://clearcutt.dev/attestations/closure-equivalence/v1, docs/enterprise-compliance.md:77-82) is a novel, falsifiable attestation for BYO-base grafts; and the rebase flow's dual-identity trust boundary (developer signature verified before rebase-engine re-signs, docs/security-model.md:60-79) is articulated more honestly than most commercial offerings."
+        ],
+        "wowIdeas": [
+          "A CI-generated 'receipts' page that makes alternatives.md undeniable: nightly workflow builds/pulls the same hello-service image on clearcutt-java21:distroless, eclipse-temurin:21-jre, gcr.io/distroless/java21-debian12, and a Chainguard JRE, then publishes compressed size, package count, SBOM package depth (syft), critical/high CVE counts with scan date (grype), and which cosign/slsa-verifier commands succeed for each — rendered as a portal page and a committed markdown table. Every tool needed (syft, grype, crane, catalog renderer) is already in the pipeline.",
+          "A 'Verify this page yourself' block on every image detail page: the catalog records already contain the Rekor transparencyLogIndex, workflow identity, and digest — emit a single copy-paste script per image that runs cosign verify + gh attestation verify + jq-compares the registry result against the rendered catalog record, turning the portal into a self-auditing artifact. Link the Rekor entry (transparencyUrl is already in the data) as a clickable 'public transparency log' badge.",
+          "Promote the self-audit machinery as a product feature: docs/audit-findings.md (claims register), docs/homepage-audit.md, and the pr-gate doc-snippet validation (scripts/validate-doc-commands.sh) are a unique 'docs-as-tests + claims-as-policy' story no competitor tells. A short 'How ClearCutt audits its own claims' page on the portal — with the pr-gate badge wired to the actual drift checks — converts the currently-risky docs/analysis history into the project's most distinctive trust signal.",
+          "Ship the fixture-backed demo as a recorded artifact and a one-command experience: `make demo` (or `clearcutt demo`) that runs the five clean-clone proof commands and opens the locally built portal against internal/testdata/mixed-catalog, paired with an asciinema-GIF in the README hero. The deterministic fixtures make the recording reproducible, and it collapses the time-to-wow for an HN visitor from ten minutes of reading to thirty seconds of watching."
+        ],
+        "verifiedFindings": [
+          {
+            "title": "docs/alternatives.md never makes the technical case — the differentiation doc is the weakest page in the repo",
+            "severity": "high",
+            "files": [
+              "docs/alternatives.md",
+              "README.md:73",
+              "docs/README.md:11"
+            ],
+            "detail": "The designated manager entry point ('First document' for Engineering manager in README.md:73) is 43 lines and never names a single alternative: no apko/Chainguard, no gcr.io/distroless, no plain pkgs.dockerTools, no Docker multi-stage. The comparison table is four generic categories ('Vendor hardened feed | Operationally simple... | Less ownership...') with zero numbers — no closure size, package count, CVE delta, SBOM depth, or provenance-verifiability comparison, even though the repo already generates all of those metrics per image (latestPackageCount, vulnSummary, sbom.packages in site/src/data/catalog). The repo's own audit (docs/analysis/decisions-needed.md) chose 'category-level tradeoff comparison' deliberately, but for a wow-factor showcase the result reads as hand-wavy: a reader cannot tell why ClearCutt distroless beats a hand-rolled dockerTools.buildLayeredImage or a Chainguard image on any measurable axis. The capping irony: the manager's 'first useful command' is `sed -n '1,140p' docs/alternatives.md` — printing 140 lines of a 43-line file.",
+            "recommendation": "Add a CI-generated comparison artifact and link it from alternatives.md: a scheduled job that builds/pulls the same Java 21 service on (a) clearcutt-java21:distroless, (b) eclipse-temurin:21-jre, (c) gcr.io/distroless/java21-debian12, (d) a Chainguard JRE image, then publishes a table of compressed size, package count, syft SBOM package depth, grype critical/high counts with scan date, and which signature/provenance verification commands succeed. The pipeline already has syft+grype+crane; this is mostly a new workflow plus a generated markdown/JSON artifact rendered on the portal. Replace the sed command with `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog catalog summarize`.",
+            "effort": "medium",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every factual claim checks out. docs/alternatives.md is 42 lines (finding said 43 — trivial off-by-one), names no concrete alternative (no Chainguard/apko/gcr.io/distroless/pkgs.dockerTools/multi-stage anywhere in the file), and its Category Comparison table is exactly the four generic rows quoted, with zero quantitative data. README.md:73 and docs/README.md:11 both make it the Engineering manager's \"First document\" with first command `sed -n '1,140p' docs/alternatives.md`, which indeed asks for 140 lines of a 42-line file. The repo does already generate the cited metrics per image: latestPackageCount and vulnSummary in site/src/data/catalog/index.json, and sbom.packageCount/sbom.packages in releases[].architectures[].sbom of site/src/data/catalog/images/*.json; syft/grype/crane appear in .github/workflows/publish-pages.yml and release.yml, so the recommendation is feasible with existing tooling. The one mitigating control: this is a documented deliberate decision, not an oversight — docs/analysis/decisions-needed.md:18 explicitly chose \"category-level tradeoff comparison\" over naming vendors (rationale in docs/analysis/clearcutt-audit.md:48: competitors' primitives are not unique, named CVE/size claims go stale) and recorded the residual risk. The finding acknowledges this, so it stands, but the documented decision plus the fact that this is a positioning/docs-quality issue (no functional or security impact) makes \"high\" severity inflated; medium is more defensible. The sed quirk is real but cosmetic. fable-review and main are identical for all cited files."
+            }
+          },
+          {
+            "title": "Evidence portal silently rewrites scanner identity in the served evidence JSON",
+            "severity": "high",
+            "files": [
+              "site/src/lib/catalog.ts:26-57",
+              "site/src/pages/catalog/images/[id].json.ts:8-15",
+              "docs/trust/catalog-evidence.md:50-59",
+              "cli/internal/sitetemplate/template/src/lib/catalog.ts:23"
+            ],
+            "detail": "site/src/lib/catalog.ts defines publicArchPayload which rewrites `arch.vulnerabilities.scanner` from any 'grype*' value to the string 'vulnerability-check' and renames assertions ('Grype Vulnerability Gating' → 'Vulnerability check'). Because the static JSON route catalog/images/[id].json.ts serves loadImage() output, the rewrite lands in the published machine-readable evidence, not just UI labels — confirmed live: https://northcutted.github.io/clearcutt/catalog/images/java21-distroless.json returns scanner: \"vulnerability-check\" while sbom tool honestly reads \"syft-1.44.0\". This directly contradicts docs/trust/catalog-evidence.md ('Generated site labels should be read literally') and the core differentiator of 'inspectable evidence surfaces rather than opaque trust' (docs/alternatives.md:15-16). A skeptical auditor diffing the GitHub Release scan asset against the portal JSON sees a mutated scanner field and reasonably asks what else is rewritten. The replicated copy in the embedded template ships the same behavior to every fork.",
+            "recommendation": "Delete the scanner/assertion renaming in publicArchPayload (and the vestigial 'credential broker'→'credential helper' replace — the source blurb in cli/internal/catalogbuild/model.go:79 already says 'credential helper'). Display scanner name, version, and dbBuiltAt verbatim; if a friendlier label is wanted, add a displayName alongside the untouched scanner field. Regenerate the embedded template (go generate ./...) so forks inherit the fix.",
+            "effort": "low",
+            "verdict": {
+              "confidence": "high",
+              "isReal": true,
+              "note": "Every factual claim verified. site/src/lib/catalog.ts:37-58 (and the identical embedded template copy at cli/internal/sitetemplate/template/src/lib/catalog.ts) rewrites vulnerabilities.scanner from grype* to 'vulnerability-check' in publicArchPayload; the static route site/src/pages/catalog/images/[id].json.ts serves loadImage() output, so the rewrite lands in published machine-readable evidence. Confirmed end-to-end: on-disk source data has \"scanner\": \"grype-0.112.0\" while the live https://northcutted.github.io/clearcutt/catalog/images/java21-distroless.json returns \"scanner\": \"vulnerability-check\" with sbom tool honestly reading \"syft-1.44.0\". I searched for mitigating controls and found none: raw/scans/ in the catalog data is empty, no site route serves raw scan files, the verbatim-served evidence-manifest.json contains no scanner identity, and no doc discloses the mapping — the rewritten value is the only scanner identity the portal publishes. docs/trust/catalog-evidence.md:50 (\"Generated site labels should be read literally\") and docs/alternatives.md:15-16 (inspectable evidence vs opaque trust) say what the finding claims, and model.go:79 already says \"credential helper\", confirming the blurb replace is vestigial. One minor correction: the site-level assertion rename is mostly dead code because the Go generator (cli/internal/catalogbuild/record.go:84-92) already renames 'Grype Vulnerability Gating' to 'Vulnerability gate' before records reach the site (live JSON shows 'Vulnerability gate', not 'Vulnerability check') — which means scanner-identity scrubbing also happens upstream in the generator, slightly broadening rather than weakening the finding. High severity is justified in context: the product's stated differentiator is literal, inspectable evidence, and the recommendation (display verbatim, optional displayName, regenerate template) is sound."
+            }
+          }
+        ],
+        "unverifiedFindings": [
+          {
+            "title": "Architecture diagram 404s on the live About/Audit page (base-path bug, replicated into every fork)",
+            "severity": "medium",
+            "files": [
+              "site/src/pages/about.astro:119",
+              "site/astro.config.mjs:7",
+              "cli/internal/sitetemplate/template/src/pages/about.astro:119",
+              "docs/images/supply-chain-flow.svg"
+            ],
+            "detail": "about.astro:119 renders `<img src=\"/supply-chain-flow.svg\" alt=\"ClearCutt Supply Chain Architecture\">` with a root-absolute path, but astro.config.mjs sets `base: '/clearcutt'`. Verified live: https://northcutted.github.io/supply-chain-flow.svg → 404 while https://northcutted.github.io/clearcutt/supply-chain-flow.svg → 200, so the supply-chain architecture diagram — on the exact page titled 'About & Audit Guide' that security reviewers are routed to — is a broken image. index.astro carefully computes a base-prefixed hrefFor() helper (index.astro:10,33-38), so this is an isolated miss. The bug is also baked into the embedded fork template (cli/internal/sitetemplate/template/src/pages/about.astro:119). Separately, docs/images/supply-chain-flow.svg is referenced by zero markdown files — the README and all of docs/ contain no architecture diagram at all (the only inline diagram is the 4-node mermaid sketch in docs/security-model.md:26-31).",
+            "recommendation": "Prefix the asset with the base path (`${(import.meta.env.BASE_URL ?? '/').replace(/\\/$/, '')}/supply-chain-flow.svg`) in both site/ and the embedded template, then regenerate. Embed docs/images/supply-chain-flow.svg in README.md (it is currently orphaned) and consider expanding the security-model mermaid into a full trust-boundary diagram for leadership audiences.",
+            "effort": "low"
+          },
+          {
+            "title": "ADR digest-pinning mandate is contradicted by every shipped template Dockerfile",
+            "severity": "medium",
+            "files": [
+              "docs/decisions.md:17-19",
+              "examples/clearcutt-template-java/Dockerfile:1",
+              "examples/clearcutt-template-go/Dockerfile:1",
+              "cli/internal/commands/app_template.go:176-177",
+              "docs/getting-started.md:123-128"
+            ],
+            "detail": "docs/decisions.md ADR #2 states: 'All base image templates and production deployments must pin OCI image references using their immutable SHA-256 digest rather than standard mutable version tags.' But the committed templates use bare mutable tags — examples/clearcutt-template-java/Dockerfile:1 is `FROM ghcr.io/northcutted/clearcutt/clearcutt-java21:dev AS builder` and line 7 `FROM ...:distroless`; the generator hard-codes the same (app_template.go:176-177: `spec.DevImage = cfg.ImageName(spec.RuntimeLine) + \":dev\"`), and getting-started.md's 'Manual Dockerfile Fallback' does too. The ADR's own rationale ('An attacker who gains write access to a registry can overwrite the tag') applies verbatim to these FROM lines. The certification policy's requireDigestPinned:true covers only the app image ref, not the base. A sharp reviewer will quote the ADR against the kit's own paved path.",
+            "recommendation": "Either (a) soften ADR #2 to describe digest pinning as the production posture and add an explicit 'pin your base' step to templates (the catalog already exposes latestManifestDigest; `clearcutt inspect` can print a copy-paste FROM line with @sha256), or (b) make `app template` resolve and emit digest-pinned FROM lines from the configured catalog with a comment noting the rebase workflow updates them. Option (a) is a one-day fix; (b) is the better showcase.",
+            "effort": "medium"
+          },
+          {
+            "title": "Published catalog contract mislabels manifest-descriptor size as imageSize (15.6 kB for a 318 MiB image)",
+            "severity": "medium",
+            "files": [
+              "cli/internal/commands/catalog_enrich.go:397-399",
+              "schemas/image-record.v2.schema.json:61",
+              "site/src/components/LayersTable.astro:23",
+              "site/src/data/catalog/images/java21-distroless.json"
+            ],
+            "detail": "enrichmentArchitecture sets `size := descriptorSize` (the OCI manifest descriptor's byte size) and only falls back to the layer-sum when it is zero (catalog_enrich.go:397-399). Result in the live evidence JSON: java21-distroless reports imageSize: 15626 and release totalSize: 31253 while its layers sum to 333,577,839 bytes (318 MiB) — confirmed against https://northcutted.github.io/clearcutt/catalog/images/java21-distroless.json. The schema (image-record.v2.schema.json:61) gives no description, so any downstream consumer of this 'portable catalog artifact for policy, audit, and site rendering' (docs/platform-kit.md:136) will misread image size by four orders of magnitude. The unused LayersTable.astro:23 would render '98 layers · 15.6 kB' if ever wired up (the live page avoids it only because LayerExplorer.tsx recomputes from layer sums). Image size is also a headline differentiation metric that is currently absent from the portal because the recorded number is wrong.",
+            "recommendation": "Record both fields explicitly: keep manifestDescriptorSize if useful, and populate imageSize with the compressed layer sum (already computed as `total` in the same function). Add descriptions to the schema fields, bump the image-record schema patch version, and surface 'compressed size' on ImageHeader/catalog cards — small distroless sizes are a selling point worth rendering.",
+            "effort": "low"
+          },
+          {
+            "title": "1,123 lines of internal 'not ready' audit history ship in docs/analysis/ — free ammunition for skeptics",
+            "severity": "low",
+            "files": [
+              "docs/analysis/clearcutt-audit.md",
+              "docs/analysis/post-hardening-readiness.md",
+              "docs/analysis/decisions-needed.md",
+              "docs/analysis/clearcutt-action-plan.md",
+              "docs/analysis/critical-path-0-review.md"
+            ],
+            "detail": "docs/analysis/clearcutt-audit.md publicly states 'The project is not ready for broad, serious human feedback...' and lists 'What feels like marketing? \"Every image signed, attested\", ... \"Vulnerability Free\", \"VERIFIED KEYLESS\", and \"non-falsifiable\"', while post-hardening-readiness.md records a 'Brutal skeptic | NOT HAPPY' reviewer row and 'Screenshots remain deferred by owner direction.' The superseded-status banners are present and the transparency is admirable, but these files are one `ls docs/` away from the front door and are quotable out of context ('the project's own audit says the claims feel like marketing'). One leftover banned phrase also survives in product copy: 'Highly secure production hosting' at site/src/lib/image-metadata.ts:237, which the claims register (docs/audit-findings.md) explicitly disallows.",
+            "recommendation": "Reframe rather than delete: move the snapshots to docs/analysis/history/ with a short README that leads with the post-hardening verdict and frames the audit as the project's QA process (it genuinely is a strength), or distill them into one 'How we audit ourselves' doc and drop the raw reviewer-mood tables. Fix the 'Highly secure' string in image-metadata.ts to comply with the claims register.",
+            "effort": "low"
+          },
+          {
+            "title": "Zero visual or recorded demo artifacts — the showcase is 100% text",
+            "severity": "medium",
+            "files": [
+              "README.md",
+              "docs/demo.md:60-69",
+              "docs/analysis/post-hardening-readiness.md"
+            ],
+            "detail": "There is not a single screenshot, GIF, or asciinema recording anywhere in README.md or docs/ (grep for asciinema/.gif/.png across README and docs returns nothing). docs/demo.md:63-69 instead asks the reviewer to 'Capture screenshots of: docs front door role routing, CLI fixture-backed verify image, catalog homepage...' — i.e., the demo doc outsources the demo to the audience. The portal at northcutted.github.io/clearcutt is genuinely impressive (live evidence JSON, provenance blocks, vulnerability tables) but a leadership reviewer skimming the GitHub repo never sees it; the only visual asset, supply-chain-flow.svg, is orphaned in docs and broken on the live site (see separate finding). For 'wow-factor showcase quality' this is the largest cheap win available.",
+            "recommendation": "Record a 60-90s asciinema of the five clean-clone commands (list → inspect → verify image → app template → catalog site build) and convert to GIF for the README hero; add two screenshots (catalog matrix + java21-distroless evidence page) under docs/images/ and embed them in README.md and docs/demo.md. The fixture-backed commands are already deterministic, so the recording is reproducible in CI if desired.",
+            "effort": "low"
+          },
+          {
+            "title": "Dead components and terminology drift in the portal (replicated into the fork template)",
+            "severity": "low",
+            "files": [
+              "site/src/components/TerminalSimulator.tsx",
+              "site/src/components/LayersTable.astro",
+              "site/src/pages/limitations.astro:110-113",
+              "cli/internal/sitetemplate/template/src/components/TerminalSimulator.tsx"
+            ],
+            "detail": "TerminalSimulator.tsx (226 lines) and LayersTable.astro are imported by no page in site/src (grep confirms zero usages outside their own files), yet both are shipped twice — in site/ and inside the embedded template every fork scaffolds. Terminology also drifts: limitations.astro:110 headlines 'Credential Broker exposure' while its body and the rest of the site say 'credential helper' (the very term catalog.ts:23 rewrites), and the underlying core file is still core/lib/credential-broker.sh. Small, but this is the kind of inconsistency a reviewer notices on a project whose pitch is precision.",
+            "recommendation": "Delete TerminalSimulator.tsx and LayersTable.astro (or wire LayersTable in after fixing imageSize), pick one name for the credential component ('build-time credential helper' is already the public term) and align limitations.astro heading and core/lib/credential-broker.sh naming, then run go generate ./... so the embedded template tracks the cleanup.",
+            "effort": "low"
+          }
+        ]
+      },
+      {
+        "dimension": "schemas-consistency",
+        "strengths": [
+          "The embedded site template cannot drift: cli/internal/sitetemplate/template/src is byte-identical to site/src (verified — diff shows only site/src/data differs) and is enforced by TestEmbeddedTemplateMatchesSite (cli/internal/sitetemplate/sitetemplate_test.go:32), the gold standard the schema copies should also adopt.",
+          "Schemas ship with every generated catalog: writeCatalogSchemaFiles (cli/internal/commands/catalog_schemas.go) emits all 7 versioned schemas into <catalog>/schemas/, and the 6 schemas shared between root schemas/ and the embedded set are currently byte-identical — consumers get a versioned contract alongside the data.",
+          "v1/v2 coexistence is managed migration, not cruft: versioned constants with doc comments (cli/internal/catalog/types.go:8-19), BuildIndex auto-selects v2 only when service/kind images exist (catalogbuild/index.go:66-82), validate accepts both and supports --schema-version pinning (catalog_validate.go:183-212), and pr-gate.yml:285-286 gates the mixed-kind fixture on the v2 versions in CI.",
+          "`clearcutt catalog validate` does real referential-integrity work beyond field checks: duplicate/orphan image-record detection, index-vs-latest-release evidence cross-checks per channel, and an evidence-manifest that must DeepEqual a rebuild from the image records (catalog_validate.go:137-181) — plus a global --strict flag that wires json.DisallowUnknownFields as a deliberate drift catcher (cli/internal/catalog/load.go:12-23).",
+          "Exceptions enforcement is in exact parity with its schema: the status enum (affected/not_affected/fixed/under_investigation/false_positive/accepted_risk) and the 7-value reason enum in cli/internal/commands/exceptions.go:202-211 match schemas/exceptions.schema.json:47-62 one-for-one, including apiVersion/kind gating.",
+          "The rebase attestation contract is duplicated correctly in both layers: schemas/rebase-attestation.schema.json's allOf if/then (allowed ⇒ developerSignatureVerified=true + non-empty developerIdentity) is mirrored exactly by Predicate.Validate() in cli/internal/attest/rebase.go:84-110 — dual-control encoded twice, consistently.",
+          "fleet.Config is a well-engineered single Go source of truth: defaults derivation from owner/repo, applyDefaults + Validate with actionable errors listing supported values, built-in runtime-line and service-template registries, and GitHub matrix generation all in one place (cli/internal/fleet/config.go).",
+          "Developer-experience touches like the catalog-not-found error (cli/internal/catalog/load.go:29-41) that tells users exactly how to generate, build, or point at the bundled fixture catalog — rare polish for a governance CLI."
+        ],
+        "wowIdeas": [
+          "Make the shipped schemas executable: add github.com/santhosh-tekuri/jsonschema/v6 and have `catalog validate` (and a pr-gate + publish-pages step) validate index.json, images/*.json, and evidence-manifest.json against the embedded schemas. One dependency converts the schemas/ directory from documentation into enforced contract — and would have caught every drift finding in this review automatically.",
+          "Single-source the contract: generate the site's zod definitions from the JSON Schemas (json-schema-to-zod) and add a golden Go test that round-trips each fixture catalog through the catalog package's marshal/unmarshal and re-validates against the schema, killing the three-way Go/zod/schema divergence permanently.",
+          "Self-attesting catalogs: stamp generator.commit/version from runtime/debug.ReadBuildInfo() (vcs.revision works on any git build, no ldflags needed), then have publish-pages sign the catalog index with the same cosign keyless flow used for images — the evidence portal's data becomes evidence itself, displayed as a 'catalog provenance' badge on the site's About page.",
+          "Publish the schemas at their $id URLs (https://clearcutt.dev/schemas/...) via the existing Pages site and add a yaml-language-server modeline to clearcutt.fleet.yaml — forks get live editor validation of fleet configs and external policy tooling can $ref the catalog contract directly.",
+          "Add `clearcutt catalog migrate --to v2` that promotes v1 runtime records to v2 (kind: runtime, explicit nulls), plus a schemaVersion badge per image on the site — making the v1→v2 transition a visible, finishable migration instead of a permanent mixed state."
+        ],
+        "verifiedFindings": [
+          {
+            "title": "Published catalog index violates its own shipped v2 schema: required `kind` missing on 36 of 39 image summaries",
+            "severity": "high",
+            "files": [
+              "schemas/catalog-index.v2.schema.json:188-204",
+              "cli/internal/catalogbuild/model.go:215",
+              "cli/internal/catalogbuild/index.go:66-82",
+              "cli/internal/catalog/validate.go:48-54",
+              "site/src/data/catalog/index.json"
+            ],
+            "detail": "catalog-index.v2.schema.json lists \"kind\" in CatalogImageSummary.required (lines 189-204). But the generator's ImageSummary marshals it as `Kind string `json:\"kind,omitempty\"`` (catalogbuild/model.go:215) and runtime images never get Kind set — only service images do. BuildIndex flips the whole index to v2 whenever ANY image is v2 (`if img.Kind != \"\" || img.Service != nil { hasV2Image = true }`, index.go:68; `schemaVersion = catalog.CatalogIndexSchemaVersionV2`, index.go:81). The real generated catalog confirms it: site/src/data/catalog/index.json declares `\"schemaVersion\": \"clearcutt.catalog.index/v2\"` yet 36 of 39 image summaries (every runtime image: coreLTS-dev, java21-dev, node22-*, ...) have no `kind` key; only postgres16/valkey8/oauth2-proxy7 do. Nothing catches this: the CLI's own validator defaults empty kind to \"runtime\" (`normalizedKind` in catalog/validate.go:48-54) and the site's zod does `.optional().default('runtime')` (site/src/lib/catalog-schema.ts:339). Any consumer who runs the schemas the catalog itself ships under schemas/ will see the flagship artifact fail validation.",
+            "recommendation": "In SummarizeImageForIndex (cli/internal/catalogbuild/record.go:202) and the v2 record path, explicitly set Kind to \"runtime\" when the index is emitted as v2 (or drop omitempty and normalize at build time). Add a regression test that marshals a mixed-catalog index and asserts every images[] entry has a kind when schemaVersion is v2.",
+            "effort": "low",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every claim checked out. (1) /Users/eddie/Development/clearcutt-images/schemas/catalog-index.v2.schema.json lists \"kind\" in CatalogImageSummary.required (line 191) and images[] items $ref that definition (line 77); identical copies ship at cli/internal/catalog/schemas/ and site/src/data/catalog/schemas/. (2) cli/internal/catalogbuild/model.go:215 has `Kind string `json:\"kind,omitempty\"``. (3) cli/internal/catalogbuild/index.go:68 flips hasV2Image when any image has Kind or Service, and line 81 sets the whole index to v2. (4) Runtime records never set Kind: runtimeRecordTarget (record.go:66-82) omits it while only BuildServiceImageRecord sets Kind \"service\" (record.go:389), and SummarizeImageForIndex copies img.Kind verbatim (record.go:272). (5) I parsed site/src/data/catalog/index.json: schemaVersion is \"clearcutt.catalog.index/v2\", 39 images, exactly 36 lack a \"kind\" key, only postgres16/valkey8/oauth2-proxy7 carry kind:\"service\" — matching the finding's numbers. (6) No mitigating control exists: go.mod pulls in no JSON Schema validator; the CI gate (.github/workflows/pr-gate.yml:285) runs `catalog validate`, whose normalizedKind (cli/internal/catalog/validate.go:48-54) silently defaults empty kind to \"runtime\"; site/src/lib/catalog-schema.ts:339 likewise does `.optional().default('runtime')`; cli/internal/catalog/schema_files_test.go only asserts the schema files are bundled, never that generated output conforms. So the published artifact genuinely fails the schema it ships. Only quibble: severity \"high\" is arguable — both in-repo consumers tolerate the omission, so impact is limited to external consumers validating against the shipped schema; medium-high would also be defensible, but for a project whose product is verifiable supply-chain evidence, the self-contradiction is material."
+            }
+          },
+          {
+            "title": "All four JSON Schemas families are decorative — no JSON Schema validator runs anywhere in CLI, site, or CI",
+            "severity": "high",
+            "files": [
+              "cli/go.mod:1-24",
+              "cli/internal/commands/catalog_validate.go:55-135",
+              "cli/internal/catalog/validate.go",
+              "site/src/lib/catalog-schema.ts:1-389",
+              ".github/workflows/pr-gate.yml:283-286",
+              "cli/internal/commands/catalog_schemas.go:10-25"
+            ],
+            "detail": "The repo maintains three hand-written parallel contracts: JSON Schemas (schemas/ + embedded cli/internal/catalog/schemas/), Go structs (cli/internal/catalog/types.go), and zod (site/src/lib/catalog-schema.ts) — but no code path ever executes the JSON Schemas. cli/go.mod has no jsonschema dependency (only cobra, go-containerregistry, sigs.k8s.io/yaml). `clearcutt catalog validate` is entirely hand-rolled structural checking (catalog_validate.go), the site parses with its own zod definitions (catalog.ts:94,105), and CI only runs `catalog validate --schema-version ...` (pr-gate.yml:285-286), which merely string-compares the schemaVersion field. Meanwhile writeCatalogSchemaFiles (catalog_schemas.go) ships the schemas into every generated catalog as the public contract, and docs/catalog-schema.md presents them as the spec. The result is exactly the drift documented in the other findings: the published artifact fails its own published schema and nobody notices. clearcutt-fleet.schema.json, certification-policy.schema.json, and exceptions.schema.json are likewise enforced only by parallel Go logic.",
+            "recommendation": "Add a JSON Schema engine (e.g. github.com/santhosh-tekuri/jsonschema/v6) and make `catalog validate` run the embedded schemas against index.json, every images/*.json, and evidence-manifest.json in addition to the structural checks. Add a Go test that validates all three testdata catalogs and a freshly generated catalog against the schemas, and a publish-pages.yml step that schema-validates the catalog artifact before deploy.",
+            "effort": "medium",
+            "verdict": {
+              "isReal": true,
+              "confidence": "high",
+              "note": "Every cited fact checks out. cli/go.mod depends only on cobra, go-containerregistry, and sigs.k8s.io/yaml — no jsonschema library, and no .go file in the repo imports one (the lone santhosh-tekuri/jsonschema entry in go.work.sum is a /go.mod-only graph hash, not built code). cli/internal/commands/catalog_validate.go is entirely hand-rolled structural checking, and its --schema-version handling (validateIndexSchemaVersion/validateImageSchemaVersion) is plain string comparison against constants. site/src/lib/catalog-schema.ts is 389 lines of zod; site/src/lib/catalog.ts parses with CatalogIndex.parse (~line 94) and ImageRecord.parse (~line 105); site/package.json has zod but no validator (ajv appears only as a transitive astro dep in the lockfile). pr-gate.yml lines 285-286 run exactly the two `catalog validate --schema-version ...` commands claimed, and no workflow (pr-gate, publish-pages, scheduled-scan), script, Makefile target, or core/ pipeline step runs a JSON Schema engine. writeCatalogSchemaFiles (catalog_schemas.go:10-25) ships the embedded schemas into every generated catalog and docs/catalog-schema.md presents them as the published contract; the only related test (schema_files_test.go) merely checks the embedded files exist and are non-empty. Fleet/certification/exceptions schemas are likewise backed only by parallel Go logic (cli/internal/fleet/config.go, commands/certify.go, commands/exceptions.go). I found no mitigating control, and I empirically confirmed the claimed consequence: running ajv against the published artifact, site/src/data/catalog/index.json (schemaVersion clearcutt.catalog.index/v2) fails its own shipped catalog-index.v2.schema.json because every images[] entry lacks the schema-required \"kind\" property (schemas/catalog-index.v2.schema.json:191). Only quibble: the phrase that CI \"merely string-compares the schemaVersion field\" undersells that `catalog validate` also runs the full hand-rolled structural checks — but the finding acknowledges those elsewhere, so this is phrasing, not a factual error. High severity is justified: the schemas are the shipped public contract and the published artifact demonstrably violates them with nothing in CLI, site, or CI able to notice."
+            }
+          },
+          {
+            "title": "Published evidence catalog stamps generator as version \"dev\", commit \"unknown\"",
+            "severity": "high",
+            "files": [
+              "cli/internal/commands/catalog_cmd.go:246-263",
+              ".github/workflows/publish-pages.yml:54",
+              ".github/workflows/release.yml:394",
+              "cli/internal/commands/root.go:8-9",
+              "site/src/data/catalog/index.json"
+            ],
+            "detail": "stampCatalogIndexMetadata writes `index.Generator = &catalog.CatalogGenerator{Name: \"clearcutt\", Version: catalogbuild.FirstNonEmptyStr(Version, \"dev\"), Commit: \"unknown\"}` — Commit is hardcoded to \"unknown\" with no code path that ever fills it. Version is only injected by release.yml:394 (`-ldflags=\"... -X github.com/northcutted/clearcutt/internal/commands.Version=$VERSION\"`), but the Pages pipeline that actually publishes the catalog builds with a bare `go build -o ../clearcutt ./cmd/clearcutt` (publish-pages.yml:54 and :190). Ground truth from the generated data: site/src/data/catalog/index.json contains `\"generator\": {\"name\": \"clearcutt\", \"version\": \"dev\", \"commit\": \"unknown\"}`. For a platform whose whole pitch is evidence and provenance, the evidence index's own generator provenance is unversioned and untraceable — and this is the version-drift ground truth across workspaces: the released CLI knows its version, the catalog/site pipeline does not.",
+            "recommendation": "Derive version/commit via runtime/debug.ReadBuildInfo() (vcs.revision, vcs.time, module version) as a fallback in stampCatalogIndexMetadata so even plain `go build` binaries stamp the real commit; additionally pass the same -ldflags in publish-pages.yml. Surface generator version/commit on the site About page as a trust signal.",
+            "effort": "low",
+            "verdict": {
+              "confidence": "high",
+              "isReal": true,
+              "note": "Every factual claim checks out. cli/internal/commands/catalog_cmd.go:246-263 contains stampCatalogIndexMetadata with Commit hardcoded to \"unknown\" (line 254) and Version falling back to \"dev\"; no code anywhere in cli/ uses runtime/debug.ReadBuildInfo or vcs.revision, so nothing ever fills Commit. root.go:8-9 declares Version=\"dev\"; release.yml:394 is the only ldflags injection (Version only); publish-pages.yml builds the CLI with bare `go build` at lines 54 and 190 and then runs `./clearcutt catalog build` (lines 132/139), so the Pages-published catalog is stamped dev/unknown — confirmed by the generated site/src/data/catalog/index.json on disk (gitignored artifact, generated 2026-06-08) containing exactly {\"name\":\"clearcutt\",\"version\":\"dev\",\"commit\":\"unknown\"}. I searched for mitigating controls and found none: no script or workflow post-processes the generator field. Two caveats on severity: (1) the homepage's \"Generator\" row (site/src/pages/index.astro:116) hardcodes \"ClearCutt static portal\" and never renders the dev/unknown values, and (2) image-level trust (cosign signatures, SLSA provenance, SBOMs) is verified independently of this metadata, so nothing security-critical depends on the generator stamp. The finding is real and well-evidenced, but \"high\" overstates it — this is a provenance-completeness/credibility gap in informational metadata, best rated medium."
+            }
+          }
+        ],
+        "unverifiedFindings": [
+          {
+            "title": "v1 catalog emission self-invalidates: index stamping round-trip silently drops schema-required Lifecycle/RuntimeContract keys",
+            "severity": "medium",
+            "files": [
+              "cli/internal/commands/catalog_cmd.go:175,246-263",
+              "cli/internal/catalog/types.go:146-165",
+              "schemas/catalog-index.v1.schema.json:133-180",
+              "cli/internal/catalogbuild/lifecycle.go:10-29"
+            ],
+            "detail": "catalog-index.v1.schema.json requires Lifecycle to contain `deprecatedAt`, `eolAt`, `reason` (required list, lines 135-142) and RuntimeContract to contain all 8 keys including `defaultEntrypoint` (lines 160-169). The writer types in catalogbuild always emit them (lifecycle.go:10-29, no omitempty), but stampCatalogIndexMetadata — called after every `catalog generate`/`catalog build` (catalog_cmd.go:175,734,744,806; catalog_build.go:109) — re-loads index.json through the reader types and rewrites it. Those use `*string` with omitempty (types.go:150-152 `json:\"deprecatedAt,omitempty\"` etc.), so null values are dropped. Empirically verified: round-tripping the fixture index through these types yields `{\"status\":\"active\",\"support\":\"lts\",\"productionAllowed\":true}` — three required keys gone. rust/cc images also lose `defaultEntrypoint` (determineRuntimeContract returns nil for them; confirmed in real data: rust1.95-dev runtimeContract has 7 keys, no defaultEntrypoint). The current production catalog escapes only because services flip it to v2, whose relaxed required lists tolerate the omissions — a fork building a runtime-only fleet emits a v1 index that fails the v1 schema it ships.",
+            "recommendation": "Either drop omitempty from Lifecycle/RuntimeContract pointer fields in cli/internal/catalog/types.go (emit explicit nulls, matching the catalogbuild writer and the v1 schema), or relax the v1 schema's required lists to match v2. Then add the schema-validation test from the main finding to lock it.",
+            "effort": "low"
+          },
+          {
+            "title": "clearcutt-fleet.schema.json is referenced nowhere and rejects the documented `runtimeLines` feature via additionalProperties:false",
+            "severity": "medium",
+            "files": [
+              "schemas/clearcutt-fleet.schema.json:6-18",
+              "cli/internal/fleet/config.go:40,177-187",
+              "docs/extending-clearcutt.md:52"
+            ],
+            "detail": "schemas/clearcutt-fleet.schema.json sets top-level `\"additionalProperties\": false` (line 6) but defines no `runtimeLines` property. The Go Config explicitly supports it (`RuntimeLines []RuntimeLine `json:\"runtimeLines,omitempty\"``, fleet/config.go:40, with full validation in runtimeLineMap), and docs/extending-clearcutt.md:52 documents that `clearcutt runtime scaffold` \"writes a custom `runtimeLines` entry\" into clearcutt.fleet.yaml. So any fork that uses the advertised extension mechanism produces a fleet config that fails the published schema. The schema is also wholly unenforced: grepping the repo, the only reference to clearcutt-fleet.schema.json is its own $id — no Go code, workflow, Makefile target, or editor wiring (e.g. yaml-language-server modeline in clearcutt.fleet.yaml) ever loads it. The schema's enums also drift from Go: `matrix.languages` is free-form in the schema but Go restricts to supportedRuntimeLines+custom; `templates.runtimes` is schema-enum'd to [java,node,python,go] while Go never validates it at all (Config.Validate has no templates check, config.go:508-579).",
+            "recommendation": "Add a `runtimeLines` property (mirroring RuntimeLine: id/language/version/appTemplateRuntime/description/packageCandidates/devPackages/omitInProduction/smoke) to the schema, add a `# yaml-language-server: $schema=...` modeline to clearcutt.fleet.yaml for editor validation, and validate the schema against clearcutt.fleet.yaml in a Go test or pr-gate step so it cannot drift again.",
+            "effort": "low"
+          },
+          {
+            "title": "Fixture catalogs are stale against the published schemas and don't match current generator output",
+            "severity": "medium",
+            "files": [
+              "cli/internal/testdata/catalog/index.json",
+              "cli/internal/testdata/catalog/images/java21-distroless.json",
+              "cli/internal/testdata/dev-catalog/index.json",
+              "schemas/catalog-index.v1.schema.json:5-20",
+              "schemas/package-entry.v1.schema.json:7",
+              "cli/internal/catalog/fixture_test.go:12-92"
+            ],
+            "detail": "The primary fixture (cli/internal/testdata/catalog) fails the published v1 schemas on multiple required fields: index.json has no `schemaVersion`, `generator`, `source`, or `summary` (all four are in catalog-index.v1.schema.json's required list, lines 5-20, and the current generator always stamps them via stampCatalogIndexMetadata); images/java21-distroless.json has no `schemaVersion` (required const in image-record.v1.schema.json:5-18); and its SBOM packages lack the required `cpes` array (e.g. `{\"name\": \"openssl\", \"version\": \"3.0.8\", \"license\": \"Apache-2.0\", \"supplier\": \"Nix\", \"spdxId\": \"SPDXRef-openssl\"}` — `cpes` is required by both package-entry.v1.schema.json:7 and image-record.v1.schema.json:54, and the real writer spdxPackageOut always emits it). dev-catalog has the same gaps. Yet `./clearcutt --catalog cli/internal/testdata/catalog catalog validate` passes with 0 errors — demonstrating the Go validator cannot detect published-schema violations. Also, the mixed-catalog fixture marks its runtime record as `clearcutt.catalog.image/v2`, while the production generator emits runtime records as v1 under a v2 index (record.go:75 vs site/src/data/catalog/images/coreLTS-dev.json = v1), so the CI fixture doesn't exercise the shape production actually produces.",
+            "recommendation": "Regenerate the fixtures from the current generator (or hand-patch schemaVersion/generator/source/summary/cpes), add a runtime-record-at-v1-under-v2-index case to mixed-catalog, and add the schema-validation test so fixtures can never silently drift from the published contract again.",
+            "effort": "low"
+          },
+          {
+            "title": "CLI run from cli/ scatters generated trees (cli/core, cli/site, cli/docs, cli/examples) — papered over by .gitignore instead of fixed",
+            "severity": "medium",
+            "files": [
+              ".gitignore:36-42",
+              "cli/core/lib/platform-metadata.nix",
+              "cli/site/src/data",
+              "cli/internal/commands/platform.go:102"
+            ],
+            "detail": ".gitignore:36-42 says it outright: \"# Accidental nested output roots created when commands run from cli/. The canonical project roots are /site, /examples, /docs, and /core.\" followed by ignores for /cli/site/, /cli/examples/, /cli/docs/, /cli/core/. These directories really exist on disk: cli/core/lib/platform-metadata.nix contains leftover test branding (`repoPath = \"acme/platform\"`, `productName = \"Platform\"`) from a `platform init` run, and cli/site/src/data holds full SBOM dumps for v0.7.0 and v0.9.8 plus catalog records — megabytes of stale generated data shadowing the real site/src/data. Root cause: commands resolve output paths relative to cwd (e.g. platform.go:102 `filepath.Join(root, \"core\", \"lib\", \"platform-metadata.nix\")`), so running from cli/ writes a parallel universe. cli/core is NOT a duplicate of core/ in any designed sense — it is debris — but anyone auditing the repo (or an agent grepping it) will read the acme/platform metadata and stale SBOMs as real, and a fork could ship them.",
+            "recommendation": "Make the CLI resolve the repo root (walk up for go.work / clearcutt.fleet.yaml) instead of trusting cwd, or refuse to run mutating commands when cwd basename is cli/ inside a repo. Delete the existing cli/core, cli/site, cli/docs, cli/examples trees and ensure tests use t.TempDir().",
+            "effort": "medium"
+          },
+          {
+            "title": "Root schemas/ directory drifts from the embedded/emitted schema set: missing evidence-manifest.v1, plus two orphaned legacy duplicates",
+            "severity": "low",
+            "files": [
+              "schemas/catalog.schema.json",
+              "schemas/image-record.schema.json:42-43",
+              "cli/internal/catalog/schemas/evidence-manifest.v1.schema.json",
+              "cli/internal/catalog/schema_files_test.go:19-27",
+              "docs/catalog-schema.md:45-51"
+            ],
+            "detail": "The CLI embeds and emits 7 schemas (cli/internal/catalog/schemas/, guarded by TestSchemaArtifactsIncludesVersionedSchemas), including evidence-manifest.v1.schema.json — which does not exist in the root schemas/ directory at all, even though docs/catalog-schema.md:48 documents it as part of the generated layout. Conversely, root schemas/ contains two files the CLI does not embed and nothing references: catalog.schema.json (byte-identical to catalog-index.v1.schema.json) and image-record.schema.json (identical to image-record.v1.schema.json except its $refs point at `catalog.schema.json#/definitions/...` instead of `catalog-index.v1.schema.json#/...`). The 6 shared files are currently byte-identical between root and embedded copies, but no test or CI check guards that — unlike the site template, which has TestEmbeddedTemplateMatchesSite.",
+            "recommendation": "Delete schemas/catalog.schema.json and schemas/image-record.schema.json, copy evidence-manifest.v1.schema.json into root schemas/, and add a small Go test asserting root schemas/ and the embedded set are identical (mirroring the site-template drift test).",
+            "effort": "low"
+          },
+          {
+            "title": "Index `tiers` taxonomy omits the \"service\" tier used by its own images",
+            "severity": "low",
+            "files": [
+              "cli/internal/catalogbuild/model.go:76-82,115-122",
+              "schemas/catalog-index.v2.schema.json:91-98",
+              "site/src/data/catalog/index.json"
+            ],
+            "detail": "tierList() builds the index's `tiers` array from the fixed gatherTierOrder = [\"dev\", \"slim\", \"distroless\"] (model.go:76, 115-122). The v2 schema's TierInfo enum includes \"service\" (catalog-index.v2.schema.json:95) and the real published index contains three images with `\"tier\": \"service\"` (postgres16, valkey8, oauth2-proxy7) — but its `tiers` array lists only dev/slim/distroless. Any consumer that renders tier filters or legends from index.tiers (the documented purpose: \"tier summaries\") will miss the service tier that a third of the v2 feature set lives in.",
+            "recommendation": "Append a `{id: \"service\", name: \"Service\", blurb: ...}` entry to tierList() when the catalog contains service images (i.e., when the index is v2 with kind=service entries).",
+            "effort": "low"
+          },
+          {
+            "title": "Site zod contract drifts from v2 schema and Go types: strips latestManifestDigest, over-strict lifecycle.support enum",
+            "severity": "low",
+            "files": [
+              "site/src/lib/catalog-schema.ts:140-148,336-387",
+              "schemas/catalog-index.v2.schema.json:135,213",
+              "cli/internal/catalog/types.go:99",
+              "site/src/lib/catalog.ts:94,105"
+            ],
+            "detail": "Two concrete mismatches between site/src/lib/catalog-schema.ts and the rest of the stack: (1) the zod CatalogIndex images object (lines 336-387) has no `latestManifestDigest` field, while the Go generator always emits it (catalogbuild/model.go:221 `json:\"latestManifestDigest\"`, no omitempty), the v2 schema documents it (catalog-index.v2.schema.json:213), and the real data carries it (site/src/data/catalog/index.json:133 etc.). zod's default parse strips unknown keys, so the digest is silently discarded from the parsed index — the denormalization built for cheap digest display can never reach a site component. (2) zod Lifecycle.support is the strict v1 enum `['lts','current','preview','legacy','unsupported']` (line 142), but catalog-index.v2.schema.json deliberately relaxed support to a free string (line 135) and Go never validates it; a fork with a custom support label (e.g. fleet services' free-text ServiceLifecycle.Support) passes the CLI and the v2 schema but throws at site build time in CatalogIndex.parse (catalog.ts:94). Note the identical copies in cli/internal/sitetemplate/template/src/lib/catalog-schema.ts inherit both issues.",
+            "recommendation": "Add `latestManifestDigest: NullableString` to the zod images object, and relax `support` to z.string() (or enum-with-fallback) to match the v2 contract. The sitetemplate drift test will force the embedded copy to follow.",
+            "effort": "low"
+          },
+          {
+            "title": "Docs pin CLI/image versions 7+ releases behind the current tag",
+            "severity": "low",
+            "files": [
+              "docs/certification.md:77,162",
+              "docs/app-lifecycle.md:134-328",
+              "scripts/validate-doc-commands.sh"
+            ],
+            "detail": "Latest git tag is v0.17.0, but docs/certification.md pins `VERSION=\"v0.10.2\"` (line 77) and `CLEARCUTT_VERSION: \"v0.10.2\"` (line 162) in the two copy-paste supply-chain install snippets, and docs/app-lifecycle.md uses `:v0.2.2-distroless` image tags in 9 examples (lines 134-328). The comments rightly say to pin and bump deliberately, but for showcase docs a 7-minor-version-stale pin reads as unmaintained, and users copying the snippet get an old CLI. scripts/validate-doc-commands.sh already greps docs for drift but does not check version currency.",
+            "recommendation": "Add a check to scripts/validate-doc-commands.sh (or the release workflow) that flags doc version pins older than N releases, and bump the pins as part of the release checklist (release.yml could sed them automatically).",
+            "effort": "low"
+          },
+          {
+            "title": "Workflows hardcode Go 1.26 in two places instead of go-version-file",
+            "severity": "suggestion",
+            "files": [
+              ".github/workflows/cve-patch-agent.yml:65",
+              ".github/workflows/publish-pages.yml:47,183",
+              ".github/workflows/pr-gate.yml:108"
+            ],
+            "detail": "pr-gate.yml and e2e-runtimes.yml correctly use `go-version-file: 'cli/go.mod'`, but cve-patch-agent.yml:65 and publish-pages.yml:47,183 hardcode `go-version: '1.26'`. Consistent today (go.work and cli/go.mod both say go 1.26), but it is the classic cross-workspace version-drift vector: the next toolchain bump in go.mod will leave the CVE agent and the Pages publisher building with a different Go than CI gates.",
+            "recommendation": "Switch the three hardcoded steps to `go-version-file: 'cli/go.mod'` with `cache-dependency-path: 'cli/go.sum'`, matching pr-gate.yml.",
+            "effort": "low"
+          }
+        ]
+      }
+    ],
+    "critic": {
+      "gaps": [
+        "[high] No reviewer audited the GitHub repo-level controls the whole trust story bottoms out on: `main` has NO branch protection (`gh api repos/northcutted/clearcutt/branches/main/protection` returns 404 'Branch not protected') and NO rulesets (`/rulesets` returns `[]`), yet /Users/eddie/Development/clearcutt-images/.github/workflows/release.yml triggers on `push: branches: [main]` (lines 5-8) and pins the release identity to `refs/heads/main` (lines 35-39). The only human control is the `release-gate` job's `environment: production # <-- Manual approval gate here!` (line 73), whose protection rule (per `gh api .../environments`) has a single required reviewer (the maintainer) with `prevent_self_review: false`. Net effect: an unreviewed direct push to main can be self-approved into a fully signed, SLSA-attested release, and the 20KB pr-gate.yml suite is purely advisory because no status checks are required anywhere. The docs never close this hole either: docs/fork-validation.md lines 49-50 tell forks to create the `production` environment with required reviewers, but 'branch protection', 'protected branch', and 'ruleset' have zero grep hits across docs/, FORKING.md, and README.md — forks inherit the same gap by following the checklist.",
+        "[high] No SECURITY.md or vulnerability disclosure policy exists anywhere in the repo (verified with `find` across the tree excluding node_modules/.git: zero hits for SECURITY*, and zero hits for CODE_OF_CONDUCT*, CODEOWNERS*, PULL_REQUEST_TEMPLATE*, ISSUE_TEMPLATE, CHANGELOG*, NOTICE*). docs/security-model.md covers trust boundaries and non-claims (sections '1. Core Security Assurances' through '3. Security Model Limitations & Non-Claims') but contains no reporting channel — greps for 'security@', 'disclosure', and 'report vulnerability' across security-model.md, README.md, and CONTRIBUTING.md return nothing. A repo whose pitch is hardened, evidence-backed images gives security researchers no way to report a vulnerability privately, and GitHub's Security tab will show 'no policy'.",
+        "[medium] No dependency-update automation for the platform's own toolchain: there is no .github/dependabot.yml or renovate config, and the GitHub API confirms `dependabot_security_updates: disabled`. This compounds with scripts/validate-workflow-hardening.sh, which ENFORCES immutable SHA pins on every action ref ('workflow and composite action references must be pinned to immutable SHAs') — pins that nothing will ever bump. site/package-lock.json (291KB: astro, react 19, zod...), cli/go.sum, and core/flake.lock all have no automated update path (no `nix flake update` workflow exists; flake.lock appears in workflows only inside cache keys). The project that runs scheduled CVE scans and an automated patch agent for the images it ships has zero patch automation for the toolchain that builds and signs them.",
+        "[medium] Community/governance scaffolding is entirely absent for an open-source showcase: /Users/eddie/Development/clearcutt-images/.github contains only actions/, codex/, workflows/, and copilot-instructions.md — no CODEOWNERS, no issue templates, no PR template, no CODE_OF_CONDUCT, no CHANGELOG, despite `has_issues: true` and a README addressed to 'Open-source evaluator'. The gap is sharpened by .agents/reviewers/ shipping 18 reviewer persona TOMLs (security-auditor.toml, release-engineer.toml, etc.) — the repo defines richer review routing for AI agents than for human contributors.",
+        "[medium] The AI-agent operations layer (.agents/, .codex/, .github/codex/prompts/, .github/copilot-instructions.md) was examined by no dimension, and its generated artifacts are ungated: .agents/sync.sh compiles .agents/context/*.md into .github/copilot-instructions.md and .vscode/tasks.json, but no workflow runs `make agent-sync` or sync.sh (zero grep hits in .github/workflows and scripts/), so the 14KB copilot-instructions.md can drift silently (it is currently in sync — verified by diff). Worse, `git ls-files .vscode` is empty — the generated tasks.json is untracked, so fresh clones lack the documented VS Code tasks — and its default test task points at `./.claude/skills/test-clearcutt/scripts/verify.sh`, which is excluded by the `.claude/*` line in .gitignore and therefore does not exist in any clone. sync.sh also does `mkdir -p .claude/skills` (line ~29) and never writes anything into it.",
+        "[medium] Drift enforcement is sampled, not comprehensive: scripts/validate-doc-commands.sh hardcodes an 11-file docs allowlist (docs=(README.md docs/README.md ... docs/trust/catalog-evidence.md)) plus 2 site pages, leaving the Makefile, FORKING.md, CONTRIBUTING.md, AGENTS.md, .agents/runbooks/*.md, and every examples/*/README.md outside any command-drift gate. Similarly, site/src and cli/internal/sitetemplate/template/src are full duplicates (verified `diff -rq`: identical except site/src/data) with no equivalence check in pr-gate.yml — only a shared paths-filter trigger (line 68). This single pattern is the root cause behind the stale-pin and fixture-drift findings other dimensions reported independently.",
+        "[low] LICENSE is Apache-2.0 but no source file in cli/cmd, cli/internal, or core carries an SPDX identifier or Apache license header (grep for 'SPDX-License' and 'Licensed under the Apache' returns nothing), and there is no NOTICE file — weak provenance hygiene for a supply-chain-provenance product.",
+        "[verification] README 'First Proof From A Clean Clone' claims hold: all three commands were executed and pass — `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` (returns the 1-row fixture catalog), the full `verify image java21-distroless --require-signature --require-sbom --require-provenance --max-critical 0 --max-high 3 --allow-preview` (10/10 checks PASS, exit 0), and `platform status --output \"$PWD\" --fleet-config clearcutt.fleet.yaml` (29 checks, all pass). One cosmetic inconsistency observed: for the same fixture record, `list` reports ARCHES 'amd64,arm64' while `verify image` prints 'architectures present: amd64'."
+      ],
+      "crossCuttingObservations": [
+        "The repo enforces its trust chain exhaustively at the file level (29-check `platform status`, validate-workflow-hardening.sh, validate-doc-commands.sh, pr-gate matrix) but the GitHub host-platform layer everything bottoms out on is unconfigured: no branch protection, no required status checks, no rulesets, dependabot disabled. Every per-dimension reviewer audited file contents; none could see that the gates are optional because nothing requires them to pass before code reaches the release branch.",
+        "Remediation is asymmetric by design blind spot: scheduled-scan.yml + cve-patch-agent.yml + core/overlays patch CVEs in the SHIPPED images, while the toolchain that builds and signs them (npm deps in site/, Go modules in cli/, nixpkgs in core/flake.lock, SHA-frozen GitHub Actions) has zero update automation. An auditor pitching this as a supply-chain showcase will notice the build toolchain is the least-patched component in the system.",
+        "Drift gates are hand-picked samples rather than invariants — an 11-doc allowlist in validate-doc-commands.sh, fixed-string checks in validate-workflow-hardening.sh, no site/-to-sitetemplate equivalence check — which predicts and explains the independent stale-version, stale-fixture, and schema-drift findings reported by the cli-dx, showcase-docs, and schemas-consistency dimensions. The fix is one pattern (generate-and-diff gates over whole surfaces), not a dozen point fixes.",
+        "There is a substantial, polished AI-agent operations layer (.agents/ with 18 reviewer personas, 6 skills, 4 runbooks, a sync compiler; .codex/config.toml with multi-agent settings; .github/codex/prompts/) that no review dimension covered. It is simultaneously an unadvertised showcase differentiator and the least-gated surface in the repo: its generated outputs are untracked or unverified in CI, and it references gitignored paths — mirroring, for human contributors, the exact doc-drift failure mode the project gates everywhere else.",
+        "The .gitignore accretes exceptions for tool misbehavior rather than the tools being fixed: a 15MB `clearcutt` binary and `result` Nix symlink at the repo root, a second 13MB binary plus ~7MB of coverage artifacts inside cli/, and the /cli/site,/cli/core,/cli/docs,/cli/examples stray-tree entries — generalizing the cli-dx finding that '.gitignore codifies the bug' from one case to a repo-wide habit.",
+        "Positive signals no dimension recorded: secret scanning and push protection are enabled on the repo, the `production` environment approval gate genuinely exists and fronts all publish jobs, all README first-proof commands work from a clean checkout, and the copilot-instructions/agents-context pair is currently in sync — the showcase's biggest residual risks are configuration and governance gaps, not broken commands."
+      ]
+    }
+  }
+}

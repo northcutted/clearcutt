@@ -44,6 +44,15 @@ type ExceptionEntry struct {
 
 var cveRegex = regexp.MustCompile(`^CVE-\d{4}-\d{4,}$`)
 
+// ExceptionsValidateResponse is the structured payload for --format json|yaml,
+// mirroring the check-list shape of VerifyResponse from `verify image`.
+type ExceptionsValidateResponse struct {
+	Status     string              `json:"status"` // pass or fail
+	Document   string              `json:"document"`
+	Exceptions int                 `json:"exceptions"`
+	Checks     []VerifyCheckResult `json:"checks"`
+}
+
 // Match finds the exception governing a given finding, if any. It returns the
 // matched entry along with whether that entry has expired as of now. Callers
 // decide policy: an expired exception should never exempt a finding, but whether
@@ -177,64 +186,92 @@ func runExceptionsValidate(yamlPath string) error {
 		return fmt.Errorf("metadata.name must not be empty")
 	}
 
-	errors := []string{}
+	failures := []VerifyCheckResult{}
+	fail := func(prefix, msg string) {
+		failures = append(failures, VerifyCheckResult{ID: prefix, Status: "fail", Message: msg})
+	}
 	now := time.Now().UTC()
 
 	for i, exc := range doc.Spec.Exceptions {
 		prefix := fmt.Sprintf("spec.exceptions[%d] (%s)", i, exc.ID)
 
 		if !cveRegex.MatchString(exc.ID) {
-			errors = append(errors, fmt.Sprintf("%s: invalid CVE ID format", prefix))
+			fail(prefix, "invalid CVE ID format")
 		}
 		if exc.Package == "" {
-			errors = append(errors, fmt.Sprintf("%s: package is required", prefix))
+			fail(prefix, "package is required")
 		}
 		if exc.Image == "" {
-			errors = append(errors, fmt.Sprintf("%s: image is required", prefix))
+			fail(prefix, "image is required")
 		}
 		if exc.Release == "" {
-			errors = append(errors, fmt.Sprintf("%s: release is required", prefix))
+			fail(prefix, "release is required")
 		}
 		if exc.Owner == "" {
-			errors = append(errors, fmt.Sprintf("%s: owner is required", prefix))
+			fail(prefix, "owner is required")
 		}
 
 		// Status verification
 		status := strings.ToLower(exc.Status)
 		if status != "affected" && status != "not_affected" && status != "fixed" && status != "under_investigation" && status != "false_positive" && status != "accepted_risk" {
-			errors = append(errors, fmt.Sprintf("%s: invalid status %q", prefix, exc.Status))
+			fail(prefix, fmt.Sprintf("invalid status %q", exc.Status))
 		}
 
 		// Reason verification
 		reason := strings.ToLower(exc.Reason)
 		if reason != "inherited_from_base" && reason != "no_fix_available" && reason != "vulnerable_code_not_present" && reason != "vulnerable_code_not_executed" && reason != "scanner_false_positive" && reason != "temporary_business_exception" && reason != "requires_upstream_fix" {
-			errors = append(errors, fmt.Sprintf("%s: invalid reason %q", prefix, exc.Reason))
+			fail(prefix, fmt.Sprintf("invalid reason %q", exc.Reason))
 		}
 
 		// Owner and references assertions
 		if status == "accepted_risk" && len(exc.References) == 0 {
-			errors = append(errors, fmt.Sprintf("%s: references are required for accepted_risk status", prefix))
+			fail(prefix, "references are required for accepted_risk status")
 		}
 
 		// Dates verification
 		if _, err := time.Parse("2006-01-02", exc.CreatedAt); err != nil {
-			errors = append(errors, fmt.Sprintf("%s: invalid createdAt format %q (expected YYYY-MM-DD)", prefix, exc.CreatedAt))
+			fail(prefix, fmt.Sprintf("invalid createdAt format %q (expected YYYY-MM-DD)", exc.CreatedAt))
 		}
 
 		expiry, err := time.Parse("2006-01-02", exc.ExpiresAt)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: invalid expiresAt format %q (expected YYYY-MM-DD)", prefix, exc.ExpiresAt))
+			fail(prefix, fmt.Sprintf("invalid expiresAt format %q (expected YYYY-MM-DD)", exc.ExpiresAt))
 		} else {
 			if exceptionsOpts.failOnExpired && expiry.Before(now) {
-				errors = append(errors, fmt.Sprintf("%s: exception has expired (expired on %s)", prefix, exc.ExpiresAt))
+				fail(prefix, fmt.Sprintf("exception has expired (expired on %s)", exc.ExpiresAt))
 			}
 		}
 	}
 
-	if len(errors) > 0 {
-		fmt.Fprintf(errOut, "Exception validation failed with %d errors:\n", len(errors))
-		for _, err := range errors {
-			fmt.Fprintf(errOut, "  - %s\n", err)
+	if structuredFormat() {
+		response := ExceptionsValidateResponse{
+			Status:     "pass",
+			Document:   doc.Metadata.Name,
+			Exceptions: len(doc.Spec.Exceptions),
+			Checks:     failures,
+		}
+		if len(failures) == 0 {
+			response.Checks = []VerifyCheckResult{{
+				ID:      "exceptions.valid",
+				Status:  "pass",
+				Message: fmt.Sprintf("document %q is fully valid and active (%d exceptions)", doc.Metadata.Name, len(doc.Spec.Exceptions)),
+			}}
+		} else {
+			response.Status = "fail"
+		}
+		if err := printStructured(response); err != nil {
+			return err
+		}
+		if len(failures) > 0 {
+			return ErrCheckFailed
+		}
+		return nil
+	}
+
+	if len(failures) > 0 {
+		fmt.Fprintf(errOut, "Exception validation failed with %d errors:\n", len(failures))
+		for _, failure := range failures {
+			fmt.Fprintf(errOut, "  - %s: %s\n", failure.ID, failure.Message)
 		}
 		return ErrCheckFailed
 	}

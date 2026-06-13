@@ -21,6 +21,8 @@ There is no hosted ClearCutt control plane. The repository is the control plane:
 your fork owns the configuration, builds, evidence, catalog, policies, and
 operational burden.
 
+![Terminal demo of fixture-backed ClearCutt catalog inspection, image verification, app template generation, and catalog site build](docs/images/demo.gif)
+
 ## What It Is
 
 ClearCutt is best understood as a **forkable platform kit and reference
@@ -38,6 +40,8 @@ can fork, configure, run, inspect, and adapt:
 Nix is the backend build engine for platform-owned images. App teams consume the
 fleet with Docker, Podman, Kubernetes, Cosign, and the ClearCutt CLI; they do
 not need to learn Nix.
+
+![ClearCutt supply chain flow: Nix store base builds feed OIDC-based signing and attestation, whose evidence is checked by Kubernetes admission policy at deploy time](docs/images/supply-chain-flow.svg)
 
 ## First Proof From A Clean Clone
 
@@ -63,6 +67,39 @@ smoke tests, lifecycle status, and vulnerability thresholds. Use
 `verify release-evidence`, Cosign, GitHub attestations, and SLSA verification
 when you need registry-side cryptographic proof for a published OCI ref.
 
+## Install
+
+Each release publishes cross-compiled CLI binaries named
+`clearcutt-<os>-<arch>` for `darwin`, `linux`, and `windows` on `amd64` and
+`arm64`, a keyless Sigstore signature bundle (`<binary>.sig`) for each, and a
+`SHA256SUMS.txt` checksum manifest. Download the binary for your platform and
+its `.sig` bundle from the
+[latest release](https://github.com/northcutted/clearcutt/releases/latest),
+then verify the signature before running anything:
+
+```bash
+# Example assets: Apple Silicon macOS. Pick the pair matching your OS/arch.
+cosign verify-blob \
+  --bundle clearcutt-darwin-arm64.sig \
+  --certificate-identity 'https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  clearcutt-darwin-arm64
+
+chmod +x clearcutt-darwin-arm64
+```
+
+The certificate identity is the release workflow pinned to `refs/heads/main` —
+the same identity recorded in `clearcutt.fleet.yaml` and matched exactly by
+`clearcutt verify release-evidence`. From a repo clone, the verified binary
+runs the same fixture-backed first proof as above:
+
+```bash
+./clearcutt-darwin-arm64 --catalog cli/internal/testdata/catalog list
+```
+
+Building from source stays the contributor path; see
+[CONTRIBUTING.md](CONTRIBUTING.md) and the clean-clone proof above.
+
 ## Where To Start
 
 | Role | First document | First useful command |
@@ -70,10 +107,19 @@ when you need registry-side cryptographic proof for a published OCI ref.
 | App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
 | Platform owner | [Platform kit](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` |
 | Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
-| Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,140p' docs/alternatives.md` |
+| Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,120p' docs/alternatives.md` |
 | Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |
 
 The full documentation index is [docs/README.md](docs/README.md).
+
+## Portal Preview
+
+These screenshots are generated from the committed mixed catalog fixture, not
+from ignored local site data.
+
+![Fixture-backed catalog matrix showing runtime and service image records](docs/images/catalog-matrix.png)
+
+![Fixture-backed java21-distroless evidence view showing verification commands and recorded release evidence](docs/images/java21-distroless-evidence.png)
 
 ## Proof Map
 
@@ -114,3 +160,8 @@ admission policies, exception process, and remediation defaults.
 Use ClearCutt when owning the full image supply chain is the point. Do not use
 it when you primarily want a vendor SLA, hosted control plane, fully managed
 patch stream, or FIPS/STIG certification out of the box.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the supported-release policy and how to
+report vulnerabilities privately.

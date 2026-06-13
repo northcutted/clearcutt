@@ -33,7 +33,8 @@ graph TD
 ### 2.1 Build-Time Assumptions
 - The Nix store compilation pipeline compiles and layers all runtime interpreters inside a completely hermetic closure.
 - Distroless runtime images omit FHS linker/library fallback paths and rely on RPATH/RUNPATH entries bound directly to `/nix/store`.
-- Slim, dev, and service images retain `/lib`/`/lib64` compatibility symlinks plus `LD_LIBRARY_PATH` for teams that need to run FHS-oriented binaries inside a ClearCutt-managed runtime. Treat those tiers as compatibility tiers, not as the strictest dynamic-linkage boundary.
+- Slim, dev, and service images retain `/lib`/`/lib64` compatibility symlinks for teams that need to run FHS-oriented binaries inside a ClearCutt-managed runtime. Treat those tiers as compatibility tiers, not as the strictest dynamic-linkage boundary.
+- Only the dev tier additionally sets `LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64` as a foreign-binary convenience. Production tiers (slim, distroless) and service images never set it: glibc resolves libraries in the order `DT_RPATH` > `LD_LIBRARY_PATH` > `DT_RUNPATH`, and Nix-built binaries record their store-bound dependencies in `DT_RUNPATH`, so a global FHS `LD_LIBRARY_PATH` would outrank hermetic store resolution on every binary in the image — the same drift class the RPATH/interpreter gate exists to prevent. The `/lib`/`/lib64` symlinks alone cover FHS foreign binaries through the dynamic loader's default search paths without overriding `DT_RUNPATH`. The absence of `LD_LIBRARY_PATH` in production OCI configs is machine-checked by `core/tests/verify.sh` (runtime images) and `core/tests/service-image-contract.sh` (service images).
 - The RPATH/interpreter gate verifies the binaries in the Nix closure; it does not claim that a downstream application cannot add new dynamic-linkage paths after the image is extended.
 
 ### 2.1.1 License Metadata Boundary

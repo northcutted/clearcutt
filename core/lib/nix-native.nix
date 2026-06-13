@@ -1,20 +1,22 @@
 # ClearCutt Nix Native Consumer Integration Library
 
-{ self, pkgs, platformMetadata ? import ./platform-metadata.nix }:
+{ self
+, pkgs
+, platformMetadata ? import ./platform-metadata.nix
+, registry ? import ./registry.nix { inherit pkgs; }
+}:
 
 let
-  # Import centralized language and runtime registry
-  registry = import ./registry.nix { inherit pkgs; };
-
   # Fork-configurable product identity (see clearcutt.fleet.yaml -> branding).
   productName = platformMetadata.productName or "ClearCutt";
   imagePrefix = platformMetadata.imagePrefix or "clearcutt";
 
-  # Dynamic Overlay Generation
-  # Iterates through languages and versions in the registry to construct the overlay attributes
-  dynamicOverlayAttrs =
+  # Get all combinations of (lang, version, verSpec) that name an overlay
+  # attribute. Computed from this module's own registry (never an overlay
+  # fixpoint): an overlay's output attr NAMES must not depend on `final`,
+  # or evaluating the fixpoint's attr set recurses.
+  overlaySpecs =
     let
-      # Get all combinations of (lang, version, verSpec)
       allSpecs = pkgs.lib.concatMap (lang:
         let
           langSpec = registry.languages.${lang};
@@ -23,17 +25,8 @@ let
           inherit lang ver verSpec;
         }) langSpec.versions
       ) (builtins.attrNames registry.languages);
-
-      # Filter for specs that specify an overlayName
-      validSpecs = builtins.filter (spec: spec.verSpec ? overlayName) allSpecs;
-
-      # Map each to a name/value pair
-      pairs = map (spec: {
-        name = spec.verSpec.overlayName;
-        value = registry.resolveRaw { language = spec.lang; version = spec.ver; };
-      }) validSpecs;
     in
-    builtins.listToAttrs pairs;
+    builtins.filter (spec: spec.verSpec ? overlayName) allSpecs;
 
 in
 {
@@ -41,8 +34,18 @@ in
   resolveRawPackages = registry.resolveRaw;
 
   # Declarative Overlay
-  # Downstreams can apply this overlay to inject ClearCutt's verified package matrix
-  overlay = final: prev: dynamicOverlayAttrs;
+  # Downstreams can apply this overlay to inject ClearCutt's verified package
+  # matrix. Attr values resolve against `final`, so packages pick up the CVE
+  # remediation overlay (and any other overlays the consumer stacks); only the
+  # attr names come from the prev-side registry above.
+  overlay = final: prev:
+    let
+      finalRegistry = import ./registry.nix { pkgs = final; };
+    in
+    builtins.listToAttrs (map (spec: {
+      name = spec.verSpec.overlayName;
+      value = finalRegistry.resolveRaw { language = spec.lang; version = spec.ver; };
+    }) overlaySpecs);
 
   # Downstream Development Shell Builder
   # Automatically wraps a host development shell with ClearCutt's transient enterprise credentials broker

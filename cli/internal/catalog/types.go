@@ -124,12 +124,14 @@ type EvidenceSummary struct {
 }
 
 // VulnSummary aggregates vulnerability counts and scanning timestamps.
+// scannedAt is a required (nullable) key in catalog-index.v1.schema.json and
+// the catalogbuild writer always emits it, so it must survive round-trips.
 type VulnSummary struct {
 	Critical    int                `json:"critical"`
 	High        int                `json:"high"`
 	Medium      int                `json:"medium"`
 	Low         int                `json:"low"`
-	ScannedAt   *string            `json:"scannedAt,omitempty"`
+	ScannedAt   *string            `json:"scannedAt"`
 	Remediation *RemediationCounts `json:"remediation,omitempty"`
 }
 
@@ -143,24 +145,34 @@ type RemediationCounts struct {
 }
 
 // Lifecycle maps base image support, status, and production gating.
+//
+// The nullable fields deliberately omit `omitempty`: catalog-index.v1.schema.json
+// requires the deprecatedAt/eolAt/reason keys (with null allowed) and the
+// catalogbuild writer always emits them, so a load→rewrite round-trip (e.g.
+// stampCatalogIndexMetadata) must preserve the explicit nulls instead of
+// silently dropping schema-required keys.
 type Lifecycle struct {
 	Status            string  `json:"status"`
 	Support           string  `json:"support"`
 	ProductionAllowed bool    `json:"productionAllowed"`
-	DeprecatedAt      *string `json:"deprecatedAt,omitempty"`
-	EOLAt             *string `json:"eolAt,omitempty"`
-	Reason            *string `json:"reason,omitempty"`
+	DeprecatedAt      *string `json:"deprecatedAt"`
+	EOLAt             *string `json:"eolAt"`
+	Reason            *string `json:"reason"`
 }
 
 // RuntimeContract represents expectations and runtime platform guarantees.
+//
+// As with Lifecycle, every nullable field stays in the JSON output as an
+// explicit null: catalog-index.v1.schema.json lists them all as required keys
+// and the catalogbuild writer always emits them.
 type RuntimeContract struct {
-	User                  *string `json:"user,omitempty"`
-	WorkingDir            *string `json:"workingDir,omitempty"`
-	ShellPresent          *bool   `json:"shellPresent,omitempty"`
-	PackageManagerPresent *bool   `json:"packageManagerPresent,omitempty"`
-	CACertificatesPresent *bool   `json:"caCertificatesPresent,omitempty"`
-	TimezoneDataPresent   *bool   `json:"timezoneDataPresent,omitempty"`
-	DefaultEntrypoint     *string `json:"defaultEntrypoint,omitempty"`
+	User                  *string `json:"user"`
+	WorkingDir            *string `json:"workingDir"`
+	ShellPresent          *bool   `json:"shellPresent"`
+	PackageManagerPresent *bool   `json:"packageManagerPresent"`
+	CACertificatesPresent *bool   `json:"caCertificatesPresent"`
+	TimezoneDataPresent   *bool   `json:"timezoneDataPresent"`
+	DefaultEntrypoint     *string `json:"defaultEntrypoint"`
 	ProductionTier        bool    `json:"productionTier"`
 }
 
@@ -309,7 +321,9 @@ type SeverityCounts struct {
 	Unknown    int `json:"unknown"`
 }
 
-// FindingInfo represents a single vulnerability finding.
+// FindingInfo represents a single vulnerability finding. fixedIn is a
+// required (nullable) key in the published finding schema and the scanner
+// always emits it, so it must survive load→rewrite round-trips.
 type FindingInfo struct {
 	ID             string           `json:"id"`
 	Severity       string           `json:"severity"`
@@ -317,7 +331,7 @@ type FindingInfo struct {
 	PackageVersion string           `json:"packageVersion"`
 	Purl           *string          `json:"purl,omitempty"`
 	Layer          string           `json:"layer"`
-	FixedIn        *string          `json:"fixedIn,omitempty"`
+	FixedIn        *string          `json:"fixedIn"`
 	FixState       string           `json:"fixState"`
 	Remediation    *RemediationInfo `json:"remediation,omitempty"`
 	Inclusion      *InclusionInfo   `json:"inclusion,omitempty"`

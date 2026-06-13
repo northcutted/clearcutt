@@ -3,31 +3,33 @@
 
 name: ClearCutt E2E Runtimes
 
+# On pull requests this suite runs as part of the ClearCutt PR Gating
+# workflow (pr-gate.yml calls it via workflow_call) so reviewers watch a
+# single workflow; workflow_dispatch remains for manual runs.
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'core/**'
-      - 'cli/**'
-      - 'Makefile'
-      - '.github/workflows/e2e-runtimes.yml'
+  workflow_call:
 
+# contents: read is all this suite needs. The E2E lifecycle tests never touch
+# GHCR or Sigstore: core/tests/e2e-runtimes.sh pushes to a throwaway local
+# registry (localhost:5001, skopeo --dest-tls-verify=false) and asserts
+# signing behavior with a mock cosign stub (MOCK_COSIGN), so packages: write
+# and id-token: write must not be re-added here.
 permissions:
   contents: read
-  packages: write
-  id-token: write # Required for keyless OIDC Cosign signing checks
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+# No workflow-level concurrency here: inside a workflow_call, github.workflow
+# resolves to the CALLING workflow's name, so a group declared here would
+# collide with the PR gate's own group and cancel the parent run. The caller
+# provides cancel-in-progress semantics for PRs.
 
 jobs:
   e2e-lifecycle-matrix:
     name: E2E Lifecycle (${{ matrix.language }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Warm-cache runs finish in minutes; sized for cold-cache rebuilds after
+    # a CVE overlay or flake.lock change invalidates the nix cache key.
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +71,9 @@ jobs:
         with:
           primary-key: nix-e2e-${{ runner.os }}-${{ matrix.language }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-e2e-${{ runner.os }}-${{ matrix.language }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Cosign & Skopeo Natively
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

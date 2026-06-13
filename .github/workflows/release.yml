@@ -54,14 +54,19 @@ jobs:
 
       - name: Resolve Version Output
         id: version-calc
+        env:
+          # Hoisted out of the run script so the GitHub templater never
+          # expands untrusted context into shell code.
+          CUSTOM_INPUT: ${{ github.event.inputs.custom_version }}
+          CALC_VERSION: ${{ steps.versioning.outputs.version }}
+          CALC_VERSION_TYPE: ${{ steps.versioning.outputs.version_type }}
         run: |
-          CUSTOM_INPUT="${{ github.event.inputs.custom_version }}"
           if [ -n "$CUSTOM_INPUT" ]; then
             RAW_VERSION="${CUSTOM_INPUT#v}"
             echo "version_type=custom" >> "$GITHUB_OUTPUT"
           else
-            RAW_VERSION="${{ steps.versioning.outputs.version }}"
-            echo "version_type=${{ steps.versioning.outputs.version_type }}" >> "$GITHUB_OUTPUT"
+            RAW_VERSION="$CALC_VERSION"
+            echo "version_type=$CALC_VERSION_TYPE" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -82,10 +87,12 @@ jobs:
       - name: Create and Push Git Tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Hoisted out of the run script so the GitHub templater never
+          # expands untrusted context into shell code.
+          RAW_VERSION: ${{ needs.check-version.outputs.version }}
         run: |
           set -euo pipefail
           
-          RAW_VERSION="${{ needs.check-version.outputs.version }}"
           VERSION_TAG="v$RAW_VERSION"
           
           echo "Release approved! Tagging commit and pushing $VERSION_TAG..."
@@ -184,6 +191,9 @@ jobs:
           # helpers, registry metadata, and CVE overlays.
           primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -293,6 +303,9 @@ jobs:
         with:
           primary-key: nix-service-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-service-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -774,9 +787,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.26'
+          go-version-file: 'cli/go.mod'
+          cache-dependency-path: 'cli/go.sum'
           cache: true
-          cache-dependency-path: cli/go.sum
 
       - name: Build ClearCutt CLI
         run: |

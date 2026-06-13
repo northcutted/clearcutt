@@ -250,12 +250,40 @@ certify_target() {
     fi
   fi
 
+  # C1.5. Closure purity gating for distroless production targets: the
+  # distroless contract is closure-level (no shells, package managers, or
+  # setuid/setgid files anywhere in /nix/store), so the same checker that
+  # backs the verify.sh gate runs here against the uncompressed archive and
+  # feeds the closurePurity predicate field. Findings can only be accepted
+  # through the explained-exception allowlist.
+  local closure_purity_status="skipped"
+  local closure_purity_bool="null"
+  if [[ "$target_kind" == "runtime" && "$tier" == "distroless" ]]; then
+    local pipeline_dir
+    pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    log_info "Executing closure purity gate (shells, package managers, setuid/setgid) on distroless target..."
+    if python3 "$pipeline_dir/../tests/closure-purity-check.py" "$uncompressed_tar" \
+      --allowlist "$pipeline_dir/../tests/closure-purity-allowlist.txt"; then
+      closure_purity_status="passed"
+      closure_purity_bool="true"
+      log_success "Closure purity gate passed: distroless closure is shell- and package-manager-free."
+    else
+      closure_purity_status="failed"
+      closure_purity_bool="false"
+      log_error "Closure purity gate failed: distroless closure ships shells, package managers, or setuid/setgid files."
+    fi
+  fi
+
   rm -f "$uncompressed_tar" 2>/dev/null || true
 
   # C2. Generate structured test results predicate
   local test_results_path="$OUTPUT_DIR/$target.test-results.json"
   local test_results_status
-  test_results_status="$(aggregate_assertion_status "passed" "passed" "$grype_assertion_status")"
+  local aggregate_inputs=("passed" "passed" "$grype_assertion_status")
+  if [[ "$closure_purity_status" != "skipped" ]]; then
+    aggregate_inputs+=("$closure_purity_status")
+  fi
+  test_results_status="$(aggregate_assertion_status "${aggregate_inputs[@]}")"
   local policy_blocking="true"
   local policy_production_allowed="${CLEARCUTT_SERVICE_PRODUCTION_ALLOWED:-false}"
   local policy_lifecycle_status="${CLEARCUTT_SERVICE_LIFECYCLE_STATUS:-}"
@@ -276,6 +304,7 @@ certify_target() {
   "language": "$lang",
   "tier": "$tier",
   "status": "$test_results_status",
+  "closurePurity": $closure_purity_bool,
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "policy": {
     "blocking": $policy_blocking,
@@ -300,6 +329,10 @@ certify_target() {
     {
       "name": "Grype Vulnerability Gating",
       "status": "$grype_assertion_status"
+    },
+    {
+      "name": "Closure Purity (distroless boundary)",
+      "status": "$closure_purity_status"
     }
   ]
 }
@@ -307,6 +340,9 @@ EOF
   log_success "Test results predicate generated -> $test_results_path"
   if [[ "$grype_assertion_status" == "failed" ]]; then
     return "$grype_exit"
+  fi
+  if [[ "$closure_purity_status" == "failed" ]]; then
+    return 1
   fi
 
   # D. Registry Distribution & Cryptographic Signature/Attestation Phase

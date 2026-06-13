@@ -48,6 +48,10 @@ generation, and approved remediation into one operator-facing product surface.`,
 		Short: "Write starter fleet config, docs, and app templates",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default --output writes into the repo root, not the cwd, so
+			// running from a subdirectory does not scatter nested
+			// core/docs/examples trees.
+			resolveRepoRootDefault(cmd, "output", &platformOpts.outputDir)
 			return runPlatformInit()
 		},
 	}
@@ -62,6 +66,8 @@ generation, and approved remediation into one operator-facing product surface.`,
 		Short: "Check whether the platform kit is wired together",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Inspect the same root that platform init writes to by default.
+			resolveRepoRootDefault(cmd, "output", &platformOpts.outputDir)
 			return runPlatformStatus()
 		},
 	}

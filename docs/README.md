@@ -8,7 +8,7 @@ document, one first command, and then deeper links.
 | App developer | [Getting started](getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` | [App lifecycle](app-lifecycle.md), [Certification](certification.md) |
 | Platform owner | [Platform kit](platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` | [Fork validation](fork-validation.md), [Site generator](site-generator.md), [Service images](service-images.md) |
 | Security or auditor | [Trust evidence walkthrough](trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` | [Catalog evidence](trust/catalog-evidence.md), [Security model](security-model.md), [Policy bundles](policy-bundles.md) |
-| Manager | [Alternatives and fit](alternatives.md) | `sed -n '1,140p' docs/alternatives.md` | [Enterprise adoption](enterprise-adoption.md), [Platform kit](platform-kit.md) |
+| Manager | [Alternatives and fit](alternatives.md) | `sed -n '1,120p' docs/alternatives.md` | [Enterprise adoption](enterprise-adoption.md), [Platform kit](platform-kit.md) |
 | Open-source reviewer | [Demo path](demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` | [Mental model](concepts/mental-model.md), [Glossary](concepts/glossary.md), [CLI reference](cli-reference.md) |
 
 ## Concept Docs

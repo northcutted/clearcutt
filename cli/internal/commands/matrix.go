@@ -92,6 +92,9 @@ selected in the current fleet config.`,
 Use runtime scaffold first when the runtime line is not built in.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default --fleet-config edits the repo root's fleet config even
+			// when run from a subdirectory.
+			resolveRepoRootDefault(cmd, "fleet-config", &matrixOpts.fleetConfig)
 			return runMatrixAdd(args[0])
 		},
 	}
@@ -104,6 +107,9 @@ Use runtime scaffold first when the runtime line is not built in.`,
 		Short: "Remove a runtime line from clearcutt.fleet.yaml",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default --fleet-config edits the repo root's fleet config even
+			// when run from a subdirectory.
+			resolveRepoRootDefault(cmd, "fleet-config", &matrixOpts.fleetConfig)
 			return runMatrixRemove(args[0])
 		},
 	}

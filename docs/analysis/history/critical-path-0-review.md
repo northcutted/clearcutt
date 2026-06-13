@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 
-Status: historical review snapshot. The "needs minor fixes" verdict below described the branch before the follow-up polish/hardening pass. The flagged wording issues have since been addressed or superseded; see `docs/analysis/post-hardening-readiness.md` for the current state.
+Status: historical review snapshot. The "needs minor fixes" verdict below described the branch before the follow-up polish/hardening pass. The flagged wording issues have since been addressed or superseded; start with `docs/analysis/README.md` for the current state.
 
 Verdict at time of review: needs minor fixes
 

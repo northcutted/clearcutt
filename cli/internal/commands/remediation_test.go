@@ -379,6 +379,21 @@ func TestRemediationValidateOverlaysRequiresEvidenceAndDetectsCollisions(t *test
 		t.Fatalf("expected overlay collision failure, got %v", err)
 	}
 
+	quotedDir := t.TempDir()
+	quotedPath := filepath.Join(quotedDir, "cve-2026-10004-zlib.nix")
+	if err := os.WriteFile(quotedPath, []byte("final: prev: {\n  zlib = prev.zlib.overrideAttrs (old: { version = \"1.3.2\"; \"postInstall\" = \"true\"; });\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogJSON(t, strings.TrimSuffix(quotedPath, ".nix")+".evidence.json", map[string]any{
+		"status":         "draft_compiled",
+		"policyDecision": map[string]any{"selected": true, "reason": "eligible"},
+		"validation":     []map[string]any{{"status": "passed"}},
+	})
+	_, err = runCLI(t, "remediation", "validate-overlays", "--overlay-dir", quotedDir)
+	if err == nil || !strings.Contains(err.Error(), "disallowed generated remediation hook postInstall") {
+		t.Fatalf("expected quoted-key hook rejection, got %v", err)
+	}
+
 	manualDir := t.TempDir()
 	manualPath := filepath.Join(manualDir, "cve-2026-10003-manual.nix")
 	if err := os.WriteFile(manualPath, []byte("final: prev: {\n  manualPkg = prev.manualPkg.overrideAttrs (old: { postPatch = \"true\"; });\n}\n"), 0o644); err != nil {

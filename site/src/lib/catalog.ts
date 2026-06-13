@@ -3,7 +3,6 @@ import path from 'node:path';
 import {
   CatalogIndex,
   ImageRecord,
-  type ArchPayload,
   type CatalogIndex as CatalogIndexT,
   type ImageRecord as ImageRecordT,
 } from './catalog-schema';
@@ -19,68 +18,6 @@ const DATA_ROOTS = [
 
 let cachedIndex: CatalogIndexT | null = null;
 
-function publicBlurb(blurb: string): string {
-  return blurb.replace('credential broker', 'credential helper');
-}
-
-function displayAssertionName(name: string): string {
-  switch (name) {
-    case 'Grype Vulnerability Gating':
-      return 'Vulnerability check';
-    case 'Syft SBOM Generation':
-      return 'SBOM generation';
-    default:
-      return name;
-  }
-}
-
-function publicArchPayload(arch: ArchPayload): ArchPayload {
-  return {
-    ...arch,
-    testResults: arch.testResults
-      ? {
-          ...arch.testResults,
-          assertions: arch.testResults.assertions.map((assertion) => ({
-            ...assertion,
-            name: displayAssertionName(assertion.name),
-          })),
-        }
-      : arch.testResults,
-    vulnerabilities: arch.vulnerabilities
-      ? {
-          ...arch.vulnerabilities,
-          scanner: arch.vulnerabilities.scanner.toLowerCase().startsWith('grype')
-            ? 'vulnerability-check'
-            : arch.vulnerabilities.scanner,
-        }
-      : arch.vulnerabilities,
-  };
-}
-
-function publicImageRecord(image: ImageRecordT): ImageRecordT {
-  return {
-    ...image,
-    tier: {
-      ...image.tier,
-      blurb: publicBlurb(image.tier.blurb),
-    },
-    releases: image.releases.map((release) => ({
-      ...release,
-      architectures: release.architectures.map(publicArchPayload),
-    })),
-  };
-}
-
-function publicCatalogIndex(index: CatalogIndexT): CatalogIndexT {
-  return {
-    ...index,
-    tiers: index.tiers.map((tier) => ({
-      ...tier,
-      blurb: publicBlurb(tier.blurb),
-    })),
-  };
-}
-
 export function loadIndex(): CatalogIndexT {
   if (cachedIndex) return cachedIndex;
   const dataRoot = resolveDataRoot();
@@ -91,7 +28,7 @@ export function loadIndex(): CatalogIndexT {
     );
   }
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  cachedIndex = publicCatalogIndex(CatalogIndex.parse(raw));
+  cachedIndex = CatalogIndex.parse(raw);
   return cachedIndex;
 }
 
@@ -102,7 +39,7 @@ export function loadImage(id: string): ImageRecordT {
     throw new Error(`Image record not found: ${id}`);
   }
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  return publicImageRecord(ImageRecord.parse(raw));
+  return ImageRecord.parse(raw);
 }
 
 export function loadCatalogArtifact(relativePath: string): string {

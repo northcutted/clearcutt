@@ -75,8 +75,10 @@ jobs:
               - 'cli/**'
               - 'clearcutt.fleet.yaml'
               - 'schemas/**'
+              - 'Makefile'
               - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
+              - '.github/workflows/e2e-runtimes.yml'
             go:
               - 'AGENTS.md'
               - 'README.md'
@@ -132,7 +134,14 @@ jobs:
     needs: [changes, fleet-matrix]
     if: ${{ needs.changes.outputs.fleet == 'true' }}
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 60
+    # Warm-cache jobs finish in minutes; the cap only binds when a CVE
+    # overlay or flake.lock change invalidates the nix cache key and a leg
+    # has to rebuild the package graph from openssl up before its cache is
+    # seeded. During the 2026-06 openssl/sqlite remediation rebuild, 60m and
+    # then 180m killed every leg before any could seed a cache; a cold leg
+    # is effectively a world rebuild on a 4-core runner. GitHub's hard job
+    # limit is 6h, so 330m is the practical ceiling.
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
@@ -165,8 +174,17 @@ jobs:
           # Fleet image derivations are shaped by flake inputs, lib helpers,
           # registry/service metadata, and CVE overlays. Keep cache keys broad
           # enough that package graph changes do not restore stale prefixes.
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-${{ matrix.system }}-
+          # The key is per matrix leg: with a shared key only the FIRST
+          # successful job saves, so every other leg's runtime stack (java,
+          # node, python...) would rebuild cold on every run whenever the CVE
+          # overlays diverge from upstream binary caches.
+          primary-key: nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
+            nix-${{ matrix.system }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -181,12 +199,18 @@ jobs:
             --tier "${{ matrix.tier }}" \
             --core-dir core
 
-      # Upload the validated SBOM JSON as an artifact for audit checking
-      - name: Upload Local SBOM Artifact
+      # Upload local evidence even when a gate fails so reviewers can inspect
+      # the exact SBOM, Grype findings, and structured predicate.
+      - name: Upload Local Evidence Artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+          name: evidence-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: |
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.grype.json
+            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
+          if-no-files-found: ignore
           retention-days: 7
 
   validate-service-images:
@@ -194,7 +218,8 @@ jobs:
     needs: [changes, fleet-matrix]
     if: ${{ needs.changes.outputs.service == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.service_image_matrix) }}
@@ -224,9 +249,15 @@ jobs:
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
           # Service image closures also depend on shared lib/build helpers, not
-          # just service-extensions.nix.
-          primary-key: nix-service-x86_64-linux-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-service-x86_64-linux-
+          # just service-extensions.nix. Per-service key for the same reason as
+          # validate-matrix: a shared key is only saved by the first success.
+          primary-key: nix-service-x86_64-linux-${{ matrix.service }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-service-x86_64-linux-${{ matrix.service }}-
+            nix-service-x86_64-linux-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -309,7 +340,8 @@ jobs:
     needs: [changes]
     if: ${{ needs.changes.outputs.integration == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
+    timeout-minutes: 330
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -340,6 +372,9 @@ jobs:
         with:
           primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
+          # Cap each cold-miss save so the ~90 per-leg caches don't LRU-evict each
+          # other under GitHub's 10GB/repo cache limit (no effect on a key hit).
+          gc-max-store-size-linux: 5000000000
 
       # Required for structure tests and patchelf inside the suite
       - name: Install Cosign & Gating Tools
@@ -430,6 +465,17 @@ jobs:
           done
           echo "Drift guard check PASSED!"
 
+  e2e-runtimes:
+    name: E2E Runtimes
+    needs: [changes]
+    # The heavy lifecycle suite shares the integration surface (core/cli/fleet
+    # config); it ran as a standalone pull_request workflow before being
+    # folded into this gate so PRs surface one workflow.
+    if: ${{ needs.changes.outputs.integration == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e-runtimes.yml
+
   pr-gate-summary:
     name: PR Gate Summary
     needs:
@@ -440,6 +486,7 @@ jobs:
       - site-ci
       - integration-checks
       - go-ci
+      - e2e-runtimes
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -467,6 +514,7 @@ jobs:
               "site-ci": enabled("site"),
               "integration-checks": enabled("integration"),
               "go-ci": enabled("go"),
+              "e2e-runtimes": enabled("integration"),
           }
 
           lines = [

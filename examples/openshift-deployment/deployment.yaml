@@ -37,9 +37,23 @@ spec:
 
       containers:
         - name: runtime-container
-          # Targets our hardened distroless base layer
-          image: ghcr.io/northcutted/clearcutt/clearcutt-corelts:distroless
+          # This blueprint pins the slim tier (bash + busybox + CA certs) so the
+          # pod has a real process to run and the verification steps in the
+          # README work as written.
+          #
+          # Distroless-tier base images are NOT directly runnable: they ship
+          # zero executables and no ENTRYPOINT/CMD. They are scratch runtimes
+          # for YOUR application layer. When adapting this manifest, replace
+          # `image` with your app image built FROM a ClearCutt base and drop
+          # the placeholder `command` (see examples/k8s-deployment/ for the
+          # app-image deployment pattern).
+          image: ghcr.io/northcutted/clearcutt/clearcutt-corelts:slim
           imagePullPolicy: IfNotPresent
+
+          # ClearCutt base images define no default ENTRYPOINT. This placeholder
+          # parks the pod so the blueprint is verifiable end to end; a real
+          # deployment runs your application binary here instead.
+          command: ["bash", "-c", "while true; do sleep 3600; done"]
 
           # Enforce resource boundaries to prevent starvation vectors
           resources:

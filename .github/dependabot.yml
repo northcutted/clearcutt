@@ -1,0 +1,40 @@
+# Dependency-update automation for the toolchain that builds and signs the
+# fleet. The images themselves are patched by the scheduled scan and CVE
+# remediation pipeline; this file covers the build/sign/publish toolchain,
+# which would otherwise have no update path (workflow SHA pins are enforced
+# by scripts/validate-workflow-hardening.sh, and dependabot maintains the
+# trailing version comments on pinned actions).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: gomod
+    directory: "/cli"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: "/site"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch

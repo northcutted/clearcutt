@@ -299,12 +299,23 @@ func TestServiceSmokeNixEvalMatrixAndPortBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("service smoke failed: %v\n%s", err, stdout)
 	}
-	if len(calls) != 3 {
-		t.Fatalf("expected postgres command smoke only, got %#v", calls)
+	if len(calls) != 6 {
+		t.Fatalf("expected postgres command smoke plus functional smoke, got %#v", calls)
 	}
-	for _, call := range calls {
+	for _, call := range calls[:3] {
 		if call.Name != "podman" || !strings.Contains(strings.Join(call.Args, " "), "--entrypoint") {
 			t.Fatalf("unexpected smoke command: %#v", call)
+		}
+	}
+	postgresCalls := flattenServiceCalls(calls)
+	for _, want := range []string{
+		"podman run -d --name clearcutt-smoke-custom-postgres-",
+		"podman exec clearcutt-smoke-custom-postgres-",
+		"pg_isready -h 127.0.0.1 -p 5432",
+		"podman rm -f clearcutt-smoke-custom-postgres-",
+	} {
+		if !strings.Contains(postgresCalls, want) {
+			t.Fatalf("expected functional smoke call %q in:\n%s", want, postgresCalls)
 		}
 	}
 
@@ -467,8 +478,11 @@ func TestServiceFunctionalSmokeFailureDumpsLogsAndCleansUp(t *testing.T) {
 
 	calls = nil
 	err = runServiceFunctionalSmoke("docker", fleet.ServiceImage{ID: "postgres16", Template: "postgres"}, "local/postgres:service")
-	if err != nil || len(calls) != 0 {
-		t.Fatalf("postgres should not run a functional profile, err=%v calls=%#v", err, calls)
+	if err == nil || !strings.Contains(err.Error(), "postgres functional smoke probe failed") {
+		t.Fatalf("expected postgres functional smoke failure, got %v", err)
+	}
+	if joined := flattenServiceCalls(calls); !strings.Contains(joined, "pg_isready -h 127.0.0.1 -p 5432") || !strings.Contains(joined, "docker rm -f clearcutt-smoke-postgres16-") {
+		t.Fatalf("expected postgres probe and cleanup calls, got:\n%s", joined)
 	}
 
 	calls = nil

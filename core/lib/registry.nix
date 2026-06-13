@@ -14,6 +14,30 @@ let
     if foundPath != null then lib.attrByPath foundPath null pkgs
     else throw errorMsg;
 
+  # Like getPkg, but resolves to null instead of throwing so a version spec can
+  # express "use the preferred attr when this nixpkgs has it, otherwise fall
+  # back to an in-registry transformation" without aborting evaluation.
+  getPkgOrNull = paths:
+    let
+      foundPath = lib.findFirst (path: lib.hasAttrByPath path pkgs) null paths;
+    in
+    if foundPath != null then lib.attrByPath foundPath null pkgs else null;
+
+  # Zero out store-path references INSIDE the package's own derivation.
+  # Copy-and-strip wrappers (runCommand + cp) do not work for this: the copy
+  # keeps self-references to the original store path, so Nix records the
+  # original package as a runtime dependency and its references (e.g. the
+  # build shell) come right back into the closure — plus the image then
+  # ships two copies of the package. Appending to postFixup rewrites the
+  # files before Nix scans the single, real output for references.
+  severRuntimeReferences = { pkg, references }:
+    pkg.overrideAttrs (old: {
+      nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.removeReferencesTo ];
+      postFixup = (old.postFixup or "") + ''
+        find "$out" -type f -exec remove-references-to ${lib.concatMapStringsSep " " (ref: "-t ${ref}") references} '{}' +
+      '';
+    });
+
   # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes.
   # symlinkJoin materializes a new store path whose bin/ and lib/ entries are
   # symlinks into the upstream nodejs derivation; postBuild then unlinks the
@@ -42,51 +66,200 @@ let
       };
     };
 
-    java = {
+    java = let
+      # Production tiers build a JRE-shaped runtime from the headless OpenJDK.
+      # Temurin/Semeru binary JREs in the locked nixpkgs carry shell-bearing
+      # launcher wrappers or desktop/printing closures (cups -> avahi -> bash).
+      # `jre*_minimal` normally links against the full JDK; overriding its JDK
+      # inputs to the headless JDK keeps the runtime shell-free.
+      #
+      # The module set must be explicit: ALL-MODULE-PATH would include every
+      # jmod of the headless JDK, and jlink copies each included module's bin/
+      # launchers into the image — javac, jshell, jar, jlink, jcmd, and the
+      # rest of the toolchain that production tiers must not ship. The list
+      # below mirrors what vendors put in a standalone JRE: every java.*
+      # platform module plus the jdk.* service/runtime modules (crypto
+      # providers, locales, management/JFR, DNS naming, unsupported APIs),
+      # and none of the jdk.* developer-tool modules. Every name exists in
+      # both the JDK 21 and JDK 25 headless jmods of the locked nixpkgs.
+      jreModules = [
+        "java.base"
+        "java.compiler" # javax.tools/javax.lang.model API only - javac itself lives in the excluded jdk.compiler
+        "java.datatransfer"
+        "java.desktop"
+        "java.instrument"
+        "java.logging"
+        "java.management"
+        "java.management.rmi"
+        "java.naming"
+        "java.net.http"
+        "java.prefs"
+        "java.rmi"
+        "java.scripting"
+        "java.se"
+        "java.security.jgss"
+        "java.security.sasl"
+        "java.smartcardio"
+        "java.sql"
+        "java.sql.rowset"
+        "java.transaction.xa"
+        "java.xml"
+        "java.xml.crypto"
+        "jdk.accessibility"
+        "jdk.charsets"
+        "jdk.crypto.cryptoki"
+        "jdk.crypto.ec"
+        "jdk.dynalink"
+        "jdk.httpserver"
+        "jdk.incubator.vector"
+        "jdk.jdwp.agent"
+        "jdk.jfr"
+        "jdk.jsobject"
+        "jdk.localedata"
+        "jdk.management"
+        "jdk.management.agent"
+        "jdk.management.jfr"
+        "jdk.naming.dns"
+        "jdk.naming.rmi"
+        "jdk.net"
+        "jdk.nio.mapmode"
+        "jdk.sctp"
+        "jdk.security.auth"
+        "jdk.security.jgss"
+        "jdk.unsupported"
+        "jdk.unsupported.desktop"
+        "jdk.xml.dom"
+        "jdk.zipfs"
+      ];
+      javaProductionRuntime = javaVersion:
+        let
+          minimalJre = getPkg [
+            [ "jre${javaVersion}_minimal" ]
+          ] "No Java ${javaVersion} jre${javaVersion}_minimal builder is available in this nixpkgs version";
+          headlessJdk = getPkg [
+            [ "jdk${javaVersion}_headless" ]
+            [ "openjdk${javaVersion}_headless" ]
+          ] "No Java ${javaVersion} headless JDK is available in this nixpkgs version";
+          buildHeadlessJdk = lib.attrByPath [ "buildPackages" "jdk${javaVersion}_headless" ] headlessJdk pkgs;
+        in
+        [
+          (minimalJre.override {
+            jdk = headlessJdk;
+            jdkOnBuild = buildHeadlessJdk;
+            # jdk.random (extra RandomGenerator algorithms) exists as a
+            # separate jmod only in the JDK 21 headless package of the
+            # locked nixpkgs; the JDK 25 jmods directory does not have it.
+            modules = jreModules ++ lib.optional (javaVersion == "21") "jdk.random";
+          })
+        ];
+    in {
       versions = {
         "21" = {
           overlayName = "clearcuttJava21";
           raw = [ (getPkg [ [ "zulu21" ] [ "temurin-bin-21" ] [ "jdk21" ] [ "openjdk21" ] ] "Java 21 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
+          slimOverride = javaProductionRuntime "21";
+          distrolessOverride = javaProductionRuntime "21";
         };
         "25" = {
           overlayName = "clearcuttJava25";
           raw = [ (getPkg [ [ "zulu25" ] [ "temurin-bin-25" ] [ "jdk25" ] [ "openjdk25" ] ] "Java 25 is not available in this nixpkgs version") ];
           devExtra = [ pkgs.maven pkgs.ant pkgs.gradle ];
+          slimOverride = javaProductionRuntime "25";
+          distrolessOverride = javaProductionRuntime "25";
         };
       };
     };
 
-    node = {
+    node = let
+      # `raw` stays the full nodejs attr: it feeds the dev tier and the
+      # -native packages, which need npm. Production tiers prefer upstream's
+      # nodejs-slim_<v> (built with enableNpm = false — no npm/npx/corepack
+      # and no bundled npm module tree to scan), and fall back to removeNpm
+      # over the full attr on nixpkgs revisions without a slim build, so the
+      # fallback never silently re-ships npm.
+      # nodejs embeds its configure metadata (process.config) in the binary,
+      # which keeps icu4c's dev output - and through icu-config's shebang the
+      # build shell - in the runtime closure, failing the distroless closure
+      # purity gate. Nothing at runtime resolves those paths, so sever them in
+      # the derivation itself. If a future nixpkgs decouples pkgs.icu from the
+      # icu node links against, the strip becomes a no-op and the purity gate
+      # surfaces it again rather than failing silently.
+      nodeProductionRuntime = nodeVersion: rawPkgs:
+        let
+          slimPkg = getPkgOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
+          severShellChain = pkg: severRuntimeReferences {
+            inherit pkg;
+            references = [ (pkgs.icu.dev or pkgs.icu) pkg.stdenv.shell ];
+          };
+        in
+        if slimPkg != null then [ (severShellChain slimPkg) ] else map removeNpm rawPkgs;
+      nodeRaw22 = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+      nodeRaw24 = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+    in {
       versions = {
         "22" = {
           overlayName = "clearcuttNode22";
-          raw = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+          raw = nodeRaw22;
+          slimOverride = nodeProductionRuntime "22" nodeRaw22;
+          distrolessOverride = nodeProductionRuntime "22" nodeRaw22;
+          # Kept as the final resolveForTier fallback for forks whose registry
+          # forks drop the overrides while pinned to an older nixpkgs.
           useRemoveNpm = true;
         };
         "24" = {
           overlayName = "clearcuttNode24";
-          raw = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+          raw = nodeRaw24;
+          slimOverride = nodeProductionRuntime "24" nodeRaw24;
+          distrolessOverride = nodeProductionRuntime "24" nodeRaw24;
           useRemoveNpm = true;
         };
       };
     };
 
-    python = {
+    python = let
+      # Distroless override evaluation (2026-06): python3Minimal exists in the
+      # locked nixpkgs (python3-minimal-3.13.13) but was deliberately NOT
+      # adopted as a distrolessOverride:
+      #   * it is built with withMinimalDeps = true, which disables OpenSSL,
+      #     sqlite, expat, mpdecimal, and readline — so the `ssl`, `sqlite3`,
+      #     and `pyexpat` stdlib modules are missing and HTTPS, pip-installed
+      #     wheels, and most real services break out of the box;
+      #   * it tracks the 3.13 sources only, so it could never serve the
+      #     3.14/3.15 lines and would silently downgrade interpreters.
+      # Instead, distroless keeps the per-version full interpreter but severs
+      # the build-shell store references that live in dev-facing helper files
+      # (pythonX.Y-config, config-*/Makefile, install-sh, makesetup, ctypes
+      # test fixtures, _sysconfigdata). Nothing the interpreter executes at
+      # runtime resolves them, and removing them drops bash from the image
+      # closure. The target is the interpreter's own stdenv shell - NOT
+      # pkgs.bash, which the locked nixpkgs aliases to bashInteractive, a
+      # different store path that python never references. The ssl/sqlite/
+      # readline runtime references are retained.
+      pythonDistrolessRuntime = py: [
+        (severRuntimeReferences {
+          pkg = py;
+          references = [ py.stdenv.shell ];
+        })
+      ];
+    in {
       versions = {
         "3.13" = {
           overlayName = "clearcuttPython313";
-          raw = [ (getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python313" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python313" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.14" = {
           overlayName = "clearcuttPython314";
-          raw = [ (getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.15" = {
           overlayName = "clearcuttPython315";
-          raw = [ (getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version") ];
+          raw = let py = getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version"; in [ py ];
+          distrolessOverride = let py = getPkg [ [ "python315" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python315" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
       };

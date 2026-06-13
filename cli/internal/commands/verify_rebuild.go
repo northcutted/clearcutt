@@ -194,7 +194,9 @@ func runVerifyRebuild() error {
 			hasFailure = true
 			predicate.Status = "fail"
 		}
-		if !o.outputPredicate {
+		// Structured output modes (--output-predicate, --format json|yaml) own
+		// stdout; only the human table mode streams per-check progress lines.
+		if !o.outputPredicate && !structuredFormat() {
 			fmt.Fprintf(out, "[rebuild] %s: %s\n", status, message)
 		}
 	}
@@ -353,13 +355,20 @@ func runVerifyRebuild() error {
 		predicate.Closure = closure
 	}
 
-	if o.outputPredicate {
+	switch {
+	case o.outputPredicate:
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(predicate); err != nil {
 			return err
 		}
-	} else if !hasFailure {
+	case structuredFormat():
+		// The rebuild predicate already carries the standard status + checks
+		// shape, so --format json|yaml emits it directly.
+		if err := printStructured(predicate); err != nil {
+			return err
+		}
+	case !hasFailure:
 		fmt.Fprintf(out, "[rebuild] complete: %s (%s)\n", o.target, o.system)
 	}
 

@@ -234,7 +234,7 @@ export function getImageMetadata(
       } else {
         description = `This C/C++ distroless base provides a hardened OCI workspace with no shells. It is designed to host statically and dynamically compiled C/C++ binaries with a minimal runtime surface.`;
         useCases = [
-          'Highly secure production hosting of pre-compiled C/C++ server nodes and daemons',
+          'Production-oriented hosting of pre-compiled C/C++ server nodes and daemons',
           'Edge deployments looking for minimal container footprint and current vulnerability evidence',
           'Executing compiled network filters and low-level controllers in hardened environments'
         ];
