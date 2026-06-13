@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     # Warm-cache runs finish in minutes; sized for cold-cache rebuilds after
     # a CVE overlay or flake.lock change invalidates the nix cache key.
-    timeout-minutes: 180
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:

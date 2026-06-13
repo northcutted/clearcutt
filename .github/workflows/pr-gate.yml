@@ -135,11 +135,13 @@ jobs:
     if: ${{ needs.changes.outputs.fleet == 'true' }}
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     # Warm-cache jobs finish in minutes; the cap only binds when a CVE
-    # overlay or flake.lock change invalidates the nix cache key and the
-    # first wave has to rebuild the package graph from openssl up before
-    # any job has saved the new cache. 60 minutes killed every job of the
-    # 2026-06 openssl/sqlite remediation rebuild without ever seeding it.
-    timeout-minutes: 180
+    # overlay or flake.lock change invalidates the nix cache key and a leg
+    # has to rebuild the package graph from openssl up before its cache is
+    # seeded. During the 2026-06 openssl/sqlite remediation rebuild, 60m and
+    # then 180m killed every leg before any could seed a cache; a cold leg
+    # is effectively a world rebuild on a 4-core runner. GitHub's hard job
+    # limit is 6h, so 330m is the practical ceiling.
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
@@ -214,7 +216,7 @@ jobs:
     if: ${{ needs.changes.outputs.service == 'true' }}
     runs-on: ubuntu-latest
     # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
-    timeout-minutes: 180
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.service_image_matrix) }}
@@ -333,7 +335,7 @@ jobs:
     if: ${{ needs.changes.outputs.integration == 'true' }}
     runs-on: ubuntu-latest
     # See validate-matrix: sized for cold-cache rebuilds after overlay bumps.
-    timeout-minutes: 180
+    timeout-minutes: 330
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
