@@ -54,7 +54,7 @@ func determineLifecycle(target, tier string) Lifecycle {
 		if tier != "dev" {
 			productionAllowed = true
 		}
-	case "java25", "node24", "python3.14", "python3.15", "dotnet10":
+	case "java25", "node24", "python3.14", "dotnet10":
 		status, support, productionAllowed = "preview", "preview", false
 	case "go1.25", "go1.26", "rust1.95", "cc15":
 		status, support, productionAllowed = "experimental", "unsupported", false

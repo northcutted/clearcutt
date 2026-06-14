@@ -26,12 +26,24 @@
       # assembly, scanners, and dev tooling, then threads patched handles only
       # into package closures that ship inside images.
       cveRemediationOverlay = import ./overlays/cve-remediation.nix;
-      dotnetRuntimeOpensslOverlay = final: _prev: {
-        # .NET's nixpkgs runtime wrappers bake a top-level openssl path into
-        # the package. Isolate that unavoidable override to the package set
-        # used for dotnet runtime contents, not the build toolchain.
+      # Some runtimes link the CVE-remediated libraries TRANSITIVELY through
+      # dependencies whose openssl/sqlite inputs the runtime package never
+      # exposes as `.override` arguments:
+      #   * .NET bakes a top-level openssl path into its nixpkgs wrappers.
+      #   * Node links nghttp2/ngtcp2/nghttp3 (each carrying their own openssl)
+      #     and sqlite, none of which `nodejs.override` reaches (it only takes
+      #     openssl + python3). A bare `.override { openssl = … }` patches the
+      #     interpreter's own libssl but leaves stock openssl/sqlite in the
+      #     shipped closure — which the runtime-patch completeness gate rejects.
+      # For those runtimes we rebind openssl/sqlite at the top of a DEDICATED
+      # package set used only for their runtime contents, so every transitive
+      # linker resolves the patched build. The build toolchain, scanners, and
+      # dev shell keep using stock `buildPkgs`, so this never rebinds the
+      # cached toolchain — only the affected runtime's own subtree rebuilds.
+      runtimeCryptoOverlay = final: _prev: {
         openssl_3_6 = final.clearcuttCveOpenssl;
         openssl = final.openssl_3_6;
+        sqlite = final.clearcuttCveSqlite;
       };
       nixpkgsConfig = {
         # `allowUnfree` is required for JDKs (Zulu/Oracle) and a few fonts.
@@ -50,17 +62,17 @@
         config = nixpkgsConfig;
         overlays = [ cveRemediationOverlay ];
       };
-      importDotnetRuntimeNixpkgs = system: import nixpkgs {
+      importCryptoRuntimeNixpkgs = system: import nixpkgs {
         inherit system;
         config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay dotnetRuntimeOpensslOverlay ];
+        overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
       };
 
       perSystem = system:
       let
         buildPkgs = importBuildNixpkgs system;
         runtimePkgs = importRuntimeNixpkgs system;
-        dotnetRuntimePkgs = importDotnetRuntimeNixpkgs system;
+        cryptoRuntimePkgs = importCryptoRuntimeNixpkgs system;
 
         # Host package alignment: build native OCI layers on Linux release
         # runners, and expose native development shells on Darwin for the local
@@ -72,7 +84,7 @@
         # otherwise each re-instantiate it against the same pkgs.
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
-          dotnetPkgs = dotnetRuntimePkgs;
+          cryptoPkgs = cryptoRuntimePkgs;
         };
 
         # Import our custom image compiler
@@ -263,8 +275,8 @@
         mkHardenedShell = { system, language, version, ... }@args:
           let
             runtimePkgs = importRuntimeNixpkgs system;
-            dotnetPkgs = importDotnetRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix { pkgs = runtimePkgs; inherit dotnetPkgs; };
+            cryptoPkgs = importCryptoRuntimeNixpkgs system;
+            registry = import ./lib/registry.nix { pkgs = runtimePkgs; inherit cryptoPkgs; };
             helpers = import ./lib/nix-native.nix { inherit self registry; pkgs = runtimePkgs; };
           in
           helpers.mkHardenedShell (runtimePkgs.lib.filterAttrs (n: v: n != "system") args);
@@ -283,8 +295,8 @@
           let
             buildPkgs = importBuildNixpkgs system;
             runtimePkgs = importRuntimeNixpkgs system;
-            dotnetPkgs = importDotnetRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix { inherit dotnetPkgs; pkgs = runtimePkgs; };
+            cryptoPkgs = importCryptoRuntimeNixpkgs system;
+            registry = import ./lib/registry.nix { inherit cryptoPkgs; pkgs = runtimePkgs; };
             compiler = import ./lib/build-fleet.nix { pkgs = buildPkgs; inherit runtimePkgs registry; };
             platformMetadata = import ./lib/platform-metadata.nix;
             imagePrefix = platformMetadata.imagePrefix or "clearcutt";
@@ -297,7 +309,7 @@
                   parsed = builtins.match "([A-Za-z]+)([0-9].*)" runtimeId;
                 in
                 if parsed == null then
-                  throw "clearcutt.lib.graftOntoBase: runtime must look like java21, python3.15, go1.25, dotnet8, rust1.95, cc15, or coreLTS"
+                  throw "clearcutt.lib.graftOntoBase: runtime must look like java21, python3.14, go1.25, dotnet8, rust1.95, cc15, or coreLTS"
                 else {
                   language = builtins.elemAt parsed 0;
                   version = builtins.elemAt parsed 1;
@@ -380,7 +392,6 @@
             "java25-slim" "java25-distroless"
             "python3.13-slim" "python3.13-distroless"
             "python3.14-slim" "python3.14-distroless"
-            "python3.15-slim" "python3.15-distroless"
             "dotnet8-slim" "dotnet8-distroless"
             "dotnet10-slim" "dotnet10-distroless"
           ];

@@ -111,17 +111,17 @@ clearcutt app build \\
   },
   {
     title: 'Python',
-    versions: '3.15',
-    bases: 'python3.15-*',
+    versions: '3.14',
+    bases: 'python3.14-*',
     artifact: 'PEX, shiv, or zipapp',
-    note: 'Preview lifecycle; package app and dependencies into one runnable file.',
+    note: 'Package app and dependencies into one runnable file.',
     code: `python -m pip install --upgrade build pex
 pex . \\
   -m payments_api.main \\
   -o dist/payments-api.pyz
 
-export BASE_ID="python3.15-distroless"
-export PATCHED_BASE="${baseRef('python3.15-distroless')}"
+export BASE_ID="python3.14-distroless"
+export PATCHED_BASE="${baseRef('python3.14-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
@@ -301,7 +301,7 @@ clearcutt app build \\
       <h2 class="heading text-xl text-ink-50">Common Rebase Loop</h2>
       <p class="max-w-3xl text-sm text-ink-200">
         Each stack example sets <code>BASE_ID</code> and <code>PATCHED_BASE</code>. The source image, rebased tag, developer signer, and rebase-engine signer stay the same across stacks.
-        These examples assume a generated or live catalog; a clean clone only proves the Java 21 fixture path. Preview lifecycle lines such as <code>python3.15-*</code> require policies or gates that explicitly allow preview bases.
+        These examples assume a generated or live catalog; a clean clone only proves the Java 21 fixture path. Preview lifecycle lines such as <code>java25-*</code> require policies or gates that explicitly allow preview bases.
       </p>
       <div class="grid min-w-0 gap-6 lg:grid-cols-2">
         <CopyBlock language="shell" label="shared environment" code={envCode} />

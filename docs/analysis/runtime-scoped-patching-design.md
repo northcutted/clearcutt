@@ -113,7 +113,7 @@ a **hard build failure**.
 
 ## Per-runtime decisions
 
-- **python**: ship `clearcuttPython313/314/315` (patched interpreter, openssl/
+- **python**: ship `clearcuttPython313/314` (patched interpreter, openssl/
   sqlite inputs overridden); leave `python313`/`python3` stock for the build
   toolchain. Dev tier (`raw`) stays stock so dev shells stay cached.
 - **node**: `nodejs-slim_22/24` already accept `.override { openssl = …; }`

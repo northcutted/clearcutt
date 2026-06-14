@@ -48,7 +48,7 @@ Supported base families:
 | Core/static | `coreLTS-dev`, `coreLTS-slim`, `coreLTS-distroless` |
 | Java | `java21-*`, `java25-*` |
 | Node.js | `node22-*`, `node24-*` |
-| Python | `python3.15-*` (preview lifecycle) |
+| Python | `python3.13-*`, `python3.14-*` |
 | Go | `go1.25-*`, `go1.26-*` |
 | .NET | `dotnet8-*`, `dotnet10-*` |
 | Rust | `rust1.95-*` |
@@ -57,7 +57,7 @@ Supported base families:
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
 
-Preview lifecycle lines such as `python3.15-*` are suitable for validation and
+Preview lifecycle lines such as `java25-*` are suitable for validation and
 early adoption. Production policies with `allowPreview: false` should use active
 runtime lines until the catalog lifecycle for that line moves to active.
 
@@ -172,11 +172,10 @@ clearcutt app build \
 If the application depends on native addons or runtime files that cannot be
 bundled into one artifact, use a Containerfile and certify the finished image.
 
-### Python 3.15
+### Python 3.14
 
 Package the application as a zipapp, PEX, or shiv artifact.
-Python 3.15 is currently a preview lifecycle line, so catalog gates require
-`--allow-preview` or a policy that explicitly allows preview bases.
+Python 3.14 is the latest production Python line in the catalog.
 
 ```bash
 python -m pip install --upgrade build pex
@@ -184,8 +183,8 @@ pex . \
   -m payments_api.main \
   -o dist/payments-api.pyz
 
-export BASE_ID="python3.15-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.15:v0.17.0-distroless"
+export BASE_ID="python3.14-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.14:v0.17.0-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \

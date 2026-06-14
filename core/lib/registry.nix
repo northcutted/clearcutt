@@ -1,7 +1,13 @@
 # ClearCutt Declarative Language & Runtime Registry
 
+# `cryptoPkgs` is a package set whose openssl/sqlite are rebound to the
+# CVE-patched builds at the top level (see runtimeCryptoOverlay in flake.nix).
+# Runtimes that link the remediated libraries through dependencies they cannot
+# `.override` (node -> nghttp2/ngtcp2/sqlite; .NET's baked openssl) are sourced
+# from it so every transitive linker resolves the patched build. Everything
+# else stays on the plain `pkgs` (CVE handles available, stock openssl/sqlite).
 { pkgs
-, dotnetPkgs ? pkgs
+, cryptoPkgs ? pkgs
 }:
 
 let
@@ -181,6 +187,14 @@ let
     };
 
     node = let
+      # Node is sourced from `cryptoPkgs` (openssl/sqlite rebound to the patched
+      # builds). `nodejs.override` only exposes `openssl` + `python3`, so it can
+      # patch the interpreter's own libssl but NOT the openssl that nghttp2 /
+      # ngtcp2 / nghttp3 each link, nor node's `sqlite` input — all of which
+      # ship inside the runtime closure and trip the runtime-patch completeness
+      # gate. Building node from the crypto-rebound set makes every transitive
+      # linker resolve openssl-3.6.3 / sqlite-3.53.2 instead.
+      #
       # `raw` stays the full nodejs attr: it feeds the dev tier and the
       # -native packages, which need npm. Production tiers prefer upstream's
       # nodejs-slim_<v> (built with enableNpm = false — no npm/npx/corepack
@@ -189,25 +203,29 @@ let
       # fallback never silently re-ships npm.
       # nodejs embeds its configure metadata (process.config) in the binary,
       # which keeps icu4c's dev output - and through icu-config's shebang the
-      # build shell - in the runtime closure, failing the distroless closure
-      # purity gate. Nothing at runtime resolves those paths, so sever them in
-      # the derivation itself. If a future nixpkgs decouples pkgs.icu from the
-      # icu node links against, the strip becomes a no-op and the purity gate
-      # surfaces it again rather than failing silently.
-      patchNode = nodePkg: nodePkg.override {
-        openssl = pkgs.clearcuttCveOpenssl;
-      };
+      # build shell - plus node's bash-interactive build input in the runtime
+      # closure, failing the distroless closure purity gate. Nothing at runtime
+      # resolves those paths, so sever them in the derivation itself. If a
+      # future nixpkgs decouples pkgs.icu from the icu node links against, the
+      # strip becomes a no-op and the purity gate surfaces it again rather than
+      # failing silently.
+      getNode = getPkgFrom cryptoPkgs;
+      getNodeOrNull = getPkgOrNullFrom cryptoPkgs;
       nodeProductionRuntime = nodeVersion: rawPkgs:
         let
-          slimPkg = getPkgOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
+          slimPkg = getNodeOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
           severShellChain = pkg: severRuntimeReferences {
             inherit pkg;
-            references = [ (pkgs.icu.dev or pkgs.icu) pkg.stdenv.shell ];
+            references = [
+              (cryptoPkgs.icu.dev or cryptoPkgs.icu)
+              pkg.stdenv.shell
+              (cryptoPkgs.bashInteractive or cryptoPkgs.bash)
+            ];
           };
         in
-        if slimPkg != null then [ (severShellChain (patchNode slimPkg)) ] else map (pkg: removeNpm (patchNode pkg)) rawPkgs;
-      nodeRaw22 = [ (getPkg [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
-      nodeRaw24 = [ (getPkg [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+        if slimPkg != null then [ (severShellChain slimPkg) ] else map removeNpm rawPkgs;
+      nodeRaw22 = [ (getNode [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+      nodeRaw24 = [ (getNode [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
     in {
       versions = {
         "22" = {
@@ -238,7 +256,7 @@ let
       #     and `pyexpat` stdlib modules are missing and HTTPS, pip-installed
       #     wheels, and most real services break out of the box;
       #   * it tracks the 3.13 sources only, so it could never serve the
-      #     3.14/3.15 lines and would silently downgrade interpreters.
+      #     3.14 line and would silently downgrade interpreters.
       # Instead, distroless keeps the per-version full interpreter but severs
       # the build-shell store references that live in dev-facing helper files
       # (pythonX.Y-config, config-*/Makefile, install-sh, makesetup, ctypes
@@ -270,13 +288,6 @@ let
           distrolessOverride = let py = getPkg [ [ "clearcuttCvePython314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
-        "3.15" = {
-          overlayName = "clearcuttPython315";
-          raw = let py = getPkg [ [ "python315" ] ] "Python 3.15 is not available in this nixpkgs version"; in [ py ];
-          slimOverride = [ (getPkg [ [ "clearcuttCvePython315" ] ] "Patched Python 3.15 runtime is not available") ];
-          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython315" ] ] ""; in pythonDistrolessRuntime py;
-          devExtra = let py = getPkg [ [ "python315" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
-        };
       };
     };
 
@@ -299,15 +310,15 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8";
-          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10";
-          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
         };
       };
     };
@@ -317,11 +328,11 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8Runtime";
-          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10Runtime";
-          raw = [ (getPkgFrom dotnetPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
       };
     };

@@ -36,7 +36,7 @@ clearcutt platform status
 ```
 
 - `matrix.languages` selects runtime lines such as `java21`, `node24`, or
-  `python3.15`.
+  `python3.14`.
 - `matrix.tiers` selects `dev`, `slim`, and `distroless`.
 - `matrix.systems` selects Linux release architectures.
 - `templates.runtimes` controls generated app starters.
