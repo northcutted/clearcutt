@@ -35,6 +35,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tarfile
 
@@ -61,6 +62,57 @@ def strip_store_hash(component):
     if "-" in component:
         return component.split("-", 1)[1]
     return component
+
+
+def store_root(path):
+    """/nix/store/<hash-name>/sub/path -> /nix/store/<hash-name>, else None."""
+    parts = path.split("/")
+    try:
+        i = parts.index("store")
+    except ValueError:
+        return None
+    if len(parts) > i + 1 and parts[i + 1]:
+        return "/".join(parts[: i + 2])
+    return None
+
+
+def diagnose_referrers(violation_paths, scanned_roots):
+    """Best-effort: for each offending store path, name the IN-IMAGE packages
+    that reference it, so a purity failure points at its source instead of just
+    flagging the leaf (e.g. 'bash-5.3p9 is pulled in by: icu4c-dev'). Needs
+    nix-store and the realized closure (present in CI right after the build);
+    silently no-ops when unavailable, so it never changes the gate's verdict.
+    """
+    offenders = sorted({r for r in (store_root(p) for p in violation_paths) if r})
+    for bad in offenders:
+        try:
+            result = subprocess.run(
+                ["nix-store", "--query", "--referrers", bad],
+                capture_output=True, text=True, timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return  # nix-store unavailable (e.g. local run) — best-effort only
+        if result.returncode != 0:
+            continue
+        referrers = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        in_image = sorted(
+            strip_store_hash(os.path.basename(r))
+            for r in referrers
+            if r in scanned_roots and r != bad
+        )
+        leaf = strip_store_hash(os.path.basename(bad))
+        if in_image:
+            print(
+                f"[closure-purity] DIAGNOSIS: {leaf} is referenced in the image by: "
+                f"{', '.join(sorted(set(in_image)))}",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[closure-purity] DIAGNOSIS: {leaf} has no single in-image referrer "
+                "(reached transitively beyond one hop, or it is a root content path)",
+                file=sys.stderr,
+            )
 
 
 def load_allowlist(path):
@@ -187,6 +239,7 @@ def oci_layers(archive):
 
 
 def scan_image_archive(archive_path, findings):
+    scanned_roots = set()
     with tarfile.open(archive_path, mode="r:*") as archive:
         names = set(archive.getnames())
         if "manifest.json" in names:
@@ -199,7 +252,11 @@ def scan_image_archive(archive_path, findings):
         for layer_bytes in layer_iter:
             with tarfile.open(fileobj=io.BytesIO(layer_bytes), mode="r:*") as layer:
                 for member in layer:
+                    root = store_root("/" + member.name.lstrip("/"))
+                    if root:
+                        scanned_roots.add(root)
                     inspect_member(member, findings)
+    return scanned_roots
 
 
 def scan_store_paths(paths_file, findings):
@@ -238,6 +295,8 @@ def scan_store_paths(paths_file, findings):
                         f"{bit} regular file {full} (mode {stat.S_IMODE(st.st_mode):o})",
                     )
 
+    return set(store_paths)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -252,9 +311,9 @@ def main():
     findings = Findings(load_allowlist(args.allowlist))
 
     if args.archive:
-        scan_image_archive(args.archive, findings)
+        scanned_roots = scan_image_archive(args.archive, findings)
     else:
-        scan_store_paths(args.store_paths, findings)
+        scanned_roots = scan_store_paths(args.store_paths, findings)
 
     for note in findings.accepted:
         print(f"[closure-purity] ACCEPTED: {note}")
@@ -262,6 +321,7 @@ def main():
     if findings.violations:
         for message in sorted(findings.violations.values()):
             print(f"[closure-purity] VIOLATION: {message}", file=sys.stderr)
+        diagnose_referrers(findings.violations.keys(), scanned_roots)
         print(
             f"[closure-purity] {len(findings.violations)} violation(s). "
             "Either remove the offending package from the production closure or add an "
