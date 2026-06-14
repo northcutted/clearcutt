@@ -41,13 +41,12 @@ name: ClearCutt Seed Nix Cache
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'core/overlays/**'
-      - 'core/lib/registry.nix'
-      - 'core/flake.nix'
-      - 'core/flake.lock'
-      - 'clearcutt.fleet.yaml'
+    # TEMP(seed-bootstrap): refactor/runtime-scoped-patching is listed (and the
+    # paths filter dropped) ONLY to fire the first seed run on this branch,
+    # since workflow_dispatch is unavailable until this file lands on the
+    # default branch. Reverted to `branches: [main]` + the paths filter right
+    # after the run is queued so it does not re-fire on every push.
+    branches: [main, refactor/runtime-scoped-patching]
 
 permissions:
   contents: read
