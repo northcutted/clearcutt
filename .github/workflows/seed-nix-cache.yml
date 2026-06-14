@@ -41,13 +41,11 @@ name: ClearCutt Seed Nix Cache
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'core/overlays/**'
-      - 'core/lib/registry.nix'
-      - 'core/flake.nix'
-      - 'core/flake.lock'
-      - 'clearcutt.fleet.yaml'
+    # TEMP(seed-bootstrap): refactor/runtime-scoped-patching listed (paths
+    # filter dropped) ONLY to fire the seed run on this branch while
+    # workflow_dispatch is unavailable (file not yet on the default branch).
+    # Reverted to `branches: [main]` + paths once the run is confirmed.
+    branches: [main, refactor/runtime-scoped-patching]
 
 permissions:
   contents: read
@@ -107,25 +105,41 @@ jobs:
         # aarch64 substitutability from the x86 runner without building.
         run: |
           set -euo pipefail
+          # The flake lives in core/, not the repo root — reference it explicitly.
+          CORE_FLAKE="./core"
           RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
           need='[]'
+          errors=0
           while read -r row; do
             sys=$(jq -r '.system' <<<"$row")
             lang=$(jq -r '.language' <<<"$row")
             tier=$(jq -r '.tier' <<<"$row")
-            inst=".#packages.${sys}.\"${lang}-${tier}\""
+            inst="${CORE_FLAKE}#packages.${sys}.\"${lang}-${tier}\""
             echo "::group::dry-run ${sys} ${lang} ${tier}"
-            # `nix build --dry-run` lists a "will be built:" section only when
-            # at least one derivation in the closure is neither present nor
-            # substitutable. Its absence means the whole closure is cached.
-            if nix build --dry-run "$inst" --extra-experimental-features 'nix-command flakes' --accept-flake-config 2>&1 | tee /tmp/dry.txt | grep -q 'will be built'; then
-              echo "NEEDS BUILD"
-              need=$(jq -c ". += [${row}]" <<<"$need")
+            # Run the dry-run on its own (NOT piped) so we can tell an eval/path
+            # ERROR (non-zero exit) apart from a clean "nothing to build". A
+            # failed dry-run must NEVER be silently treated as "cached" — that
+            # would skip seeding and let an unverified, un-warmed runtime through.
+            if nix build --dry-run "$inst" \
+                 --extra-experimental-features 'nix-command flakes' \
+                 --accept-flake-config >/tmp/dry.out 2>&1; then
+              if grep -q 'will be built' /tmp/dry.out; then
+                echo "NEEDS BUILD"
+                need=$(jq -c ". += [${row}]" <<<"$need")
+              else
+                echo "cached — skipping"
+              fi
             else
-              echo "cached — skipping"
+              echo "::error::dry-run FAILED for ${sys} ${lang} ${tier}"
+              cat /tmp/dry.out
+              errors=$((errors + 1))
             fi
             echo "::endgroup::"
           done < <(jq -c '.include[]' <<<"$RELEASE_MATRIX")
+          if [ "$errors" -ne 0 ]; then
+            echo "::error::${errors} cell(s) failed to evaluate; refusing to emit a partial seed set."
+            exit 1
+          fi
           count=$(jq 'length' <<<"$need")
           echo "Cells needing a seed build: ${count}"
           jq -r '.[] | "  - \(.system) \(.language) \(.tier)"' <<<"$need" || true
