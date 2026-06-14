@@ -364,15 +364,25 @@
             "java21-distroless"
             "python3.13-distroless"
           ];
+          # EVERY production tier (slim + distroless) that ships an
+          # openssl/sqlite-linked runtime must be gated, or an unwalked tier can
+          # silently ship a stock dep. dotnet especially: its openssl is a
+          # source-baked dlopen path invisible to graph/SBOM walks, so the
+          # realized-closure gate is the ONLY thing that catches a stock copy.
+          # coreLTS is included as a no-openssl baseline. dev tier is omitted —
+          # it intentionally ships stock runtimes (build shells stay cached).
           runtimePatchTargets = [
             "coreLTS-slim"
             "coreLTS-distroless"
-            "node22-slim"
-            "node22-distroless"
-            "java21-slim"
-            "java21-distroless"
-            "python3.13-slim"
-            "python3.13-distroless"
+            "node22-slim" "node22-distroless"
+            "node24-slim" "node24-distroless"
+            "java21-slim" "java21-distroless"
+            "java25-slim" "java25-distroless"
+            "python3.13-slim" "python3.13-distroless"
+            "python3.14-slim" "python3.14-distroless"
+            "python3.15-slim" "python3.15-distroless"
+            "dotnet8-slim" "dotnet8-distroless"
+            "dotnet10-slim" "dotnet10-distroless"
           ];
           mkClosurePurityCheck = attrName:
             let
