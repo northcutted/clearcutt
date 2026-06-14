@@ -214,11 +214,20 @@ let
       nodeProductionRuntime = nodeVersion: rawPkgs:
         let
           slimPkg = getNodeOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
+          # The leaked interactive shell the distroless purity gate flags is
+          # `bash-5.3p9` = bashNonInteractive (the locked nixpkgs aliases both
+          # `bash` and `bashInteractive` to bash-interactive-5.3p9, a DIFFERENT
+          # store path), so target bashNonInteractive explicitly. `stdenv.shell`
+          # is a `${bash}/bin/bash` SUBpath, kept as a backstop. If a future
+          # build still ships bash here it is reaching the closure transitively
+          # (e.g. an icu-config shebang) rather than through node's own files,
+          # and the purity gate surfaces it rather than failing silently.
           severShellChain = pkg: severRuntimeReferences {
             inherit pkg;
             references = [
               (cryptoPkgs.icu.dev or cryptoPkgs.icu)
               pkg.stdenv.shell
+              (cryptoPkgs.bashNonInteractive or cryptoPkgs.bash)
               (cryptoPkgs.bashInteractive or cryptoPkgs.bash)
             ];
           };
