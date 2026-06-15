@@ -22,6 +22,17 @@
       forLinuxSystems = nixpkgs.lib.genAttrs linuxSystems;
       forDarwinSystems = nixpkgs.lib.genAttrs darwinSystems;
 
+      # The image matrix is the GENERATED enumeration compiled from
+      # clearcutt.fleet.yaml by `clearcutt fleet compile` into
+      # lib/fleet-matrix.nix. It is pure data (system-independent): the concrete
+      # (language, version, tier) cells, the unique runtime lines, and the
+      # realized-closure gate targets. It is read here and threaded into both
+      # perSystem (image packages, native runtimes, dev shells) and the
+      # closure-purity / runtime-patch checks, so the flake no longer derives the
+      # matrix from registry.nix attr names. The hardened recipes, CVE overlays,
+      # and build/runtime/crypto nixpkgs split stay curated and untouched.
+      fleetMatrix = import ./lib/fleet-matrix.nix;
+
       # Runtime-scoped CVE patching uses stock build packages for image
       # assembly, scanners, and dev tooling, then threads patched handles only
       # into package closures that ship inside images.
@@ -102,37 +113,48 @@
         imagePrefix = platformMetadata.imagePrefix or "clearcutt";
         productName = platformMetadata.productName or "ClearCutt";
 
-        # Helper to generate standard package name attributes
-        mkPackageName = lang: ver: tier: "${lang}${ver}-${tier}";
+        # clearcutt:matrix:begin
+        # This block reads the generated enumeration (top-level `fleetMatrix`,
+        # from lib/fleet-matrix.nix) and SELECTS the hardened recipes from
+        # lib/registry.nix. It no longer derives the matrix from registry attr
+        # names. Everything outside these markers — the CVE overlays, the
+        # build/runtime/crypto nixpkgs split, registry.nix, and the check bodies
+        # — stays curated and is untouched.
 
-        # Matrix specifications - dynamically generated from the central registry
-        languages = builtins.filter (lang: lang != "dotnet-runtime") (builtins.attrNames registry.languages);
-        versions = builtins.mapAttrs (lang: spec: builtins.attrNames spec.versions) registry.languages;
-        tiers = [ "dev" "slim" "distroless" ];
+        # Coverage gate (replaces the registry↔fleet drift test): the fleet
+        # config is authoritative; the registry is the recipe library it selects
+        # from. Every declared cell MUST resolve to a curated recipe, or it is
+        # unbuildable and throws here at eval time rather than deep in image
+        # assembly. Returns the cell so callers force the check by using it.
+        assertRecipe = cell:
+          if (registry.languages.${cell.language} or null) != null
+             && ((registry.languages.${cell.language}.versions or { }) ? ${cell.version})
+          then cell
+          else throw "clearcutt fleet-matrix: cell ${cell.line}-${cell.tier} declares language=${cell.language} version=${cell.version} with no recipe in lib/registry.nix; add it there or remove the line from clearcutt.fleet.yaml matrix.languages";
+
+        # Unique runtime lines (one per language+version) in fleet-config order,
+        # for the per-line native packages and dev shells.
+        fleetLines = pkgs.lib.unique (
+          builtins.map (cell: { inherit (cell) line language version; }) fleetMatrix.cells
+        );
 
         # Generate image package outputs for the Linux build systems only.
         # Darwin still exposes native runtime closures and dev shells, but not
         # OCI image attrs that require Linux container tooling.
         matrixPackages = pkgs.lib.listToAttrs (
-          pkgs.lib.concatMap (lang:
-            pkgs.lib.concatMap (ver:
-              pkgs.lib.map (tier:
-                let
-                  attrName = mkPackageName lang ver tier;
-                in
-                {
-                  name = attrName;
-                  value = compiler.buildFleetImage {
-                    name = "${imagePrefix}-${lang}-${ver}";
-                    tag = tier;
-                    language = lang;
-                    version = ver;
-                    inherit tier;
-                  };
-                }
-              ) tiers
-            ) (pkgs.lib.attrByPath [ lang ] [] versions)
-          ) languages
+          builtins.map (rawCell:
+            let cell = assertRecipe rawCell; in
+            {
+              name = "${cell.line}-${cell.tier}";
+              value = compiler.buildFleetImage {
+                name = "${imagePrefix}-${cell.language}-${cell.version}";
+                tag = cell.tier;
+                language = cell.language;
+                version = cell.version;
+                tier = cell.tier;
+              };
+            }
+          ) fleetMatrix.cells
         );
 
         servicePackages = pkgs.lib.listToAttrs (
@@ -150,20 +172,13 @@
         nativeHelpers = import ./lib/nix-native.nix { inherit self registry; pkgs = runtimePkgs; };
 
         # Generate a set of raw, dynamic-link-patched matrix runtimes
-        # e.g., packages.x86_64-linux.nodejs22-native
+        # e.g., packages.x86_64-linux.node22-native
         rawPackages = pkgs.lib.listToAttrs (
-          pkgs.lib.concatMap (lang:
-            pkgs.lib.map (ver:
-              let
-                attrName = "${lang}${ver}-native";
-              in
-              {
-                name = attrName;
-                # Get the first package in the list returned by resolveRawPackages
-                value = pkgs.lib.head (nativeHelpers.resolveRawPackages { language = lang; version = ver; });
-              }
-            ) (pkgs.lib.attrByPath [ lang ] [] versions)
-          ) (pkgs.lib.filter (x: x != "core") languages)
+          builtins.map (line: {
+            name = "${line.line}-native";
+            # Get the first package in the list returned by resolveRawPackages
+            value = pkgs.lib.head (nativeHelpers.resolveRawPackages { language = line.language; version = line.version; });
+          }) (builtins.filter (line: line.language != "core") fleetLines)
         );
 
         # Per-target hardened dev shells mirror each dev image's runtime closure,
@@ -171,13 +186,12 @@
         # java21:dev image ships. Built natively per host (incl. Darwin) for the
         # local inner loop — this is what `clearcutt dev --nix` resolves to.
         devTargetShells = pkgs.lib.listToAttrs (
-          pkgs.lib.concatMap (lang:
-            pkgs.lib.map (ver: {
-              name = "${lang}${ver}-dev";
-              value = nativeHelpers.mkHardenedShell { language = lang; version = ver; };
-            }) (pkgs.lib.attrByPath [ lang ] [] versions)
-          ) languages
+          builtins.map (line: {
+            name = "${line.line}-dev";
+            value = nativeHelpers.mkHardenedShell { language = line.language; version = line.version; };
+          }) fleetLines
         );
+        # clearcutt:matrix:end
 
       in
       {
@@ -249,14 +263,15 @@
 
       # Reusable Library Helper for creating custom brokered shells
       lib = {
-        # Registry truth surface: the flat list of runtime line ids the
-        # registry actually compiles ("coreLTS", "java21", "python3.13", ...),
-        # mirroring the flake's own image-matrix exclusions (dotnet-runtime is
-        # a virtual overlay-only line filtered out of `languages` above).
-        # Consumed by tests/verify.sh's registry↔fleet drift gate so
-        # clearcutt.fleet.yaml `matrix.languages` can never silently diverge
-        # from lib/registry.nix again. Listing attr names never forces the
-        # package values, so this stays cheap and system-independent.
+        # Registry introspection surface: the flat list of runtime line ids the
+        # registry can compile ("coreLTS", "java21", "python3.13", ...), with the
+        # virtual overlay-only dotnet-runtime line excluded. This is the library
+        # of recipes the generated fleet matrix SELECTS from; the image matrix
+        # itself is now driven by lib/fleet-matrix.nix, and recipe coverage for
+        # every selected cell is enforced at eval by assertRecipe above. Retained
+        # for downstream introspection of what the registry offers. Listing attr
+        # names never forces the package values, so this stays cheap and
+        # system-independent.
         runtimeLines =
           let
             pkgs = import nixpkgs {
@@ -370,31 +385,21 @@
       checks = forLinuxSystems (system:
         let
           checkPkgs = import nixpkgs { inherit system; };
-          closurePurityTargets = [
-            "coreLTS-distroless"
-            "node22-distroless"
-            "java21-distroless"
-            "python3.13-distroless"
-          ];
-          # EVERY production tier (slim + distroless) that ships an
-          # openssl/sqlite-linked runtime must be gated, or an unwalked tier can
-          # silently ship a stock dep. dotnet especially: its openssl is a
-          # source-baked dlopen path invisible to graph/SBOM walks, so the
+          # Realized-closure gate targets are the GENERATED, default-INCLUDE
+          # lists from lib/fleet-matrix.nix (compiled from clearcutt.fleet.yaml).
+          # closurePurityTargets covers every production distroless image;
+          # runtimePatchTargets covers every production tier (slim + distroless)
+          # of every line that ships a production runtime — toolchain lines
+          # (go/rust/cc) that ship no production runtime are excluded by the
+          # compiler. This can ONLY add coverage versus the prior hand-list: a
+          # new production tier is gated automatically instead of waiting for
+          # someone to remember to append it. dotnet especially — its openssl is
+          # a source-baked dlopen path invisible to graph/SBOM walks, so this
           # realized-closure gate is the ONLY thing that catches a stock copy.
-          # coreLTS is included as a no-openssl baseline. dev tier is omitted —
-          # it intentionally ships stock runtimes (build shells stay cached).
-          runtimePatchTargets = [
-            "coreLTS-slim"
-            "coreLTS-distroless"
-            "node22-slim" "node22-distroless"
-            "node24-slim" "node24-distroless"
-            "java21-slim" "java21-distroless"
-            "java25-slim" "java25-distroless"
-            "python3.13-slim" "python3.13-distroless"
-            "python3.14-slim" "python3.14-distroless"
-            "dotnet8-slim" "dotnet8-distroless"
-            "dotnet10-slim" "dotnet10-distroless"
-          ];
+          # The dev tier is intentionally excluded (it ships stock runtimes so
+          # the build shells stay cached).
+          closurePurityTargets = fleetMatrix.closurePurityTargets;
+          runtimePatchTargets = fleetMatrix.runtimePatchTargets;
           mkClosurePurityCheck = attrName:
             let
               image = self.packages.${system}.${attrName};

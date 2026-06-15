@@ -29,6 +29,8 @@ type fleetFlags struct {
 	sourceRef           string
 	sourceBranch        string
 	archiveReleaseNotes bool
+	checkOnly           bool
+	allowPreview        bool
 }
 
 type externalCommand struct {
@@ -167,8 +169,73 @@ GitHub Release finalization.`,
 	finalizeCmd.Flags().BoolVar(&fleetOpts.archiveReleaseNotes, "archive-release-notes", false, "Commit published release notes to docs/releases/<tag>.md on the source branch when possible")
 	_ = finalizeCmd.MarkFlagRequired("version-tag")
 
-	cmd.AddCommand(certifyTargetCmd, publishTargetCmd, publishCacheCmd, assembleCmd, aggregateCmd, exportCmd, verifyCmd, finalizeCmd)
+	compileCmd := &cobra.Command{
+		Use:   "compile",
+		Short: "Compile clearcutt.fleet.yaml into the generated core/lib/fleet-matrix.nix build set",
+		Long: `Resolves matrix.languages × matrix.tiers from clearcutt.fleet.yaml into the
+concrete (language, version, tier) image cells, stamps each with its lifecycle
+from the shared version policy, derives the realized-closure gate targets, and
+writes the result to core/lib/fleet-matrix.nix.
+
+The file is generated data, not logic: the hardened per-runtime recipes stay in
+lib/registry.nix. Use --check in CI to fail when the committed file has drifted
+from the fleet config without writing anything.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolveRepoRootDefault(cmd, "fleet-config", &fleetOpts.configPath)
+			resolveRepoRootDefault(cmd, "core-dir", &fleetOpts.coreDir)
+			return runFleetCompile()
+		},
+	}
+	compileCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	compileCmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
+	compileCmd.Flags().BoolVar(&fleetOpts.checkOnly, "check", false, "Verify core/lib/fleet-matrix.nix is up to date without writing; exit non-zero on drift")
+	compileCmd.Flags().BoolVar(&fleetOpts.allowPreview, "allow-preview", false, "Union preview-channel runtimes into the matrix (language-level matrix.languages only)")
+
+	cmd.AddCommand(certifyTargetCmd, publishTargetCmd, publishCacheCmd, assembleCmd, aggregateCmd, exportCmd, verifyCmd, finalizeCmd, compileCmd)
 	return cmd
+}
+
+func fleetMatrixPath(coreDir string) string {
+	return filepath.Join(coreDir, "lib", "fleet-matrix.nix")
+}
+
+func runFleetCompile() error {
+	cfg, err := fleet.Load(fleetOpts.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load fleet config: %w", err)
+	}
+	matrix, err := cfg.CompileMatrix(fleetOpts.allowPreview)
+	if err != nil {
+		return fmt.Errorf("compile fleet matrix: %w", err)
+	}
+	rendered := fleet.RenderMatrixNix(matrix)
+	path := fleetMatrixPath(fleetOpts.coreDir)
+
+	if fleetOpts.checkOnly {
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w (run `clearcutt fleet compile` to generate it)", path, err)
+		}
+		if string(existing) != rendered {
+			return fmt.Errorf("%s is out of date; run `clearcutt fleet compile` to regenerate it", path)
+		}
+		if !GlobalOpts.Quiet {
+			fmt.Fprintf(out, "%s is up to date (%d cells)\n", path, len(matrix.Cells))
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create fleet matrix directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if !GlobalOpts.Quiet {
+		fmt.Fprintf(out, "wrote %s (%d cells)\n", path, len(matrix.Cells))
+	}
+	return nil
 }
 
 func addFleetCommonFlags(cmd *cobra.Command) {

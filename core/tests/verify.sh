@@ -317,89 +317,43 @@ test_agent_sandbox_isolation() {
 }
 
 # ----------------------------------------------------
-# 1.7. Registry ↔ Fleet Config Runtime Line Drift Gate
+# 1.7. Generated Fleet Matrix Sync Gate
 # ----------------------------------------------------
-test_registry_fleet_alignment() {
-  log_section "Governance Gate: Registry ↔ Fleet Config Runtime Line Alignment"
+test_fleet_matrix_synced() {
+  log_section "Governance Gate: Generated Fleet Matrix Sync (core/lib/fleet-matrix.nix)"
 
   local fleet_config
   if ! fleet_config="$(find_fleet_config)"; then
-    log_fail "Fleet config (clearcutt.fleet.yaml) not found; cannot verify registry↔fleet alignment."
+    log_fail "Fleet config (clearcutt.fleet.yaml) not found; cannot verify the generated fleet matrix."
   fi
 
-  # The flake exposes the registry's language×version matrix as lib.runtimeLines,
-  # already mirroring the image-matrix exclusions (dotnet-runtime is virtual,
-  # core+LTS concatenates to coreLTS). Diffing that list against
-  # matrix.languages makes silent registry↔governance drift impossible.
-  log_info "Evaluating registry runtime lines via flake output lib.runtimeLines..."
-  local registry_lines
-  if ! registry_lines=$(nix eval ".#lib.runtimeLines" --json --extra-experimental-features "nix-command flakes" --accept-flake-config); then
-    log_fail "Could not evaluate .#lib.runtimeLines from the core flake."
-  fi
-  log_info "Registry runtime lines: ${registry_lines}"
+  local fleet_config_abs repo_root
+  fleet_config_abs="$(cd "$(dirname "$fleet_config")" && pwd)/$(basename "$fleet_config")"
+  repo_root="$(cd "$(dirname "$fleet_config")" && pwd)"
 
-  log_info "Diffing against matrix.languages in ${fleet_config}..."
-  local drift_report=""
-  local drift_status=0
-  drift_report=$(python3 - "$fleet_config" "$registry_lines" <<'PY'
-import json
-import sys
-
-fleet_path, registry_json = sys.argv[1], sys.argv[2]
-registry_lines = set(json.loads(registry_json))
-
-# Minimal indentation-walk of the governance-owned fleet config: pull the
-# scalar list entries under matrix.languages without requiring PyYAML.
-fleet_lines = []
-in_matrix = in_languages = False
-for raw in open(fleet_path, encoding="utf-8"):
-    line = raw.rstrip("\n")
-    stripped = line.strip()
-    if not stripped or stripped.startswith("#"):
-        continue
-    if not line.startswith(" "):
-        in_matrix = stripped == "matrix:"
-        in_languages = False
-        continue
-    indent = len(line) - len(line.lstrip(" "))
-    if in_matrix and indent == 2:
-        in_languages = stripped == "languages:"
-        continue
-    if in_matrix and in_languages and stripped.startswith("- "):
-        fleet_lines.append(stripped[2:].strip().strip('"').strip("'"))
-
-fleet = set(fleet_lines)
-if not fleet:
-    print("PARSE_ERROR no matrix.languages entries found in fleet config")
-    sys.exit(1)
-
-registry_only = sorted(registry_lines - fleet)
-fleet_only = sorted(fleet - registry_lines)
-print("REGISTRY_ONLY=" + (",".join(registry_only) or "-"))
-print("FLEET_ONLY=" + (",".join(fleet_only) or "-"))
-sys.exit(2 if registry_only or fleet_only else 0)
-PY
-  ) || drift_status=$?
-
-  if [[ "$drift_status" -eq 1 ]]; then
-    log_fail "Registry↔fleet drift gate could not parse matrix.languages: ${drift_report}"
-  fi
-
-  local registry_only fleet_only
-  registry_only=$(printf '%s\n' "$drift_report" | sed -n 's/^REGISTRY_ONLY=//p')
-  fleet_only=$(printf '%s\n' "$drift_report" | sed -n 's/^FLEET_ONLY=//p')
-
-  if [[ "$drift_status" -ne 0 ]]; then
-    if [[ "$registry_only" != "-" ]]; then
-      log_warn "Runtime lines built by lib/registry.nix but absent from matrix.languages (orphaned, ungoverned builds): ${registry_only}"
+  # The fleet config is authoritative: `clearcutt fleet compile` resolves it into
+  # the generated core/lib/fleet-matrix.nix that the flake reads to build the
+  # image matrix AND the realized-closure gate targets. This gate fails if the
+  # committed file has drifted from the config — the in-process byte-compare that
+  # replaces the old registry↔fleet diff (no `nix eval` in the loop). Recipe
+  # coverage (every declared cell resolves to a registry recipe) is enforced
+  # separately at flake eval by the assertRecipe gate in flake.nix, so an
+  # unbuildable line can never reach a build.
+  log_info "Verifying core/lib/fleet-matrix.nix matches clearcutt.fleet.yaml via 'clearcutt fleet compile --check'..."
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    if ! "$cli" fleet compile --check --fleet-config "$fleet_config_abs" --core-dir "${repo_root}/core"; then
+      log_fail "core/lib/fleet-matrix.nix is out of sync with clearcutt.fleet.yaml. Regenerate it: clearcutt fleet compile"
     fi
-    if [[ "$fleet_only" != "-" ]]; then
-      log_warn "Runtime lines declared in matrix.languages but absent from lib/registry.nix (unbuildable policy entries): ${fleet_only}"
+  else
+    log_info "No clearcutt binary found; running the CLI from ${repo_root}/cli via go run."
+    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt fleet compile --check --fleet-config "$fleet_config_abs" --core-dir "${repo_root}/core"; then
+      log_fail "core/lib/fleet-matrix.nix is out of sync with clearcutt.fleet.yaml. Regenerate it: clearcutt fleet compile"
     fi
-    log_fail "Registry and fleet config runtime lines have drifted. Align lib/registry.nix with clearcutt.fleet.yaml matrix.languages."
   fi
 
-  log_pass "Registry runtime lines and fleet matrix.languages are fully aligned."
+  log_pass "Generated fleet matrix is in sync with the fleet config."
 }
 
 # ----------------------------------------------------
@@ -921,7 +875,7 @@ main() {
   
   test_credential_broker
   test_agent_sandbox_isolation
-  test_registry_fleet_alignment
+  test_fleet_matrix_synced
   test_rootless_boundaries
   test_dynamic_binary_headers
   test_distroless_boundaries

@@ -523,8 +523,8 @@
   },
   "python3.14-dev": {
     "lifecycle": {
-      "status": "preview",
-      "support": "preview",
+      "status": "active",
+      "support": "lts",
       "productionAllowed": false,
       "deprecatedAt": null,
       "eolAt": null,
@@ -552,9 +552,9 @@
   },
   "python3.14-slim": {
     "lifecycle": {
-      "status": "preview",
-      "support": "preview",
-      "productionAllowed": false,
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
       "deprecatedAt": null,
       "eolAt": null,
       "reason": null
@@ -581,9 +581,9 @@
   },
   "python3.14-distroless": {
     "lifecycle": {
-      "status": "preview",
-      "support": "preview",
-      "productionAllowed": false,
+      "status": "active",
+      "support": "lts",
+      "productionAllowed": true,
       "deprecatedAt": null,
       "eolAt": null,
       "reason": null
@@ -697,8 +697,8 @@
   },
   "go1.26-dev": {
     "lifecycle": {
-      "status": "experimental",
-      "support": "unsupported",
+      "status": "active",
+      "support": "lts",
       "productionAllowed": false,
       "deprecatedAt": null,
       "eolAt": null,
@@ -726,8 +726,8 @@
   },
   "go1.26-slim": {
     "lifecycle": {
-      "status": "experimental",
-      "support": "unsupported",
+      "status": "active",
+      "support": "lts",
       "productionAllowed": false,
       "deprecatedAt": null,
       "eolAt": null,
@@ -755,8 +755,8 @@
   },
   "go1.26-distroless": {
     "lifecycle": {
-      "status": "experimental",
-      "support": "unsupported",
+      "status": "active",
+      "support": "lts",
       "productionAllowed": false,
       "deprecatedAt": null,
       "eolAt": null,

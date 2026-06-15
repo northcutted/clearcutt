@@ -73,9 +73,21 @@ type Site struct {
 }
 
 type Matrix struct {
-	Systems   []string `json:"systems"`
+	Systems []string `json:"systems"`
+	// Languages is the RESOLVED flat list of runtime line ids the matrix builds
+	// ("coreLTS", "java21", ...). It is populated directly from the legacy flat
+	// list, or resolved from LanguageSelectors via the version policy. Downstream
+	// consumers always read this resolved list.
 	Languages []string `json:"languages"`
 	Tiers     []string `json:"tiers"`
+	// Preview is the fleet's persistent opt-in to preview-channel runtimes; it
+	// can be overridden per run by --allow-preview. Only affects the language-
+	// level form (LanguageSelectors); the legacy flat list is explicit.
+	Preview bool `json:"preview,omitempty"`
+	// LanguageSelectors holds the language-level form of matrix.languages when in
+	// use ([{language, channel}, ...]); empty for the legacy flat list. Retained
+	// so --allow-preview can re-resolve and so marshalling preserves the form.
+	LanguageSelectors []LanguageSelector `json:"-"`
 }
 
 type Release struct {
@@ -225,9 +237,9 @@ var supportedRuntimeLines = []RuntimeLine{
 	{ID: "node22", Language: "node", Version: "22", AppTemplateRuntime: "node", Description: "Node.js 22 runtime line"},
 	{ID: "node24", Language: "node", Version: "24", AppTemplateRuntime: "node", Description: "Node.js 24 runtime line"},
 	{ID: "python3.13", Language: "python", Version: "3.13", AppTemplateRuntime: "python", Description: "Python 3.13 runtime line"},
-	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 runtime line"},
+	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 LTS runtime line"},
 	{ID: "go1.25", Language: "go", Version: "1.25", AppTemplateRuntime: "go", Description: "Go 1.25 toolchain line"},
-	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 toolchain line"},
+	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 LTS toolchain line"},
 	{ID: "dotnet8", Language: "dotnet", Version: "8", Description: ".NET 8 runtime line"},
 	{ID: "dotnet10", Language: "dotnet", Version: "10", Description: ".NET 10 runtime line"},
 	{ID: "rust1.95", Language: "rust", Version: "1.95", Description: "Rust 1.95 toolchain line"},
