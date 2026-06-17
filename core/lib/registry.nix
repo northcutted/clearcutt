@@ -67,6 +67,84 @@ let
     '';
   };
 
+  # Graft the CVE-patched crypto libraries into a STOCK, cache-substitutable
+  # build instead of rebuilding it from source. Rebinding openssl in the package
+  # set a runtime is built from (cryptoPkgs) changes that runtime's derivation
+  # hash, so it loses its cache.nixos.org substitute and rebuilds from source —
+  # for .NET that is the ~3h VMR build. `replaceDependencies` instead rewrites
+  # every reference to the stock crypto lib (including .NET's baked absolute
+  # dlopen path, which an RPATH change cannot redirect) byte-for-byte across the
+  # closure, producing a cheap rewrite of the cached output. This is the same
+  # mechanism nixpkgs uses to ship openssl security fixes without rebuilding the
+  # world.
+  #
+  # A graft is only sound when the patched lib is a drop-in for the stock one:
+  #   * same MAJOR version — openssl/sqlite hold a stable SONAME across a major
+  #     (libssl.so.3 for all of openssl 3.x; libsqlite3.so.0 for all sqlite 3),
+  #     so a stock-compiled binary runs against the patched lib. (Major, not
+  #     major.minor: sqlite 3.51 -> 3.53 is ABI-stable.)
+  #   * identical store-path length — replaceDependencies rewrites in place, so
+  #     the swap must be byte-exact (a name-length change like 3.6.9 -> 3.6.10
+  #     would not be).
+  # When either fails, the openssl graft is dropped and the caller falls back to
+  # the from-source crypto rebuild. The runtime-cve closure gate independently
+  # proves the shipped result in BOTH paths, so a missed graft fails the gate
+  # loudly rather than silently shipping a stock library.
+  # ABI gate: a stock-compiled binary runs against the patched lib only within a
+  # stable SONAME, which openssl/sqlite hold across a whole MAJOR (not minor —
+  # sqlite 3.51 -> 3.53 is ABI-stable).
+  graftAbiOk = old: new: lib.versions.major old.version == lib.versions.major new.version;
+  # Byte-exact gate: replaceDependencies rewrites store paths in place, so each
+  # swapped pair must be the same length.
+  graftSameLen = a: b:
+    builtins.stringLength (builtins.unsafeDiscardStringContext a)
+    == builtins.stringLength (builtins.unsafeDiscardStringContext b);
+
+  # One replacement PER OUTPUT (out/bin/dev/...). A closure references a library's
+  # `out` (lib) output, while the derivation's DEFAULT output is openssl's `bin`,
+  # so targeting the derivation itself would miss the runtime reference (and the
+  # floor gate flags every output anyway — openssl-X-dev included). Each output is
+  # gated on length independently.
+  graftOutputs = old: new:
+    if old == null || new == null || !(graftAbiOk old new) then [ ]
+    else builtins.concatMap
+      (o:
+        if (builtins.hasAttr o new) && graftSameLen (old.${o}.outPath) (new.${o}.outPath)
+        then [ { oldDependency = old.${o}; newDependency = new.${o}; } ]
+        else [ ])
+      old.outputs;
+
+  opensslGrafts =
+    graftOutputs (pkgs.openssl_3_6 or null) (pkgs.clearcuttCveOpenssl or null)
+    ++ graftOutputs (pkgs.openssl or null) (pkgs.clearcuttCveOpenssl or null);
+  sqliteGrafts = graftOutputs (pkgs.sqlite or null) (pkgs.clearcuttCveSqlite or null);
+
+  cryptoGrafts =
+    let
+      # openssl and openssl_3_6 are the same derivation on most pins; de-dup by
+      # the old output path so replaceDependencies never sees a target twice.
+      key = r: builtins.unsafeDiscardStringContext r.oldDependency.outPath;
+      dedup = builtins.foldl'
+        (acc: r: if builtins.elem (key r) (map key acc) then acc else acc ++ [ r ])
+        [ ] (opensslGrafts ++ sqliteGrafts);
+    in
+    dedup;
+
+  # openssl is the load-bearing graft: if it cannot be grafted safely we must
+  # rebuild from source rather than ship a half-grafted closure the gate rejects.
+  opensslGraftable = opensslGrafts != [ ];
+
+  # Source a crypto-linked runtime: graft the patched libs into the stock cached
+  # build when it is an ABI-safe drop-in, else fall back to the cryptoPkgs
+  # from-source rebuild. Same (paths, errorMsg) signature as getPkgFrom.
+  graftedOrRebuilt = paths: errorMsg:
+    if opensslGraftable then
+      pkgs.replaceDependencies {
+        drv = getPkgFrom pkgs paths errorMsg;
+        replacements = cryptoGrafts;
+      }
+    else getPkgFrom cryptoPkgs paths errorMsg;
+
   # Declarative specifications for every supported language runtime and version
   baseLanguages = {
     core = {
@@ -319,15 +397,15 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8";
-          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10";
-          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
+          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
+          slimOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          distrolessOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
         };
       };
     };
@@ -337,11 +415,11 @@ let
       versions = {
         "8" = {
           overlayName = "clearcuttDotnet8Runtime";
-          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
         "10" = {
           overlayName = "clearcuttDotnet10Runtime";
-          raw = [ (getPkgFrom cryptoPkgs [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
+          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
         };
       };
     };
