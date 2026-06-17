@@ -135,13 +135,41 @@ type Remediation struct {
 	Policy                 RemediationPolicy `json:"policy,omitempty"`
 }
 
+// RemediationPolicy is the configurable, risk-based CVE policy. A finding is in
+// scope to remediate/block when it is reachable (present in the production
+// runtime closure) AND materially risky (KEV, OR EPSS percentile >=
+// EPSSPercentile, OR severity >= MinimumSeverity) AND in a production tier;
+// fixability then splits must-fix from must-acknowledge. Everything else is
+// auto-accepted (recorded, expiring). See docs/analysis/cve-risk-policy-design.md.
 type RemediationPolicy struct {
-	ProductionTiers       []string `json:"productionTiers,omitempty"`
-	MinimumSeverity       string   `json:"minimumSeverity,omitempty"`
-	RequireRuntimeLayer   *bool    `json:"requireRuntimeLayer,omitempty"`
-	RequireFixedVersion   *bool    `json:"requireFixedVersion,omitempty"`
-	EPSSPercentileBoostAt float64  `json:"epssPercentileBoostAt,omitempty"`
-	KEVBoost              *bool    `json:"kevBoost,omitempty"`
+	ProductionTiers []string `json:"productionTiers,omitempty"`
+	MinimumSeverity string   `json:"minimumSeverity,omitempty"`
+	// Reachability gates on closure presence: "runtime" (only findings in the
+	// shipped runtime closure are in scope) or "any". This is closure-presence
+	// reachability, NOT exploitability/call-graph reachability.
+	Reachability string `json:"reachability,omitempty"`
+	// EPSSPercentile is the FIRST EPSS percentile (0..1) at/above which a finding
+	// is materially risky. A missing EPSS score falls back to KEV/severity.
+	EPSSPercentile float64 `json:"epssPercentile,omitempty"`
+	// KEV controls CISA KEV handling: "always" (a KEV finding is always in scope,
+	// non-loosenable for crypto) or "off".
+	KEV string `json:"kev,omitempty"`
+	// RequireFixedVersion governs in-scope but UNFIXABLE findings. true (default):
+	// they block until explicitly acknowledged (must_acknowledge) — never a silent
+	// pass. false: a non-KEV unfixable finding auto-accepts (recorded as an
+	// expiring VEX record), the escape hatch for a line that must run with an
+	// unbackported CVE. KEV is non-loosenable either way. A fix always being
+	// present is what separates must_fix from must_acknowledge.
+	RequireFixedVersion *bool `json:"requireFixedVersion,omitempty"`
+	// AcceptedExpiryDays backstops auto-recorded acceptances (re-evaluated each scan).
+	AcceptedExpiryDays int `json:"acceptedExpiryDays,omitempty"`
+
+	// Deprecated — retained for back-compat; normalized into the fields above by
+	// EffectiveRemediationPolicy. RequireRuntimeLayer -> Reachability,
+	// EPSSPercentileBoostAt -> EPSSPercentile, KEVBoost -> KEV.
+	RequireRuntimeLayer   *bool   `json:"requireRuntimeLayer,omitempty"`
+	EPSSPercentileBoostAt float64 `json:"epssPercentileBoostAt,omitempty"`
+	KEVBoost              *bool   `json:"kevBoost,omitempty"`
 }
 
 type Templates struct {
@@ -598,8 +626,12 @@ func DefaultRemediationPolicy() RemediationPolicy {
 	return RemediationPolicy{
 		ProductionTiers:       []string{"slim", "distroless"},
 		MinimumSeverity:       "high",
-		RequireRuntimeLayer:   boolPtr(true),
+		Reachability:          "runtime",
+		EPSSPercentile:        0.90,
+		KEV:                   "always",
 		RequireFixedVersion:   boolPtr(true),
+		AcceptedExpiryDays:    90,
+		RequireRuntimeLayer:   boolPtr(true),
 		EPSSPercentileBoostAt: 0.90,
 		KEVBoost:              boolPtr(true),
 	}
@@ -613,22 +645,52 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	if policy.MinimumSeverity == "" {
 		policy.MinimumSeverity = def.MinimumSeverity
 	}
-	if policy.RequireRuntimeLayer == nil {
-		policy.RequireRuntimeLayer = def.RequireRuntimeLayer
-	}
 	if policy.RequireFixedVersion == nil {
 		policy.RequireFixedVersion = def.RequireFixedVersion
 	}
-	if policy.EPSSPercentileBoostAt == 0 {
-		policy.EPSSPercentileBoostAt = def.EPSSPercentileBoostAt
+
+	// Normalize the gating fields: the new field wins when set, else the
+	// deprecated equivalent, else the default. Then mirror the resolved value
+	// back onto the deprecated field so existing consumers stay consistent.
+	if policy.Reachability == "" {
+		if policy.RequireRuntimeLayer != nil {
+			policy.Reachability = map[bool]string{true: "runtime", false: "any"}[*policy.RequireRuntimeLayer]
+		} else {
+			policy.Reachability = def.Reachability
+		}
 	}
-	if policy.KEVBoost == nil {
-		policy.KEVBoost = def.KEVBoost
+	policy.RequireRuntimeLayer = boolPtr(policy.Reachability == "runtime")
+
+	if policy.EPSSPercentile == 0 {
+		if policy.EPSSPercentileBoostAt > 0 {
+			policy.EPSSPercentile = policy.EPSSPercentileBoostAt
+		} else {
+			policy.EPSSPercentile = def.EPSSPercentile
+		}
+	}
+	policy.EPSSPercentileBoostAt = policy.EPSSPercentile
+
+	if policy.KEV == "" {
+		if policy.KEVBoost != nil {
+			policy.KEV = map[bool]string{true: "always", false: "off"}[*policy.KEVBoost]
+		} else {
+			policy.KEV = def.KEV
+		}
+	}
+	policy.KEVBoost = boolPtr(policy.KEV == "always")
+
+	if policy.AcceptedExpiryDays == 0 {
+		policy.AcceptedExpiryDays = def.AcceptedExpiryDays
 	}
 	return policy
 }
 
 func validateRemediationPolicy(policy RemediationPolicy) error {
+	// Validate the raw deprecated bound before normalization so an out-of-range
+	// deprecated value is caught even when a new field also takes precedence.
+	if policy.EPSSPercentileBoostAt < 0 || policy.EPSSPercentileBoostAt > 1 {
+		return fmt.Errorf("remediation.policy.epssPercentileBoostAt must be between 0 and 1")
+	}
 	policy = EffectiveRemediationPolicy(policy)
 	if len(policy.ProductionTiers) == 0 {
 		return fmt.Errorf("remediation.policy.productionTiers must not be empty")
@@ -645,8 +707,21 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 	default:
 		return fmt.Errorf("unsupported remediation.policy.minimumSeverity %q", policy.MinimumSeverity)
 	}
-	if policy.EPSSPercentileBoostAt < 0 || policy.EPSSPercentileBoostAt > 1 {
-		return fmt.Errorf("remediation.policy.epssPercentileBoostAt must be between 0 and 1")
+	switch strings.ToLower(policy.Reachability) {
+	case "runtime", "any":
+	default:
+		return fmt.Errorf("unsupported remediation.policy.reachability %q (use runtime or any)", policy.Reachability)
+	}
+	switch strings.ToLower(policy.KEV) {
+	case "always", "off":
+	default:
+		return fmt.Errorf("unsupported remediation.policy.kev %q (use always or off)", policy.KEV)
+	}
+	if policy.EPSSPercentile < 0 || policy.EPSSPercentile > 1 {
+		return fmt.Errorf("remediation.policy.epssPercentile must be between 0 and 1")
+	}
+	if policy.AcceptedExpiryDays < 0 {
+		return fmt.Errorf("remediation.policy.acceptedExpiryDays must not be negative")
 	}
 	return nil
 }

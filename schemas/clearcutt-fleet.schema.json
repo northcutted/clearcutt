@@ -283,18 +283,41 @@
             "minimumSeverity": {
               "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
             },
-            "requireRuntimeLayer": {
-              "type": "boolean"
+            "reachability": {
+              "description": "Closure-presence reachability gate: runtime (only findings in the shipped runtime closure) or any. Not exploitability/call-graph reachability.",
+              "enum": ["runtime", "any"]
+            },
+            "epssPercentile": {
+              "description": "FIRST EPSS percentile (0-1) at/above which a finding is materially risky. Missing EPSS falls back to KEV/severity.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kev": {
+              "description": "CISA KEV handling: always (a KEV finding is always in scope) or off.",
+              "enum": ["always", "off"]
             },
             "requireFixedVersion": {
+              "description": "true (default): an in-scope finding with no upstream fix blocks until acknowledged. false: it auto-accepts as an expiring record (escape hatch for unbackported CVEs). KEV is non-loosenable either way.",
+              "type": "boolean"
+            },
+            "acceptedExpiryDays": {
+              "description": "Backstop expiry (days) for auto-recorded acceptances, which re-evaluate each scan.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "requireRuntimeLayer": {
+              "description": "Deprecated: use reachability. true maps to reachability=runtime, false to any.",
               "type": "boolean"
             },
             "epssPercentileBoostAt": {
+              "description": "Deprecated: use epssPercentile.",
               "type": "number",
               "minimum": 0,
               "maximum": 1
             },
             "kevBoost": {
+              "description": "Deprecated: use kev. true maps to kev=always, false to off.",
               "type": "boolean"
             }
           }

@@ -191,7 +191,10 @@ func TestRemediationPlanQuietOutExplicitDirAndDiagnostics(t *testing.T) {
 	if plan.Campaigns[0].FixedVersion != "3.0.1" {
 		t.Fatalf("expected fixed version to use first comma-delimited candidate, got %+v", plan.Campaigns[0])
 	}
-	for _, reason := range []string{"base_layer", "below_priority_threshold", "no_fixed_version"} {
+	// zlib is High severity + runtime + unfixable: above the materiality bar
+	// but with no fix, so it is must_acknowledge (requires_acknowledgement),
+	// not a benign no_fixed_version deferral.
+	for _, reason := range []string{"base_layer", "below_priority_threshold", "requires_acknowledgement"} {
 		if plan.Summary.DeferredReasonCounts[reason] != 1 {
 			t.Fatalf("expected one deferred %s finding, got summary %+v", reason, plan.Summary)
 		}
@@ -608,7 +611,7 @@ func TestRemediationRunPlanSummaryAndHelpers(t *testing.T) {
 	printRemediationRunPlanSummary(&RemediationPlan{Summary: RemediationPlanSummary{
 		ProductionDeferredReasonCounts: map[string]int{"no_fixed_version": 2, "base_layer": 1},
 	}})
-	if !strings.Contains(stdout.String(), "Zero fixable High or Critical") ||
+	if !strings.Contains(stdout.String(), "Zero fixable, materially-risky") ||
 		!strings.Contains(stdout.String(), "base_layer=1, no_fixed_version=2") {
 		t.Fatalf("expected zero-campaign and sorted reason summary, got stdout:\n%s", stdout.String())
 	}

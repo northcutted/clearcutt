@@ -12,12 +12,18 @@ drafting agent boundary, use
 ---
 
 ## 1. Core Security Assurances
-ClearCutt is designed to establish reliable, evidence-backed supply-chain assurances for base images through three primary pillars:
+ClearCutt is designed to establish reliable, evidence-backed supply-chain assurances for base images through four primary pillars:
 - **Digest-Pinned References**: ClearCutt records immutable image digests when release/catalog evidence is available and uses Nix-locked platform inputs for the reference build path. Fork owners should treat any mutable external tag as a configuration gap.
 - **Keyless Signature & SLSA Provenance Evidence**: The release workflow is configured to sign published images with Sigstore Cosign keyless signatures and attach SLSA provenance evidence. Use registry-side verification commands for cryptographic proof; catalog gates report whether that evidence is recorded for a release.
 - **Minimality & Hardening**:
   - `distroless` tier is verified by conformance/certification checks to be shell-free, package-manager-free, and configured for unprivileged execution (`UID 10001:10001`).
   - `slim` tier is package-manager-free and executes under a non-root UID while retaining an interactive shell.
+- **Risk-Based Vulnerability Posture**: Production-tier images carry no *reachable, materially-risky, fixable* CVE that the platform has left unaddressed.
+  - *Reachable* = present in the shipped runtime closure, enforced by `closure-cve-check` against a policy-derived runtime floor (not exploitability/call-graph reachability — a deliberately conservative, over-including proxy).
+  - *Materially risky* = CISA KEV-listed, **or** EPSS percentile ≥ the configured threshold, **or** severity ≥ the configured floor. KEV and EPSS scores are authoritative and dated in-record (CISA / FIRST.org), not ClearCutt's opinion.
+  - *Fixable* = an upstream fixed version exists.
+  - Every finding the policy does not require fixing is auto-recorded as an owned, time-boxed, **expiring** acceptance (OpenVEX) — visible in the catalog, re-evaluated each scan, never silently tolerated. A finding that is reachable and materially risky but has **no** upstream fix blocks until an explicit, expiring acknowledgement is recorded.
+  - The thresholds live in `clearcutt.fleet.yaml` `remediation.policy` (reachability, KEV, EPSS percentile, severity floor, expiry). Forks tune the **thresholds**, never per-package waivers; `kev: always` is non-loosenable for the crypto floor.
 
 ---
 
@@ -84,7 +90,7 @@ must pin the rebase-engine identity tightly and inspect the predicate fields.
 ## 3. Security Model Limitations & Non-Claims
 To remain precise and conservative:
 - **No FIPS Cryptographic Claims**: ClearCutt runtimes use standard upstream cryptographic modules and do not assert FIPS validation unless an explicit cryptographic module boundary has been formally certified.
-- **No Zero Risk Guarantees**: While vulnerability exception models enable structured patch governance, vulnerability scans only represent findings at a discrete point in time and do not guarantee an absence of future security defects.
+- **No Zero Risk Guarantees**: Vulnerability scans only represent findings at a discrete point in time and do not guarantee an absence of future security defects. The production posture in §1 is risk-scoped, not absolute: it asserts that no *reachable, materially-risky, fixable* CVE is left unaddressed — it does **not** claim zero known CVEs. Findings below the materiality bar, or confined to unreachable base layers, are accepted by policy and recorded as owned, time-boxed, expiring exceptions (re-evaluated each scan) rather than silently tolerated. The single trust surface is the threshold configuration itself, which lives in a reviewed config file — never per-finding, never hidden.
 - **BYO Base Image Overlays Limitation**: Overlay images grafted onto mandated corporate operating systems (e.g., Red Hat UBI or AL2023) **do not** inherit ClearCutt's distroless zero-utility guarantee. They retain the parent base image's shell, package manager, and CVE footprint.
 - **Service Data Directory Permissions**: Service images create declared data directories in image layers so rootless smoke tests can start without a mounted volume. Production deployments should mount managed volumes at those paths and enforce their own ownership/mode policy.
 - **CVE Draft Agent Boundary**: the remediation agent produces untrusted overlay drafts from untrusted advisory text. Drafts require sandboxed execution, `validate-overlays`, build/scan proof, and human review before merge.

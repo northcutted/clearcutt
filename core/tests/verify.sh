@@ -356,6 +356,41 @@ test_fleet_matrix_synced() {
   log_pass "Generated fleet matrix is in sync with the fleet config."
 }
 
+test_runtime_floor_synced() {
+  log_section "Governance Gate: Policy-Derived Runtime Floor Sync (core/tests/runtime-dep-floor.json)"
+
+  # The floor's policy defaults are conservative and self-contained, so it does
+  # not need the fleet config — derive the repo root from this script's own path
+  # (core/tests/verify.sh) so the gate works regardless of CWD.
+  local repo_root
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+  local overlays_dir="${repo_root}/core/overlays/cve"
+  local floor_out="${repo_root}/core/tests/runtime-dep-floor.json"
+
+  # The floor membership is policy-derived (fleet.Materiality over the CVE
+  # overlay evidence): a version-bump overlay is floored only when its CVE clears
+  # the risk bar. This gate fails if the committed floor has drifted from what the
+  # policy + evidence would generate, so the closure-cve-check.py default-deny
+  # gate can never silently lose (or gain) a floored crypto dep. The gate
+  # MECHANISM is untouched; only its membership is regenerated here.
+  log_info "Verifying core/tests/runtime-dep-floor.json matches the policy-derived floor via 'clearcutt remediation generate-floor --check'..."
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    if ! "$cli" remediation generate-floor --check --overlays-dir "$overlays_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the policy-derived floor. Regenerate it: clearcutt remediation generate-floor"
+    fi
+  else
+    log_info "No clearcutt binary found; running the CLI from ${repo_root}/cli via go run."
+    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt remediation generate-floor --check --overlays-dir "$overlays_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the policy-derived floor. Regenerate it: clearcutt remediation generate-floor"
+    fi
+  fi
+
+  log_pass "Policy-derived runtime floor is in sync with the overlay evidence."
+}
+
 # ----------------------------------------------------
 # 2. OCI Image Config & Rootless Metadata Verification
 # ----------------------------------------------------
@@ -876,6 +911,7 @@ main() {
   test_credential_broker
   test_agent_sandbox_isolation
   test_fleet_matrix_synced
+  test_runtime_floor_synced
   test_rootless_boundaries
   test_dynamic_binary_headers
   test_distroless_boundaries

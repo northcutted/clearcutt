@@ -221,6 +221,7 @@ func NewRemediationCmd() *cobra.Command {
 	cmd.AddCommand(NewRemediationValidateOverlaysCmd())
 	cmd.AddCommand(NewRemediationRunCmd())
 	cmd.AddCommand(NewRemediationOpenPRCmd())
+	cmd.AddCommand(NewRemediationGenerateFloorCmd())
 	return cmd
 }
 
@@ -248,7 +249,7 @@ func runRemediationPlan() error {
 		s := plan.Summary
 		fmt.Fprintf(
 			out,
-			"[remediation] campaigns=%d candidates=%d production=%d dev_only=%d deferred=%d criteria=high-critical-runtime-with-fixed-version source=%s\n",
+			"[remediation] campaigns=%d candidates=%d production=%d dev_only=%d deferred=%d criteria=reachable-materially-risky-fixable source=%s\n",
 			s.CampaignCount, s.CandidateCampaignCount, s.ProductionCampaignCount,
 			s.DevOnlyCampaignCount, s.DeferredCount, plan.SourceDir,
 		)
@@ -463,21 +464,27 @@ func normalizeRemediationCampaigns(vulnDir string, policy fleet.RemediationPolic
 			if finding.PackageName == "" || finding.ID == "" {
 				continue
 			}
-			severityKey := strings.ToLower(finding.Severity)
 			fix := fixedVersionString(finding.FixedIn)
-			reason := ""
-			switch {
-			case policyBool(policy.RequireRuntimeLayer) && finding.Layer != "runtime":
-				reason = "base_layer"
-			case !severityMeetsThreshold(severityKey, policy.MinimumSeverity):
-				reason = "below_priority_threshold"
-			case policyBool(policy.RequireFixedVersion) && fix == "":
-				reason = "no_fixed_version"
-			}
+			// One risk policy decides scope here — the same fleet.Materiality
+			// the release gate (verify) and the crypto floor consume. It
+			// promotes EPSS/KEV from ranking boosts to gates (a medium finding
+			// with EPSS >= the floor or a KEV listing is now in scope), and
+			// splits an in-scope finding on fixability. ProductionTier is forced
+			// true: the planner ranks across every tier and the dev/prod split
+			// is applied downstream (devOnly filtering + ProductionTargetCount),
+			// so gating on tier here would drop --include-dev-only campaigns.
+			decision := fleet.Materiality(fleet.MaterialityInput{
+				Severity:       finding.Severity,
+				EPSSPercentile: finding.EpssPercentile,
+				KEV:            finding.KEV != nil && finding.KEV.KnownExploited,
+				Layer:          finding.Layer,
+				HasFix:         fix != "",
+				ProductionTier: true,
+			}, policy)
 
-			if reason != "" {
+			if decision.Disposition != fleet.DispositionMustFix {
 				deferred = append(deferred, RemediationDeferred{
-					Reason:   reason,
+					Reason:   plannerDeferredReason(decision),
 					CVE:      finding.ID,
 					Package:  finding.PackageName,
 					Severity: finding.Severity,
@@ -706,8 +713,36 @@ func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
 	return fleet.EffectiveRemediationPolicy(policy)
 }
 
-func policyBool(value *bool) bool {
-	return value != nil && *value
+// plannerDeferredReason maps a risk decision onto the planner's deferral
+// vocabulary. A must_acknowledge finding (reachable + materially risky, but
+// unfixable) gets its own reason so it is never silently folded into a benign
+// "below threshold" deferral — it is surfaced for an explicit, owned
+// acknowledgement. The planner only ranks; the release gate (verify) is what
+// actually blocks on it.
+func plannerDeferredReason(decision fleet.RiskDecision) string {
+	if decision.Disposition == fleet.DispositionMustAcknowledge {
+		return "requires_acknowledgement"
+	}
+	switch decision.Reason {
+	case "not_reachable_base_layer":
+		return "base_layer"
+	case "no_fix_unrequired":
+		// In scope and unfixable, but the policy does not require a fix
+		// (requireFixedVersion:false): a benign no-fix deferral.
+		return "no_fixed_version"
+	default:
+		// below_risk_threshold (and any future auto-accept reason). non_production
+		// cannot occur on the planner path: it forces ProductionTier:true.
+		return "below_priority_threshold"
+	}
+}
+
+// findingHasFix is the single fixability predicate shared by the planner and the
+// release gate so they never disagree on a finding's disposition. It keys on a
+// usable fixed version (the first comma-delimited candidate), matching what the
+// campaign actually bumps to — not merely a non-empty FixedIn string.
+func findingHasFix(fixedIn *string) bool {
+	return fixedVersionString(fixedIn) != ""
 }
 
 func productionTier(policy fleet.RemediationPolicy, tier string) bool {
@@ -718,23 +753,6 @@ func productionTier(policy fleet.RemediationPolicy, tier string) bool {
 		}
 	}
 	return false
-}
-
-func severityMeetsThreshold(severity, threshold string) bool {
-	order := map[string]int{
-		"critical":   5,
-		"high":       4,
-		"medium":     3,
-		"low":        2,
-		"negligible": 1,
-		"unknown":    0,
-	}
-	sev := order[strings.ToLower(severity)]
-	min, ok := order[strings.ToLower(threshold)]
-	if !ok {
-		min = order["high"]
-	}
-	return sev >= min
 }
 
 func mergeScanSource(source *RemediationScanSource, scan remediationScanFile) {

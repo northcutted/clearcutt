@@ -31,11 +31,13 @@ type OpenVEXDocument struct {
 }
 
 type OpenVEXStatement struct {
-	Vulnerability   OpenVEXVulnerability `json:"vulnerability"`
-	Products        []OpenVEXProduct     `json:"products"`
-	Status          string               `json:"status"` // affected, not_affected, under_investigation, fixed
-	Justification   string               `json:"justification,omitempty"`
-	ImpactStatement string               `json:"impact_statement,omitempty"`
+	Vulnerability   OpenVEXVulnerability   `json:"vulnerability"`
+	Products        []OpenVEXProduct       `json:"products"`
+	Status          string                 `json:"status"` // affected, not_affected, under_investigation, fixed
+	Justification   string                 `json:"justification,omitempty"`
+	ImpactStatement string                 `json:"impact_statement,omitempty"`
+	Timestamp       string                 `json:"timestamp,omitempty"` // per-statement (OpenVEX-standard, optional)
+	ClearCutt       *ClearCuttVEXExtension `json:"clearcutt,omitempty"` // policy-acceptance + expiry extension
 }
 
 type OpenVEXVulnerability struct {

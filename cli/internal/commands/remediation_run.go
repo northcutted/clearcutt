@@ -162,7 +162,7 @@ func printRemediationRunPlanSummary(plan *RemediationPlan) {
 			)
 			logRemediationRun("Set INCLUDE_DEV_ONLY_REMEDIATION=1, or use --include-dev-only, for an explicit dev-tier remediation run.")
 		} else {
-			passRemediationRun("Zero fixable High or Critical runtime vulnerabilities selected for automated remediation.")
+			passRemediationRun("Zero fixable, materially-risky runtime vulnerabilities selected for automated remediation.")
 		}
 		if len(summary.ProductionDeferredReasonCounts) > 0 {
 			logRemediationRun("Production findings outside auto-remediation policy: %s.", sortedReasonSummary(summary.ProductionDeferredReasonCounts))

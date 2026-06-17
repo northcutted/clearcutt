@@ -133,6 +133,9 @@ func residualOwnerActions(deferred []RemediationDeferredSummary) []RemediationOw
 		case "base_layer":
 			owner = "base-image-owner"
 			summary = "Inherited base-layer finding requires base image update or documented exception."
+		case "requires_acknowledgement":
+			owner = "security"
+			summary = "Reachable and materially risky with no upstream fix; requires an explicit, owned acknowledgement and a documented, expiring VEX exception (it blocks the release gate until then)."
 		case "no_fixed_version":
 			owner = "security"
 			summary = "No upstream fixed version is available; monitor advisory and consider a temporary VEX exception."

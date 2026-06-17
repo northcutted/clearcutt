@@ -2,11 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +28,9 @@ type verifyFlags struct {
 	exceptionsFile          string
 	allowExceptions         bool
 	failOnExpiredExceptions bool
+	requireVulnPolicy       bool
+	policyJSON              string
+	vexOutput               string
 }
 
 var verifyOpts verifyFlags
@@ -107,6 +112,9 @@ func addVerifyImageFlags(cmd *cobra.Command, hidden bool) {
 	cmd.Flags().StringVar(&verifyOpts.exceptionsFile, "exceptions", "", "Path to local exceptions YAML triage governance file (active exceptions are honoured automatically when set)")
 	cmd.Flags().BoolVar(&verifyOpts.allowExceptions, "allow-exceptions", false, "Deprecated/no-op: exceptions are honoured automatically whenever --exceptions is provided")
 	cmd.Flags().BoolVar(&verifyOpts.failOnExpiredExceptions, "fail-on-expired-exceptions", true, "Fail verification if any matched exception is expired")
+	cmd.Flags().BoolVar(&verifyOpts.requireVulnPolicy, "require-vuln-policy", false, "Gate on the risk policy: block reachable, materially-risky findings (must_fix, and unfixable must_acknowledge) unless covered by an active exception")
+	cmd.Flags().StringVar(&verifyOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml (used by --require-vuln-policy / --vex-output)")
+	cmd.Flags().StringVar(&verifyOpts.vexOutput, "vex-output", "", "Write the policy-accepted finding set as expiring OpenVEX records to this path")
 
 	if !hidden {
 		return
@@ -126,6 +134,9 @@ func addVerifyImageFlags(cmd *cobra.Command, hidden bool) {
 		"exceptions",
 		"allow-exceptions",
 		"fail-on-expired-exceptions",
+		"require-vuln-policy",
+		"policy-json",
+		"vex-output",
 	} {
 		_ = cmd.Flags().MarkHidden(name)
 	}
@@ -370,6 +381,94 @@ func runVerify(imageID string) error {
 				addCheck("vulnerabilities.threshold.high", "fail", fmt.Sprintf("high vulnerability count %d exceeds maximum allowed %d", maxHighFound, verifyOpts.maxHigh))
 			} else {
 				addCheck("vulnerabilities.threshold.high", "pass", fmt.Sprintf("high vulnerabilities verified within limits (%d found, max allowed %d)", maxHighFound, verifyOpts.maxHigh))
+			}
+		}
+	}
+
+	// 10. Risk-policy vulnerability gate (opt-in). The same fleet.Materiality the
+	// remediation planner and the crypto floor use decides scope, so verify
+	// blocks exactly the findings the rest of the platform treats as material:
+	// reachable + production + (KEV | EPSS | severity). must_fix and unfixable
+	// must_acknowledge block (the latter unless covered by an active exception —
+	// an explicit, owned acknowledgement); everything else is policy-accepted and
+	// emitted as an expiring OpenVEX record. This runs only when opted in, so the
+	// legacy --max-critical/--max-high path is unchanged.
+	if verifyOpts.requireVulnPolicy || verifyOpts.vexOutput != "" {
+		policy := remediationPolicyFromJSON(verifyOpts.policyJSON)
+		// Production-eligibility is fail-closed: gate the finding if EITHER the
+		// image's own declared contract says production OR the policy lists its
+		// tier. This closes the service-tier trap where a tier absent from
+		// policy.ProductionTiers (e.g. a productionAllowed service image) would
+		// otherwise make Materiality silently auto-accept every finding.
+		prodTier := release.RuntimeContract.ProductionTier || productionTier(policy, record.Tier.ID)
+		now := time.Now().UTC()
+
+		mustFix := map[string]catalog.FindingInfo{}
+		mustAck := map[string]catalog.FindingInfo{}
+		accepted := map[string]policyAcceptance{}
+		expiredExceptions := map[string]bool{}
+
+		for _, arch := range release.Architectures {
+			if arch.Vulnerabilities == nil {
+				continue
+			}
+			for _, finding := range arch.Vulnerabilities.Findings {
+				if finding.ID == "" {
+					continue
+				}
+				key := finding.ID + "\x00" + finding.PackageName
+				// An active exception is an explicit, owned acknowledgement: it
+				// exempts the finding (and satisfies the must_acknowledge gate). An
+				// expired one does not exempt — it re-blocks via its disposition AND
+				// is surfaced below, so a lapsed acknowledgement is never silent.
+				if entry, expired := exceptionsDoc.Match(finding.ID, finding.PackageName, imageID, release.Tag, now); entry != nil {
+					if !expired {
+						continue
+					}
+					expiredExceptions[entry.ID] = true
+				}
+				decision := findingMateriality(finding, prodTier, policy)
+				switch decision.Disposition {
+				case fleet.DispositionMustFix:
+					mustFix[key] = finding
+				case fleet.DispositionMustAcknowledge:
+					mustAck[key] = finding
+				case fleet.DispositionAutoAccept:
+					accepted[key] = policyAcceptance{Finding: finding, Reason: decision.Reason}
+				}
+			}
+		}
+
+		if verifyOpts.requireVulnPolicy {
+			if verifyOpts.failOnExpiredExceptions && len(expiredExceptions) > 0 {
+				ids := make([]string, 0, len(expiredExceptions))
+				for id := range expiredExceptions {
+					ids = append(ids, id)
+				}
+				sort.Strings(ids)
+				addCheck("vulnerabilities.policy.expiredExceptions", "fail", fmt.Sprintf("matched exception(s) expired and were not honored: %s", strings.Join(ids, ", ")))
+			}
+			if len(mustFix) > 0 {
+				addCheck("vulnerabilities.policy.fixable", "fail", fmt.Sprintf("%d reachable, materially-risky, fixable finding(s) in a production tier: %s", len(mustFix), summarizeFindingKeys(mustFix)))
+			} else {
+				addCheck("vulnerabilities.policy.fixable", "pass", "no reachable, materially-risky, fixable findings outstanding")
+			}
+			if len(mustAck) > 0 {
+				addCheck("vulnerabilities.policy.acknowledge", "fail", fmt.Sprintf("%d reachable, materially-risky, UNFIXABLE finding(s) require an explicit acknowledgement (add an exception): %s", len(mustAck), summarizeFindingKeys(mustAck)))
+			} else {
+				addCheck("vulnerabilities.policy.acknowledge", "pass", "no unacknowledged, materially-risky, unfixable findings")
+			}
+		}
+
+		if verifyOpts.vexOutput != "" {
+			if err := writePolicyVEX(verifyOpts.vexOutput, imageID, release.Tag, accepted, policy.AcceptedExpiryDays, now); err != nil {
+				return fmt.Errorf("failed to write policy VEX records: %w", err)
+			}
+			// Human diagnostic only — never pollute the structured (json/yaml)
+			// payload machine consumers read from stdout.
+			format := strings.ToLower(GlobalOpts.Format)
+			if !GlobalOpts.Quiet && format != "json" && format != "yaml" && format != "yml" && errOut != nil {
+				fmt.Fprintf(errOut, "[verify] wrote %d policy-accepted VEX record(s) to %s\n", len(accepted), verifyOpts.vexOutput)
 			}
 		}
 	}

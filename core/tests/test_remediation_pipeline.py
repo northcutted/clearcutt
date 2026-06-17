@@ -273,6 +273,72 @@ echo '{"matches":[]}'
         with self.assertRaisesRegex(ValueError, "version_bump recipes may set only"):
             draft_agent.validate_recipe(recipe, "zlib", "CVE-2026-12345")
 
+    def test_version_bump_recipe_accepts_docheck_false(self):
+        recipe = {
+            "route": "version_bump",
+            "package_attribute": "openssl",
+            "fixed_version": "3.6.3",
+            "overlay_expression": (
+                'openssl = prev.openssl.overrideAttrs (old: { '
+                'version = "3.6.3"; '
+                'src = prev.fetchurl { url = "https://example.invalid/o.tar.gz"; sha256 = "sha256-abc"; }; '
+                "doCheck = false; });"
+            ),
+        }
+        # doCheck=false is permitted (disables the spurious from-source test suite).
+        draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
+    def test_version_bump_recipe_rejects_docheck_true(self):
+        recipe = {
+            "route": "version_bump",
+            "package_attribute": "openssl",
+            "fixed_version": "3.6.3",
+            "overlay_expression": (
+                'openssl = prev.openssl.overrideAttrs (old: { '
+                'version = "3.6.3"; '
+                'src = prev.fetchurl { url = "https://example.invalid/o.tar.gz"; sha256 = "sha256-abc"; }; '
+                "doCheck = true; });"
+            ),
+        }
+        # doCheck may only be the literal false; re-enabling checks is rejected.
+        with self.assertRaisesRegex(ValueError, "doCheck may only be set to the literal false"):
+            draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
+    def test_docheck_rejects_chained_true_after_false(self):
+        recipe = {
+            "route": "version_bump",
+            "package_attribute": "openssl",
+            "fixed_version": "3.6.3",
+            "overlay_expression": (
+                'openssl = prev.openssl.overrideAttrs (old: { '
+                'version = "3.6.3"; '
+                'src = prev.fetchurl { url = "https://example.invalid/o.tar.gz"; sha256 = "sha256-abc"; }; '
+                "doCheck = false; doCheck = true; });"
+            ),
+        }
+        # A second doCheck = true must NOT be smuggled past by an earlier false.
+        with self.assertRaisesRegex(ValueError, "doCheck may only be set to the literal false"):
+            draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
+    def test_docheck_rejects_commented_false_decoy_with_live_true(self):
+        recipe = {
+            "route": "version_bump",
+            "package_attribute": "openssl",
+            "fixed_version": "3.6.3",
+            "overlay_expression": (
+                "openssl = prev.openssl.overrideAttrs (old: {\n"
+                '  version = "3.6.3";\n'
+                '  src = prev.fetchurl { url = "https://example.invalid/o.tar.gz"; sha256 = "sha256-abc"; };\n'
+                "  # doCheck = false;\n"
+                "  doCheck = true;\n"
+                "});"
+            ),
+        }
+        # A commented-out false decoy must not satisfy the check while the live
+        # binding is true.
+        with self.assertRaisesRegex(ValueError, "doCheck may only be set to the literal false"):
+            draft_agent.validate_recipe(recipe, "openssl", "CVE-2026-12345")
+
     def test_fetchpatch_recipe_rejects_source_replacement(self):
         recipe = {
             "route": "fetchpatch",
@@ -327,8 +393,14 @@ echo '{"matches":[]}'
         self.assertIsNotNone(recipe)
         self.assertEqual(recipe["route"], "version_bump")
         self.assertEqual(recipe["fixed_version"], "1.3.2")
-        self.assertIn("zlib = prev.zlib.overrideAttrs", recipe["overlay_expression"])
-        self.assertIn("sha256-deadbeef", recipe["overlay_expression"])
+        # Self-retiring version bump: a versionOlder guard gates the override, and
+        # doCheck is disabled for the from-source rebuild.
+        expr = recipe["overlay_expression"]
+        self.assertIn('prev.lib.versionOlder prev.zlib.version "1.3.2"', expr)
+        self.assertIn("then prev.zlib.overrideAttrs", expr)
+        self.assertIn("else prev.zlib;", expr)
+        self.assertIn("doCheck = false;", expr)
+        self.assertIn("sha256-deadbeef", expr)
 
     def test_deterministic_resolver_uses_explicit_patch_evidence(self):
         campaign = {
