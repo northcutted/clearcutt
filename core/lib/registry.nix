@@ -8,6 +8,12 @@
 # else stays on the plain `pkgs` (CVE handles available, stock openssl/sqlite).
 { pkgs
 , cryptoPkgs ? pkgs
+  # `.NET` is sourced from its own (newer) package set carrying the CVE-patched
+  # aspnetcore/runtime; `dotnetCryptoPkgs` is its from-source crypto-rebuild
+  # fallback. Both default to the main sets so callers that don't thread a
+  # dedicated .NET pin keep the prior behaviour.
+, dotnetPkgs ? pkgs
+, dotnetCryptoPkgs ? cryptoPkgs
 }:
 
 let
@@ -114,13 +120,16 @@ let
         else [ ])
       old.outputs;
 
-  opensslGrafts =
-    graftOutputs (pkgs.openssl_3_6 or null) (pkgs.clearcuttCveOpenssl or null)
-    ++ graftOutputs (pkgs.openssl or null) (pkgs.clearcuttCveOpenssl or null);
-  sqliteGrafts = graftOutputs (pkgs.sqlite or null) (pkgs.clearcuttCveSqlite or null);
-
-  cryptoGrafts =
+  # Compute the crypto replacements within ONE package set: the drv and the stock
+  # crypto it links come from the same `base`, and the patched handle is built
+  # from that same base, so the swap is self-consistent even when `base` is a
+  # different nixpkgs pin than the rest of the fleet (the .NET case).
+  cryptoGraftsFor = base:
     let
+      opensslGrafts =
+        graftOutputs (base.openssl_3_6 or null) (base.clearcuttCveOpenssl or null)
+        ++ graftOutputs (base.openssl or null) (base.clearcuttCveOpenssl or null);
+      sqliteGrafts = graftOutputs (base.sqlite or null) (base.clearcuttCveSqlite or null);
       # openssl and openssl_3_6 are the same derivation on most pins; de-dup by
       # the old output path so replaceDependencies never sees a target twice.
       key = r: builtins.unsafeDiscardStringContext r.oldDependency.outPath;
@@ -128,22 +137,28 @@ let
         (acc: r: if builtins.elem (key r) (map key acc) then acc else acc ++ [ r ])
         [ ] (opensslGrafts ++ sqliteGrafts);
     in
-    dedup;
+    {
+      grafts = dedup;
+      # openssl is the load-bearing graft: if it can't be grafted safely we must
+      # rebuild from source rather than ship a half-grafted closure the gate rejects.
+      opensslGraftable = opensslGrafts != [ ];
+    };
 
-  # openssl is the load-bearing graft: if it cannot be grafted safely we must
-  # rebuild from source rather than ship a half-grafted closure the gate rejects.
-  opensslGraftable = opensslGrafts != [ ];
-
-  # Source a crypto-linked runtime: graft the patched libs into the stock cached
-  # build when it is an ABI-safe drop-in, else fall back to the cryptoPkgs
-  # from-source rebuild. Same (paths, errorMsg) signature as getPkgFrom.
-  graftedOrRebuilt = paths: errorMsg:
-    if opensslGraftable then
-      pkgs.replaceDependencies {
-        drv = getPkgFrom pkgs paths errorMsg;
-        replacements = cryptoGrafts;
+  # Source a crypto-linked runtime from `base`, grafting the patched libs into the
+  # stock cached build when it is an ABI-safe drop-in, else falling back to
+  # `rebuildBase` (the from-source crypto rebuild). Same (paths, errorMsg) tail as
+  # getPkgFrom.
+  graftedOrRebuiltFrom = base: rebuildBase: paths: errorMsg:
+    let g = cryptoGraftsFor base; in
+    if g.opensslGraftable then
+      base.replaceDependencies {
+        drv = getPkgFrom base paths errorMsg;
+        replacements = g.grafts;
       }
-    else getPkgFrom cryptoPkgs paths errorMsg;
+    else getPkgFrom rebuildBase paths errorMsg;
+
+  # .NET resolves from the dedicated newer pin (dotnetPkgs), grafted to the floor.
+  graftedOrRebuilt = graftedOrRebuiltFrom dotnetPkgs dotnetCryptoPkgs;
 
   # Declarative specifications for every supported language runtime and version
   baseLanguages = {

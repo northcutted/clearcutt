@@ -5,9 +5,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # .NET is pinned to a NEWER nixpkgs than the rest of the fleet so it carries
+    # the CVE-patched ASP.NET Core runtime (10.0.9 / 8.0.28 — fixes the High
+    # GHSA-f8h2-vmm9-qhj6 in Microsoft.AspNetCore.App.Runtime, which the main
+    # pin's 10.0.8 still ships). It is substituted from cache (no VMR rebuild)
+    # and grafted to the openssl/sqlite floor in registry.nix. Pinned to an exact
+    # rev so the bump's churn is scoped to .NET images and stays reproducible.
+    nixpkgs-dotnet.url = "github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, nixpkgs-dotnet }:
     let
       linuxSystems = [
         "x86_64-linux"
@@ -78,6 +85,20 @@
         config = nixpkgsConfig;
         overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
       };
+      # Dedicated .NET package set from the newer pin (carries aspnetcore 10.0.9 /
+      # 8.0.28). registry.nix grafts the patched openssl/sqlite into these, so the
+      # crypto floor still holds while the CVE-patched runtime ships. The crypto
+      # variant is the from-source fallback used only if the graft is ever unsafe.
+      importDotnetNixpkgs = system: import nixpkgs-dotnet {
+        inherit system;
+        config = nixpkgsConfig;
+        overlays = [ cveRemediationOverlay ];
+      };
+      importDotnetCryptoNixpkgs = system: import nixpkgs-dotnet {
+        inherit system;
+        config = nixpkgsConfig;
+        overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
+      };
 
       perSystem = system:
       let
@@ -96,6 +117,8 @@
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
           cryptoPkgs = cryptoRuntimePkgs;
+          dotnetPkgs = importDotnetNixpkgs system;
+          dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
         };
 
         # Import our custom image compiler
@@ -291,7 +314,12 @@
           let
             runtimePkgs = importRuntimeNixpkgs system;
             cryptoPkgs = importCryptoRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix { pkgs = runtimePkgs; inherit cryptoPkgs; };
+            registry = import ./lib/registry.nix {
+              pkgs = runtimePkgs;
+              inherit cryptoPkgs;
+              dotnetPkgs = importDotnetNixpkgs system;
+              dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
+            };
             helpers = import ./lib/nix-native.nix { inherit self registry; pkgs = runtimePkgs; };
           in
           helpers.mkHardenedShell (runtimePkgs.lib.filterAttrs (n: v: n != "system") args);
@@ -311,7 +339,12 @@
             buildPkgs = importBuildNixpkgs system;
             runtimePkgs = importRuntimeNixpkgs system;
             cryptoPkgs = importCryptoRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix { inherit cryptoPkgs; pkgs = runtimePkgs; };
+            registry = import ./lib/registry.nix {
+              inherit cryptoPkgs;
+              pkgs = runtimePkgs;
+              dotnetPkgs = importDotnetNixpkgs system;
+              dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
+            };
             compiler = import ./lib/build-fleet.nix { pkgs = buildPkgs; inherit runtimePkgs registry; };
             platformMetadata = import ./lib/platform-metadata.nix;
             imagePrefix = platformMetadata.imagePrefix or "clearcutt";
