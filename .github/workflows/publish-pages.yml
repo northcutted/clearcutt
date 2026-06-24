@@ -82,9 +82,13 @@ jobs:
       - name: Refresh grype DB
         run: grype db update
 
-      - name: Authenticate registry client to GHCR
+      - name: Authenticate registry client
+        env:
+          REGISTRY_HOST: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       # Cache the per-release enrichment, SBOM downloads, and vulnerability
       # scan output. Old releases are immutable: once an image is published, its

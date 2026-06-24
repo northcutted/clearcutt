@@ -202,9 +202,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Publish Single-Arch Fleet Target
         env:
@@ -309,9 +309,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Publish Single-Arch Service Target
         env:
@@ -466,9 +466,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -590,9 +590,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -724,10 +724,10 @@ jobs:
     with:
       image: ${{ matrix.target.image }}
       digest: ${{ matrix.target.digest }}
-      registry-username: ${{ github.actor }}
+      registry-username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
       private-repository: true
     secrets:
-      registry-password: ${{ secrets.GITHUB_TOKEN }}
+      registry-password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
   verify-release-evidence:
     name: Verify Release Evidence (${{ matrix.target.language }} - ${{ matrix.target.tier }})
@@ -748,9 +748,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -833,9 +833,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -892,9 +892,9 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
+          username: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          password: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
