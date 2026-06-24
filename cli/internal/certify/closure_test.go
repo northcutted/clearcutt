@@ -190,6 +190,24 @@ func TestLoadClosureAllowlistMissingFileIsEmpty(t *testing.T) {
 	}
 }
 
+func TestClosurePurityUnsupportedArchive(t *testing.T) {
+	// A tar with neither manifest.json nor index.json is not an image.
+	data := buildTar(t, []tarEntry{{name: "random.txt", mode: 0o644, body: []byte("x")}})
+	p := filepath.Join(t.TempDir(), "bad.tar")
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ScanImageArchiveForClosurePurity(p, nil); err == nil {
+		t.Fatal("expected unsupported-archive error")
+	}
+}
+
+func TestClosurePurityMissingArchive(t *testing.T) {
+	if _, err := ScanImageArchiveForClosurePurity(filepath.Join(t.TempDir(), "nope.tar"), nil); err == nil {
+		t.Fatal("expected error for a missing archive")
+	}
+}
+
 func TestClosurePurityStorePathsMode(t *testing.T) {
 	root := t.TempDir()
 	storeDir := filepath.Join(root, "store", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-busybox-1.36")
@@ -233,6 +251,15 @@ func TestFnmatchToRegexp(t *testing.T) {
 		{"*-dev", "icu4c", false},
 		{"pip?", "pip3", true},
 		{"pip?", "pip", false},
+		// character classes (the fnmatch [...] branch)
+		{"[abc]x", "ax", true},
+		{"[abc]x", "dx", false},
+		{"[!abc]x", "dx", true},
+		{"[!abc]x", "ax", false},
+		{"openssl-3.[0-9]", "openssl-3.6", true},
+		{"openssl-3.[0-9]", "openssl-3.x", false},
+		// an unterminated '[' is a literal bracket
+		{"weird[", "weird[", true},
 	}
 	for _, c := range cases {
 		re, err := fnmatchToRegexp(c.pattern)

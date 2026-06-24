@@ -194,6 +194,106 @@ func TestCertifyTargetDarwinFailsFast(t *testing.T) {
 	}
 }
 
+// scriptedRunner lets a test fail specific build stages.
+type scriptedRunner struct {
+	nixErr       error
+	syftErr      error
+	grypeErr     error
+	writeArchive []byte
+}
+
+func (s *scriptedRunner) Run(dir, name string, args ...string) error {
+	if name == "nix" {
+		if s.nixErr != nil {
+			return s.nixErr
+		}
+		if s.writeArchive != nil {
+			return os.WriteFile(flagValue(args, "--out-link"), s.writeArchive, 0o644)
+		}
+	}
+	return nil
+}
+
+func (s *scriptedRunner) Capture(dir, outPath, name string, args ...string) error {
+	switch name {
+	case "syft":
+		if s.syftErr != nil {
+			return s.syftErr
+		}
+		return os.WriteFile(outPath, []byte("{}"), 0o644)
+	case "grype":
+		_ = os.WriteFile(outPath, []byte("{}"), 0o644)
+		return s.grypeErr
+	}
+	return nil
+}
+
+func TestCertifyTargetBuildErrors(t *testing.T) {
+	base := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
+
+	// nix build fails.
+	if _, err := CertifyTarget(&scriptedRunner{nixErr: errors.New("build boom")}, base, time.Unix(0, 0), nil); err == nil {
+		t.Fatal("expected nix build error")
+	}
+	// nix build "succeeds" but produces no out-link -> reading the output fails.
+	if _, err := CertifyTarget(&scriptedRunner{}, base, time.Unix(0, 0), nil); err == nil {
+		t.Fatal("expected error reading the missing build output")
+	}
+	// syft fails.
+	layer := layerTar(t, map[string]int64{"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/x.so": 0o644})
+	r := &scriptedRunner{writeArchive: gzippedDockerArchive(t, layer), syftErr: errors.New("syft boom")}
+	if _, err := CertifyTarget(r, base, time.Unix(0, 0), nil); err == nil {
+		t.Fatal("expected syft error")
+	}
+}
+
+func TestCertifyTargetServiceKind(t *testing.T) {
+	// A service target: own language, tier "service", no closure/runtime gates,
+	// preview lifecycle is non-blocking.
+	layer := layerTar(t, map[string]int64{
+		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-postgresql-16/bin/postgres": 0o755,
+	})
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
+	opts := Options{
+		Target: "postgres16", System: "x86_64-linux", Kind: "service",
+		CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t),
+		ServiceLifecycleStatus: "", // defaults to preview -> non-blocking
+	}
+	res, err := CertifyTarget(r, opts, time.Unix(0, 0), nil)
+	if err != nil {
+		t.Fatalf("service certify: %v", err)
+	}
+	if res.Tier != "service" || res.Language != "postgres16" {
+		t.Errorf("parseTarget service: tier=%q lang=%q", res.Tier, res.Language)
+	}
+	if res.ClosurePurity != nil || res.RuntimePatchComplete != nil {
+		t.Errorf("service should skip closure/runtime gates")
+	}
+	if res.Policy.Blocking {
+		t.Errorf("preview service should be non-blocking")
+	}
+	if res.Policy.LifecycleStatus != "preview" {
+		t.Errorf("service lifecycle default = %q, want preview", res.Policy.LifecycleStatus)
+	}
+}
+
+func TestCertifyTargetGateScanErrors(t *testing.T) {
+	// Distroless target fed a corrupt archive -> closure-purity scan errors.
+	bad := &scriptedRunner{writeArchive: []byte("not a gzip or tar")}
+	opts := Options{Target: "node24-distroless", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
+	if _, err := CertifyTarget(bad, opts, time.Unix(0, 0), nil); err == nil {
+		t.Fatal("expected closure-purity scan error on a corrupt archive")
+	}
+
+	// Slim target with a missing floor file -> runtime-cve floor load errors.
+	layer := layerTar(t, map[string]int64{"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/x.so": 0o644})
+	r := &scriptedRunner{writeArchive: gzippedDockerArchive(t, layer)}
+	slim := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: filepath.Join(t.TempDir(), "missing-floor.json")}
+	if _, err := CertifyTarget(r, slim, time.Unix(0, 0), nil); err == nil {
+		t.Fatal("expected runtime-cve floor load error")
+	}
+}
+
 func TestGrypeStatus(t *testing.T) {
 	cases := []struct {
 		failed            bool

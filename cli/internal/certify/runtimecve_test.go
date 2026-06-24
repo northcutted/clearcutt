@@ -190,6 +190,18 @@ func TestRuntimeCveStorePathsMode(t *testing.T) {
 	}
 }
 
+func TestRuntimeCveUnsupportedArchive(t *testing.T) {
+	floor := testFloor(t)
+	data := buildTar(t, []tarEntry{{name: "random.txt", mode: 0o644, body: []byte("x")}})
+	p := filepath.Join(t.TempDir(), "bad.tar")
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ScanImageArchiveForRuntimeCve(p, floor); err == nil {
+		t.Fatal("expected unsupported-archive error")
+	}
+}
+
 func TestLoadRuntimeDepFloorErrors(t *testing.T) {
 	dir := t.TempDir()
 
