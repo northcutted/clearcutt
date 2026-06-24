@@ -307,18 +307,26 @@ let
       nodeProductionRuntime = nodeVersion: rawPkgs:
         let
           slimPkg = getNodeOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
-          # The leaked interactive shell the distroless purity gate flags is
-          # `bash-5.3p9` = bashNonInteractive (the locked nixpkgs aliases both
-          # `bash` and `bashInteractive` to bash-interactive-5.3p9, a DIFFERENT
-          # store path), so target bashNonInteractive explicitly. `stdenv.shell`
-          # is a `${bash}/bin/bash` SUBpath, kept as a backstop. If a future
-          # build still ships bash here it is reaching the closure transitively
-          # (e.g. an icu-config shebang) rather than through node's own files,
-          # and the purity gate surfaces it rather than failing silently.
+          # nodejs bakes its build config (process.config in the binary +
+          # include/node/config.gypi) with the `-dev` store paths of every build
+          # input. Two of those dev outputs ship a `*-config` helper with a
+          # bashNonInteractive shebang — `icu4c-*-dev/bin/icu-config` and
+          # `zstd-*-dev` (-> zstd-*-bin) — which is the ONLY way bash-5.3p9 reaches
+          # the distroless closure (verified with `nix why-depends --all node bash`:
+          # node -> {icu4c-dev, zstd-dev} -> bash are the only chains). Nothing at
+          # runtime resolves those build-config paths, so sever node's references
+          # to BOTH dev outputs; remove-references-to zeroes the hash in the binary
+          # and config.gypi alike (verified: icu 4->0, zstd 2->0 occurrences). The
+          # leaked shell is bashNonInteractive (the locked nixpkgs aliases `bash`
+          # and `bashInteractive` to bash-interactive-*, a DIFFERENT store path), so
+          # target it explicitly; `stdenv.shell` is kept as a backstop. If a future
+          # build still ships bash, the purity gate surfaces the new referrer rather
+          # than failing silently.
           severShellChain = pkg: severRuntimeReferences {
             inherit pkg;
             references = [
               (cryptoPkgs.icu.dev or cryptoPkgs.icu)
+              (cryptoPkgs.zstd.dev or cryptoPkgs.zstd)
               pkg.stdenv.shell
               (cryptoPkgs.bashNonInteractive or cryptoPkgs.bash)
               (cryptoPkgs.bashInteractive or cryptoPkgs.bash)
