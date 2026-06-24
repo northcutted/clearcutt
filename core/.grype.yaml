@@ -2,13 +2,27 @@
 # package set before upstream version metadata changes. Keep these entries
 # narrow and pair each one with an overlay evidence file under overlays/cve/.
 ignore:
-  - vulnerability: CVE-2026-7210
-    package:
-      name: python
-      version: 3.13.13
-      type: UnknownPackage
-  - vulnerability: CVE-2026-7210
-    package:
-      name: python
-      version: 3.14.4
-      type: UnknownPackage
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.13.13
+  vulnerability: CVE-2026-7210
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.14.4
+  vulnerability: CVE-2026-7210
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.14.4
+  reason: Fix (python 3.14.6/3.13.14) not yet in nixpkgs — checked master/unstable/staging
+    2026-06-24; tracking for an unstable opt-in or CPython branch patch (expires 2026-09-24)
+  vulnerability: CVE-2026-9669
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.13.13
+  reason: Fix (python 3.14.6/3.13.14) not yet in nixpkgs — checked master/unstable/staging
+    2026-06-24; tracking for an unstable opt-in or CPython branch patch (expires 2026-09-24)
+  vulnerability: CVE-2026-9669

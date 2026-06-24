@@ -222,6 +222,7 @@ func NewRemediationCmd() *cobra.Command {
 	cmd.AddCommand(NewRemediationRunCmd())
 	cmd.AddCommand(NewRemediationOpenPRCmd())
 	cmd.AddCommand(NewRemediationGenerateFloorCmd())
+	cmd.AddCommand(NewRemediationIgnoreCmd())
 	return cmd
 }
 
