@@ -609,7 +609,20 @@ test_distroless_boundaries() {
   # consciously accepted in tests/closure-purity-allowlist.txt with a
   # one-line reason — never by weakening this gate.
   log_info "Walking /nix/store closure for shells, package managers, and setuid/setgid files..."
-  if ! python3 ./tests/closure-purity-check.py "$build_tar" --allowlist ./tests/closure-purity-allowlist.txt; then
+  # Native-Go gate (clearcutt verify closure-purity), the port of
+  # tests/closure-purity-check.py. Falls back to `go run` for local runs without
+  # a prebuilt binary, mirroring the fleet-matrix drift check above.
+  local cli purity_root purity_failed=0
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    "$cli" verify closure-purity "$build_tar" --allowlist ./tests/closure-purity-allowlist.txt || purity_failed=1
+  else
+    purity_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    log_info "No clearcutt binary found; running the CLI from ${purity_root}/cli via go run."
+    go -C "${purity_root}/cli" run ./cmd/clearcutt verify closure-purity \
+      "$(pwd)/$build_tar" --allowlist "$(pwd)/tests/closure-purity-allowlist.txt" || purity_failed=1
+  fi
+  if [[ "$purity_failed" -ne 0 ]]; then
     log_fail "Distroless closure purity violated: the /nix/store closure ships shells, package managers, or setuid/setgid files (see findings above)."
   fi
 
@@ -631,10 +644,30 @@ test_distroless_boundaries() {
   fi
 
   log_info "Walking slim + distroless /nix/store closures for unpatched openssl/sqlite (floor: tests/runtime-dep-floor.json)..."
-  if ! python3 ./tests/closure-cve-check.py "$slim_tar" --floor ./tests/runtime-dep-floor.json; then
+  # Native-Go gate (clearcutt verify runtime-cve), the port of
+  # tests/closure-cve-check.py, with the same CLI-or-`go run` fallback as the
+  # closure-purity gate above.
+  cli="$(find_clearcutt_cli || true)"
+  local rc_root rc_failed
+  rc_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  rc_failed=0
+  if [[ -n "$cli" ]]; then
+    "$cli" verify runtime-cve "$slim_tar" --floor ./tests/runtime-dep-floor.json || rc_failed=1
+  else
+    go -C "${rc_root}/cli" run ./cmd/clearcutt verify runtime-cve \
+      "$(pwd)/$slim_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
+  fi
+  if [[ "$rc_failed" -ne 0 ]]; then
     log_fail "Slim runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
   fi
-  if ! python3 ./tests/closure-cve-check.py "$build_tar" --floor ./tests/runtime-dep-floor.json; then
+  rc_failed=0
+  if [[ -n "$cli" ]]; then
+    "$cli" verify runtime-cve "$build_tar" --floor ./tests/runtime-dep-floor.json || rc_failed=1
+  else
+    go -C "${rc_root}/cli" run ./cmd/clearcutt verify runtime-cve \
+      "$(pwd)/$build_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
+  fi
+  if [[ "$rc_failed" -ne 0 ]]; then
     log_fail "Distroless runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
   fi
 

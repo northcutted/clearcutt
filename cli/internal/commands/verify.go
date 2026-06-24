@@ -61,6 +61,9 @@ func NewVerifyCmd() *cobra.Command {
 		Long: `Verification subcommands:
   image            gate a specific catalog image against policy contract gates
   catalog          check the generated catalog publishes complete, consistent trust data
+  closure-purity   gate an image's /nix/store closure against shells, package managers, setuid/setgid
+  runtime-cve      gate the shipped closure: no stock (below-floor) build of a CVE-remediated dep
+  boundaries       run all image-security boundary gates (closure-purity + runtime-cve) at once
   rebuild          verify rebuild digest and runtime/grafted closure equivalence predicates
   release-evidence verify a published image ref's Sigstore signature + SLSA provenance`,
 		Args: cobra.ExactArgs(1),
@@ -75,6 +78,9 @@ func NewVerifyCmd() *cobra.Command {
 	cmd.AddCommand(NewVerifyCatalogCmd())
 	cmd.AddCommand(NewVerifyRebuildCmd())
 	cmd.AddCommand(NewVerifyReleaseEvidenceCmd())
+	cmd.AddCommand(newVerifyClosurePurityCmd())
+	cmd.AddCommand(newVerifyRuntimeCveCmd())
+	cmd.AddCommand(newVerifyBoundariesCmd())
 	return cmd
 }
 
