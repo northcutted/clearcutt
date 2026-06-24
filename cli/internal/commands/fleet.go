@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
@@ -31,6 +32,7 @@ type fleetFlags struct {
 	archiveReleaseNotes bool
 	checkOnly           bool
 	allowPreview        bool
+	engine              string
 }
 
 type externalCommand struct {
@@ -70,6 +72,7 @@ GitHub Release finalization.`,
 		},
 	}
 	addFleetTargetFlags(certifyTargetCmd)
+	certifyTargetCmd.Flags().StringVar(&fleetOpts.engine, "engine", "shell", "Build engine: 'shell' (pipeline.sh) or 'go' (native in-process gates)")
 
 	publishTargetCmd := &cobra.Command{
 		Use:   "publish-target",
@@ -273,6 +276,13 @@ func runFleetTarget(publish bool) error {
 	}
 	target := fleetTarget(fleetOpts.language, fleetOpts.tier)
 	coreDir := fleetOpts.coreDir
+
+	// Native-Go build engine (opt-in): runs the build + in-process boundary gates
+	// instead of shelling into pipeline.sh. Certify-only for now; publish still
+	// uses the shell engine, so the default release path is unchanged.
+	if !publish && fleetOpts.engine == "go" {
+		return runFleetCertifyTargetGo(target, coreDir)
+	}
 	args := []string{
 		"develop",
 		"--extra-experimental-features", "nix-command flakes",
@@ -303,6 +313,27 @@ func runFleetTarget(publish bool) error {
 			"GITHUB_REF_NAME=" + strings.TrimSpace(fleetOpts.versionTag),
 		},
 	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runFleetCertifyTargetGo runs the certify path through the native-Go build
+// engine: nix build + Syft/Grype + the in-process closure-purity and runtime-cve
+// gates, emitting the same test-results predicate pipeline.sh produces.
+func runFleetCertifyTargetGo(target, coreDir string) error {
+	outDir := resolveBuildOutputsDir(coreDir, fleetOpts.buildOutputsDir)
+	opts := build.Options{
+		Target:        target,
+		System:        fleetOpts.system,
+		Kind:          "runtime",
+		CoreDir:       coreDir,
+		OutputDir:     outDir,
+		AllowlistPath: filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"),
+		FloorPath:     filepath.Join(coreDir, "tests", "runtime-dep-floor.json"),
+	}
+	runner := build.ExecRunner{Stdout: out, Stderr: errOut}
+	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {
 		return err
 	}
 	return nil
