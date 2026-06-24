@@ -24,6 +24,7 @@ type remediationRunFlags struct {
 	planOut        string
 	agentScript    string
 	baseBranch     string
+	rollingBranch  string
 	skipPR         bool
 	policyJSON     string
 }
@@ -62,6 +63,7 @@ the CI orchestration, branch detection, and PR creation live here.`,
 	cmd.Flags().StringVar(&remediationRunOpts.planOut, "plan-out", "", "Write the generated plan JSON to this path")
 	cmd.Flags().StringVar(&remediationRunOpts.agentScript, "agent-script", envOr("CVE_DRAFT_AGENT", "./scripts/cve-draft-agent.py"), "Drafting agent path, relative to --core-dir unless absolute")
 	cmd.Flags().StringVar(&remediationRunOpts.baseBranch, "base-branch", envOr("REMEDIATION_BASE_BRANCH", "main"), "Base branch for draft PRs and checkout reset")
+	cmd.Flags().StringVar(&remediationRunOpts.rollingBranch, "rolling-branch", envOr("REMEDIATION_ROLLING_BRANCH", "cve-remediation/auto"), "Single rolling branch all campaign overlays land on, backing ONE aggregated draft PR")
 	cmd.Flags().StringVar(&remediationRunOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 	cmd.Flags().BoolVar(&remediationRunOpts.skipPR, "skip-pr", false, "Run the drafting agent but do not push or open pull requests")
 	return cmd
@@ -127,13 +129,23 @@ func runRemediationRun() error {
 		return nil
 	}
 
+	rolling := remediationRunOpts.rollingBranch
+	base := remediationRunOpts.baseBranch
+	runner := execRunner{}
+
+	// Every campaign overlay lands on ONE rolling branch backing a single
+	// aggregated draft PR (instead of a PR per CVE). The branch is recreated
+	// from base each run so that one PR always reflects the current scan.
+	if err := resetRollingBranch(runner, coreDir, rolling, base); err != nil {
+		return fmt.Errorf("could not initialize rolling remediation branch %s: %w", rolling, err)
+	}
+
 	successCount := 0
 	failureCount := 0
+	landed := make([]RemediationCampaign, 0, len(plan.Campaigns))
 	for _, campaign := range plan.Campaigns {
-		ok := executeRemediationCampaign(coreDir, campaign)
-		if ok {
-			successCount++
-		} else {
+		ok, branch := executeRemediationCampaign(coreDir, campaign)
+		if !ok {
 			failureCount++
 			if remediationRunOpts.maxFailures > 0 && failureCount >= remediationRunOpts.maxFailures {
 				remaining := len(plan.Campaigns) - successCount - failureCount
@@ -144,11 +156,35 @@ func runRemediationRun() error {
 				)
 				break
 			}
+			continue
 		}
+		successCount++
+		if branch == "" {
+			continue
+		}
+		if err := foldIntoRolling(runner, coreDir, rolling, branch); err != nil {
+			warnRemediationRun("Could not fold %s into rolling branch %s: %v", branch, rolling, err)
+			continue
+		}
+		landed = append(landed, campaign)
 	}
 
-	attempted := successCount + failureCount
-	passRemediationRun("Auto-Patch Dispatcher complete. Drafted %d/%d attempted remediation PR(s).", successCount, attempted)
+	if len(landed) == 0 {
+		passRemediationRun("Auto-Patch Dispatcher complete. No overlays landed on %s.", rolling)
+		return nil
+	}
+	if remediationRunOpts.skipPR {
+		passRemediationRun("--skip-pr set; %d overlay(s) accumulated on local branch %s (not pushed).", len(landed), rolling)
+		return nil
+	}
+	if err := openOrUpdateAggregatedPR(runner, coreDir, rolling, base, landed); err != nil {
+		warnRemediationRun("Aggregated PR open/update failed (branch %s is pushed): %v", rolling, err)
+	}
+
+	passRemediationRun(
+		"Auto-Patch Dispatcher complete. %d overlay(s) on one aggregated PR (%d/%d campaigns succeeded).",
+		len(landed), successCount, successCount+failureCount,
+	)
 	return nil
 }
 
@@ -188,7 +224,12 @@ func printRemediationRunPlanSummary(plan *RemediationPlan) {
 	}
 }
 
-func executeRemediationCampaign(coreDir string, campaign RemediationCampaign) bool {
+// executeRemediationCampaign runs the drafting agent for one campaign and
+// reports whether it produced a remediation branch, returning that branch name.
+// The agent branches off the current HEAD (the rolling branch), so the caller
+// folds the produced branch into the rolling branch and opens ONE aggregated PR
+// for the whole run rather than a PR per CVE.
+func executeRemediationCampaign(coreDir string, campaign RemediationCampaign) (bool, string) {
 	logRemediationRun(
 		"Dispatching AI Patching Agent for: %s (%s) -> %s...",
 		campaign.Package,
@@ -200,7 +241,7 @@ func executeRemediationCampaign(coreDir string, campaign RemediationCampaign) bo
 	env, err := remediationAgentEnv(campaign, summaryRel)
 	if err != nil {
 		warnRemediationRun("Failed to encode campaign environment for %s (%s): %v", campaign.Package, campaign.CVE, err)
-		return false
+		return false, ""
 	}
 
 	agent := remediationRunOpts.agentScript
@@ -216,37 +257,126 @@ func executeRemediationCampaign(coreDir string, campaign RemediationCampaign) bo
 	cmd.Stderr = errOut
 	if err := cmd.Run(); err != nil {
 		warnRemediationRun("AI Patching Agent failed to draft a patch for %s (%s): %v", campaign.Package, campaign.CVE, err)
-		return false
+		return false, ""
 	}
 
 	passRemediationRun("AI Patching Agent drafted a patch for %s (%s); checking for branch...", campaign.Package, campaign.CVE)
 	branchName, err := currentGitBranch(coreDir)
 	if err != nil {
 		warnRemediationRun("Could not read current git branch: %v", err)
-		return false
+		return false, ""
 	}
 	if !strings.HasPrefix(branchName, "cve-remediation/") {
-		warnRemediationRun("No remediation branch produced by the agent - skipping PR.")
-		return false
+		warnRemediationRun("No remediation branch produced by the agent - skipping campaign.")
+		return false, ""
 	}
-	if remediationRunOpts.skipPR {
-		logRemediationRun("--skip-pr set; leaving remediation branch %s in place.", branchName)
-		return true
+	return true, branchName
+}
+
+// cmdRunner abstracts git/gh execution so the rolling-branch accumulation and
+// aggregated-PR dedup are unit-testable with a fake.
+type cmdRunner interface {
+	Run(dir, name string, args ...string) error
+	Output(dir, name string, args ...string) (string, error)
+}
+
+type execRunner struct{}
+
+func (execRunner) Run(dir, name string, args ...string) error {
+	return runCommand(dir, name, args...)
+}
+
+func (execRunner) Output(dir, name string, args ...string) (string, error) {
+	var stdout bytes.Buffer
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// resetRollingBranch recreates the rolling remediation branch at base so the
+// single aggregated PR reflects the current scan rather than accumulating stale
+// overlays across runs.
+func resetRollingBranch(r cmdRunner, dir, rolling, base string) error {
+	if err := r.Run(dir, "git", "checkout", base); err != nil {
+		return err
+	}
+	return r.Run(dir, "git", "checkout", "-B", rolling)
+}
+
+// foldIntoRolling fast-forwards the rolling branch to a per-CVE branch the agent
+// produced (it branched off the rolling HEAD), accumulating that overlay, then
+// returns HEAD to the rolling branch for the next campaign and deletes the
+// now-redundant per-CVE branch.
+func foldIntoRolling(r cmdRunner, dir, rolling, branch string) error {
+	if err := r.Run(dir, "git", "branch", "-f", rolling, branch); err != nil {
+		return err
+	}
+	if err := r.Run(dir, "git", "checkout", rolling); err != nil {
+		return err
+	}
+	_ = r.Run(dir, "git", "branch", "-D", branch)
+	return nil
+}
+
+// openOrUpdateAggregatedPR pushes the rolling branch and opens its single draft
+// PR, or refreshes the existing one. The `gh pr list --head` dedup guard is what
+// keeps remediation to ONE continuously-updated PR instead of many.
+func openOrUpdateAggregatedPR(r cmdRunner, dir, rolling, base string, campaigns []RemediationCampaign) error {
+	// The rolling branch is recreated from base each run, so its remote ref
+	// diverges; lease against the fetched remote tip to force-update safely, or
+	// create it when there is no remote ref yet.
+	_ = r.Run(dir, "git", "fetch", "origin",
+		fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", rolling, rolling))
+	pushArgs := []string{"push", "origin", rolling}
+	if tip, _ := r.Output(dir, "git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+rolling); tip != "" {
+		pushArgs = append(pushArgs, "--force-with-lease="+rolling+":"+tip)
+	}
+	if err := r.Run(dir, "git", pushArgs...); err != nil {
+		return err
 	}
 
-	summaryPath := filepath.Join(coreDir, summaryRel)
-	if err := openRemediationPR(openRemediationPROptions{
-		Branch:           branchName,
-		PackageName:      campaign.Package,
-		CVE:              campaign.CVE,
-		InstalledVersion: campaign.InstalledVersion,
-		SummaryPath:      summaryPath,
-		BaseBranch:       remediationRunOpts.baseBranch,
-	}); err != nil {
-		warnRemediationRun("PR open failed for %s (%s) - branch is still pushed: %v", campaign.Package, campaign.CVE, err)
+	title := aggregatedPRTitle(campaigns)
+	body := aggregatedPRBody(campaigns)
+
+	count, _ := r.Output(dir, "gh", "pr", "list", "--head", rolling, "--state", "open", "--json", "number", "--jq", "length")
+	if trimmed := strings.TrimSpace(count); trimmed == "" || trimmed == "0" {
+		fmt.Fprintf(out, "Opening aggregated draft PR for %s...\n", rolling)
+		return r.Run(dir, "gh", "pr", "create", "--title", title, "--body", body, "--head", rolling, "--base", base, "--draft")
 	}
-	_ = runCommand(coreDir, "git", "checkout", remediationRunOpts.baseBranch)
-	return true
+	fmt.Fprintf(out, "Updating existing aggregated PR for %s...\n", rolling)
+	return r.Run(dir, "gh", "pr", "edit", rolling, "--title", title, "--body", body)
+}
+
+func aggregatedPRTitle(campaigns []RemediationCampaign) string {
+	if len(campaigns) == 1 {
+		return fmt.Sprintf("chore(cve): automated remediation for %s (%s)", campaigns[0].Package, campaigns[0].CVE)
+	}
+	return fmt.Sprintf("chore(cve): automated remediation for %d CVEs", len(campaigns))
+}
+
+func aggregatedPRBody(campaigns []RemediationCampaign) string {
+	var b strings.Builder
+	b.WriteString("This Pull Request was automatically drafted by the **ClearCutt CVE Patch Drafting Agent**.\n\n")
+	b.WriteString(fmt.Sprintf("It aggregates **%d** CVE remediation overlay(s) onto a single rolling branch; the agent refreshes this one PR as new scans run instead of opening a PR per CVE.\n\n", len(campaigns)))
+	b.WriteString("### Remediations\n")
+	b.WriteString("| Package | CVE | Installed | Fixed |\n")
+	b.WriteString("| --- | --- | --- | --- |\n")
+	for _, c := range campaigns {
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+			codeQuote(c.Package), codeQuote(c.CVE),
+			codeQuote(fallbackString(c.InstalledVersion, "?")),
+			codeQuote(fallbackString(c.FixedVersion, "?"))))
+	}
+	b.WriteString("\n### Verification\n")
+	b.WriteString("Each overlay was rebuilt-and-rescanned by the agent so the original CVE/package pair disappears from Grype output. ")
+	b.WriteString("The full matrix runs in this PR's pr-gate job; **do not merge until that suite is green.**\n\n")
+	b.WriteString("### Rollback\n")
+	b.WriteString("To drop a single remediation, delete its file under `core/overlays/cve/` and re-run the scan; the next run rebuilds this PR without it.\n")
+	return b.String()
 }
 
 func remediationAgentEnv(campaign RemediationCampaign, summaryPath string) ([]string, error) {

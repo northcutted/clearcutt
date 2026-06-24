@@ -37,9 +37,10 @@ func writeExecutable(t *testing.T, path, content string) {
 
 // Exercises the full dispatch path that the deferral/dry-run tests skip: a real
 // git repo with a bare origin, a fake drafting agent that produces a
-// cve-remediation/* branch, and a stub `gh`. Asserts that branch detection, the
-// push to origin, PR creation, and the checkout reset to the base branch all fire.
-func TestRemediationRunDispatchesAgentPushesAndResets(t *testing.T) {
+// cve-remediation/* branch, and a stub `gh`. Asserts that the agent's per-CVE
+// branch is folded onto the single rolling branch, that rolling branch is pushed
+// to origin, and ONE aggregated draft PR is opened for it.
+func TestRemediationRunDispatchesAgentAndOpensAggregatedPR(t *testing.T) {
 	for _, bin := range []string{"git", "bash"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skipf("%s not available", bin)
@@ -123,30 +124,34 @@ printf '%s\n' '{"recipe":{"route":"version_bump"},"validation":[],"affected_targ
 		t.Fatalf("remediation run failed: %v\n%s", err, stdout)
 	}
 
-	// Branch detection + dispatch happened.
-	for _, want := range []string{"Dispatching AI Patching Agent", "Done. PR created against cve-remediation/test-branch"} {
+	// Branch detection + dispatch happened, and one aggregated PR was opened.
+	for _, want := range []string{"Dispatching AI Patching Agent", "Opening aggregated draft PR for cve-remediation/auto"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got:\n%s", want, stdout)
 		}
 	}
 
-	// The branch reached origin via the hardened push.
-	if remote := dispatchGitOut(t, workRepo, "ls-remote", "origin", "cve-remediation/test-branch"); !strings.Contains(remote, "cve-remediation/test-branch") {
-		t.Fatalf("expected cve-remediation/test-branch on origin, got: %q", remote)
+	// The single rolling branch reached origin (not the per-CVE branch).
+	if remote := dispatchGitOut(t, workRepo, "ls-remote", "origin", "cve-remediation/auto"); !strings.Contains(remote, "cve-remediation/auto") {
+		t.Fatalf("expected cve-remediation/auto on origin, got: %q", remote)
+	}
+	// The per-CVE branch was folded in and deleted, never pushed on its own.
+	if remote := dispatchGitOut(t, workRepo, "ls-remote", "origin", "cve-remediation/test-branch"); strings.Contains(remote, "cve-remediation/test-branch") {
+		t.Fatalf("per-CVE branch should not be pushed, but found on origin: %q", remote)
 	}
 
-	// The working tree was reset back to the base branch.
-	if branch := dispatchGitOut(t, workRepo, "branch", "--show-current"); branch != "main" {
-		t.Fatalf("expected checkout reset to main, still on %q", branch)
+	// HEAD ends on the rolling branch (overlays accumulate there across campaigns).
+	if branch := dispatchGitOut(t, workRepo, "branch", "--show-current"); branch != "cve-remediation/auto" {
+		t.Fatalf("expected HEAD on cve-remediation/auto, got %q", branch)
 	}
 
-	// gh was invoked to open a draft PR.
+	// gh was invoked to open ONE aggregated draft PR for the rolling branch.
 	logBytes, err := os.ReadFile(ghLog)
 	if err != nil {
 		t.Fatalf("gh was never invoked: %v", err)
 	}
 	ghCall := string(logBytes)
-	for _, want := range []string{"pr create", "--draft", "cve-remediation/test-branch", "--base main"} {
+	for _, want := range []string{"pr create", "--draft", "cve-remediation/auto", "--base main"} {
 		if !strings.Contains(ghCall, want) {
 			t.Fatalf("expected gh call to contain %q, got: %q", want, ghCall)
 		}
