@@ -120,6 +120,7 @@ func runRemediationRun() error {
 	if err != nil {
 		return err
 	}
+	enrichPlanRoutesBestEffort(plan, coreDir)
 	if err := writeRemediationPlanFile(planPath, plan); err != nil {
 		return err
 	}
@@ -363,14 +364,16 @@ func aggregatedPRBody(campaigns []RemediationCampaign) string {
 	b.WriteString("This Pull Request was automatically drafted by the **ClearCutt CVE Patch Drafting Agent**.\n\n")
 	b.WriteString(fmt.Sprintf("It aggregates **%d** CVE remediation overlay(s) onto a single rolling branch; the agent refreshes this one PR as new scans run instead of opening a PR per CVE.\n\n", len(campaigns)))
 	b.WriteString("### Remediations\n")
-	b.WriteString("| Package | CVE | Installed | Fixed |\n")
-	b.WriteString("| --- | --- | --- | --- |\n")
+	b.WriteString("| Package | CVE | Installed | Fixed | Route |\n")
+	b.WriteString("| --- | --- | --- | --- | --- |\n")
 	for _, c := range campaigns {
-		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+		b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
 			codeQuote(c.Package), codeQuote(c.CVE),
 			codeQuote(fallbackString(c.InstalledVersion, "?")),
-			codeQuote(fallbackString(c.FixedVersion, "?"))))
+			codeQuote(fallbackString(c.FixedVersion, "?")),
+			codeQuote(fallbackString(c.RecommendedRoute, RouteVersionBump))))
 	}
+	b.WriteString("\n_Route legend: `substitute_vex` = ship the provenance-allowlisted patched crypto + VEX the version gap; `unstable_optin` = source the fix from a scoped newer nixpkgs pin; `version_bump` = a fixed version in the pinned channel; `fetchpatch_rebuild` = bespoke crypto rebuild (no upstream fix yet); `scanner_ignore` = narrow expiring suppression._\n")
 	b.WriteString("\n### Verification\n")
 	b.WriteString("Each overlay was rebuilt-and-rescanned by the agent so the original CVE/package pair disappears from Grype output. ")
 	b.WriteString("The full matrix runs in this PR's pr-gate job; **do not merge until that suite is green.**\n\n")

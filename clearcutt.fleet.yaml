@@ -79,6 +79,12 @@ remediation:
     requireFixedVersion: true
     epssPercentileBoostAt: 0.90
     kevBoost: true
+    # How the known-good crypto build (openssl/sqlite) is trusted. nixpkgs
+    # (default): trust the pin's patched build, substitute from cache, and VEX
+    # the scanner version gap. reproduce: also independently rebuild the crypto
+    # closure and byte-compare it against the substituted build (trust AND
+    # verify); a divergence fails the release evidence.
+    cryptoTrust: nixpkgs
   unstable:
     # Default-off opt-in for sourcing a CVE fix from a newer nixpkgs when the
     # stable pin lacks it. `suggest` = scans surface an available unstable fix

@@ -83,6 +83,7 @@ type RemediationCampaign struct {
 	Namespace             *string                      `json:"namespace,omitempty"`
 	Description           *string                      `json:"description,omitempty"`
 	RecommendedRoute      string                       `json:"recommendedRoute"`
+	RouteReason           string                       `json:"routeReason,omitempty"`
 	RiskFactors           RemediationRiskFactors       `json:"riskFactors"`
 	PolicyDecision        RemediationPolicyDecision    `json:"policyDecision"`
 	ExpectedRemoved       []RemediationExpectedFinding `json:"expectedRemoved"`
@@ -237,6 +238,7 @@ func runRemediationPlan() error {
 	if err != nil {
 		return err
 	}
+	enrichPlanRoutesBestEffort(plan, "")
 
 	if remediationOpts.out != "" {
 		if err := writeRemediationPlanFile(remediationOpts.out, plan); err != nil {
