@@ -127,12 +127,44 @@ type Admission struct {
 }
 
 type Remediation struct {
-	Mode                   string            `json:"mode"`
-	ScanDepth              string            `json:"scanDepth"`
-	MaxFindingsPerRun      int               `json:"maxFindingsPerRun"`
-	MaxPatchFailuresPerRun int               `json:"maxPatchFailuresPerRun"`
-	IncludeDevOnly         bool              `json:"includeDevOnly"`
-	Policy                 RemediationPolicy `json:"policy,omitempty"`
+	Mode                   string              `json:"mode"`
+	ScanDepth              string              `json:"scanDepth"`
+	MaxFindingsPerRun      int                 `json:"maxFindingsPerRun"`
+	MaxPatchFailuresPerRun int                 `json:"maxPatchFailuresPerRun"`
+	IncludeDevOnly         bool                `json:"includeDevOnly"`
+	Policy                 RemediationPolicy   `json:"policy,omitempty"`
+	Unstable               RemediationUnstable `json:"unstable,omitempty"`
+}
+
+// RemediationUnstable is the opt-in policy for sourcing a CVE fix from a newer
+// (unstable) nixpkgs when the stable pin lacks it. Default-off: the scan only
+// SUGGESTS an unstable fix unless an explicit soft opt-in scopes a single
+// package to a pinned ref (the .NET/node22 dedicated-pin pattern), or `hard`
+// moves the whole fleet. See docs/analysis/cli-pivot-plan.md.
+type RemediationUnstable struct {
+	// Mode: off | suggest | soft | hard. Default suggest.
+	Mode string `json:"mode,omitempty"`
+	// Ref is the default unstable nixpkgs flake ref the scan probes for fixes.
+	Ref string `json:"ref,omitempty"`
+	// SoftOptIns scope individual packages to a pinned unstable ref for a CVE.
+	SoftOptIns []RemediationUnstableOptIn `json:"softOptIns,omitempty"`
+}
+
+// RemediationUnstableOptIn pins one package to a newer nixpkgs ref to clear
+// specific CVEs, scoped so the rest of the fleet stays on the stable pin.
+type RemediationUnstableOptIn struct {
+	Package string                   `json:"package"`
+	Ref     string                   `json:"ref,omitempty"`
+	Reason  string                   `json:"reason,omitempty"`
+	Owner   string                   `json:"owner,omitempty"`
+	Fixes   []RemediationUnstableFix `json:"fixes,omitempty"`
+}
+
+// RemediationUnstableFix records a CVE cleared by the opt-in and the versions.
+type RemediationUnstableFix struct {
+	CVE              string `json:"cve"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	FixedVersion     string `json:"fixedVersion,omitempty"`
 }
 
 // RemediationPolicy is the configurable, risk-based CVE policy. A finding is in

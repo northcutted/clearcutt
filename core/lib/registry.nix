@@ -14,6 +14,10 @@
   # dedicated .NET pin keep the prior behaviour.
 , dotnetPkgs ? pkgs
 , dotnetCryptoPkgs ? cryptoPkgs
+  # `nodeCryptoPkgs` is node22's dedicated unstable pin (UNSTABLE OPT-IN), with
+  # the same crypto rebinding as `cryptoPkgs`, carrying nodejs 22.23.0. Defaults
+  # to `cryptoPkgs` so a fork without the dedicated pin keeps the prior node22.
+, nodeCryptoPkgs ? cryptoPkgs
 }:
 
 let
@@ -302,11 +306,18 @@ let
       # future nixpkgs decouples pkgs.icu from the icu node links against, the
       # strip becomes a no-op and the purity gate surfaces it again rather than
       # failing silently.
-      getNode = getPkgFrom cryptoPkgs;
-      getNodeOrNull = getPkgOrNullFrom cryptoPkgs;
-      nodeProductionRuntime = nodeVersion: rawPkgs:
+      # node22 is sourced from a dedicated UNSTABLE pin (nodeCryptoPkgs) so it
+      # ships 22.23.0 — the fix for CVE-2026-48617 / CVE-2026-48937 the main pin's
+      # 22.22.3 still carries. node24 stays on the main crypto set until its fix
+      # (24.17.0) lands in the pinned nixpkgs. The node helpers are parameterised
+      # by package set so the slim build AND its severed icu/zstd/bash references
+      # come from the SAME set as the node attr — a cross-set sever would miss the
+      # unstable pin's store paths and re-leak bash into the distroless closure.
+      node22Set = nodeCryptoPkgs;
+      node24Set = cryptoPkgs;
+      nodeProductionRuntimeFrom = set: nodeVersion: rawPkgs:
         let
-          slimPkg = getNodeOrNull [ [ "nodejs-slim_${nodeVersion}" ] ];
+          slimPkg = (getPkgOrNullFrom set) [ [ "nodejs-slim_${nodeVersion}" ] ];
           # nodejs bakes its build config (process.config in the binary +
           # include/node/config.gypi) with the `-dev` store paths of every build
           # input. Two of those dev outputs ship a `*-config` helper with a
@@ -325,24 +336,24 @@ let
           severShellChain = pkg: severRuntimeReferences {
             inherit pkg;
             references = [
-              (cryptoPkgs.icu.dev or cryptoPkgs.icu)
-              (cryptoPkgs.zstd.dev or cryptoPkgs.zstd)
+              (set.icu.dev or set.icu)
+              (set.zstd.dev or set.zstd)
               pkg.stdenv.shell
-              (cryptoPkgs.bashNonInteractive or cryptoPkgs.bash)
-              (cryptoPkgs.bashInteractive or cryptoPkgs.bash)
+              (set.bashNonInteractive or set.bash)
+              (set.bashInteractive or set.bash)
             ];
           };
         in
         if slimPkg != null then [ (severShellChain slimPkg) ] else map removeNpm rawPkgs;
-      nodeRaw22 = [ (getNode [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
-      nodeRaw24 = [ (getNode [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+      nodeRaw22 = [ ((getPkgFrom node22Set) [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
+      nodeRaw24 = [ ((getPkgFrom node24Set) [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
     in {
       versions = {
         "22" = {
           overlayName = "clearcuttNode22";
           raw = nodeRaw22;
-          slimOverride = nodeProductionRuntime "22" nodeRaw22;
-          distrolessOverride = nodeProductionRuntime "22" nodeRaw22;
+          slimOverride = nodeProductionRuntimeFrom node22Set "22" nodeRaw22;
+          distrolessOverride = nodeProductionRuntimeFrom node22Set "22" nodeRaw22;
           # Kept as the final resolveForTier fallback for forks whose registry
           # forks drop the overrides while pinned to an older nixpkgs.
           useRemoveNpm = true;
@@ -350,8 +361,8 @@ let
         "24" = {
           overlayName = "clearcuttNode24";
           raw = nodeRaw24;
-          slimOverride = nodeProductionRuntime "24" nodeRaw24;
-          distrolessOverride = nodeProductionRuntime "24" nodeRaw24;
+          slimOverride = nodeProductionRuntimeFrom node24Set "24" nodeRaw24;
+          distrolessOverride = nodeProductionRuntimeFrom node24Set "24" nodeRaw24;
           useRemoveNpm = true;
         };
       };

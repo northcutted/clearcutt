@@ -269,6 +269,42 @@
         "includeDevOnly": {
           "type": "boolean"
         },
+        "unstable": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Opt-in policy for sourcing a CVE fix from a newer (unstable) nixpkgs when the stable pin lacks it. Default-off: suggest unless a soft opt-in scopes a package.",
+          "properties": {
+            "mode": { "enum": ["off", "suggest", "soft", "hard"] },
+            "ref": { "type": "string", "minLength": 1 },
+            "softOptIns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package"],
+                "properties": {
+                  "package": { "type": "string", "minLength": 1 },
+                  "ref": { "type": "string", "minLength": 1 },
+                  "reason": { "type": "string" },
+                  "owner": { "type": "string" },
+                  "fixes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["cve"],
+                      "properties": {
+                        "cve": { "type": "string", "minLength": 1 },
+                        "installedVersion": { "type": "string" },
+                        "fixedVersion": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "policy": {
           "type": "object",
           "additionalProperties": false,
