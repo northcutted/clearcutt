@@ -28,7 +28,7 @@ func newVerifyBoundariesCmd() *cobra.Command {
 (a docker-save / OCI-layout archive, or a closureInfo store-paths file):
 
   closure-purity   no shells, package managers, or setuid/setgid files
-  runtime-cve      no stock (below-floor) build of a CVE-remediated dep
+  runtime-cve      every CVE-remediated crypto path is a known-good identity
 
 Fails if any gate fails. This is the CLI-owned umbrella that replaces the
 per-gate python invocations in core/tests/verify.sh.`,
@@ -96,7 +96,7 @@ func runVerifyBoundaries(archive string) error {
 		return err
 	}
 	if runtimeCve.Clean() {
-		fmt.Fprintf(out, "[runtime-cve] clean: every shipped dep meets the floor (%s).\n", strings.Join(runtimeCve.Tracked, ", "))
+		fmt.Fprintf(out, "[runtime-cve] clean: every shipped crypto path matches a known-good identity (%s).\n", strings.Join(runtimeCve.Tracked, ", "))
 	} else {
 		for _, v := range runtimeCve.Violations {
 			fmt.Fprintf(errOut, "[runtime-cve] VIOLATION: %s\n", v.Message)

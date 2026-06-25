@@ -5,12 +5,14 @@ Runnable the way the repo runs its python tests:
 
     cd core && python3 -m unittest tests/test_closure_cve_check.py
 
-Exercises both the in-process matcher/version logic and the subprocess CLI
-exit codes over synthetic ``--store-paths`` files, so the gate's default-deny
-behavior and artifact-skip anchoring are pinned against regression.
+Exercises both the in-process identity matcher and the subprocess CLI exit
+codes over synthetic ``--store-paths`` files, so the gate's default-deny
+behavior, artifact-skip anchoring, and identity (not version) semantics are
+pinned against regression.
 """
 
 import importlib.util
+import json
 import pathlib
 import subprocess
 import sys
@@ -20,7 +22,16 @@ import unittest
 
 TESTS_DIR = pathlib.Path(__file__).resolve().parent
 CHECKER = TESTS_DIR / "closure-cve-check.py"
-FLOOR = TESTS_DIR / "runtime-dep-floor.json"
+COMMITTED_FLOOR = TESTS_DIR / "runtime-dep-floor.json"
+
+# Synthetic known-good identities. openssl's known-good build reads version
+# 3.6.2 — a patched-not-bumped build — to prove the gate passes by IDENTITY,
+# not version.
+KG_OPENSSL_OUT = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.2"
+KG_OPENSSL_BIN = "cccccccccccccccccccccccccccccccc-openssl-3.6.2-bin"
+KG_SQLITE_OUT = "dddddddddddddddddddddddddddddddd-sqlite-3.53.2"
+# An off-allowlist openssl at a HIGHER version — must still be rejected.
+OFF_OPENSSL = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-openssl-3.6.9"
 
 
 def load_module(name, path):
@@ -33,13 +44,32 @@ def load_module(name, path):
 cve = load_module("closure_cve_check", CHECKER)
 
 
-def run_cli(lines):
+def write_allowlist(deps):
+    handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    json.dump({"deps": deps}, handle)
+    handle.close()
+    return handle.name
+
+
+def sample_allowlist():
+    return write_allowlist([
+        {"name": "openssl", "cve": "CVE-2026-34182", "knownGood": [
+            {"storePath": KG_OPENSSL_OUT},
+            {"storePath": "/nix/store/" + KG_OPENSSL_BIN + "/bin/openssl"},
+        ]},
+        {"name": "sqlite", "cve": "CVE-2026-11822", "knownGood": [
+            {"storePath": KG_SQLITE_OUT},
+        ]},
+    ])
+
+
+def run_cli(lines, floor):
     """Run the checker over a synthetic store-paths file; return exit code."""
     with tempfile.NamedTemporaryFile("w", suffix=".paths", delete=False) as handle:
         handle.write("\n".join(lines) + "\n")
         paths_file = handle.name
     proc = subprocess.run(
-        [sys.executable, str(CHECKER), "--store-paths", paths_file, "--floor", str(FLOOR)],
+        [sys.executable, str(CHECKER), "--store-paths", paths_file, "--floor", str(floor)],
         capture_output=True,
         text=True,
     )
@@ -47,105 +77,126 @@ def run_cli(lines):
     return proc.returncode, proc.stdout, proc.stderr
 
 
-class VersionLogicTests(unittest.TestCase):
-    def test_parse_version_dotted_numeric(self):
-        self.assertEqual(cve.parse_version("3.6.3"), (3, 6, 3))
-        self.assertEqual(cve.parse_version("3.53.2"), (3, 53, 2))
-
-    def test_parse_version_rejects_non_numeric(self):
-        self.assertIsNone(cve.parse_version("3.6.3a"))
-        self.assertIsNone(cve.parse_version("3.6.3-rc1"))
-        self.assertIsNone(cve.parse_version(""))
-
-    def test_version_ge_is_tuple_not_string_compare(self):
-        # 3.6.10 > 3.6.3 numerically, even though "3.6.10" < "3.6.3" as strings.
-        self.assertTrue(cve.version_ge((3, 6, 10), (3, 6, 3)))
-        self.assertTrue(cve.version_ge((3, 6, 3), (3, 6, 3)))
-        self.assertFalse(cve.version_ge((3, 6, 2), (3, 6, 3)))
-        # Padding: 3.6 == 3.6.0 < 3.6.3.
-        self.assertFalse(cve.version_ge((3, 6), (3, 6, 3)))
-
-
-class MatcherTests(unittest.TestCase):
+class IdentityMatcherTests(unittest.TestCase):
     def setUp(self):
-        self.floor = cve.load_floor(str(FLOOR))
-        self.dep_re = cve.build_dep_re(self.floor)
+        self.floor_path = sample_allowlist()
+        self.allowlist = cve.load_floor(self.floor_path)
+        self.dep_re = cve.build_dep_re(self.allowlist)
 
-    def evaluate(self, name):
-        return cve.evaluate_component(name, self.floor, self.dep_re)
+    def tearDown(self):
+        pathlib.Path(self.floor_path).unlink()
 
-    def test_all_six_openssl_outputs_match_by_version(self):
-        for output in ("", "-bin", "-dev", "-out", "-man", "-doc", "-debug"):
-            self.assertIsNone(self.evaluate(f"openssl-3.6.3{output}"))
+    def evaluate(self, component):
+        return cve.evaluate_component(component, self.allowlist, self.dep_re)
 
-    def test_stock_openssl_3_6_2_fails(self):
-        self.assertIn("floor 3.6.3", self.evaluate("openssl-3.6.2-bin"))
+    def test_known_good_identities_pass(self):
+        # Including the patched-not-bumped openssl-3.6.2 and the bin output that
+        # was given as a full /nix/store/.../bin/openssl path.
+        for comp in (KG_OPENSSL_OUT, KG_OPENSSL_BIN, KG_SQLITE_OUT):
+            self.assertIsNone(self.evaluate(comp), comp)
 
-    def test_old_majors_fail(self):
-        self.assertIsNotNone(self.evaluate("openssl-3.5.6"))
-        self.assertIsNotNone(self.evaluate("openssl-3.0.20"))
+    def test_off_allowlist_fails_regardless_of_version(self):
+        msg = self.evaluate(OFF_OPENSSL)
+        self.assertIsNotNone(msg)
+        self.assertIn("off-allowlist openssl", msg)
+        # A stock-vulnerable lower version with an unknown identity also fails.
+        self.assertIsNotNone(self.evaluate("ffffffffffffffffffffffffffffffff-openssl-3.6.0"))
 
-    def test_stock_sqlite_fails_patched_passes(self):
-        self.assertIsNotNone(self.evaluate("sqlite-3.51.2"))
-        self.assertIsNone(self.evaluate("sqlite-3.53.2"))
+    def test_non_crypto_paths_ignored(self):
+        self.assertIsNone(self.evaluate("11111111111111111111111111111111-zlib-1.3.1"))
 
     def test_artifacts_are_skipped_not_flagged(self):
-        # .drv / .tar.gz / .zip / source / patch must NOT match — the version
-        # group is dotted-numeric only, so an extension is not an output suffix.
         for artifact in (
-            "openssl-3.6.3.drv",
-            "openssl-3.6.3.tar.gz",
-            "openssl-3.6.3-bin.drv",
-            "sqlite-src-3530200.zip",
-            "openssl-disable-kernel-detection.patch",
+            "22222222222222222222222222222222-openssl-3.6.3.drv",
+            "33333333333333333333333333333333-openssl-3.6.3.tar.gz",
+            "44444444444444444444444444444444-openssl-3.6.3-bin.drv",
+            "55555555555555555555555555555555-sqlite-src-3530200.zip",
+            "66666666666666666666666666666666-openssl-disable-kernel-detection.patch",
         ):
             self.assertIsNone(self.evaluate(artifact), artifact)
 
-    def test_below_floor_short_versions_default_deny(self):
-        # A bare older version still anchors and is denied as below-floor.
-        self.assertIsNotNone(self.evaluate("openssl-3"))    # 3 < 3.6.3
-        self.assertIsNotNone(self.evaluate("openssl-3.6"))  # 3.6.0 < 3.6.3
+    def test_normalize_store_component(self):
+        self.assertEqual(
+            cve.normalize_store_component("/nix/store/" + KG_OPENSSL_OUT + "/lib/x"),
+            KG_OPENSSL_OUT,
+        )
+        self.assertEqual(cve.normalize_store_component("nohyphen"), "")
+        self.assertEqual(cve.normalize_store_component(""), "")
 
-    def test_unparseable_matched_version_default_denies(self):
-        # If a name anchors as dep-<numeric...> but parse_version still can't
-        # produce a clean tuple, the gate denies rather than guessing. We drive
-        # parse_version directly through evaluate by constructing a match whose
-        # version the regex admits but the parser rejects is impossible here
-        # (the regex is dotted-numeric); assert the parser contract instead.
-        self.assertIsNone(cve.parse_version("3.6.3rc1"))
+
+class LoadErrorTests(unittest.TestCase):
+    def expect_systemexit(self, deps):
+        path = write_allowlist(deps)
+        try:
+            with self.assertRaises(SystemExit):
+                cve.load_floor(path)
+        finally:
+            pathlib.Path(path).unlink()
+
+    def test_empty_deps(self):
+        self.expect_systemexit([])
+
+    def test_legacy_min_version_rejected(self):
+        path = write_allowlist([{"name": "openssl", "minVersion": "3.6.3"}])
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                cve.load_floor(path)
+            self.assertIn("generate-crypto-allowlist", str(ctx.exception))
+        finally:
+            pathlib.Path(path).unlink()
+
+    def test_empty_known_good(self):
+        self.expect_systemexit([{"name": "openssl", "knownGood": []}])
+
+    def test_cross_dep_identity_rejected(self):
+        self.expect_systemexit([
+            {"name": "openssl", "knownGood": [{"storePath": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-sqlite-3.53.2"}]},
+        ])
+
+    def test_invalid_store_path(self):
+        self.expect_systemexit([{"name": "openssl", "knownGood": [{"storePath": "openssl"}]}])
 
 
 class CliExitCodeTests(unittest.TestCase):
-    H = "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-"
+    def setUp(self):
+        self.floor_path = sample_allowlist()
+
+    def tearDown(self):
+        pathlib.Path(self.floor_path).unlink()
 
     def test_clean_closure_passes(self):
         rc, out, _ = run_cli([
-            self.H + "openssl-3.6.3",
-            self.H + "openssl-3.6.3-dev",
-            self.H + "sqlite-3.53.2",
-            self.H + "openssl-3.6.3.tar.gz",  # artifact, skipped
-        ])
+            "/nix/store/" + KG_OPENSSL_OUT,
+            "/nix/store/" + KG_OPENSSL_BIN,
+            "/nix/store/" + KG_SQLITE_OUT,
+            "/nix/store/77777777777777777777777777777777-openssl-3.6.3.tar.gz",  # artifact, skipped
+        ], self.floor_path)
         self.assertEqual(rc, 0, out)
         self.assertIn("clean", out)
 
-    def test_stock_openssl_fails(self):
-        rc, _, err = run_cli([self.H + "openssl-3.6.2-bin"])
+    def test_off_allowlist_openssl_fails(self):
+        rc, _, err = run_cli(["/nix/store/" + OFF_OPENSSL], self.floor_path)
         self.assertEqual(rc, 1)
-        self.assertIn("openssl-3.6.2 (floor 3.6.3)", err)
+        self.assertIn("off-allowlist openssl", err)
 
-    def test_stock_sqlite_fails(self):
-        rc, _, err = run_cli([self.H + "sqlite-3.51.2"])
-        self.assertEqual(rc, 1)
-        self.assertIn("sqlite-3.51.2 (floor 3.53.2)", err)
 
-    def test_old_major_fails(self):
-        rc, _, err = run_cli([self.H + "openssl-3.5.6"])
-        self.assertEqual(rc, 1)
-        self.assertIn("openssl-3.5.6", err)
+class CommittedFloorTests(unittest.TestCase):
+    """The committed allowlist must be well-formed (loadable, non-vacuous) so a
+    malformed regenerate can't silently disable the gate."""
 
-    def test_higher_patch_passes_numeric_not_string(self):
-        rc, out, _ = run_cli([self.H + "openssl-3.6.10"])
-        self.assertEqual(rc, 0, out)
+    def test_committed_floor_loads_with_known_good_identities(self):
+        allowlist = cve.load_floor(str(COMMITTED_FLOOR))
+        self.assertIn("openssl", allowlist)
+        self.assertIn("sqlite", allowlist)
+        self.assertTrue(allowlist["openssl"], "openssl allowlist must be non-empty")
+        self.assertTrue(allowlist["sqlite"], "sqlite allowlist must be non-empty")
+        # A committed openssl identity passes; a fabricated one default-denies.
+        dep_re = cve.build_dep_re(allowlist)
+        one_openssl = next(iter(allowlist["openssl"]))
+        self.assertIsNone(cve.evaluate_component(one_openssl, allowlist, dep_re))
+        self.assertIsNotNone(
+            cve.evaluate_component("00000000000000000000000000000000-openssl-3.6.3", allowlist, dep_re)
+        )
 
 
 if __name__ == "__main__":

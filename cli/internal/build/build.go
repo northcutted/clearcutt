@@ -279,7 +279,7 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 			{Name: "Syft SBOM Generation", Status: "passed"},
 			{Name: "Grype Vulnerability Gating", Status: grype},
 			{Name: "Closure Purity (distroless boundary)", Status: closureStatus},
-			{Name: "Runtime-Patch Completeness (CVE floor)", Status: runtimeStatus},
+			{Name: "Runtime-Patch Completeness (crypto identity allowlist)", Status: runtimeStatus},
 		},
 	}
 

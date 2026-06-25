@@ -277,16 +277,17 @@ certify_target() {
   # C1.6. Runtime-patch completeness gate: the CVE keystone. For any runtime
   # target that ships the openssl-linked runtime (slim + distroless — dev is
   # non-blocking and intentionally stock), walk the SHIPPED closure of the
-  # built archive and fail if any openssl/sqlite store path is below the
-  # committed floor (tests/runtime-dep-floor.json). Default-deny, so a stock
-  # 3.6.2 or an unpatched older major is a hard failure, never a silent ship.
-  # Mirrors the closurePurity predicate and the verify.sh / flake-check gates.
+  # built archive and fail if any openssl/sqlite store path's IDENTITY is not on
+  # the committed known-good allowlist (tests/runtime-dep-floor.json).
+  # Default-deny, so an off-allowlist crypto build is a hard failure, never a
+  # silent ship. Mirrors the closurePurity predicate and the verify.sh /
+  # flake-check gates.
   local runtime_patch_status="skipped"
   local runtime_patch_bool="null"
   if [[ "$target_kind" == "runtime" && ( "$tier" == "slim" || "$tier" == "distroless" ) ]]; then
     local pipeline_dir
     pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    log_info "Executing runtime-patch completeness gate (unpatched openssl/sqlite below floor) on $tier target..."
+    log_info "Executing runtime-patch completeness gate (off-allowlist openssl/sqlite identity) on $tier target..."
     if python3 "$pipeline_dir/../tests/closure-cve-check.py" "$uncompressed_tar" \
       --floor "$pipeline_dir/../tests/runtime-dep-floor.json"; then
       runtime_patch_status="passed"

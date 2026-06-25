@@ -409,6 +409,45 @@
           });
       };
 
+      # Known-good crypto identity surface for the runtime-patch completeness
+      # gate. The gate (tests/closure-cve-check.py and its Go port) asserts the
+      # CVE patch-state of shipped openssl/sqlite by IDENTITY — the exact store
+      # path — not by version. This output resolves, per Linux system, the store
+      # paths of the crypto-overlaid openssl/sqlite across EVERY shipped crypto
+      # set (the main runtime pin plus the .NET and node unstable pins, which
+      # build their own openssl/sqlite from their own nixpkgs revs), with full
+      # provenance (pin name + locked rev + output + version). It is pure
+      # evaluation — no build — so `clearcutt remediation generate-crypto-allowlist`
+      # can stamp the committed allowlist (tests/runtime-dep-floor.json) locally
+      # and it will match the realized closure in CI (same lock → same paths).
+      cryptoIdentities = forLinuxSystems (system:
+        let
+          cryptoSets = [
+            { pinName = "nixpkgs"; rev = nixpkgs.rev or "unlocked"; pkgs = importCryptoRuntimeNixpkgs system; }
+            { pinName = "nixpkgs-dotnet"; rev = nixpkgs-dotnet.rev or "unlocked"; pkgs = importDotnetCryptoNixpkgs system; }
+            { pinName = "nixpkgs-node"; rev = nixpkgs-node.rev or "unlocked"; pkgs = importNodeCryptoNixpkgs system; }
+          ];
+          # The tracked crypto deps are exactly the packages runtimeCryptoOverlay
+          # rebinds to the patched build; each carries the CVE it remediates.
+          trackedDeps = [
+            { name = "openssl"; cve = "CVE-2026-34182"; sel = p: p.openssl; }
+            { name = "sqlite"; cve = "CVE-2026-11822"; sel = p: p.sqlite; }
+          ];
+          idsFor = set: dep:
+            let drv = dep.sel set.pkgs;
+            in map (o: {
+              inherit (dep) name cve;
+              inherit system;
+              pin = set.pinName;
+              rev = set.rev;
+              output = o;
+              version = drv.version;
+              storePath = baseNameOf (builtins.getAttr o drv).outPath;
+            }) drv.outputs;
+        in
+        nixpkgs.lib.concatMap (set: nixpkgs.lib.concatMap (dep: idsFor set dep) trackedDeps) cryptoSets
+      );
+
       # Closure-purity security gate for `nix flake check`, Linux-only because
       # the OCI image matrix is only exposed for Linux systems. For each
       # representative distroless image, closureInfo materializes the full

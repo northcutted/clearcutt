@@ -357,38 +357,38 @@ test_fleet_matrix_synced() {
 }
 
 test_runtime_floor_synced() {
-  log_section "Governance Gate: Policy-Derived Runtime Floor Sync (core/tests/runtime-dep-floor.json)"
+  log_section "Governance Gate: Known-Good Crypto Identity Allowlist Sync (core/tests/runtime-dep-floor.json)"
 
-  # The floor's policy defaults are conservative and self-contained, so it does
-  # not need the fleet config — derive the repo root from this script's own path
-  # (core/tests/verify.sh) so the gate works regardless of CWD.
+  # Derive the repo root from this script's own path (core/tests/verify.sh) so
+  # the gate works regardless of CWD.
   local repo_root
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-  local overlays_dir="${repo_root}/core/overlays/cve"
+  local flake_dir="${repo_root}/core"
   local floor_out="${repo_root}/core/tests/runtime-dep-floor.json"
 
-  # The floor membership is policy-derived (fleet.Materiality over the CVE
-  # overlay evidence): a version-bump overlay is floored only when its CVE clears
-  # the risk bar. This gate fails if the committed floor has drifted from what the
-  # policy + evidence would generate, so the closure-cve-check.py default-deny
-  # gate can never silently lose (or gain) a floored crypto dep. The gate
-  # MECHANISM is untouched; only its membership is regenerated here.
-  log_info "Verifying core/tests/runtime-dep-floor.json matches the policy-derived floor via 'clearcutt remediation generate-floor --check'..."
+  # The allowlist is the resolved store-path IDENTITIES of the patched
+  # openssl/sqlite across every shipped crypto set, evaluated from the flake's
+  # cryptoIdentities output. This gate fails if the committed allowlist has
+  # drifted from what the flake now resolves (a crypto rebuild without a
+  # regenerate, or vice versa), so the closure-cve-check.py default-deny gate can
+  # never silently lose (or gain) a known-good crypto identity. Requires nix
+  # (pure eval, no build).
+  log_info "Verifying core/tests/runtime-dep-floor.json matches the flake-resolved crypto identities via 'clearcutt remediation generate-crypto-allowlist --check'..."
   local cli
   cli="$(find_clearcutt_cli || true)"
   if [[ -n "$cli" ]]; then
-    if ! "$cli" remediation generate-floor --check --overlays-dir "$overlays_dir" --out "$floor_out"; then
-      log_fail "core/tests/runtime-dep-floor.json is out of sync with the policy-derived floor. Regenerate it: clearcutt remediation generate-floor"
+    if ! "$cli" remediation generate-crypto-allowlist --check --flake-dir "$flake_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the flake-resolved crypto identities. Regenerate it: clearcutt remediation generate-crypto-allowlist"
     fi
   else
     log_info "No clearcutt binary found; running the CLI from ${repo_root}/cli via go run."
-    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt remediation generate-floor --check --overlays-dir "$overlays_dir" --out "$floor_out"; then
-      log_fail "core/tests/runtime-dep-floor.json is out of sync with the policy-derived floor. Regenerate it: clearcutt remediation generate-floor"
+    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt remediation generate-crypto-allowlist --check --flake-dir "$flake_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the flake-resolved crypto identities. Regenerate it: clearcutt remediation generate-crypto-allowlist"
     fi
   fi
 
-  log_pass "Policy-derived runtime floor is in sync with the overlay evidence."
+  log_pass "Known-good crypto identity allowlist is in sync with the flake."
 }
 
 # ----------------------------------------------------
@@ -630,10 +630,10 @@ test_distroless_boundaries() {
 
   # Runtime-patch completeness (the CVE keystone): walk the SHIPPED closure
   # of both the slim and distroless tiers — slim ships the openssl-linked
-  # runtime too — and fail if any openssl/sqlite store path is below the
-  # committed floor (tests/runtime-dep-floor.json). Default-deny, so a stock
-  # 3.6.2 or an unpatched older major is a hard failure here, not a silent
-  # ship. Same image archives that the purity gate already consumes.
+  # runtime too — and fail if any openssl/sqlite store path's IDENTITY is not on
+  # the committed known-good allowlist (tests/runtime-dep-floor.json).
+  # Default-deny, so an off-allowlist crypto build is a hard failure here, not a
+  # silent ship. Same image archives that the purity gate already consumes.
   local slim_tar="build-outputs/coreLTS-slim.tar.gz"
   if [ ! -f "$slim_tar" ]; then
     log_info "Slim image tarball not found for runtime-cve gate. Invoking build runner..."
@@ -643,7 +643,7 @@ test_distroless_boundaries() {
     rm -f "$slim_link"
   fi
 
-  log_info "Walking slim + distroless /nix/store closures for unpatched openssl/sqlite (floor: tests/runtime-dep-floor.json)..."
+  log_info "Walking slim + distroless /nix/store closures for off-allowlist openssl/sqlite identities (allowlist: tests/runtime-dep-floor.json)..."
   # Native-Go gate (clearcutt verify runtime-cve), the port of
   # tests/closure-cve-check.py, with the same CLI-or-`go run` fallback as the
   # closure-purity gate above.
@@ -658,7 +658,7 @@ test_distroless_boundaries() {
       "$(pwd)/$slim_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
   fi
   if [[ "$rc_failed" -ne 0 ]]; then
-    log_fail "Slim runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
+    log_fail "Slim runtime-patch completeness violated: the shipped closure carries an off-allowlist openssl/sqlite identity (see findings above)."
   fi
   rc_failed=0
   if [[ -n "$cli" ]]; then
@@ -668,7 +668,7 @@ test_distroless_boundaries() {
       "$(pwd)/$build_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
   fi
   if [[ "$rc_failed" -ne 0 ]]; then
-    log_fail "Distroless runtime-patch completeness violated: the shipped closure carries an unpatched openssl/sqlite below the floor (see findings above)."
+    log_fail "Distroless runtime-patch completeness violated: the shipped closure carries an off-allowlist openssl/sqlite identity (see findings above)."
   fi
 
   log_pass "Runtime-patch completeness verified: slim + distroless ship only patched openssl/sqlite."

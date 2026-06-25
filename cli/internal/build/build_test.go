@@ -94,10 +94,22 @@ func gzippedDockerArchive(t *testing.T, layer []byte) []byte {
 	return gz.Bytes()
 }
 
+// testFloorPath writes a known-good crypto identity allowlist. The aaaa.../bbbb...
+// openssl-3.6.3 identities are the patched builds the certify tests ship; the
+// stock aaaa...-openssl-3.6.2 (a DIFFERENT store component) is absent, so it
+// default-denies.
 func testFloorPath(t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "floor.json")
-	body := `{"deps":[{"name":"openssl","minVersion":"3.6.3"},{"name":"sqlite","minVersion":"3.53.2"}]}`
+	body := `{"deps":[
+  {"name":"openssl","cve":"CVE-2026-34182","knownGood":[
+    {"storePath":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3"},
+    {"storePath":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3"}
+  ]},
+  {"name":"sqlite","cve":"CVE-2026-11822","knownGood":[
+    {"storePath":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-sqlite-3.53.2"}
+  ]}
+]}`
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

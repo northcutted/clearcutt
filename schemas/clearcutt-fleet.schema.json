@@ -342,6 +342,10 @@
               "type": "integer",
               "minimum": 0
             },
+            "cryptoTrust": {
+              "description": "How the known-good crypto build (openssl/sqlite) is trusted. nixpkgs (default): trust the pin's patched build, substitute from cache, and VEX the scanner version gap. reproduce: also independently rebuild the crypto closure and byte-compare it against the substituted build (trust AND verify); a divergence fails the release evidence.",
+              "enum": ["nixpkgs", "reproduce"]
+            },
             "requireRuntimeLayer": {
               "description": "Deprecated: use reachability. true maps to reachability=runtime, false to any.",
               "type": "boolean"

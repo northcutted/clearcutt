@@ -195,6 +195,16 @@ type RemediationPolicy struct {
 	RequireFixedVersion *bool `json:"requireFixedVersion,omitempty"`
 	// AcceptedExpiryDays backstops auto-recorded acceptances (re-evaluated each scan).
 	AcceptedExpiryDays int `json:"acceptedExpiryDays,omitempty"`
+	// CryptoTrust selects how the known-good crypto build (openssl/sqlite) is
+	// trusted by the runtime-patch completeness gate and the substitute-first
+	// sourcing. "nixpkgs" (default): trust the pin's patched build, substitute it
+	// from cache, and VEX the scanner version gap. "reproduce": everything nixpkgs
+	// does, plus an independent rebuild of the crypto closure byte-compared against
+	// the substituted build (trust AND verify); a divergence fails the release
+	// evidence. Both ship only provenance-allowlisted crypto identities, so the
+	// gate is identical — only whether a reproducibility compare is also required
+	// differs.
+	CryptoTrust string `json:"cryptoTrust,omitempty"`
 
 	// Deprecated — retained for back-compat; normalized into the fields above by
 	// EffectiveRemediationPolicy. RequireRuntimeLayer -> Reachability,
@@ -666,8 +676,15 @@ func DefaultRemediationPolicy() RemediationPolicy {
 		RequireRuntimeLayer:   boolPtr(true),
 		EPSSPercentileBoostAt: 0.90,
 		KEVBoost:              boolPtr(true),
+		CryptoTrust:           "nixpkgs",
 	}
 }
+
+// CryptoTrust modes for RemediationPolicy.CryptoTrust.
+const (
+	CryptoTrustNixpkgs   = "nixpkgs"
+	CryptoTrustReproduce = "reproduce"
+)
 
 func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	def := DefaultRemediationPolicy()
@@ -714,6 +731,9 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	if policy.AcceptedExpiryDays == 0 {
 		policy.AcceptedExpiryDays = def.AcceptedExpiryDays
 	}
+	if policy.CryptoTrust == "" {
+		policy.CryptoTrust = def.CryptoTrust
+	}
 	return policy
 }
 
@@ -754,6 +774,11 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 	}
 	if policy.AcceptedExpiryDays < 0 {
 		return fmt.Errorf("remediation.policy.acceptedExpiryDays must not be negative")
+	}
+	switch strings.ToLower(policy.CryptoTrust) {
+	case CryptoTrustNixpkgs, CryptoTrustReproduce:
+	default:
+		return fmt.Errorf("unsupported remediation.policy.cryptoTrust %q (use nixpkgs or reproduce)", policy.CryptoTrust)
 	}
 	return nil
 }

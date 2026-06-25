@@ -7,264 +7,228 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/northcutted/clearcutt/internal/certify"
 	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
-// writeFloorEvidence drops a *.evidence.json into dir for the floor generator.
-func writeFloorEvidence(t *testing.T, dir, name string, body map[string]any) {
-	t.Helper()
-	raw, err := json.MarshalIndent(body, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal evidence: %v", err)
+// fakeResolver returns canned identities per system, mimicking the flake's
+// cryptoIdentities output without invoking nix.
+type fakeResolver struct {
+	bySystem map[string][]CryptoIdentity
+	err      error
+}
+
+func (f fakeResolver) Resolve(system string) ([]CryptoIdentity, error) {
+	if f.err != nil {
+		return nil, f.err
 	}
-	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o644); err != nil {
-		t.Fatalf("write evidence: %v", err)
+	return f.bySystem[system], nil
+}
+
+func opensslID(system, output, hash string) CryptoIdentity {
+	return CryptoIdentity{
+		Name: "openssl", CVE: "CVE-2026-34182", System: system, Pin: "nixpkgs",
+		Rev: "abc123", Output: output, Version: "3.6.3", StorePath: hash + "-openssl-3.6.3" + suffix(output),
 	}
 }
 
-func opensslEvidence() map[string]any {
-	return map[string]any{
-		"cve":         "CVE-2026-34182",
-		"package":     "openssl",
-		"riskFactors": map[string]any{"knownExploited": false, "severity": "critical"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-34182", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3"},
+func sqliteID(system, output, hash string) CryptoIdentity {
+	return CryptoIdentity{
+		Name: "sqlite", CVE: "CVE-2026-11822", System: system, Pin: "nixpkgs",
+		Rev: "abc123", Output: output, Version: "3.53.2", StorePath: hash + "-sqlite-3.53.2" + suffix(output),
+	}
+}
+
+func suffix(output string) string {
+	if output == "out" {
+		return ""
+	}
+	return "-" + output
+}
+
+func sampleResolver() fakeResolver {
+	return fakeResolver{bySystem: map[string][]CryptoIdentity{
+		"x86_64-linux": {
+			opensslID("x86_64-linux", "out", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			opensslID("x86_64-linux", "bin", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+			sqliteID("x86_64-linux", "out", "cccccccccccccccccccccccccccccccc"),
 		},
-	}
-}
-
-func sqliteEvidence() map[string]any {
-	return map[string]any{
-		"cve":         "CVE-2026-11822",
-		"package":     "sqlite",
-		"riskFactors": map[string]any{"knownExploited": false, "severity": "high"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-11822", "package": "sqlite", "installedVersion": "3.51.2", "fixedVersion": "3.53.2"},
+		"aarch64-linux": {
+			opensslID("aarch64-linux", "out", "dddddddddddddddddddddddddddddddd"),
+			sqliteID("aarch64-linux", "out", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
 		},
-	}
+	}}
 }
 
-func floorByName(deps []RuntimeFloorDep) map[string]string {
-	m := map[string]string{}
-	for _, d := range deps {
-		m[d.Name] = d.MinVersion
-	}
-	return m
-}
-
-func TestGenerateRuntimeFloorDefaultPolicyFloorsCryptoDeps(t *testing.T) {
-	dir := t.TempDir()
-	writeFloorEvidence(t, dir, "openssl.evidence.json", opensslEvidence())
-	writeFloorEvidence(t, dir, "sqlite.evidence.json", sqliteEvidence())
-
-	floor, warnings, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
+func TestGenerateCryptoAllowlistGroupsAndSorts(t *testing.T) {
+	allowlist, err := generateCryptoAllowlist(sampleResolver(), []string{"x86_64-linux", "aarch64-linux"}, fleet.DefaultRemediationPolicy())
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	if len(warnings) != 0 {
-		t.Fatalf("expected no conservative-default warnings, got %v", warnings)
+	if allowlist.Trust != "nixpkgs" {
+		t.Errorf("expected default trust nixpkgs, got %q", allowlist.Trust)
 	}
-	got := floorByName(floor.Deps)
-	if got["openssl"] != "3.6.3" || got["sqlite"] != "3.53.2" {
-		t.Fatalf("unexpected floor deps: %+v", floor.Deps)
+	if allowlist.SchemaVersion != runtimeFloorSchemaVersion {
+		t.Errorf("unexpected schema version %q", allowlist.SchemaVersion)
 	}
-	// Deps are sorted by name for a stable diff.
-	if floor.Deps[0].Name != "openssl" || floor.Deps[1].Name != "sqlite" {
-		t.Fatalf("deps not sorted by name: %+v", floor.Deps)
+	if len(allowlist.Deps) != 2 {
+		t.Fatalf("expected 2 deps (openssl, sqlite), got %d", len(allowlist.Deps))
 	}
-	if len(floor.Accepted) != 0 {
-		t.Fatalf("expected nothing accepted under default policy, got %+v", floor.Accepted)
+	// Deps sorted: openssl before sqlite.
+	if allowlist.Deps[0].Name != "openssl" || allowlist.Deps[1].Name != "sqlite" {
+		t.Errorf("deps not sorted: %q, %q", allowlist.Deps[0].Name, allowlist.Deps[1].Name)
+	}
+	// openssl: 2 (x86) + 1 (aarch) = 3 known-good.
+	if got := len(allowlist.Deps[0].KnownGood); got != 3 {
+		t.Errorf("expected 3 openssl identities, got %d", got)
+	}
+	if allowlist.Deps[0].CVE != "CVE-2026-34182" {
+		t.Errorf("unexpected openssl cve %q", allowlist.Deps[0].CVE)
 	}
 }
 
-func TestGenerateRuntimeFloorLoosenedPolicyDropsBelowBar(t *testing.T) {
-	dir := t.TempDir()
-	writeFloorEvidence(t, dir, "openssl.evidence.json", opensslEvidence())
-	writeFloorEvidence(t, dir, "sqlite.evidence.json", sqliteEvidence())
+func TestGenerateCryptoAllowlistDedupsByStorePath(t *testing.T) {
+	// Both systems resolve the SAME store path (the coincidence the real pins
+	// exhibit). It must appear once.
+	r := fakeResolver{bySystem: map[string][]CryptoIdentity{
+		"x86_64-linux":  {opensslID("x86_64-linux", "out", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+		"aarch64-linux": {opensslID("aarch64-linux", "out", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+	}}
+	allowlist, err := generateCryptoAllowlist(r, []string{"x86_64-linux", "aarch64-linux"}, fleet.DefaultRemediationPolicy())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(allowlist.Deps) != 1 || len(allowlist.Deps[0].KnownGood) != 1 {
+		t.Fatalf("expected 1 deduped identity, got %+v", allowlist.Deps)
+	}
+}
 
-	// minimumSeverity=critical: sqlite (high) drops below the bar; openssl stays.
+func TestGenerateCryptoAllowlistRecordsReproduceTrust(t *testing.T) {
 	policy := fleet.DefaultRemediationPolicy()
-	policy.MinimumSeverity = "critical"
-
-	floor, _, err := generateRuntimeFloor(dir, policy)
+	policy.CryptoTrust = fleet.CryptoTrustReproduce
+	allowlist, err := generateCryptoAllowlist(sampleResolver(), []string{"x86_64-linux"}, policy)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	got := floorByName(floor.Deps)
-	if _, ok := got["sqlite"]; ok {
-		t.Fatalf("sqlite should be dropped under critical-only policy, got %+v", floor.Deps)
-	}
-	if got["openssl"] != "3.6.3" {
-		t.Fatalf("openssl should stay floored, got %+v", floor.Deps)
-	}
-	if len(floor.Accepted) != 1 || floor.Accepted[0].Name != "sqlite" || floor.Accepted[0].Reason != "below_risk_threshold" {
-		t.Fatalf("expected sqlite recorded as policy-accepted below_risk_threshold, got %+v", floor.Accepted)
+	if allowlist.Trust != "reproduce" {
+		t.Errorf("expected trust reproduce, got %q", allowlist.Trust)
 	}
 }
 
-func TestGenerateRuntimeFloorKEVAlwaysFloorsLowSeverity(t *testing.T) {
-	dir := t.TempDir()
-	// A low-severity but KEV-listed version-bump CVE must stay floored even under
-	// a critical-only severity policy: kev:always is the non-loosenable guardrail.
-	writeFloorEvidence(t, dir, "kev.evidence.json", map[string]any{
-		"cve":         "CVE-2026-99999",
-		"package":     "openssl",
-		"riskFactors": map[string]any{"knownExploited": true, "severity": "low"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-99999", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3"},
-		},
-	})
+func TestGenerateCryptoAllowlistEmptyResolutionFailsClosed(t *testing.T) {
+	r := fakeResolver{bySystem: map[string][]CryptoIdentity{"x86_64-linux": {}}}
+	if _, err := generateCryptoAllowlist(r, []string{"x86_64-linux"}, fleet.DefaultRemediationPolicy()); err == nil {
+		t.Fatal("expected error on empty resolution (vacuous allowlist)")
+	}
+}
 
-	policy := fleet.DefaultRemediationPolicy()
-	policy.MinimumSeverity = "critical"
-	policy.EPSSPercentile = 0.99
-
-	floor, _, err := generateRuntimeFloor(dir, policy)
+// The generated file must be loadable by the gate AND must pass for the resolved
+// identities — the end-to-end contract between generator and gate.
+func TestGeneratedAllowlistLoadsAndGatesByIdentity(t *testing.T) {
+	allowlist, err := generateCryptoAllowlist(sampleResolver(), []string{"x86_64-linux", "aarch64-linux"}, fleet.DefaultRemediationPolicy())
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	if floorByName(floor.Deps)["openssl"] != "3.6.3" {
-		t.Fatalf("KEV finding must stay floored regardless of severity, got %+v", floor.Deps)
+	p := filepath.Join(t.TempDir(), "runtime-dep-floor.json")
+	if err := writeCryptoAllowlistFile(p, allowlist); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	floor, err := certify.LoadRuntimeDepFloor(p)
+	if err != nil {
+		t.Fatalf("gate failed to load generated allowlist: %v", err)
+	}
+	paths := filepath.Join(t.TempDir(), "store-paths")
+	body := "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3\n" + // known-good
+		"/nix/store/cccccccccccccccccccccccccccccccc-sqlite-3.53.2\n" // known-good
+	if err := os.WriteFile(paths, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := certify.ScanStorePathsForRuntimeCve(paths, floor)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if !res.Clean() {
+		t.Fatalf("expected clean for known-good identities, got: %v", res.Violations)
+	}
+
+	// An off-allowlist openssl fails.
+	bad := filepath.Join(t.TempDir(), "bad-paths")
+	if err := os.WriteFile(bad, []byte("/nix/store/99999999999999999999999999999999-openssl-3.6.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err = certify.ScanStorePathsForRuntimeCve(bad, floor)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if res.Clean() {
+		t.Fatal("expected off-allowlist openssl to violate")
 	}
 }
 
-func TestGenerateRuntimeFloorSkipsFetchpatchNoVersionBump(t *testing.T) {
-	dir := t.TempDir()
-	writeFloorEvidence(t, dir, "openssl.evidence.json", opensslEvidence())
-	// A fetchpatch overlay (CPython branch patch) keeps the version: no
-	// fixedVersion, so it is not version-floorable and must be skipped.
-	writeFloorEvidence(t, dir, "python.evidence.json", map[string]any{
-		"cve":         "CVE-2026-7210",
-		"package":     "python313",
-		"riskFactors": map[string]any{"knownExploited": false, "severity": "high"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-7210", "package": "python", "installedVersion": "3.13.13"},
-		},
-	})
-
-	floor, _, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
+func TestCheckCryptoAllowlistInSync(t *testing.T) {
+	allowlist, err := generateCryptoAllowlist(sampleResolver(), []string{"x86_64-linux"}, fleet.DefaultRemediationPolicy())
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	got := floorByName(floor.Deps)
-	if _, ok := got["python313"]; ok {
-		t.Fatalf("fetchpatch overlay should not be version-floored, got %+v", floor.Deps)
+	p := filepath.Join(t.TempDir(), "floor.json")
+	if err := writeCryptoAllowlistFile(p, allowlist); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	if _, ok := got["python"]; ok {
-		t.Fatalf("fetchpatch overlay should not be version-floored, got %+v", floor.Deps)
-	}
-	if got["openssl"] != "3.6.3" {
-		t.Fatalf("openssl should still be floored, got %+v", floor.Deps)
-	}
-}
 
-func TestGenerateRuntimeFloorConservativeDefaultWhenUngated(t *testing.T) {
-	dir := t.TempDir()
-	// No structured severity/EPSS/KEV: the policy cannot evaluate it, so it is
-	// floored conservatively (fail-closed) and flagged — never silently dropped.
-	writeFloorEvidence(t, dir, "ungated.evidence.json", map[string]any{
-		"cve":         "CVE-2026-55555",
-		"package":     "openssl",
-		"riskFactors": map[string]any{"knownExploited": false},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-55555", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3"},
-		},
-	})
+	prevOut, prevQuiet := runtimeFloorOpts.out, GlobalOpts.Quiet
+	GlobalOpts.Quiet = true
+	defer func() { runtimeFloorOpts.out, GlobalOpts.Quiet = prevOut, prevQuiet }()
+	runtimeFloorOpts.out = p
 
-	floor, warnings, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
+	// In sync.
+	if err := checkCryptoAllowlistInSync(p, allowlist); err != nil {
+		t.Errorf("expected in sync, got: %v", err)
+	}
+
+	// Drift: regenerate with an extra resolved identity.
+	r2 := sampleResolver()
+	r2.bySystem["x86_64-linux"] = append(r2.bySystem["x86_64-linux"], opensslID("x86_64-linux", "dev", "ffffffffffffffffffffffffffffffff"))
+	want2, err := generateCryptoAllowlist(r2, []string{"x86_64-linux"}, fleet.DefaultRemediationPolicy())
 	if err != nil {
-		t.Fatalf("generate: %v", err)
+		t.Fatalf("generate2: %v", err)
 	}
-	if floorByName(floor.Deps)["openssl"] != "3.6.3" {
-		t.Fatalf("ungated evidence should be floored conservatively, got %+v", floor.Deps)
-	}
-	if len(warnings) != 1 {
-		t.Fatalf("expected one conservative-default warning, got %v", warnings)
-	}
-}
-
-func TestGenerateRuntimeFloorPicksMaxFixedVersion(t *testing.T) {
-	dir := t.TempDir()
-	writeFloorEvidence(t, dir, "openssl.evidence.json", map[string]any{
-		"cve":         "CVE-2026-34182",
-		"package":     "openssl",
-		"riskFactors": map[string]any{"knownExploited": false, "severity": "critical"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-34182", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3"},
-			{"cve": "CVE-2026-34999", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.10"},
-			{"cve": "CVE-2026-34000", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3-rc1"},
-		},
-	})
-
-	floor, _, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
-	if err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	// 3.6.10 > 3.6.3 (tuple, not string); 3.6.3-rc1 is non-numeric and skipped.
-	if got := floorByName(floor.Deps)["openssl"]; got != "3.6.10" {
-		t.Fatalf("expected max clean version 3.6.10, got %q", got)
-	}
-}
-
-func TestGenerateRuntimeFloorEmptyGuard(t *testing.T) {
-	dir := t.TempDir() // no evidence files
-	_, _, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
+	err = checkCryptoAllowlistInSync(p, want2)
 	if err == nil {
-		t.Fatal("expected an error for an empty floor, got nil")
+		t.Fatal("expected drift error")
+	}
+	if !strings.Contains(err.Error(), "out of sync") {
+		t.Errorf("unexpected drift error: %v", err)
 	}
 }
 
-// A must_fix overlay whose only fix versions are malformed must fail closed, not
-// silently vanish from the gate (the silent-loss failure class).
-func TestGenerateRuntimeFloorFailsClosedOnMalformedMustFixVersion(t *testing.T) {
-	dir := t.TempDir()
-	writeFloorEvidence(t, dir, "bad.evidence.json", map[string]any{
-		"cve":         "CVE-2026-7",
-		"package":     "openssl",
-		"riskFactors": map[string]any{"knownExploited": false, "severity": "critical"},
-		"expectedRemoved": []map[string]any{
-			{"cve": "CVE-2026-7", "package": "openssl", "installedVersion": "3.6.2", "fixedVersion": "3.6.3-rc1"},
+func TestNixEvalResolverDecodesJSON(t *testing.T) {
+	ids := []CryptoIdentity{
+		{Name: "openssl", CVE: "CVE-2026-34182", System: "x86_64-linux", Pin: "nixpkgs", Rev: "r", Output: "out", Version: "3.6.3", StorePath: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3"},
+	}
+	raw, _ := json.Marshal(ids)
+	r := nixEvalResolver{
+		flakeDir: "core",
+		runJSON: func(args ...string) ([]byte, error) {
+			// Sanity: the attr path is built correctly.
+			joined := strings.Join(args, " ")
+			if !strings.Contains(joined, "core#cryptoIdentities.x86_64-linux") {
+				t.Errorf("unexpected nix args: %v", args)
+			}
+			return raw, nil
 		},
-	})
-	_, _, err := generateRuntimeFloor(dir, fleet.DefaultRemediationPolicy())
-	if err == nil || !strings.Contains(err.Error(), "must_fix but no expectedRemoved.fixedVersion") {
-		t.Fatalf("expected fail-closed on a malformed must_fix version, got %v", err)
+	}
+	got, err := r.Resolve("x86_64-linux")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(got) != 1 || got[0].StorePath != ids[0].StorePath {
+		t.Fatalf("unexpected decode: %+v", got)
 	}
 }
 
-func TestRuntimeFloorAcceptedDrift(t *testing.T) {
-	want := []RuntimeFloorAcceptance{{Name: "sqlite", CVE: "CVE-1", Reason: "below_risk_threshold"}}
-	if runtimeFloorAcceptedDrift(nil, want) == "" {
-		t.Fatal("a newly-dropped dep should surface as accepted drift")
-	}
-	if runtimeFloorAcceptedDrift(want, want) != "" {
-		t.Fatal("identical accepted sets should report no drift")
-	}
-}
-
-func TestRuntimeFloorDepDrift(t *testing.T) {
-	have := []RuntimeFloorDep{{Name: "openssl", MinVersion: "3.6.2"}, {Name: "gone", MinVersion: "1.0"}}
-	want := []RuntimeFloorDep{{Name: "openssl", MinVersion: "3.6.3"}, {Name: "sqlite", MinVersion: "3.53.2"}}
-	drift := runtimeFloorDepDrift(have, want)
-	for _, expect := range []string{"openssl", "sqlite", "gone"} {
-		if !strings.Contains(drift, expect) {
-			t.Fatalf("drift should mention %q, got:\n%s", expect, drift)
-		}
-	}
-	if runtimeFloorDepDrift(want, want) != "" {
-		t.Fatal("identical floors should report no drift")
-	}
-}
-
-func TestIsCleanDottedNumeric(t *testing.T) {
-	for _, ok := range []string{"3", "3.6", "3.6.3", "3.53.2"} {
-		if !isCleanDottedNumeric(ok) {
-			t.Errorf("%q should be clean dotted-numeric", ok)
-		}
-	}
-	for _, bad := range []string{"", "3.6.3-rc1", "3.6.3a", "v3.6", "3..6", "3.x"} {
-		if isCleanDottedNumeric(bad) {
-			t.Errorf("%q should be rejected", bad)
-		}
+func TestSplitCommaList(t *testing.T) {
+	got := splitCommaList(" x86_64-linux , aarch64-linux ,")
+	if len(got) != 2 || got[0] != "x86_64-linux" || got[1] != "aarch64-linux" {
+		t.Fatalf("unexpected split: %v", got)
 	}
 }
