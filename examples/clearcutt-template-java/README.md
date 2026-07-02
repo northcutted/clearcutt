@@ -6,7 +6,7 @@ delivery.
 
 - build stage: ghcr.io/northcutted/clearcutt/clearcutt-java21:dev
 - runtime stage: ghcr.io/northcutted/clearcutt/clearcutt-java21:distroless
-- ClearCutt CLI release: northcutted/clearcutt@v0.10.2 (checksum and Sigstore bundle verified in CI)
+- ClearCutt CLI release: northcutted/clearcutt@v0.17.0 (checksum and Sigstore bundle verified in CI)
 - base id for policy/rebase: java21-distroless
 
 ## Local path

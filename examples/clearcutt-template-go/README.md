@@ -6,7 +6,7 @@ delivery.
 
 - build stage: ghcr.io/northcutted/clearcutt/clearcutt-go1.25:dev
 - runtime stage: ghcr.io/northcutted/clearcutt/clearcutt-go1.25:distroless
-- ClearCutt CLI release: northcutted/clearcutt@v0.10.2 (checksum and Sigstore bundle verified in CI)
+- ClearCutt CLI release: northcutted/clearcutt@v0.17.0 (checksum and Sigstore bundle verified in CI)
 - base id for policy/rebase: go1.25-distroless
 
 ## Local path

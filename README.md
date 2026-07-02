@@ -11,11 +11,12 @@ evidence-backed base images.**
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ClearCutt is a free, open-source platform kit for teams that want to own their
-container image supply chain. Fork it into your organization and operate an
-image fleet, release workflows configured for signing and attestation, catalog
-data, a static evidence portal, CI/CD gates, admission policy examples,
-app-team templates, and remediation workflows under **your** registry, GitHub
-Actions OIDC identities, and review process.
+container image supply chain. Use the CLI to scaffold a fleet repository, or
+fork the reference repo directly, then operate an image fleet, release workflows
+configured for signing and attestation, catalog data, a static evidence portal,
+CI/CD gates, admission policy examples, app-team templates, and remediation
+workflows under **your** registry, GitHub Actions OIDC identities, and review
+process.
 
 There is no hosted ClearCutt control plane. The repository is the control plane:
 your fork owns the configuration, builds, evidence, catalog, policies, and
@@ -25,9 +26,9 @@ operational burden.
 
 ## What It Is
 
-ClearCutt is best understood as a **forkable platform kit and reference
+ClearCutt is best understood as a **CLI-scaffolded platform kit and reference
 implementation**, not a hosted product. It provides the pieces a platform team
-can fork, configure, run, inspect, and adapt:
+can scaffold or fork, configure, run, inspect, and adapt:
 
 | Surface | What it does today | Owner |
 | --- | --- | --- |
@@ -105,7 +106,7 @@ Building from source stays the contributor path; see
 | Role | First document | First useful command |
 | --- | --- | --- |
 | App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
-| Platform owner | [Platform kit](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` |
+| Platform owner | [Platform kit](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform new ./golden-images --owner YOUR_ORG --repo golden-images` |
 | Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
 | Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,120p' docs/alternatives.md` |
 | Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |

@@ -1,19 +1,41 @@
 # Swapping the Container Registry
 
 ClearCutt defaults to **GHCR** (`ghcr.io`) authenticated with the workflow's
-built-in `GITHUB_TOKEN`. The release, pages, and rebase pipelines no longer
-hardcode the registry host or credentials — they read three repository settings,
-so a fork can point the whole supply chain at another registry **without editing
-any workflow YAML**.
+built-in `GITHUB_TOKEN`. Treat GHCR as the fully supported reference path for
+the current release. Other OCI registries are configurable, but they still need
+registry-specific validation for authentication, OCI referrers, GitHub
+attestations, and SLSA verification before a fork should rely on them.
 
-## The three knobs
+## The configuration source
+
+Image naming, release login host, and catalog enrichment login host are sourced
+from `clearcutt.fleet.yaml`:
+
+```yaml
+registry:
+  host: ghcr.io
+  owner: your-org
+  repository: your-fleet
+  imagePrefix: yourbrand
+```
+
+The release and catalog workflows call:
+
+```bash
+clearcutt platform registry-env --github-output "$GITHUB_OUTPUT"
+```
+
+That command emits non-secret values such as `host`, `registry_base`, and
+`username` from the fleet config and runner environment. Passwords are never
+emitted by the CLI.
+
+## The credential knobs
 
 Set these as GitHub Actions **repository (or organization) variables/secrets**
-(`Settings → Secrets and variables → Actions`):
+when the defaults are not enough (`Settings → Secrets and variables → Actions`):
 
 | Setting | Kind | Default when unset | Purpose |
 | --- | --- | --- | --- |
-| `CLEARCUTT_REGISTRY_HOST` | Variable | `ghcr.io` | Registry hostname used by every `docker login` and the SLSA provenance push. |
 | `CLEARCUTT_REGISTRY_USER` | Variable | `github.actor` | Login username / robot account. |
 | `CLEARCUTT_REGISTRY_TOKEN` | Secret | `GITHUB_TOKEN` | Login password / token. |
 
@@ -25,41 +47,30 @@ GitHub defaults.
 Because these default to the GitHub built-ins, **the canonical GHCR setup keeps
 working with nothing set.**
 
-## Also update the fleet config
-
-The knobs above control *authentication* in CI. Image **naming and push paths**
-are controlled by the CLI from `clearcutt.fleet.yaml`:
-
-```yaml
-registry:
-  host: ghcr.io          # <-- set to the same value as CLEARCUTT_REGISTRY_HOST
-  owner: your-org
-  repository: your-fleet
-  imagePrefix: yourbrand
-```
+## Localize the fleet config
 
 Run `clearcutt platform init --owner your-org --repo your-fleet` to localize the
-config, docs, admission policy, and app templates to the new identity. Keep
-`registry.host` and `CLEARCUTT_REGISTRY_HOST` in sync (a planned refinement will
-have the CLI emit the host as a workflow job output so there is a single source —
-see [analysis/cli-pivot-plan.md](analysis/cli-pivot-plan.md)).
+config, docs, admission policy, and app templates to the new identity. Then edit
+`registry.host` if you are not using GHCR.
 
-## Per-backend notes
+## Registry support tiers
 
-- **GHCR (default):** nothing to do.
-- **Generic token registries** (Harbor, Artifactory, Quay, Nexus, GitLab
-  Container Registry, Docker Hub): create a robot/service account, set
-  `CLEARCUTT_REGISTRY_HOST`, `CLEARCUTT_REGISTRY_USER`, and the
-  `CLEARCUTT_REGISTRY_TOKEN` secret. No workflow edits required.
-- **AWS ECR:** ECR issues short-lived tokens rather than a static password, so
-  the static-secret model does not fit directly. Until an `authMode` knob exists
-  (tracked in the pivot plan), add an `aws-actions/amazon-ecr-login` step (or set
-  `CLEARCUTT_REGISTRY_TOKEN` from `aws ecr get-login-password` in a preceding
-  step) ahead of the fleet jobs.
-- **Google Artifact Registry (GAR):** authenticate with
-  `google-github-actions/auth` (Workload Identity Federation recommended) and use
-  `oauth2accesstoken` as `CLEARCUTT_REGISTRY_USER` with the access token as the
-  token secret.
+- **Tier 1: GHCR reference path.** Default and release-tested path. Uses
+  `GITHUB_TOKEN`, GitHub Packages, GitHub Releases, GitHub Pages, GitHub-native
+  attestations, Cosign referrers, and SLSA verification together.
+- **Tier 2: generic token OCI registries.** Harbor, Artifactory, Quay, Nexus,
+  GitLab Container Registry, and Docker Hub can use robot/service credentials
+  through `registry.host`, `CLEARCUTT_REGISTRY_USER`, and
+  `CLEARCUTT_REGISTRY_TOKEN`. Before relying on the path, prove that Cosign v3
+  referrers, SBOM attestations, SLSA verification, and catalog enrichment work
+  against the target registry.
+- **Tier 3: cloud registries with short-lived auth.** AWS ECR and Google
+  Artifact Registry need an auth bootstrap step today. ECR can use
+  `aws-actions/amazon-ecr-login` or set `CLEARCUTT_REGISTRY_TOKEN` from
+  `aws ecr get-login-password`; GAR should use `google-github-actions/auth`
+  with Workload Identity Federation and `oauth2accesstoken` as the username.
+  These should be treated as integration work until an explicit `authMode`
+  selector lands.
 
 ## Known limitations
 
@@ -67,11 +78,12 @@ see [analysis/cli-pivot-plan.md](analysis/cli-pivot-plan.md)).
   `slsa-framework/slsa-github-generator` with `private-repository: true`; its
   registry credentials are parameterized from the same knobs, but confirm the
   reusable workflow supports your target registry before relying on it.
-- **Host double-source.** `CLEARCUTT_REGISTRY_HOST` (a CI variable) and
-  `registry.host` (in `clearcutt.fleet.yaml`) must currently be set
-  consistently. The pivot plan replaces this with a CLI-emitted job output.
 - **ECR/GAR short-lived auth** needs an extra auth step today (no `authMode`
   selector yet).
+
+Run `clearcutt platform status` after changing `registry.host`. It passes the
+GHCR reference path and warns for non-GHCR hosts until the fork has configured
+the credential variables above and proven registry-specific evidence behavior.
 
 ## Verify the swap
 

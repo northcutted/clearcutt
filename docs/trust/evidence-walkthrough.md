@@ -42,11 +42,20 @@ The workflow identity is a trust boundary. It must match the identity pinned in
   --digest "$IMAGE_DIGEST" \
   --repo YOUR_ORG/YOUR_REPO \
   --workflow-identity "$WORKFLOW_IDENTITY" \
-  --source-ref "$SOURCE_REF"
+  --source-ref "$SOURCE_REF" \
+  --core-dir core
 ```
 
 This is the ClearCutt wrapper around registry-side signature, SBOM, and SLSA
-checks for a published ref.
+checks for a published ref. In a scaffolded fleet repo, `--core-dir core` runs
+Cosign, SLSA verifier, and GitHub attestation verification through the pinned
+Nix backend.
+
+Release workflows also write the same checklist as
+`<image-id>.release-verification.json` and upload it as a GitHub Release asset.
+Use that file as durable proof of the registry-side verification result that ran
+at release time; rerun the command above when you need to re-check current
+registry state.
 
 ## 4. Verify Individual Channels Manually
 
