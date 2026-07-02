@@ -230,6 +230,12 @@ func runVerifyBoundarySuite() error {
 }
 
 func ensureBoundarySuiteArchive(coreDir, buildOutputs, target string) (string, error) {
+	// nix build runs with cwd=coreDir and resolves a relative --out-link there,
+	// while this process reads the link from its own cwd. Anchor to absolute.
+	buildOutputs, err := filepath.Abs(buildOutputs)
+	if err != nil {
+		return "", err
+	}
 	archive := filepath.Join(buildOutputs, target+".tar.gz")
 	if _, err := os.Stat(archive); err == nil {
 		return archive, nil

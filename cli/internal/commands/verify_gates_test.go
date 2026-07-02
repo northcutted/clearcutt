@@ -258,6 +258,11 @@ func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
 		if outLink == "" {
 			t.Fatalf("missing --out-link in %#v", c)
 		}
+		// Resolve like the real subprocess would: relative to c.Dir, not the
+		// test process cwd — so a relative out-link/cwd mismatch fails here.
+		if !filepath.IsAbs(outLink) {
+			outLink = filepath.Join(c.Dir, outLink)
+		}
 		if err := os.MkdirAll(filepath.Dir(outLink), 0o755); err != nil {
 			return err
 		}
@@ -277,6 +282,65 @@ func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing build arg %q in calls %#v", want, calls)
 		}
+	}
+	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
+		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {
+			t.Fatalf("expected built archive for %s: %v", target, err)
+		}
+	}
+}
+
+// Regression for the PR-gate failure: `verify boundary-suite --core-dir core`
+// runs nix with cwd=core, so a relative --out-link must still land where the
+// suite reads it from the repo root.
+func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
+	repoRoot := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	coreDir := filepath.Join(repoRoot, "core")
+	outDir := writeBoundarySuiteCore(t, coreDir)
+	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
+	}))
+	archiveRaw, err := os.ReadFile(cleanArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldRun := runExternalCommand
+	runExternalCommand = func(c externalCommand) error {
+		if c.Name != "nix" {
+			t.Fatalf("unexpected command: %#v", c)
+		}
+		outLink := ""
+		for i, arg := range c.Args {
+			if arg == "--out-link" && i+1 < len(c.Args) {
+				outLink = c.Args[i+1]
+			}
+		}
+		if outLink == "" {
+			t.Fatalf("missing --out-link in %#v", c)
+		}
+		if !filepath.IsAbs(outLink) {
+			outLink = filepath.Join(c.Dir, outLink)
+		}
+		if err := os.MkdirAll(filepath.Dir(outLink), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(outLink, archiveRaw, 0o644)
+	}
+	t.Cleanup(func() { runExternalCommand = oldRun })
+
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", "core")
+	if err != nil {
+		t.Fatalf("boundary suite with a relative --core-dir failed: %v\n%s", err, stdout)
 	}
 	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
 		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {

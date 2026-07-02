@@ -20,9 +20,19 @@ type fakeRunner struct {
 
 func (f *fakeRunner) Run(dir, name string, args ...string) error {
 	if name == "nix" {
-		return os.WriteFile(flagValue(args, "--out-link"), f.archive, 0o644)
+		return os.WriteFile(resolveAgainstDir(dir, flagValue(args, "--out-link")), f.archive, 0o644)
 	}
 	return nil
+}
+
+// resolveAgainstDir emulates how a real subprocess resolves a relative path:
+// against its own working directory (dir), not the Go process's. Keeping the
+// fakes cwd-faithful is what lets tests catch relative-path/cwd mismatches.
+func resolveAgainstDir(dir, path string) string {
+	if path == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
 }
 
 func (f *fakeRunner) Capture(dir, outPath, name string, args ...string) error {
@@ -199,6 +209,40 @@ func TestCertifyTargetWritesPredicateFile(t *testing.T) {
 	}
 }
 
+// Regression for the PR-gate failure where nix (cwd=CoreDir) resolved a
+// relative --out-link under core/ while the engine read it from the repo
+// root: with relative CoreDir and OutputDir, both sides must still agree.
+func TestCertifyTargetRelativePathsResolveAcrossCwds(t *testing.T) {
+	repoRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	layer := layerTar(t, map[string]int64{
+		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644,
+	})
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
+	opts := Options{
+		Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime",
+		CoreDir: "core", OutputDir: filepath.Join("core", "build-outputs"),
+		FloorPath: testFloorPath(t),
+	}
+	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
+		t.Fatalf("certify with relative CoreDir/OutputDir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "core", "build-outputs", "coreLTS-slim.tar.gz")); err != nil {
+		t.Errorf("archive not written where the workflow expects it: %v", err)
+	}
+}
+
 func TestCertifyTargetDarwinFailsFast(t *testing.T) {
 	_, err := CertifyTarget(&fakeRunner{}, Options{Target: "coreLTS-slim", System: "aarch64-darwin", Kind: "runtime"}, time.Unix(0, 0), nil)
 	if err == nil {
@@ -220,7 +264,7 @@ func (s *scriptedRunner) Run(dir, name string, args ...string) error {
 			return s.nixErr
 		}
 		if s.writeArchive != nil {
-			return os.WriteFile(flagValue(args, "--out-link"), s.writeArchive, 0o644)
+			return os.WriteFile(resolveAgainstDir(dir, flagValue(args, "--out-link")), s.writeArchive, 0o644)
 		}
 	}
 	return nil

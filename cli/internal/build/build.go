@@ -159,7 +159,13 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 	lang, tier := parseTarget(opts.Target, opts.Kind)
 	logf(w, "Certifying %s target %s [%s]", opts.Kind, opts.Target, opts.System)
 
-	outDir := opts.OutputDir
+	// Subprocesses run with cwd=CoreDir (nix --out-link, syft's archive arg),
+	// while this process reads the same paths from its own cwd. Anchor the
+	// output dir to an absolute path so both sides resolve identically.
+	outDir, err := filepath.Abs(opts.OutputDir)
+	if err != nil {
+		return Result{}, err
+	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return Result{}, err
 	}
