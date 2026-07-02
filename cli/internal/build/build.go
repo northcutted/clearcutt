@@ -8,6 +8,7 @@
 package build
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,6 +149,30 @@ func aggregateStatus(statuses ...string) string {
 
 func boolPtr(b bool) *bool { return &b }
 
+// gunzipFile decompresses src (a .tar.gz) to dst, mirroring pipeline.sh's
+// `gzip -d -c` step so Syft can read the archive as a plain docker tar.
+func gunzipFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	gz, err := gzip.NewReader(in)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, gz); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 // CertifyTarget builds, scans, and gates one target, writing the test-results
 // predicate to OutputDir/<target>.test-results.json. It returns the predicate
 // and a non-nil error when a blocking gate (Grype/closure-purity/runtime-cve)
@@ -191,16 +216,38 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 	}
 	_ = os.Remove(linkPath)
 
-	// B. SBOM via Syft (against the compressed OCI archive).
+	// B. SBOM via Syft. Syft's docker-archive source cannot read a gzipped
+	// tarball, so decompress first exactly like pipeline.sh does.
+	uncompressedPath := filepath.Join(outDir, opts.Target+".tar")
+	if err := gunzipFile(tarPath, uncompressedPath); err != nil {
+		return Result{}, fmt.Errorf("decompressing image archive for %s: %w", opts.Target, err)
+	}
 	logf(w, "Generating SPDX SBOM via Syft -> %s", sbomPath)
-	if err := r.Capture(opts.CoreDir, sbomPath, "syft", "docker-archive:"+tarPath, "-o", "spdx-json"); err != nil {
-		return Result{}, fmt.Errorf("syft SBOM generation failed for %s: %w", opts.Target, err)
+	syftErr := r.Capture(opts.CoreDir, sbomPath, "syft", "docker-archive:"+uncompressedPath, "-o", "spdx-json")
+	_ = os.Remove(uncompressedPath)
+	if syftErr != nil {
+		return Result{}, fmt.Errorf("syft SBOM generation failed for %s: %w", opts.Target, syftErr)
 	}
 
 	// C. Vulnerability gate via Grype (fail-on high, only-fixed). A non-zero exit
 	// means fixable Critical/High CVEs; the tier/kind policy decides severity.
+	// Crypto VEX bridge (same contract as pipeline.sh): when the generated
+	// OpenVEX for patched-not-bumped crypto exists, pass it to Grype natively.
+	grypeArgs := []string{"sbom:" + sbomPath, "--fail-on", "high", "--only-fixed"}
+	cryptoVex := os.Getenv("CLEARCUTT_CRYPTO_VEX")
+	if cryptoVex == "" {
+		cryptoVex = filepath.Join(opts.CoreDir, "vex", "crypto.openvex.json")
+	}
+	if abs, absErr := filepath.Abs(cryptoVex); absErr == nil {
+		cryptoVex = abs
+	}
+	if _, statErr := os.Stat(cryptoVex); statErr == nil {
+		logf(w, "Crypto VEX present; passing %s to Grype (--vex).", cryptoVex)
+		grypeArgs = append(grypeArgs, "--vex", cryptoVex)
+	}
+	grypeArgs = append(grypeArgs, "-o", "json")
 	logf(w, "Scanning SBOM via Grype (fail-on high, only-fixed)...")
-	grypeErr := r.Capture(opts.CoreDir, scanPath, "grype", "sbom:"+sbomPath, "--fail-on", "high", "--only-fixed", "-o", "json")
+	grypeErr := r.Capture(opts.CoreDir, scanPath, "grype", grypeArgs...)
 	grype := grypeStatus(grypeErr != nil, opts.Kind, tier, opts.ServiceProductionAllowed, opts.ServiceLifecycleStatus)
 
 	// C1. Closure purity (distroless runtime) — IN-PROCESS, no python.

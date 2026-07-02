@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,8 +15,9 @@ import (
 // fakeRunner stands in for nix/syft/grype: "nix build" writes a prepared
 // gzipped image archive to the --out-link path; syft/grype write canned output.
 type fakeRunner struct {
-	archive  []byte
-	grypeErr error
+	archive   []byte
+	grypeErr  error
+	grypeArgs []string
 }
 
 func (f *fakeRunner) Run(dir, name string, args ...string) error {
@@ -38,8 +40,22 @@ func resolveAgainstDir(dir, path string) string {
 func (f *fakeRunner) Capture(dir, outPath, name string, args ...string) error {
 	switch name {
 	case "syft":
+		// Behave like real syft: the docker-archive source must exist (resolved
+		// against the subprocess cwd) and be a PLAIN tar, not gzipped.
+		src := strings.TrimPrefix(args[0], "docker-archive:")
+		raw, err := os.ReadFile(resolveAgainstDir(dir, src))
+		if err != nil {
+			return err
+		}
+		if len(raw) >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
+			return errors.New("syft: unable to provide image from tarball: archive/tar: invalid tar header (gzipped input)")
+		}
+		if _, err := tar.NewReader(bytes.NewReader(raw)).Next(); err != nil {
+			return errors.New("syft: unable to provide image from tarball: archive/tar: invalid tar header")
+		}
 		return os.WriteFile(outPath, []byte(`{"spdxVersion":"SPDX-2.3","packages":[]}`), 0o644)
 	case "grype":
+		f.grypeArgs = append([]string{}, args...)
 		_ = os.WriteFile(outPath, []byte(`{"matches":[]}`), 0o644)
 		return f.grypeErr
 	}
@@ -206,6 +222,44 @@ func TestCertifyTargetWritesPredicateFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "coreLTS-slim.test-results.json")); err != nil {
 		t.Errorf("predicate file not written: %v", err)
+	}
+}
+
+// The crypto VEX bridge: when CoreDir/vex/crypto.openvex.json exists, the
+// grype invocation must carry --vex with the absolute path (parity with
+// pipeline.sh); without the file, no --vex flag appears.
+func TestCertifyTargetCryptoVexBridge(t *testing.T) {
+	layer := layerTar(t, map[string]int64{
+		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644,
+	})
+
+	// Without the VEX file: no --vex.
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
+	opts := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
+	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
+		t.Fatalf("certify: %v", err)
+	}
+	if flagValue(r.grypeArgs, "--vex") != "" {
+		t.Fatalf("unexpected --vex without a crypto VEX file: %v", r.grypeArgs)
+	}
+
+	// With the VEX file: --vex <absolute path>.
+	coreDir := t.TempDir()
+	vexPath := filepath.Join(coreDir, "vex", "crypto.openvex.json")
+	if err := os.MkdirAll(filepath.Dir(vexPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vexPath, []byte(`{"statements":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = &fakeRunner{archive: gzippedDockerArchive(t, layer)}
+	opts.CoreDir = coreDir
+	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
+		t.Fatalf("certify with VEX: %v", err)
+	}
+	got := flagValue(r.grypeArgs, "--vex")
+	if got != vexPath {
+		t.Fatalf("grype --vex = %q, want %q", got, vexPath)
 	}
 }
 

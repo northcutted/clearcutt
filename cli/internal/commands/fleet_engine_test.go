@@ -17,7 +17,12 @@ type fakeFleetBuildRunner struct {
 
 func (f *fakeFleetBuildRunner) Run(dir, name string, args ...string) error {
 	if name == "nix" {
-		return os.WriteFile(testFlagValue(args, "--out-link"), f.archive, 0o644)
+		// Resolve like the real subprocess: relative out-links land under dir.
+		outLink := testFlagValue(args, "--out-link")
+		if outLink != "" && !filepath.IsAbs(outLink) {
+			outLink = filepath.Join(dir, outLink)
+		}
+		return os.WriteFile(outLink, f.archive, 0o644)
 	}
 	return nil
 }
@@ -80,9 +85,16 @@ func TestFleetPublishTargetGoEnginePublishesAndStagesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A real gzipped docker archive: the engine gunzips it for Syft.
+	archiveRaw, err := os.ReadFile(gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-nodejs-24.15.0/bin/node": 0o755,
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
 	oldRunner := fleetBuildRunner
 	fleetBuildRunner = func() build.Runner {
-		return &fakeFleetBuildRunner{archive: []byte("oci archive")}
+		return &fakeFleetBuildRunner{archive: archiveRaw}
 	}
 	t.Cleanup(func() { fleetBuildRunner = oldRunner })
 

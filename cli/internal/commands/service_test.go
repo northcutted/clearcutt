@@ -228,8 +228,15 @@ func TestServicePublishGoEnginePublishesAndStagesEvidence(t *testing.T) {
 		t.Fatalf("service scaffold failed: %v", err)
 	}
 
+	// A real gzipped docker archive: the engine gunzips it for Syft.
+	serviceArchiveRaw, err := os.ReadFile(gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-postgresql-16/bin/postgres": 0o755,
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
 	fleetBuildRunner = func() build.Runner {
-		return &fakeFleetBuildRunner{archive: []byte("service oci archive")}
+		return &fakeFleetBuildRunner{archive: serviceArchiveRaw}
 	}
 	var pushedRef, pushedArchive string
 	fleetPushImageArchive = func(client *oci.Client, ref, archivePath string) (string, error) {
