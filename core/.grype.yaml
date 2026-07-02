@@ -40,3 +40,51 @@ ignore:
   reason: node 24.17.0 fix not in nixpkgs (unstable still 24.15.0, 2026-06-24); Low/Med,
     below the high gate; tracking for the stable pin to catch up (expires 2026-09-24)
   vulnerability: CVE-2026-48937
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.13.13
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-3298
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.14.4
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-3298
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.13.13
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-4786
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.14.4
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-4786
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.13.13
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-6100
+- package:
+    name: python
+    type: UnknownPackage
+    version: 3.14.4
+  reason: Fixed upstream in python 3.13.14/3.14.5rc1 but neither is in nixpkgs (nixos-unstable
+    and master both at 3.13.13/3.14.4 as of 2026-07-02); re-evaluate when nixpkgs
+    ships the fix (expires 2026-10-02)
+  vulnerability: CVE-2026-6100
