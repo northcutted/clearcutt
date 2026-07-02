@@ -1,12 +1,17 @@
-.PHONY: cli-build cli-test cli-vet cli-fmt-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan test check agent-sync e2e-test
+.PHONY: cli-embed-source cli-build cli-test cli-vet cli-fmt-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan test check agent-sync e2e-test
 
 agent-sync:
 	bash .agents/sync.sh
 
-cli-build:
+# The platform source archive is generated (gitignored), not committed; build
+# and test through these targets so the binary ships it and its tests run.
+cli-embed-source:
+	cd cli && go run ./internal/platformsource/internal/genplatformsource
+
+cli-build: cli-embed-source
 	cd cli && go build -o ../clearcutt ./cmd/clearcutt
 
-cli-test:
+cli-test: cli-embed-source
 	cd cli && go test ./...
 
 cli-vet:

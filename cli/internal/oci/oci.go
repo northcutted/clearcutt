@@ -49,6 +49,18 @@ func NewClient() *Client {
 	}
 }
 
+// NewClientWithBasicAuth returns a registry client that authenticates with
+// explicit username/password credentials instead of relying on the ambient
+// Docker/keychain configuration.
+func NewClientWithBasicAuth(username, password string) *Client {
+	return &Client{
+		remoteOpts: []remote.Option{remote.WithAuth(&authn.Basic{
+			Username: username,
+			Password: password,
+		})},
+	}
+}
+
 // NewInsecureClient returns a client that speaks plain HTTP and skips auth. It exists
 // for hermetic tests against an in-process registry; do not use it for real traffic.
 func NewInsecureClient() *Client {

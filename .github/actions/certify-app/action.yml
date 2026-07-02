@@ -8,12 +8,12 @@ inputs:
     description: 'Path to declarative certification-policy.yaml governance file'
     required: true
   base:
-    description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.15-slim)'
+    description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.14-slim)'
     required: true
   clearcutt-version:
-    description: 'ClearCutt CLI release tag to download (e.g. v0.10.2). Pin this for reproducible builds.'
+    description: 'ClearCutt CLI release tag to download (e.g. v0.17.0). Pin this for reproducible builds.'
     required: false
-    default: 'v0.10.2'
+    default: 'v0.17.0'
   certificate-identity-regexp:
     description: >-
       Regexp for the Sigstore signing identity the app image must be signed by (the

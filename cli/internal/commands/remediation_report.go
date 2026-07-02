@@ -11,16 +11,20 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/yaml"
 )
 
 type remediationReportFlags struct {
-	planPath   string
-	outPath    string
-	summaryDir string
+	planPath     string
+	outPath      string
+	summaryDir   string
+	allowMissing bool
 }
 
 type remediationValidateOverlaysFlags struct {
-	overlayDir string
+	overlayDir   string
+	grypeConfig  string
+	checkIgnores bool
 }
 
 var remediationReportOpts remediationReportFlags
@@ -37,6 +41,7 @@ func NewRemediationReportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&remediationReportOpts.planPath, "plan", filepath.Join("core", "build-outputs", "remediation-plan.json"), "Remediation plan JSON path")
 	cmd.Flags().StringVar(&remediationReportOpts.outPath, "out", "", "Write remediation report JSON to this path")
 	cmd.Flags().StringVar(&remediationReportOpts.summaryDir, "summary-dir", "", "Directory containing remediation-summary-*.json files")
+	cmd.Flags().BoolVar(&remediationReportOpts.allowMissing, "allow-missing", false, "Exit successfully when the remediation plan is absent")
 	return cmd
 }
 
@@ -49,6 +54,8 @@ func NewRemediationValidateOverlaysCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&remediationValidateOverlaysOpts.overlayDir, "overlay-dir", filepath.Join("core", "overlays", "cve"), "Directory containing per-CVE remediation overlays")
+	cmd.Flags().StringVar(&remediationValidateOverlaysOpts.grypeConfig, "grype-config", "", "Path to .grype.yaml scanner suppressions (default <overlay-dir>/../../.grype.yaml)")
+	cmd.Flags().BoolVar(&remediationValidateOverlaysOpts.checkIgnores, "check-grype-ignores", true, "Require every .grype.yaml ignore to have active evidence")
 	return cmd
 }
 
@@ -83,6 +90,10 @@ type RemediationDraftResults struct {
 func runRemediationReport() error {
 	raw, err := os.ReadFile(remediationReportOpts.planPath)
 	if err != nil {
+		if remediationReportOpts.allowMissing && os.IsNotExist(err) {
+			fmt.Fprintf(errOut, "[remediation-report] plan %s is missing; skipping report generation.\n", remediationReportOpts.planPath)
+			return nil
+		}
 		return fmt.Errorf("failed to read remediation plan %s: %w", remediationReportOpts.planPath, err)
 	}
 	var plan RemediationPlan
@@ -260,11 +271,148 @@ func runRemediationValidateOverlays() error {
 			}
 		}
 	}
+	if remediationValidateOverlaysOpts.checkIgnores {
+		grypePath := remediationValidateOverlaysOpts.grypeConfig
+		if grypePath == "" {
+			grypePath = filepath.Clean(filepath.Join(remediationValidateOverlaysOpts.overlayDir, "..", "..", ".grype.yaml"))
+		}
+		if grypeProblems, err := validateGrypeIgnoreEvidence(grypePath, remediationValidateOverlaysOpts.overlayDir, time.Now().UTC()); err != nil {
+			problems = append(problems, err.Error())
+		} else {
+			problems = append(problems, grypeProblems...)
+		}
+	}
 	if len(problems) > 0 {
 		return fmt.Errorf("remediation overlay governance failed:\n%s", strings.Join(problems, "\n"))
 	}
 	fmt.Fprintf(out, "Validated %d remediation overlay(s) under %s.\n", len(files), remediationValidateOverlaysOpts.overlayDir)
 	return nil
+}
+
+type remediationEvidenceRecord struct {
+	Path            string
+	Status          string
+	CVE             string
+	Package         string
+	Expires         string
+	Suppressions    []grypeIgnoreRule
+	ExpectedRemoved []RemediationExpectedFinding
+}
+
+func validateGrypeIgnoreEvidence(grypePath, evidenceDir string, now time.Time) ([]string, error) {
+	raw, err := os.ReadFile(grypePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s: read failed: %v", grypePath, err)
+	}
+	var cfg grypeConfig
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("%s: parse failed: %v", grypePath, err)
+	}
+	if len(cfg.Ignore) == 0 {
+		return nil, nil
+	}
+	records, err := loadRemediationEvidenceRecords(evidenceDir)
+	if err != nil {
+		return nil, err
+	}
+	problems := []string{}
+	for _, rule := range cfg.Ignore {
+		record := matchingGrypeEvidence(rule, records)
+		if record == nil {
+			problems = append(problems, fmt.Sprintf("%s: suppression %s lacks matching active evidence", grypePath, describeGrypeRule(rule)))
+			continue
+		}
+		if strings.TrimSpace(record.Expires) == "" {
+			problems = append(problems, fmt.Sprintf("%s: suppression %s matched %s, but evidence has no expires field", grypePath, describeGrypeRule(rule), record.Path))
+			continue
+		}
+		expires, err := time.Parse("2006-01-02", record.Expires)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: suppression %s matched %s, but expires is invalid: %v", grypePath, describeGrypeRule(rule), record.Path, err))
+			continue
+		}
+		if !expires.After(truncateDate(now)) {
+			problems = append(problems, fmt.Sprintf("%s: suppression %s matched expired evidence %s (expired %s)", grypePath, describeGrypeRule(rule), record.Path, record.Expires))
+		}
+	}
+	return problems, nil
+}
+
+func loadRemediationEvidenceRecords(dir string) ([]remediationEvidenceRecord, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.evidence.json"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remediation evidence: %w", err)
+	}
+	sort.Strings(files)
+	records := make([]remediationEvidenceRecord, 0, len(files))
+	for _, path := range files {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%s: read failed: %v", path, err)
+		}
+		var record remediationEvidenceRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return nil, fmt.Errorf("%s: parse failed: %v", path, err)
+		}
+		record.Path = path
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+func matchingGrypeEvidence(rule grypeIgnoreRule, records []remediationEvidenceRecord) *remediationEvidenceRecord {
+	for i := range records {
+		record := &records[i]
+		if !sameVulnerability(record.CVE, rule.Vulnerability) {
+			continue
+		}
+		for _, suppression := range record.Suppressions {
+			if grypeRuleExists([]grypeIgnoreRule{suppression}, rule) {
+				return record
+			}
+		}
+		for _, removed := range record.ExpectedRemoved {
+			if sameVulnerability(removed.CVE, rule.Vulnerability) && grypeRulePackageMatches(rule, removed.Package, removed.InstalledVersion) {
+				return record
+			}
+		}
+		if record.Package != "" && grypeRulePackageMatches(rule, record.Package, "") {
+			return record
+		}
+	}
+	return nil
+}
+
+func sameVulnerability(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+func grypeRulePackageMatches(rule grypeIgnoreRule, name, version string) bool {
+	if rule.Package == nil {
+		return strings.TrimSpace(name) == "" && strings.TrimSpace(version) == ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(rule.Package.Name), strings.TrimSpace(name)) {
+		return false
+	}
+	if strings.TrimSpace(version) == "" {
+		return true
+	}
+	return strings.TrimSpace(rule.Package.Version) == strings.TrimSpace(version)
+}
+
+func describeGrypeRule(rule grypeIgnoreRule) string {
+	if rule.Package == nil {
+		return rule.Vulnerability
+	}
+	return fmt.Sprintf("%s/%s@%s", rule.Vulnerability, rule.Package.Name, rule.Package.Version)
+}
+
+func truncateDate(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func validateOverlayEvidence(path string) (string, error) {

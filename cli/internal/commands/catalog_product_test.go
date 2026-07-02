@@ -404,8 +404,11 @@ if [ "$1" = "install" ] || [ "$1" = "ci" ]; then
 fi
 if [ "$1" = "run" ] && [ "${2:-}" = "build" ]; then
   mkdir -p dist
-  printf 'base=%s\n' "${BASE_PATH:-}" > dist/index.html
+  printf 'base=%s\nsite=%s\n' "${BASE_PATH:-}" "${SITE_URL:-}" > dist/index.html
   cp -R public/catalog dist/catalog
+  if [ -d public/vex ]; then
+    cp -R public/vex dist/vex
+  fi
   exit 0
 fi
 exit 2
@@ -423,6 +426,8 @@ exit 2
 		"--output", outDir,
 		"--install",
 		"--base-path", "/docs",
+		"--site-url", "https://acme.github.io",
+		"--generate-vex",
 	)
 	if err != nil {
 		t.Fatalf("catalog site build failed: %v\n%s", err, stdout)
@@ -431,11 +436,14 @@ exit 2
 	if err != nil {
 		t.Fatalf("expected built index: %v", err)
 	}
-	if string(index) != "base=/docs\n" {
-		t.Fatalf("BASE_PATH was not passed to build: %q", index)
+	if string(index) != "base=/docs\nsite=https://acme.github.io\n" {
+		t.Fatalf("build env was not passed through: %q", index)
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "catalog", "index.json")); err != nil {
 		t.Fatalf("expected catalog assets in built output: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "vex", "java21-distroless.json")); err != nil {
+		t.Fatalf("expected generated OpenVEX assets in built output: %v", err)
 	}
 	logRaw, err := os.ReadFile(logPath)
 	if err != nil {
@@ -447,6 +455,9 @@ exit 2
 	}
 	if !strings.Contains(stdout, "Built catalog site at") {
 		t.Fatalf("expected build success output, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[site-build] generated ") || !strings.Contains(stdout, " OpenVEX document(s)") {
+		t.Fatalf("expected VEX generation output, got:\n%s", stdout)
 	}
 }
 

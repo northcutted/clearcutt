@@ -35,6 +35,25 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
       forLinuxSystems = nixpkgs.lib.genAttrs linuxSystems;
       forDarwinSystems = nixpkgs.lib.genAttrs darwinSystems;
+      slsaVerifierVersion = "2.7.1";
+      slsaVerifierBinaries = {
+        x86_64-linux = {
+          asset = "slsa-verifier-linux-amd64";
+          hash = "sha256-lG2+xykJQZXojveOFzQySieGnwPixr0vYcvAa9U1Azk=";
+        };
+        aarch64-linux = {
+          asset = "slsa-verifier-linux-arm64";
+          hash = "sha256-XTsjSe3nv+wZ56IVafGLn3QQFFrRLpWEsXU3BmnhQGE=";
+        };
+        x86_64-darwin = {
+          asset = "slsa-verifier-darwin-amd64";
+          hash = "sha256-S68lQVcngh+Eeji8ztyGw+WxfL/C61NM1VT+tshW1vE=";
+        };
+        aarch64-darwin = {
+          asset = "slsa-verifier-darwin-arm64";
+          hash = "sha256-Oav89fHWkMPoic49LWqLh3EUJNgzaFEYaNQU6Pi8sFw=";
+        };
+      };
 
       # The image matrix is the GENERATED enumeration compiled from
       # clearcutt.fleet.yaml by `clearcutt fleet compile` into
@@ -121,6 +140,30 @@
         buildPkgs = importBuildNixpkgs system;
         runtimePkgs = importRuntimeNixpkgs system;
         cryptoRuntimePkgs = importCryptoRuntimeNixpkgs system;
+        slsaVerifier =
+          let
+            binary = slsaVerifierBinaries.${system}
+              or (throw "unsupported slsa-verifier host system: ${system}");
+          in
+          buildPkgs.stdenvNoCC.mkDerivation {
+            pname = "slsa-verifier";
+            version = slsaVerifierVersion;
+            src = buildPkgs.fetchurl {
+              url = "https://github.com/slsa-framework/slsa-verifier/releases/download/v${slsaVerifierVersion}/${binary.asset}";
+              inherit (binary) hash;
+            };
+            dontUnpack = true;
+            installPhase = ''
+              install -Dm755 "$src" "$out/bin/slsa-verifier"
+            '';
+            meta = with buildPkgs.lib; {
+              description = "Verifier for SLSA provenance";
+              homepage = "https://github.com/slsa-framework/slsa-verifier";
+              license = licenses.asl20;
+              mainProgram = "slsa-verifier";
+              platforms = builtins.attrNames slsaVerifierBinaries;
+            };
+          };
 
         # Host package alignment: build native OCI layers on Linux release
         # runners, and expose native development shells on Darwin for the local
@@ -251,6 +294,8 @@
               buildPkgs.curl
               buildPkgs.patchelf
               buildPkgs.cosign
+              buildPkgs.gh
+              slsaVerifier
               buildPkgs.trivy
               buildPkgs.grype
               buildPkgs.syft

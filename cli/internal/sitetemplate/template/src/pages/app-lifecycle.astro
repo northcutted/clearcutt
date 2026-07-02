@@ -30,7 +30,7 @@ const imageNameFor = (id: string) => {
     return `${fallbackImagePrefix}-${imageRuntime(id)}`;
   }
 };
-const baseRef = (id: string) => `${registryBase}/${imageNameFor(id)}:v0.2.2-distroless`;
+const baseRef = (id: string) => `${registryBase}/${imageNameFor(id)}:v0.17.0-distroless`;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const devLabel = tierLabel(loadSiteConfig(), 'dev');
 

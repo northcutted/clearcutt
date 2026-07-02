@@ -45,20 +45,18 @@ jobs:
           # generator version is stamped from.
           fetch-depth: 0
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
-      - name: Build ClearCutt CLI
-        run: |
-          VERSION="$(git describe --tags --always)"
-          cd cli
-          go build \
-            -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=${VERSION}" \
-            -o ../clearcutt ./cmd/clearcutt
+      - name: Setup Nix
+        uses: ./.github/actions/setup-nix
+
+      - name: Configure ClearCutt Nix Environment
+        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -67,25 +65,17 @@ jobs:
           # produced by the release workflow.
           cosign-release: 'v3.0.6'
 
-      - name: Install grype
-        run: |
-          set -euo pipefail
-          GRYPE_VERSION=0.114.0
-          GRYPE_TARBALL="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
-          GRYPE_SHA256="edda0968d8827daab01d32b3cd7de192ae0915005e7bbfcfef9e68e79bc43343"
-          curl -fsSL -o "/tmp/${GRYPE_TARBALL}" "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${GRYPE_TARBALL}"
-          printf '%s  %s\n' "${GRYPE_SHA256}" "/tmp/${GRYPE_TARBALL}" | sha256sum -c -
-          sudo tar -xzf "/tmp/${GRYPE_TARBALL}" -C /usr/local/bin grype
-          cosign version
-          grype version
-
-      - name: Refresh grype DB
-        run: grype db update
+      - name: Resolve Registry Login
+        id: registry
+        env:
+          CLEARCUTT_REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: ./clearcutt platform registry-env --github-output "$GITHUB_OUTPUT"
 
       - name: Authenticate registry client
         env:
-          REGISTRY_HOST: ${{ vars.CLEARCUTT_REGISTRY_HOST || 'ghcr.io' }}
-          REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+          REGISTRY_HOST: ${{ steps.registry.outputs.host }}
+          REGISTRY_USER: ${{ steps.registry.outputs.username }}
           REGISTRY_PASSWORD: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
@@ -109,9 +99,9 @@ jobs:
             site/src/data/enrichment
             site/src/data/sboms
             site/src/data/vulnerabilities
-          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan*.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
           restore-keys: |
-            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan*.go', 'cli/internal/oci/*.go', 'cli/internal/sign/*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
 
       - name: Resolve fleet catalog parameters
@@ -120,17 +110,7 @@ jobs:
           # Hoisted out of the run script so the GitHub templater never
           # expands untrusted dispatch inputs into shell code.
           INPUT_LIMIT: ${{ github.event.inputs.release_limit || '' }}
-        run: |
-          set -euo pipefail
-          FLEET=$(./clearcutt --format json matrix export --source fleet)
-          DEFAULT_LIMIT=$(jq -r '.catalog.releaseLimit' <<< "$FLEET")
-          SCAN_DEPTH=$(jq -r '.catalog.scanDepth' <<< "$FLEET")
-          if [[ -n "$INPUT_LIMIT" ]]; then
-            echo "limit=${INPUT_LIMIT}" >> "$GITHUB_OUTPUT"
-          else
-            echo "limit=${DEFAULT_LIMIT}" >> "$GITHUB_OUTPUT"
-          fi
-          echo "scan_depth=${SCAN_DEPTH}" >> "$GITHUB_OUTPUT"
+        run: ./clearcutt catalog workflow-params --release-limit "$INPUT_LIMIT" --github-output "$GITHUB_OUTPUT"
 
       - name: Build catalog data
         env:
@@ -139,22 +119,9 @@ jobs:
           GH_REPO: ${{ github.event.repository.name }}
           RELEASE_LIMIT: ${{ steps.params.outputs.limit }}
           FORCE_REFRESH_ALL: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-          SCAN_ALL_TAGS: ${{ github.event.inputs.force_refresh_all == 'true' && '1' || '0' }}
-        run: |
-          set -euo pipefail
-          if [[ "${FORCE_REFRESH_ALL}" == "1" ]]; then
-            ./clearcutt catalog build \
-              --limit "$RELEASE_LIMIT" \
-              --scan-depth "${{ steps.params.outputs.scan_depth }}" \
-              --force-refresh-all \
-              --scan-all \
-              --include-services
-          else
-            ./clearcutt catalog build \
-              --limit "$RELEASE_LIMIT" \
-              --scan-depth "${{ steps.params.outputs.scan_depth }}" \
-              --include-services
-          fi
+          SCAN_TAG_DEPTH: ${{ steps.params.outputs.scan_depth }}
+          SCAN_UPDATE_DB: "1"
+        run: ./clearcutt catalog build --limit "$RELEASE_LIMIT" --core-dir core --update-db --include-services
 
       # Schema-validate the generated catalog (structural checks plus the
       # embedded JSON Schemas) before it is uploaded for the site build.
@@ -196,49 +163,20 @@ jobs:
           name: catalog-data
           path: site/src/data
 
-      - name: Install site dependencies
-        working-directory: site
-        run: npm ci
-
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
-      - name: Build ClearCutt CLI
-        run: |
-          VERSION="$(git describe --tags --always)"
-          cd cli
-          go build \
-            -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=${VERSION}" \
-            -o ../clearcutt ./cmd/clearcutt
-
-      - name: Generate OpenVEX documents
-        run: |
-          mkdir -p site/public/vex
-          for id in $(jq -r '.images[].id' site/src/data/catalog/index.json | sort -u); do
-            echo "Generating OpenVEX for ${id}..."
-            ./clearcutt --catalog site/src/data/catalog vex "${id}" --output site/public/vex/"${id}".json
-          done
-
-      - name: Resolve Pages base path
-        id: pages_base
+      - name: Build catalog site
         env:
           # Hoisted out of the run script so the GitHub templater never
           # expands event payload fields into shell code.
           REPO_NAME: ${{ github.event.repository.name }}
-        run: |
-          echo "site=https://${{ github.repository_owner }}.github.io" >> "$GITHUB_OUTPUT"
-          echo "base=/${REPO_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Build Astro
-        working-directory: site
-        env:
-          SITE_URL: ${{ steps.pages_base.outputs.site }}
-          BASE_PATH: ${{ steps.pages_base.outputs.base }}
-        run: npm run build
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: ./clearcutt catalog site build --catalog site/src/data/catalog --template site --output site/dist --install --clean --base-path "/${REPO_NAME}" --site-url "https://${REPOSITORY_OWNER}.github.io" --generate-vex
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1

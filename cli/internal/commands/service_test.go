@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/oci"
 )
 
 func TestServiceScaffoldValidateExplainAndMatrix(t *testing.T) {
@@ -132,6 +134,7 @@ func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
 
 	stdout, err := runCLI(t,
 		"service", "build", "postgres16",
+		"--engine", "shell",
 		"--system", "x86_64-linux",
 		"--fleet-config", configPath,
 		"--core-dir", coreDir,
@@ -180,6 +183,7 @@ func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
 	calls = nil
 	stdout, err = runCLI(t,
 		"service", "publish", "postgres16",
+		"--engine", "shell",
 		"--system", "x86_64-linux",
 		"--version-tag", "v1.2.3",
 		"--fleet-config", configPath,
@@ -195,6 +199,97 @@ func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outputDir, name)); err != nil {
 			t.Fatalf("expected staged service release asset %s: %v", name, err)
 		}
+	}
+}
+
+func TestServicePublishGoEnginePublishesAndStagesEvidence(t *testing.T) {
+	oldServiceOpts := serviceOpts
+	oldRunner := fleetBuildRunner
+	oldPush := fleetPushImageArchive
+	defer func() {
+		serviceOpts = oldServiceOpts
+		fleetBuildRunner = oldRunner
+		fleetPushImageArchive = oldPush
+	}()
+
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	coreDir := filepath.Join(root, "core")
+	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCLI(t,
+		"service", "scaffold", "postgres16",
+		"--template", "postgres",
+		"--version", "16",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+	); err != nil {
+		t.Fatalf("service scaffold failed: %v", err)
+	}
+
+	fleetBuildRunner = func() build.Runner {
+		return &fakeFleetBuildRunner{archive: []byte("service oci archive")}
+	}
+	var pushedRef, pushedArchive string
+	fleetPushImageArchive = func(client *oci.Client, ref, archivePath string) (string, error) {
+		pushedRef = ref
+		pushedArchive = archivePath
+		return "sha256:service-stage", nil
+	}
+
+	stdout, err := runCLI(t,
+		"service", "publish", "postgres16",
+		"--system", "aarch64-linux",
+		"--version-tag", "v1.2.3",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+	)
+	if err != nil {
+		t.Fatalf("service publish go engine failed: %v\n%s", err, stdout)
+	}
+	outputDir := filepath.Join(coreDir, "build-outputs")
+	if pushedArchive != filepath.Join(outputDir, "postgres16.tar.gz") {
+		t.Fatalf("pushed archive = %q", pushedArchive)
+	}
+	if pushedRef != "ghcr.io/acme/platform/platform-postgres16:_stage-service-arm64" {
+		t.Fatalf("pushed ref = %q", pushedRef)
+	}
+	for _, name := range []string{"postgres16-arm64.sbom.json", "postgres16-arm64.test-results.json"} {
+		if _, err := os.Stat(filepath.Join(outputDir, name)); err != nil {
+			t.Fatalf("expected staged service release asset %s: %v", name, err)
+		}
+	}
+	if !strings.Contains(stdout, "Go engine") || !strings.Contains(stdout, "sha256:service-stage") {
+		t.Fatalf("expected Go engine digest output, got:\n%s", stdout)
+	}
+}
+
+func TestServiceTargetRejectsUnknownBuildEngine(t *testing.T) {
+	oldServiceOpts := serviceOpts
+	defer func() { serviceOpts = oldServiceOpts }()
+
+	root := t.TempDir()
+	configPath := writeFleetConfig(t, root)
+	coreDir := filepath.Join(root, "core")
+	if _, err := runCLI(t,
+		"service", "scaffold", "postgres16",
+		"--template", "postgres",
+		"--version", "16",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+	); err != nil {
+		t.Fatalf("service scaffold failed: %v", err)
+	}
+	_, err := runCLI(t,
+		"service", "build", "postgres16",
+		"--engine", "legacy",
+		"--system", "x86_64-linux",
+		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+	)
+	if err == nil || !strings.Contains(err.Error(), "--engine must be go or shell") {
+		t.Fatalf("expected invalid engine error, got %v", err)
 	}
 }
 
@@ -496,10 +591,12 @@ func TestServiceAssembleAndExportProvenance(t *testing.T) {
 	oldServiceOpts := serviceOpts
 	oldRun := runExternalCommand
 	oldCapture := captureExternalOutput
+	oldPushIndex := fleetPushImageIndex
 	defer func() {
 		serviceOpts = oldServiceOpts
 		runExternalCommand = oldRun
 		captureExternalOutput = oldCapture
+		fleetPushImageIndex = oldPushIndex
 	}()
 
 	root := t.TempDir()
@@ -521,11 +618,23 @@ func TestServiceAssembleAndExportProvenance(t *testing.T) {
 		calls = append(calls, c)
 		return nil
 	}
+	var indexCalls []struct {
+		ref     string
+		sources []oci.IndexImage
+	}
+	fleetPushImageIndex = func(client *oci.Client, ref string, sources []oci.IndexImage) (string, error) {
+		indexCalls = append(indexCalls, struct {
+			ref     string
+			sources []oci.IndexImage
+		}{ref: ref, sources: append([]oci.IndexImage(nil), sources...)})
+		return "sha256:service-digest", nil
+	}
+	var provenanceRefs []string
 	captureExternalOutput = func(c externalCommand) (string, error) {
-		if c.Name == "crane" {
-			return "sha256:service-digest\n", nil
-		}
-		if c.Name == "cosign" {
+		if c.Name == "nix" && strings.Contains(strings.Join(c.Args, " "), "--command cosign download attestation") {
+			if len(c.Args) > 0 {
+				provenanceRefs = append(provenanceRefs, c.Args[len(c.Args)-1])
+			}
 			return "provenance\n", nil
 		}
 		return "", nil
@@ -537,12 +646,41 @@ func TestServiceAssembleAndExportProvenance(t *testing.T) {
 		"--build-outputs", buildOutputs,
 		"--github-output", githubOutput,
 		"--fleet-config", configPath,
+		"--core-dir", coreDir,
 	)
 	if err != nil {
 		t.Fatalf("service assemble failed: %v\n%s", err, stdout)
 	}
-	if len(calls) < 6 {
-		t.Fatalf("expected crane/cosign calls, got %#v", calls)
+	if len(indexCalls) != 2 {
+		t.Fatalf("expected rolling and versioned service index pushes, got %#v", indexCalls)
+	}
+	if indexCalls[0].ref != "ghcr.io/acme/platform/platform-postgres16:service" ||
+		indexCalls[1].ref != "ghcr.io/acme/platform/platform-postgres16:v1.2.3-service" {
+		t.Fatalf("unexpected service index refs: %#v", indexCalls)
+	}
+	if len(indexCalls[0].sources) != 2 {
+		t.Fatalf("unexpected service index sources: %#v", indexCalls[0].sources)
+	}
+	if len(calls) < 4 {
+		t.Fatalf("expected cosign sign/attest calls, got %#v", calls)
+	}
+	joinedCalls := flattenServiceCalls(calls)
+	if strings.Contains(joinedCalls, "crane") {
+		t.Fatalf("service assemble should not shell out to crane, got %#v", calls)
+	}
+	for _, want := range []string{
+		"nix develop --extra-experimental-features nix-command flakes --accept-flake-config --command cosign sign --yes ghcr.io/acme/platform/platform-postgres16:v1.2.3-service",
+		"--command cosign attest --yes --type spdxjson",
+		"--command cosign attest --yes --type custom",
+	} {
+		if !strings.Contains(joinedCalls, want) {
+			t.Fatalf("service assemble missing wrapped cosign command %q in:\n%s", want, joinedCalls)
+		}
+	}
+	for _, call := range calls {
+		if call.Name == "cosign" {
+			t.Fatalf("service assemble should use core-pinned cosign through nix, got direct command: %#v", call)
+		}
 	}
 	digestRaw, err := os.ReadFile(filepath.Join(buildOutputs, "digests", "postgres16.digest.json"))
 	if err != nil {
@@ -563,6 +701,8 @@ func TestServiceAssembleAndExportProvenance(t *testing.T) {
 		"service", "export-provenance", "postgres16",
 		"--build-outputs", buildOutputs,
 		"--fleet-config", configPath,
+		"--core-dir", coreDir,
+		"--ref", "registry.example.com/acme/fleet/service-postgres16@sha256:service-digest",
 	)
 	if err != nil {
 		t.Fatalf("service export-provenance failed: %v\n%s", err, stdout)
@@ -573,5 +713,8 @@ func TestServiceAssembleAndExportProvenance(t *testing.T) {
 	}
 	if !strings.Contains(string(provRaw), "provenance") {
 		t.Fatalf("unexpected provenance output:\n%s", provRaw)
+	}
+	if len(provenanceRefs) != 1 || provenanceRefs[0] != "registry.example.com/acme/fleet/service-postgres16@sha256:service-digest" {
+		t.Fatalf("expected immutable service provenance ref, got %#v", provenanceRefs)
 	}
 }

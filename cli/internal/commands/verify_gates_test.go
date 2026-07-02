@@ -68,7 +68,14 @@ func gateArchive(t *testing.T, layer []byte) string {
 func gateFloor(t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "floor.json")
-	body := `{"deps":[
+	if err := os.WriteFile(p, []byte(gateFloorJSON()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func gateFloorJSON() string {
+	return `{"deps":[
   {"name":"openssl","cve":"CVE-2026-34182","knownGood":[
     {"storePath":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3"},
     {"storePath":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3"}
@@ -77,10 +84,6 @@ func gateFloor(t *testing.T) string {
     {"storePath":"dddddddddddddddddddddddddddddddd-sqlite-3.53.2"}
   ]}
 ]}`
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
 }
 
 func TestVerifyClosurePurityCommand(t *testing.T) {
@@ -169,5 +172,115 @@ func TestVerifyBoundariesCommand(t *testing.T) {
 	}))
 	if _, err := runCLI(t, "verify", "boundaries", impure, "--floor", floor); err == nil {
 		t.Fatal("image with a shell should fail boundaries")
+	}
+}
+
+func writeBoundarySuiteCore(t *testing.T, coreDir string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "tests", "runtime-dep-floor.json"), []byte(gateFloorJSON()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(coreDir, "build-outputs")
+}
+
+func TestVerifyBoundarySuiteUsesExistingArchives(t *testing.T) {
+	coreDir := t.TempDir()
+	outDir := writeBoundarySuiteCore(t, coreDir)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
+	}))
+	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
+		raw, err := os.ReadFile(cleanArchive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(outDir, target+".tar.gz"), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldRun := runExternalCommand
+	runExternalCommand = func(c externalCommand) error {
+		t.Fatalf("boundary suite should not build when archives exist, got %#v", c)
+		return nil
+	}
+	t.Cleanup(func() { runExternalCommand = oldRun })
+
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
+	if err != nil {
+		t.Fatalf("boundary suite should pass existing archives: %v\n%s", err, stdout)
+	}
+	for _, want := range []string{
+		"[boundary-suite] closure-purity coreLTS-distroless",
+		"[boundary-suite] runtime-cve coreLTS-slim",
+		"[boundary-suite] runtime-cve coreLTS-distroless",
+		"representative image-security boundary suite passed",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in boundary suite output:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
+	coreDir := t.TempDir()
+	outDir := writeBoundarySuiteCore(t, coreDir)
+	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
+	}))
+	archiveRaw, err := os.ReadFile(cleanArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldRun := runExternalCommand
+	calls := []externalCommand{}
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		if c.Name != "nix" || c.Dir != coreDir {
+			t.Fatalf("unexpected build command: %#v", c)
+		}
+		outLink := ""
+		for i, arg := range c.Args {
+			if arg == "--out-link" && i+1 < len(c.Args) {
+				outLink = c.Args[i+1]
+			}
+		}
+		if outLink == "" {
+			t.Fatalf("missing --out-link in %#v", c)
+		}
+		if err := os.MkdirAll(filepath.Dir(outLink), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(outLink, archiveRaw, 0o644)
+	}
+	t.Cleanup(func() { runExternalCommand = oldRun })
+
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
+	if err != nil {
+		t.Fatalf("boundary suite should build and pass missing archives: %v\n%s", err, stdout)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected two nix builds for default slim/distroless archives, got %#v", calls)
+	}
+	joined := strings.Join(append(calls[0].Args, calls[1].Args...), " ")
+	for _, want := range []string{".#coreLTS-slim", ".#coreLTS-distroless", "--accept-flake-config"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing build arg %q in calls %#v", want, calls)
+		}
+	}
+	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
+		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {
+			t.Fatalf("expected built archive for %s: %v", target, err)
+		}
 	}
 }

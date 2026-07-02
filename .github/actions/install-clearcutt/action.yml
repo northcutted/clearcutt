@@ -1,0 +1,99 @@
+name: Install ClearCutt CLI
+description: Install a verified ClearCutt release binary or build the checked-out source for development.
+inputs:
+  mode:
+    description: "'release' installs a verified release asset; 'local' builds from ./cli."
+    required: false
+    default: release
+  version:
+    description: ClearCutt release tag to install when mode=release.
+    required: false
+    default: v0.17.0
+  repo:
+    description: GitHub repository that publishes ClearCutt CLI release assets.
+    required: false
+    default: northcutted/clearcutt
+  output:
+    description: Output path for the installed binary.
+    required: false
+    default: ./clearcutt
+  go-version-file:
+    description: go.mod path for local source builds.
+    required: false
+    default: cli/go.mod
+  go-cache-dependency-path:
+    description: go.sum path for local source build cache keys.
+    required: false
+    default: cli/go.sum
+runs:
+  using: composite
+  steps:
+    - name: Install Sigstore Cosign
+      if: ${{ inputs.mode != 'local' }}
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    - name: Install verified release binary
+      if: ${{ inputs.mode != 'local' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.version }}"
+        REPO="${{ inputs.repo }}"
+        OUTPUT="${{ inputs.output }}"
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+        ASSET="clearcutt-${OS}-${ARCH}"
+        BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+        SIGNING_IDENTITY="https://github.com/${REPO}/.github/workflows/release.yml@refs/heads/main"
+        echo "[clearcutt] Installing verified ${ASSET} from ${REPO}@${VERSION}"
+        mkdir -p "$(dirname "${OUTPUT}")"
+        curl -fsSL -o "${RUNNER_TEMP}/${ASSET}" "${BASE_URL}/${ASSET}"
+        curl -fsSL -o "${RUNNER_TEMP}/${ASSET}.sig" "${BASE_URL}/${ASSET}.sig"
+        curl -fsSL -o "${RUNNER_TEMP}/SHA256SUMS.txt" "${BASE_URL}/SHA256SUMS.txt"
+        (
+          cd "${RUNNER_TEMP}"
+          grep -E "  ${ASSET}$" SHA256SUMS.txt | sha256sum -c -
+        )
+        cosign verify-blob "${RUNNER_TEMP}/${ASSET}" \
+          --bundle "${RUNNER_TEMP}/${ASSET}.sig" \
+          --certificate-identity "${SIGNING_IDENTITY}" \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+        install -m 0755 "${RUNNER_TEMP}/${ASSET}" "${OUTPUT}"
+        "${OUTPUT}" --version
+        if [[ -n "${GITHUB_PATH:-}" ]]; then
+          output_dir="$(cd "$(dirname "${OUTPUT}")" && pwd)"
+          echo "${output_dir}" >> "${GITHUB_PATH}"
+        fi
+
+    - name: Setup Go
+      if: ${{ inputs.mode == 'local' }}
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.go-cache-dependency-path }}
+        cache: true
+
+    - name: Build local source binary
+      if: ${{ inputs.mode == 'local' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        OUTPUT="${{ inputs.output }}"
+        case "${OUTPUT}" in
+          /*) BUILD_OUTPUT="${OUTPUT}" ;;
+          ./*) BUILD_OUTPUT="../${OUTPUT#./}" ;;
+          *) BUILD_OUTPUT="../${OUTPUT}" ;;
+        esac
+        VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+        mkdir -p "$(dirname "${OUTPUT}")"
+        cd cli
+        go run ./internal/platformsource/internal/genplatformsource
+        go build \
+          -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=${VERSION}" \
+          -o "${BUILD_OUTPUT}" ./cmd/clearcutt
+        cd ..
+        "${OUTPUT}" --version
+        if [[ -n "${GITHUB_PATH:-}" ]]; then
+          output_dir="$(cd "$(dirname "${OUTPUT}")" && pwd)"
+          echo "${output_dir}" >> "${GITHUB_PATH}"
+        fi

@@ -115,27 +115,62 @@ func NewVexCmd() *cobra.Command {
 }
 
 func runVex(imageID string) error {
-	record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, imageID)
+	doc, err := buildOpenVEXDocument(imageID, vexOpts.tag, vexOpts.exceptionsFile, time.Now().UTC())
 	if err != nil {
 		return err
 	}
 
+	// Serialize
+	outputData, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize OpenVEX document: %w", err)
+	}
+
+	if vexOpts.output != "" {
+		if err := os.WriteFile(vexOpts.output, outputData, 0644); err != nil {
+			return fmt.Errorf("failed to write OpenVEX file: %w", err)
+		}
+		if !GlobalOpts.Quiet {
+			fmt.Fprintf(out, "Successfully generated OpenVEX compliance document: %s\n", vexOpts.output)
+		}
+	} else {
+		// Output format checks
+		switch strings.ToLower(GlobalOpts.Format) {
+		case "yaml", "yml":
+			if err := output.PrintYAML(out, doc); err != nil {
+				return err
+			}
+		default:
+			out.Write(outputData)
+			fmt.Fprintln(out)
+		}
+	}
+
+	return nil
+}
+
+func buildOpenVEXDocument(imageID, tag, exceptionsFile string, now time.Time) (OpenVEXDocument, error) {
+	record, err := catalog.LoadImageRecord(GlobalOpts.CatalogPath, imageID)
+	if err != nil {
+		return OpenVEXDocument{}, err
+	}
+
 	if err := catalog.ValidateImageRecord(record); err != nil {
-		return fmt.Errorf("image record validation failed: %w", err)
+		return OpenVEXDocument{}, fmt.Errorf("image record validation failed: %w", err)
 	}
 
 	// Resolve the target release
-	release, err := latestOrTaggedRelease(record.Releases, vexOpts.tag)
+	release, err := latestOrTaggedRelease(record.Releases, tag)
 	if err != nil {
-		return fmt.Errorf("%w for image %q", err, imageID)
+		return OpenVEXDocument{}, fmt.Errorf("%w for image %q", err, imageID)
 	}
 
 	// Load exceptions if provided
 	var exceptionsDoc *ExceptionsDoc
-	if vexOpts.exceptionsFile != "" {
-		doc, err := LoadExceptionsFile(vexOpts.exceptionsFile)
+	if exceptionsFile != "" {
+		doc, err := LoadExceptionsFile(exceptionsFile)
 		if err != nil {
-			return fmt.Errorf("failed to load exceptions file: %w", err)
+			return OpenVEXDocument{}, fmt.Errorf("failed to load exceptions file: %w", err)
 		}
 		exceptionsDoc = doc
 	}
@@ -146,7 +181,7 @@ func runVex(imageID string) error {
 		ID:         fmt.Sprintf("https://clearcutt.internal/vex/%s/%s", imageID, release.Tag),
 		Author:     "ClearCutt Security Platform Gating Engine",
 		Role:       "Document Creator",
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		Timestamp:  now.Format(time.RFC3339),
 		Version:    1,
 		Statements: []OpenVEXStatement{},
 	}
@@ -156,7 +191,6 @@ func runVex(imageID string) error {
 	product := OpenVEXProduct{ID: productID}
 
 	seenVulnerabilities := make(map[string]bool)
-	now := time.Now().UTC()
 
 	for _, arch := range release.Architectures {
 		if arch.Vulnerabilities == nil {
@@ -223,32 +257,5 @@ func runVex(imageID string) error {
 			doc.Statements = append(doc.Statements, stmt)
 		}
 	}
-
-	// Serialize
-	outputData, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize OpenVEX document: %w", err)
-	}
-
-	if vexOpts.output != "" {
-		if err := os.WriteFile(vexOpts.output, outputData, 0644); err != nil {
-			return fmt.Errorf("failed to write OpenVEX file: %w", err)
-		}
-		if !GlobalOpts.Quiet {
-			fmt.Fprintf(out, "Successfully generated OpenVEX compliance document: %s\n", vexOpts.output)
-		}
-	} else {
-		// Output format checks
-		switch strings.ToLower(GlobalOpts.Format) {
-		case "yaml", "yml":
-			if err := output.PrintYAML(out, doc); err != nil {
-				return err
-			}
-		default:
-			out.Write(outputData)
-			fmt.Fprintln(out)
-		}
-	}
-
-	return nil
+	return doc, nil
 }

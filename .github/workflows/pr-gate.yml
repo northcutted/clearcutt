@@ -104,30 +104,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Export fleet matrix
         id: matrix
-        run: |
-          set -euo pipefail
-          RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
-          SERVICE_RELEASE_MATRIX=$(./clearcutt --format json service matrix --github-actions --matrix release | jq -c .)
-          SERVICE_IMAGE_MATRIX=$(./clearcutt --format json service matrix --github-actions --matrix image | jq -c .)
-          {
-            echo "release_matrix=${RELEASE_MATRIX}"
-            echo "service_release_matrix=${SERVICE_RELEASE_MATRIX}"
-            echo "service_image_matrix=${SERVICE_IMAGE_MATRIX}"
-          } >> "$GITHUB_OUTPUT"
+        run: ./clearcutt fleet workflow-matrices --github-output "$GITHUB_OUTPUT"
 
   validate-matrix:
     name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
@@ -149,17 +135,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
@@ -185,8 +166,11 @@ jobs:
       # Build, generate SBOM, and scan with Syft + Grype locally.
       # Omit --publish to prevent any registry copy or keyless OIDC signing.
       - name: Run Build and Security Gate
+        env:
+          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
         run: |
           ./clearcutt fleet certify-target \
+            --engine "${CLEARCUTT_BUILD_ENGINE}" \
             --system "${{ matrix.system }}" \
             --language "${{ matrix.language }}" \
             --tier "${{ matrix.tier }}" \
@@ -224,17 +208,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
@@ -257,7 +236,9 @@ jobs:
         run: ./clearcutt service validate "${{ matrix.service }}" --nix --system x86_64-linux --core-dir core
 
       - name: Build Service Image
-        run: ./clearcutt service build "${{ matrix.service }}" --system x86_64-linux --core-dir core
+        env:
+          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
+        run: ./clearcutt service build "${{ matrix.service }}" --engine "${CLEARCUTT_BUILD_ENGINE}" --system x86_64-linux --core-dir core
 
       - name: Validate Service OCI Contract and Smoke
         env:
@@ -283,13 +264,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
       - name: Setup Node
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v6.0.0
         with:
@@ -297,10 +271,12 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
+        with:
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Validate Mixed Runtime and Service Catalog
         run: |
@@ -341,17 +317,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
@@ -365,12 +336,8 @@ jobs:
           primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: nix-integration-${{ runner.os }}-
 
-      # Required for structure tests and patchelf inside the suite
-      - name: Install Cosign & Gating Tools
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
       - name: Execute Gating Suite
-        run: ./clearcutt platform setup-nix --core-dir core -- ./tests/verify.sh
+        run: ./clearcutt verify boundary-suite --core-dir core
 
   go-ci:
     name: Go Lint, Build, Test & Drift Guard

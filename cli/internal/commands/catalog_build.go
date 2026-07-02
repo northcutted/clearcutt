@@ -17,6 +17,8 @@ type catalogBuildFlags struct {
 	forceRefreshAll bool
 	scanDepth       string
 	scanAll         bool
+	updateDB        bool
+	coreDir         string
 	lenientEvidence bool
 	includeServices bool
 }
@@ -39,6 +41,8 @@ func newCatalogBuildCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&catalogBuildOpts.forceRefreshAll, "force-refresh-all", parseScanBool(os.Getenv("FORCE_REFRESH_ALL")), "Refresh enrichment and SBOMs for every release")
 	cmd.Flags().StringVar(&catalogBuildOpts.scanDepth, "scan-depth", envOr("SCAN_TAG_DEPTH", "4"), "Newest cached tag count to scan")
 	cmd.Flags().BoolVar(&catalogBuildOpts.scanAll, "scan-all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached SBOM tag")
+	cmd.Flags().BoolVar(&catalogBuildOpts.updateDB, "update-db", parseScanBool(os.Getenv("SCAN_UPDATE_DB")), "Refresh the local Grype vulnerability database before scanning")
+	cmd.Flags().StringVar(&catalogBuildOpts.coreDir, "core-dir", "", "Optional Nix fleet core directory; when set, run scanner tooling through the pinned Nix dev shell")
 	cmd.Flags().BoolVar(&catalogBuildOpts.lenientEvidence, "lenient-evidence", false, "Run verify catalog without requiring signature/provenance/tests")
 	cmd.Flags().BoolVar(&catalogBuildOpts.includeServices, "include-services", false, "Include configured first-class service images from clearcutt.fleet.yaml")
 	return cmd
@@ -84,6 +88,8 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 	scanOpts.tags = os.Getenv("SCAN_TAGS")
 	scanOpts.all = catalogBuildOpts.scanAll || catalogBuildOpts.forceRefreshAll
 	scanOpts.concurrency = 0
+	scanOpts.updateDB = catalogBuildOpts.updateDB
+	scanOpts.coreDir = catalogBuildOpts.coreDir
 	if err := runScan(); err != nil {
 		return err
 	}

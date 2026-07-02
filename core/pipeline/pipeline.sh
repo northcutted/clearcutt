@@ -39,6 +39,46 @@ log_error() {
   echo -e "${RED}[ClearCutt Pipeline] ✘ $1${RESET}" >&2
 }
 
+find_clearcutt_cli() {
+  if [[ -n "${CLEARCUTT_CLI:-}" && -x "${CLEARCUTT_CLI}" ]]; then
+    printf '%s\n' "$CLEARCUTT_CLI"
+    return 0
+  fi
+
+  if command -v clearcutt >/dev/null 2>&1; then
+    command -v clearcutt
+    return 0
+  fi
+
+  local pipeline_dir repo_root
+  pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_root="$(cd "$pipeline_dir/../.." && pwd)"
+  if [[ -x "$repo_root/clearcutt" ]]; then
+    printf '%s\n' "$repo_root/clearcutt"
+    return 0
+  fi
+
+  return 1
+}
+
+run_clearcutt_verify_gate() {
+  local gate="$1"
+  shift
+
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    "$cli" verify "$gate" "$@"
+    return $?
+  fi
+
+  local pipeline_dir repo_root
+  pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_root="$(cd "$pipeline_dir/../.." && pwd)"
+  log_info "No clearcutt binary found; running verify $gate from ${repo_root}/cli via go run."
+  go -C "${repo_root}/cli" run ./cmd/clearcutt verify "$gate" "$@"
+}
+
 aggregate_assertion_status() {
   local aggregate="passed"
   local status
@@ -278,7 +318,7 @@ certify_target() {
     local pipeline_dir
     pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     log_info "Executing closure purity gate (shells, package managers, setuid/setgid) on distroless target..."
-    if python3 "$pipeline_dir/../tests/closure-purity-check.py" "$uncompressed_tar" \
+    if run_clearcutt_verify_gate closure-purity "$uncompressed_tar" \
       --allowlist "$pipeline_dir/../tests/closure-purity-allowlist.txt"; then
       closure_purity_status="passed"
       closure_purity_bool="true"
@@ -304,7 +344,7 @@ certify_target() {
     local pipeline_dir
     pipeline_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     log_info "Executing runtime-patch completeness gate (off-allowlist openssl/sqlite identity) on $tier target..."
-    if python3 "$pipeline_dir/../tests/closure-cve-check.py" "$uncompressed_tar" \
+    if run_clearcutt_verify_gate runtime-cve "$uncompressed_tar" \
       --floor "$pipeline_dir/../tests/runtime-dep-floor.json"; then
       runtime_patch_status="passed"
       runtime_patch_bool="true"

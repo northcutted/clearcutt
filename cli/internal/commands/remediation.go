@@ -65,32 +65,35 @@ type RemediationPlanSummary struct {
 }
 
 type RemediationCampaign struct {
-	Package               string                       `json:"package"`
-	CVE                   string                       `json:"cve"`
-	PrimaryCVE            string                       `json:"primaryCve"`
-	CVEs                  []string                     `json:"cves"`
-	InstalledVersion      string                       `json:"installedVersion"`
-	FixedVersion          string                       `json:"fixedVersion"`
-	FixState              string                       `json:"fixState"`
-	Severity              string                       `json:"severity"`
-	Layer                 string                       `json:"layer"`
-	CVSSScore             *float64                     `json:"cvssScore,omitempty"`
-	CVSSVector            *string                      `json:"cvssVector,omitempty"`
-	EPSSScore             *float64                     `json:"epssScore,omitempty"`
-	EPSSPercentile        *float64                     `json:"epssPercentile,omitempty"`
-	RiskScore             *float64                     `json:"riskScore,omitempty"`
-	DataSource            *string                      `json:"dataSource,omitempty"`
-	Namespace             *string                      `json:"namespace,omitempty"`
-	Description           *string                      `json:"description,omitempty"`
-	RecommendedRoute      string                       `json:"recommendedRoute"`
-	RouteReason           string                       `json:"routeReason,omitempty"`
-	RiskFactors           RemediationRiskFactors       `json:"riskFactors"`
-	PolicyDecision        RemediationPolicyDecision    `json:"policyDecision"`
-	ExpectedRemoved       []RemediationExpectedFinding `json:"expectedRemoved"`
-	AffectedTargets       []RemediationTarget          `json:"affectedTargets"`
-	ProductionTargetCount int                          `json:"productionTargetCount"`
-	TargetCount           int                          `json:"targetCount"`
-	Score                 float64                      `json:"score"`
+	Package                  string                       `json:"package"`
+	CVE                      string                       `json:"cve"`
+	PrimaryCVE               string                       `json:"primaryCve"`
+	CVEs                     []string                     `json:"cves"`
+	InstalledVersion         string                       `json:"installedVersion"`
+	FixedVersion             string                       `json:"fixedVersion"`
+	FixState                 string                       `json:"fixState"`
+	Severity                 string                       `json:"severity"`
+	Layer                    string                       `json:"layer"`
+	CVSSScore                *float64                     `json:"cvssScore,omitempty"`
+	CVSSVector               *string                      `json:"cvssVector,omitempty"`
+	EPSSScore                *float64                     `json:"epssScore,omitempty"`
+	EPSSPercentile           *float64                     `json:"epssPercentile,omitempty"`
+	RiskScore                *float64                     `json:"riskScore,omitempty"`
+	DataSource               *string                      `json:"dataSource,omitempty"`
+	Namespace                *string                      `json:"namespace,omitempty"`
+	Description              *string                      `json:"description,omitempty"`
+	RecommendedRoute         string                       `json:"recommendedRoute"`
+	RouteReason              string                       `json:"routeReason,omitempty"`
+	RemediationEvidence      map[string]any               `json:"remediationEvidence,omitempty"`
+	DeterministicRemediation map[string]any               `json:"deterministicRemediation,omitempty"`
+	DeterministicRecipe      map[string]any               `json:"deterministicRecipe,omitempty"`
+	RiskFactors              RemediationRiskFactors       `json:"riskFactors"`
+	PolicyDecision           RemediationPolicyDecision    `json:"policyDecision"`
+	ExpectedRemoved          []RemediationExpectedFinding `json:"expectedRemoved"`
+	AffectedTargets          []RemediationTarget          `json:"affectedTargets"`
+	ProductionTargetCount    int                          `json:"productionTargetCount"`
+	TargetCount              int                          `json:"targetCount"`
+	Score                    float64                      `json:"score"`
 }
 
 type RemediationScanSource struct {
@@ -210,10 +213,10 @@ func NewRemediationCmd() *cobra.Command {
 		},
 	}
 
-	planCmd.Flags().StringVar(&remediationOpts.vulnRoot, "vuln-root", remediationDefaultVulnRoot, "Root directory containing versioned vulnerability scan outputs")
+	planCmd.Flags().StringVar(&remediationOpts.vulnRoot, "vuln-root", envOr("VULN_ROOT", remediationDefaultVulnRoot), "Root directory containing versioned vulnerability scan outputs")
 	planCmd.Flags().StringVar(&remediationOpts.vulnDir, "vuln-dir", "", "Specific vulnerability scan directory to read")
-	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", false, "Include dev-tier-only campaigns")
-	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", 0, "Maximum campaigns to emit")
+	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", parseScanBool(os.Getenv("INCLUDE_DEV_ONLY_REMEDIATION")), "Include dev-tier-only campaigns")
+	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", envIntValue("MAX_FINDINGS_PER_RUN", 0), "Maximum campaigns to emit")
 	planCmd.Flags().StringVar(&remediationOpts.out, "out", "", "Write the plan JSON to this path (in addition to stdout output)")
 	planCmd.Flags().StringVar(&remediationOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 
@@ -225,6 +228,7 @@ func NewRemediationCmd() *cobra.Command {
 	cmd.AddCommand(NewRemediationGenerateFloorCmd())
 	cmd.AddCommand(NewRemediationIgnoreCmd())
 	cmd.AddCommand(NewRemediationVexCryptoCmd())
+	cmd.AddCommand(NewRemediationWorkflowParamsCmd())
 	return cmd
 }
 

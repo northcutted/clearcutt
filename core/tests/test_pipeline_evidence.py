@@ -21,6 +21,7 @@ class PipelineEvidenceTests(unittest.TestCase):
         self.tmp_path = pathlib.Path(self.tmp.name)
         self.bin_dir = self.tmp_path / "bin"
         self.bin_dir.mkdir()
+        self.clearcutt_log = self.tmp_path / "clearcutt-invocations.log"
         self.write_fake_tools()
 
     def tearDown(self):
@@ -73,6 +74,17 @@ class PipelineEvidenceTests(unittest.TestCase):
             exit "${FAKE_GRYPE_EXIT:-1}"
             """,
         )
+        self.write_executable(
+            "clearcutt",
+            r"""
+            #!/usr/bin/env bash
+            set -euo pipefail
+            if [[ -n "${FAKE_CLEARCUTT_LOG:-}" ]]; then
+              printf '%s\n' "$*" >> "$FAKE_CLEARCUTT_LOG"
+            fi
+            exit "${FAKE_CLEARCUTT_EXIT:-0}"
+            """,
+        )
 
     def run_pipeline(self, target, *args, extra_env=None):
         env = os.environ.copy()
@@ -80,6 +92,7 @@ class PipelineEvidenceTests(unittest.TestCase):
             "PATH": f"{self.bin_dir}{os.pathsep}{env.get('PATH', '')}",
             "CLEARCUTT_SKIP_NIX_ENV_LOAD": "true",
             "FAKE_GRYPE_EXIT": "1",
+            "FAKE_CLEARCUTT_LOG": str(self.clearcutt_log),
         })
         if extra_env:
             env.update(extra_env)
@@ -109,6 +122,11 @@ class PipelineEvidenceTests(unittest.TestCase):
         scan = json.loads(scan_path.read_text(encoding="utf-8"))
         self.assertEqual(scan["matches"][0]["vulnerability"]["id"], "CVE-2026-0001")
 
+    def clearcutt_invocations(self):
+        if not self.clearcutt_log.exists():
+            return ""
+        return self.clearcutt_log.read_text(encoding="utf-8")
+
     def test_runtime_slim_grype_failure_writes_failed_predicate_and_scan(self):
         result = self.run_pipeline("coreLTS-slim")
 
@@ -117,6 +135,9 @@ class PipelineEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "failed")
         self.assertTrue(evidence["policy"]["blocking"])
         self.assertEqual(evidence["assertions"][2]["status"], "failed")
+        invocations = self.clearcutt_invocations()
+        self.assertIn("verify runtime-cve", invocations)
+        self.assertNotIn("closure-cve-check.py", PIPELINE.read_text(encoding="utf-8"))
         self.assert_scan_evidence("coreLTS-slim")
 
     def test_runtime_dev_grype_failure_records_warning(self):
@@ -128,6 +149,26 @@ class PipelineEvidenceTests(unittest.TestCase):
         self.assertFalse(evidence["policy"]["blocking"])
         self.assertEqual(evidence["assertions"][2]["status"], "warning")
         self.assert_scan_evidence("coreLTS-dev")
+
+    def test_runtime_distroless_uses_clearcutt_boundary_gates(self):
+        result = self.run_pipeline("coreLTS-distroless")
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        evidence = self.read_result("coreLTS-distroless")
+        self.assertEqual(evidence["status"], "failed")
+        self.assertTrue(evidence["closurePurity"])
+        self.assertTrue(evidence["runtimePatchComplete"])
+        invocations = self.clearcutt_invocations()
+        self.assertIn("verify closure-purity", invocations)
+        self.assertIn("verify runtime-cve", invocations)
+
+    def test_pipeline_boundary_gates_are_cli_owned(self):
+        source = PIPELINE.read_text(encoding="utf-8")
+
+        self.assertIn("run_clearcutt_verify_gate closure-purity", source)
+        self.assertIn("run_clearcutt_verify_gate runtime-cve", source)
+        self.assertNotIn("python3 \"$pipeline_dir/../tests/closure-purity-check.py\"", source)
+        self.assertNotIn("python3 \"$pipeline_dir/../tests/closure-cve-check.py\"", source)
 
     def test_preview_service_grype_failure_records_warning(self):
         result = self.run_pipeline("postgres16", "--kind", "service")

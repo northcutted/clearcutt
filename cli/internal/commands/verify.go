@@ -64,6 +64,7 @@ func NewVerifyCmd() *cobra.Command {
   closure-purity   gate an image's /nix/store closure against shells, package managers, setuid/setgid
   runtime-cve      gate the shipped closure: no stock (below-floor) build of a CVE-remediated dep
   boundaries       run all image-security boundary gates (closure-purity + runtime-cve) at once
+  boundary-suite   run the representative PR-gate image-security boundary suite
   rebuild          verify rebuild digest and runtime/grafted closure equivalence predicates
   release-evidence verify a published image ref's Sigstore signature + SLSA provenance`,
 		Args: cobra.ExactArgs(1),
@@ -81,6 +82,7 @@ func NewVerifyCmd() *cobra.Command {
 	cmd.AddCommand(newVerifyClosurePurityCmd())
 	cmd.AddCommand(newVerifyRuntimeCveCmd())
 	cmd.AddCommand(newVerifyBoundariesCmd())
+	cmd.AddCommand(newVerifyBoundarySuiteCmd())
 	return cmd
 }
 

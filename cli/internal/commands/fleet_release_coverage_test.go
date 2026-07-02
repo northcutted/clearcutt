@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -43,9 +44,13 @@ func TestFleetExportProvenanceAndFinalizeReleaseBranches(t *testing.T) {
 	}()
 
 	captureCalls := 0
+	capturedRefs := []string{}
 	captureExternalOutput = func(c externalCommand) (string, error) {
-		if c.Name == "cosign" {
+		if c.Name == "nix" && strings.Contains(strings.Join(c.Args, " "), "--command cosign download attestation") {
 			captureCalls++
+			if len(c.Args) > 0 {
+				capturedRefs = append(capturedRefs, c.Args[len(c.Args)-1])
+			}
 			if captureCalls == 1 {
 				return "", errors.New("missing v1 predicate")
 			}
@@ -70,12 +75,17 @@ func TestFleetExportProvenanceAndFinalizeReleaseBranches(t *testing.T) {
 		"--build-outputs", outputDir,
 		"--language", "java21",
 		"--tier", "distroless",
+		"--core-dir", filepath.Join(root, "core"),
+		"--ref", "registry.example.com/acme/fleet/base-java21@sha256:immutable",
 	)
 	if err != nil {
 		t.Fatalf("fleet export provenance failed: %v\n%s", err, stdout)
 	}
 	if captureCalls != 2 {
 		t.Fatalf("expected provenance fallback to v0.2, got %d capture calls", captureCalls)
+	}
+	if len(capturedRefs) != 2 || capturedRefs[0] != "registry.example.com/acme/fleet/base-java21@sha256:immutable" || capturedRefs[1] != capturedRefs[0] {
+		t.Fatalf("expected immutable provenance refs, got %#v", capturedRefs)
 	}
 	provPath := filepath.Join(outputDir, "java21-distroless.intoto.jsonl")
 	if !nonEmptyFile(provPath) {
@@ -136,10 +146,7 @@ func TestFleetVerifyTargetAppliesConfiguredEvidenceDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	fakes := map[string]string{
-		"crane":         "#!/bin/sh\nif [ \"$1\" = digest ]; then printf 'sha256:abc123\\n'; fi\nexit 0\n",
-		"cosign":        "#!/bin/sh\nexit 0\n",
-		"slsa-verifier": "#!/bin/sh\nexit 0\n",
-		"gh":            "#!/bin/sh\nexit 0\n",
+		"nix": "#!/bin/sh\nexit 0\n",
 	}
 	for name, body := range fakes {
 		if err := os.WriteFile(filepath.Join(binDir, name), []byte(body), 0o755); err != nil {
@@ -147,18 +154,30 @@ func TestFleetVerifyTargetAppliesConfiguredEvidenceDefaults(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	coreDir := filepath.Join(root, "core")
+	if err := os.MkdirAll(coreDir, 0o755); err != nil {
+		t.Fatalf("mkdir core: %v", err)
+	}
 
 	oldFleetOpts := fleetOpts
 	oldReleaseEvidenceOpts := releaseEvidenceOpts
+	oldResolveDigest := releaseEvidenceResolveDigest
+	releaseEvidenceResolveDigest = func(ref string) (string, error) {
+		return "sha256:abc123", nil
+	}
 	defer func() {
 		fleetOpts = oldFleetOpts
 		releaseEvidenceOpts = oldReleaseEvidenceOpts
+		releaseEvidenceResolveDigest = oldResolveDigest
 	}()
 
+	outPath := filepath.Join(root, "verification", "java21-distroless.release-verification.json")
 	stdout, err := runCLI(t,
 		"fleet", "verify-target",
 		"--fleet-config", configPath,
+		"--core-dir", coreDir,
 		"--ref", "ghcr.io/acme/platform/platform-java21:v1.2.3-distroless",
+		"--out", outPath,
 	)
 	if err != nil {
 		t.Fatalf("fleet verify target failed: %v\n%s", err, stdout)
@@ -172,6 +191,17 @@ func TestFleetVerifyTargetAppliesConfiguredEvidenceDefaults(t *testing.T) {
 		releaseEvidenceOpts.sourceRef != "refs/heads/main" ||
 		releaseEvidenceOpts.sourceBranch != "main" {
 		t.Fatalf("fleet verify defaults not applied: %#v", releaseEvidenceOpts)
+	}
+	raw, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("verification artifact was not written: %v", err)
+	}
+	var artifact VerifyEvidenceResponse
+	if err := json.Unmarshal(raw, &artifact); err != nil {
+		t.Fatalf("parse verification artifact: %v\n%s", err, raw)
+	}
+	if artifact.Status != "pass" || artifact.Ref == "" || artifact.Digest != "sha256:abc123" || len(artifact.Checks) == 0 {
+		t.Fatalf("unexpected verification artifact: %#v", artifact)
 	}
 }
 
@@ -200,6 +230,9 @@ func TestFleetReleaseHelperFailureBranches(t *testing.T) {
 	}
 	if isReleaseAsset("notes.txt") {
 		t.Fatal("notes.txt should not be a release asset")
+	}
+	if !isReleaseAsset("java21-distroless.release-verification.json") {
+		t.Fatal("verification checklist should be a release asset")
 	}
 	if got := filterGeneratedReleaseNotes("Keep me\nTo release these assets:\n"); got != "Keep me\n" {
 		t.Fatalf("unexpected filtered notes: %q", got)

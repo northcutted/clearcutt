@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -9,10 +10,17 @@ import (
 type fakeRunner struct {
 	runs    []string
 	outputs map[string]string
+	runErrs map[string]error
 }
 
 func (f *fakeRunner) Run(dir, name string, args ...string) error {
-	f.runs = append(f.runs, name+" "+strings.Join(args, " "))
+	call := name + " " + strings.Join(args, " ")
+	f.runs = append(f.runs, call)
+	for prefix, err := range f.runErrs {
+		if strings.HasPrefix(call, prefix) {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -114,6 +122,22 @@ func TestAggregatedPRUpdatesWhenPRExists(t *testing.T) {
 	}
 	if !r.ranContaining("--force-with-lease=cve-remediation/auto:abc1234") {
 		t.Errorf("expected force-with-lease against remote tip, runs: %v", r.runs)
+	}
+}
+
+func TestAggregatedPRPropagatesCreateFailure(t *testing.T) {
+	r := &fakeRunner{
+		outputs: map[string]string{
+			"gh pr list":    "0",
+			"git rev-parse": "",
+		},
+		runErrs: map[string]error{
+			"gh pr create": errors.New("gh unavailable"),
+		},
+	}
+	err := openOrUpdateAggregatedPR(r, "core", "cve-remediation/auto", "main", sampleCampaigns())
+	if err == nil || !strings.Contains(err.Error(), "gh unavailable") {
+		t.Fatalf("expected gh create failure to propagate, got %v", err)
 	}
 }
 

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func writeRemediationScan(t *testing.T, root, version, file string, findings []map[string]any) string {
@@ -66,6 +69,82 @@ func TestRemediationPlanProductionOnlyDefault(t *testing.T) {
 	}
 	if plan.Campaigns[0].Package != "python" || plan.Campaigns[0].ProductionTargetCount != 1 {
 		t.Fatalf("unexpected campaign: %+v", plan.Campaigns[0])
+	}
+}
+
+func TestRemediationWorkflowParamsWritesGitHubOutputs(t *testing.T) {
+	root := t.TempDir()
+	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg.Remediation.ScanDepth = "3"
+	cfg.Remediation.MaxFindingsPerRun = 7
+	cfg.Remediation.MaxPatchFailuresPerRun = 2
+	cfg.Remediation.IncludeDevOnly = true
+	writeFleetConfigStruct(t, filepath.Join(root, "clearcutt.fleet.yaml"), cfg)
+
+	ghOut := filepath.Join(root, "github-output")
+	stdout, err := runCLI(t,
+		"--format", "json",
+		"remediation", "workflow-params",
+		"--fleet-config", filepath.Join(root, "clearcutt.fleet.yaml"),
+		"--github-output", ghOut,
+	)
+	if err != nil {
+		t.Fatalf("workflow params failed: %v\n%s", err, stdout)
+	}
+	var got RemediationWorkflowParams
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode workflow params: %v\n%s", err, stdout)
+	}
+	if got.ScanDepth != "3" || got.MaxFindingsPerRun != 7 || got.MaxPatchFailuresPerRun != 2 || !got.IncludeDevOnly {
+		t.Fatalf("unexpected workflow params: %#v", got)
+	}
+	if got.PolicyJSON == "" || strings.Contains(got.PolicyJSON, "\n") || !strings.Contains(got.PolicyJSON, `"minimumSeverity":"high"`) {
+		t.Fatalf("policy should be compact JSON, got %q", got.PolicyJSON)
+	}
+	raw, err := os.ReadFile(ghOut)
+	if err != nil {
+		t.Fatalf("read github output: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"scan_depth=3\n",
+		"max_findings=7\n",
+		"max_failures=2\n",
+		"include_dev_only=true\n",
+		"policy=",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("github output missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestRemediationPlanUsesCIEnvDefaults(t *testing.T) {
+	root := t.TempDir()
+	devFix := map[string]any{
+		"id":             "CVE-2026-67890",
+		"severity":       "Critical",
+		"packageName":    "gradle",
+		"packageVersion": "9.2.0",
+		"layer":          "runtime",
+		"fixedIn":        "9.3.0",
+		"fixState":       "fixed",
+	}
+	writeRemediationScan(t, root, "v1.0.0", "java21-dev-amd64.json", []map[string]any{devFix})
+	t.Setenv("VULN_ROOT", root)
+	t.Setenv("INCLUDE_DEV_ONLY_REMEDIATION", "true")
+	t.Setenv("MAX_FINDINGS_PER_RUN", "1")
+
+	stdout, err := runCLI(t, "--format", "json", "remediation", "plan")
+	if err != nil {
+		t.Fatalf("remediation plan failed: %v\n%s", err, stdout)
+	}
+	var plan RemediationPlan
+	if err := json.Unmarshal([]byte(stdout), &plan); err != nil {
+		t.Fatalf("decode plan: %v\n%s", err, stdout)
+	}
+	if plan.Summary.CampaignCount != 1 || !plan.Summary.IncludeDevOnly {
+		t.Fatalf("expected env defaults to include one dev-only campaign: %+v", plan.Summary)
 	}
 }
 
@@ -344,6 +423,21 @@ func TestRemediationReportSummarizesDraftsAndResidualOwnerActions(t *testing.T) 
 	}
 }
 
+func TestRemediationReportAllowMissingPlan(t *testing.T) {
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "remediation-report.json")
+	stdout, err := runCLI(t, "remediation", "report", "--allow-missing", "--plan", filepath.Join(dir, "missing-plan.json"), "--out", reportPath)
+	if err != nil {
+		t.Fatalf("allow-missing report should not fail: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "missing; skipping report generation") {
+		t.Fatalf("expected missing-plan message, got:\n%s", stdout)
+	}
+	if _, err := os.Stat(reportPath); !os.IsNotExist(err) {
+		t.Fatalf("allow-missing should not write report, stat err=%v", err)
+	}
+}
+
 func TestRemediationValidateOverlaysRequiresEvidenceAndDetectsCollisions(t *testing.T) {
 	overlayDir := t.TempDir()
 	overlayPath := filepath.Join(overlayDir, "cve-2026-10001-zlib.nix")
@@ -410,6 +504,96 @@ func TestRemediationValidateOverlaysRequiresEvidenceAndDetectsCollisions(t *test
 	})
 	if stdout, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", manualDir); err != nil {
 		t.Fatalf("manual accepted overlay should pass despite generated hook restriction: %v\n%s", err, stdout)
+	}
+}
+
+func TestRemediationValidateOverlaysRequiresActiveIgnoreEvidence(t *testing.T) {
+	overlayDir := t.TempDir()
+	grypePath := filepath.Join(t.TempDir(), ".grype.yaml")
+	if err := os.WriteFile(grypePath, []byte(`ignore:
+- vulnerability: CVE-2026-9669
+  package:
+    name: python
+    version: 3.14.4
+    type: UnknownPackage
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir, "--grype-config", grypePath)
+	if err == nil || !strings.Contains(err.Error(), "lacks matching active evidence") {
+		t.Fatalf("expected missing ignore evidence failure, got %v", err)
+	}
+
+	expired := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	writeCatalogJSON(t, filepath.Join(overlayDir, "cve-2026-9669-python.ignore.evidence.json"), map[string]any{
+		"status":  "scanner_suppressed",
+		"cve":     "CVE-2026-9669",
+		"package": "python",
+		"expires": expired,
+		"suppressions": []map[string]any{{
+			"vulnerability": "CVE-2026-9669",
+			"package": map[string]any{
+				"name":    "python",
+				"version": "3.14.4",
+				"type":    "UnknownPackage",
+			},
+		}},
+	})
+	_, err = runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir, "--grype-config", grypePath)
+	if err == nil || !strings.Contains(err.Error(), "expired evidence") {
+		t.Fatalf("expected expired ignore evidence failure, got %v", err)
+	}
+
+	future := time.Now().UTC().AddDate(1, 0, 0).Format("2006-01-02")
+	writeCatalogJSON(t, filepath.Join(overlayDir, "cve-2026-9669-python.ignore.evidence.json"), map[string]any{
+		"status":  "scanner_suppressed",
+		"cve":     "CVE-2026-9669",
+		"package": "python",
+		"expires": future,
+		"suppressions": []map[string]any{{
+			"vulnerability": "CVE-2026-9669",
+			"package": map[string]any{
+				"name":    "python",
+				"version": "3.14.4",
+				"type":    "UnknownPackage",
+			},
+		}},
+	})
+	if stdout, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir, "--grype-config", grypePath); err != nil {
+		t.Fatalf("valid ignore evidence should pass: %v\n%s", err, stdout)
+	}
+}
+
+func TestRemediationValidateOverlaysAcceptsPatchedScannerGapEvidence(t *testing.T) {
+	overlayDir := t.TempDir()
+	grypePath := filepath.Join(t.TempDir(), ".grype.yaml")
+	if err := os.WriteFile(grypePath, []byte(`ignore:
+- vulnerability: CVE-2026-7210
+  package:
+    name: python
+    version: 3.13.13
+    type: UnknownPackage
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCatalogJSON(t, filepath.Join(overlayDir, "cve-2026-7210-python313.evidence.json"), map[string]any{
+		"status":         "manual_accepted",
+		"cve":            "CVE-2026-7210",
+		"package":        "python313",
+		"owner":          "platform",
+		"reason":         "Branch patch applied; scanner version metadata still reports the older CPython point release.",
+		"expires":        time.Now().UTC().AddDate(1, 0, 0).Format("2006-01-02"),
+		"policyDecision": map[string]any{"selected": true, "reason": "upstream_branch_patch_available"},
+		"expectedRemoved": []map[string]any{{
+			"cve":              "CVE-2026-7210",
+			"package":          "python",
+			"installedVersion": "3.13.13",
+		}},
+		"validation": []map[string]any{{"status": "passed"}},
+	})
+	if stdout, err := runCLI(t, "remediation", "validate-overlays", "--overlay-dir", overlayDir, "--grype-config", grypePath); err != nil {
+		t.Fatalf("patched scanner-gap evidence should pass: %v\n%s", err, stdout)
 	}
 }
 
@@ -495,6 +679,95 @@ func TestRemediationRunDefersDevOnlyCampaignsWithoutAgent(t *testing.T) {
 	}
 }
 
+func TestRemediationRunLLMOffSkipsCampaignsWithoutDeterministicEvidence(t *testing.T) {
+	root := t.TempDir()
+	coreDir := t.TempDir()
+	agentMarker := filepath.Join(t.TempDir(), "agent-called")
+	agentPath := filepath.Join(t.TempDir(), "agent.sh")
+	if err := os.WriteFile(agentPath, []byte("#!/usr/bin/env bash\nprintf called > '"+agentMarker+"'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	finding := map[string]any{
+		"id":             "CVE-2026-77777",
+		"severity":       "Critical",
+		"packageName":    "zlib",
+		"packageVersion": "1.3.1",
+		"layer":          "runtime",
+		"fixedIn":        "1.3.2",
+		"fixState":       "fixed",
+	}
+	writeRemediationScan(t, root, "v1.0.0", "python3.13-slim-amd64.json", []map[string]any{finding})
+	planPath := filepath.Join(t.TempDir(), "plan.json")
+
+	stdout, err := runCLI(t,
+		"remediation", "run",
+		"--vuln-root", root,
+		"--core-dir", coreDir,
+		"--agent-script", agentPath,
+		"--plan-out", planPath,
+		"--llm", "off",
+		"--limit", "1",
+	)
+	if err != nil {
+		t.Fatalf("remediation run should skip rather than require LLM: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Zero fixable") {
+		t.Fatalf("expected zero-campaign summary, got:\n%s", stdout)
+	}
+	if _, err := os.Stat(agentMarker); !os.IsNotExist(err) {
+		t.Fatalf("deterministic-only mode should not execute agent without evidence, stat err=%v", err)
+	}
+	raw, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan RemediationPlan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Summary.CandidateCampaignCount != 1 || plan.Summary.CampaignCount != 0 || plan.Metrics.SelectedCampaigns != 0 {
+		t.Fatalf("unexpected deterministic-only plan summary: %+v metrics=%+v", plan.Summary, plan.Metrics)
+	}
+}
+
+func TestDeterministicRemediationEvidenceFilterSelectsOnlyKnownSafeCampaigns(t *testing.T) {
+	evidencePath := filepath.Join(t.TempDir(), "remediation-evidence.json")
+	writeCatalogJSON(t, evidencePath, map[string]any{
+		"entries": []map[string]any{{
+			"package":       "zlib",
+			"cve":           "CVE-2026-77777",
+			"fixedVersion":  "1.3.2",
+			"download_url":  "https://example.test/zlib-1.3.2.tar.gz",
+			"source_sha256": "sha256-deadbeef",
+		}},
+	})
+	selected, skipped, err := filterDeterministicRemediationCampaigns([]RemediationCampaign{
+		{Package: "zlib", CVE: "CVE-2026-77777", FixedVersion: "1.3.2"},
+		{Package: "curl", CVE: "CVE-2026-88888", FixedVersion: "8.0.1"},
+	}, evidencePath)
+	if err != nil {
+		t.Fatalf("filter failed: %v", err)
+	}
+	if len(selected) != 1 || selected[0].Package != "zlib" || skipped != 1 {
+		t.Fatalf("unexpected filter result selected=%+v skipped=%d", selected, skipped)
+	}
+	recipe := deterministicRecipeForCampaign(selected[0])
+	if recipe == nil {
+		t.Fatal("expected external evidence-only selection to synthesize a native recipe")
+	}
+	if route := stringValue(recipe, "route"); route != "version_bump" {
+		t.Fatalf("unexpected synthesized route %q", route)
+	}
+	expression := stringValue(recipe, "overlay_expression")
+	if !strings.Contains(expression, "prev.lib.versionOlder prev.zlib.version \"1.3.2\"") ||
+		!strings.Contains(expression, "src = prev.fetchurl") {
+		t.Fatalf("unexpected synthesized external-evidence recipe:\n%s", expression)
+	}
+	if _, err := validateNativeRemediationRecipe(recipe, selected[0]); err != nil {
+		t.Fatalf("external evidence-only recipe should validate: %v", err)
+	}
+}
+
 func TestRemediationOpenPRDryRunRendersSummary(t *testing.T) {
 	summaryPath := filepath.Join(t.TempDir(), "summary.json")
 	summary := map[string]any{
@@ -528,14 +801,24 @@ func TestRemediationOpenPRDryRunRendersSummary(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Title: chore: automated CVE patch remediation for zlib (CVE-2026-12345)",
+		"ClearCutt remediation workflow",
 		"### Planner campaign",
 		"`version_bump`",
 		"`zlib`",
 		"`python3.13-slim:amd64, python3.13-dev:amd64`",
 		"`build-outputs/scan.json`",
+		"Native deterministic drafts",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in dry-run output:\n%s", want, stdout)
+		}
+	}
+	for _, forbidden := range []string{
+		"ClearCutt CVE Patch Drafting Agent",
+		"The agent verified the patch",
+	} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("dry-run output should not contain %q:\n%s", forbidden, stdout)
 		}
 	}
 }
@@ -665,6 +948,25 @@ func TestResolveCoreDirBranches(t *testing.T) {
 		}
 	})
 
+	if err := os.WriteFile("flake.nix", []byte("{ outputs = { self }: {}; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("lib", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("lib", "registry.nix"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := resolveCoreDir(""); err != nil || got != "." {
+		t.Fatalf("local Nix core workspace failed: got %q err %v", got, err)
+	}
+
+	if err := os.Remove("flake.nix"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll("lib"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll("scripts", 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -672,26 +974,29 @@ func TestResolveCoreDirBranches(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, err := resolveCoreDir(""); err != nil || got != "." {
-		t.Fatalf("local scripts core dir failed: got %q err %v", got, err)
+		t.Fatalf("legacy local scripts core dir failed: got %q err %v", got, err)
 	}
 
 	if err := os.RemoveAll("scripts"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join("core", "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join("core", "overlays"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join("core", "scripts", "cve-draft-agent.py"), []byte("#!/usr/bin/env python3\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join("core", "flake.nix"), []byte("{ outputs = { self }: {}; }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("core", "overlays", "cve-remediation.nix"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := resolveCoreDir(""); err != nil || got != "core" {
-		t.Fatalf("nested core dir failed: got %q err %v", got, err)
+		t.Fatalf("nested Nix core workspace failed: got %q err %v", got, err)
 	}
 
 	if err := os.RemoveAll("core"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := resolveCoreDir(""); err == nil || !strings.Contains(err.Error(), "pass --core-dir") {
+	if _, err := resolveCoreDir(""); err == nil || !strings.Contains(err.Error(), "ClearCutt core workspace") {
 		t.Fatalf("expected missing core dir error, got %v", err)
 	}
 }

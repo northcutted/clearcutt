@@ -81,17 +81,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Configure ClearCutt Nix Environment
         # Writes the substituter config (cache.nixos.org + the R2 public base
@@ -101,54 +96,10 @@ jobs:
       - name: Compute cells that still need building
         id: analyze
         # For every production cell, ask Nix what it WOULD build (eval +
-        # substituter query only — no compilation). A cell with nothing to
-        # build is already warm in cache.nixos.org or R2 and is skipped. Cross-
-        # arch dry-run is valid: nix evaluates aarch64 derivations and queries
-        # aarch64 substitutability from the x86 runner without building.
-        run: |
-          set -euo pipefail
-          # The flake lives in core/, not the repo root — reference it explicitly.
-          CORE_FLAKE="./core"
-          RELEASE_MATRIX=$(./clearcutt --format json matrix export --source fleet --github-actions --matrix release | jq -c .)
-          need='[]'
-          errors=0
-          while read -r row; do
-            sys=$(jq -r '.system' <<<"$row")
-            lang=$(jq -r '.language' <<<"$row")
-            tier=$(jq -r '.tier' <<<"$row")
-            inst="${CORE_FLAKE}#packages.${sys}.\"${lang}-${tier}\""
-            echo "::group::dry-run ${sys} ${lang} ${tier}"
-            # Run the dry-run on its own (NOT piped) so we can tell an eval/path
-            # ERROR (non-zero exit) apart from a clean "nothing to build". A
-            # failed dry-run must NEVER be silently treated as "cached" — that
-            # would skip seeding and let an unverified, un-warmed runtime through.
-            if nix build --dry-run "$inst" \
-                 --extra-experimental-features 'nix-command flakes' \
-                 --accept-flake-config >/tmp/dry.out 2>&1; then
-              if grep -q 'will be built' /tmp/dry.out; then
-                echo "NEEDS BUILD"
-                need=$(jq -c ". += [${row}]" <<<"$need")
-              else
-                echo "cached — skipping"
-              fi
-            else
-              echo "::error::dry-run FAILED for ${sys} ${lang} ${tier}"
-              cat /tmp/dry.out
-              errors=$((errors + 1))
-            fi
-            echo "::endgroup::"
-          done < <(jq -c '.include[]' <<<"$RELEASE_MATRIX")
-          if [ "$errors" -ne 0 ]; then
-            echo "::error::${errors} cell(s) failed to evaluate; refusing to emit a partial seed set."
-            exit 1
-          fi
-          count=$(jq 'length' <<<"$need")
-          echo "Cells needing a seed build: ${count}"
-          jq -r '.[] | "  - \(.system) \(.language) \(.tier)"' <<<"$need" || true
-          {
-            echo "seed_matrix={\"include\":${need}}"
-            echo "has_work=$([ "$count" -gt 0 ] && echo true || echo false)"
-          } >> "$GITHUB_OUTPUT"
+        # substituter query only — no compilation). The CLI owns matrix export,
+        # dry-run parsing, eval-error handling, and GitHub output formatting so
+        # Actions stays a thin orchestrator.
+        run: ./clearcutt fleet seed-cache-plan --core-dir core --github-output "$GITHUB_OUTPUT"
 
   seed:
     name: Seed Cache (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
@@ -169,17 +120,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
@@ -193,8 +139,11 @@ jobs:
         # Builds the image and runs the full security gate, so a seed build also
         # re-proves the runtime-patch completeness gate (no stock openssl/sqlite
         # ships) before the closure is published.
+        env:
+          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
         run: |
           ./clearcutt fleet certify-target \
+            --engine "${CLEARCUTT_BUILD_ENGINE}" \
             --system "${{ matrix.system }}" \
             --language "${{ matrix.language }}" \
             --tier "${{ matrix.tier }}" \

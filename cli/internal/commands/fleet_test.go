@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/oci"
 )
 
 func TestFleetPublishTargetUsesConfigAndStagesArchAssets(t *testing.T) {
@@ -41,6 +42,7 @@ func TestFleetPublishTargetUsesConfigAndStagesArchAssets(t *testing.T) {
 		"fleet", "publish-target",
 		"--fleet-config", cfgPath,
 		"--core-dir", coreDir,
+		"--engine", "shell",
 		"--system", "aarch64-linux",
 		"--language", "node24",
 		"--tier", "slim",
@@ -97,6 +99,7 @@ func TestFleetCertifyTargetDoesNotPublish(t *testing.T) {
 		"fleet", "certify-target",
 		"--fleet-config", cfgPath,
 		"--core-dir", coreDir,
+		"--engine", "shell",
 		"--system", "x86_64-linux",
 		"--language", "java25",
 		"--tier", "distroless",
@@ -224,19 +227,26 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	}
 
 	var calls []externalCommand
+	var indexCalls []struct {
+		ref     string
+		sources []oci.IndexImage
+	}
 	oldRun := runExternalCommand
-	oldCapture := captureExternalOutput
+	oldPushIndex := fleetPushImageIndex
 	runExternalCommand = func(c externalCommand) error {
 		calls = append(calls, c)
 		return nil
 	}
-	captureExternalOutput = func(c externalCommand) (string, error) {
-		calls = append(calls, c)
-		return "sha256:abc123\n", nil
+	fleetPushImageIndex = func(client *oci.Client, ref string, sources []oci.IndexImage) (string, error) {
+		indexCalls = append(indexCalls, struct {
+			ref     string
+			sources []oci.IndexImage
+		}{ref: ref, sources: append([]oci.IndexImage(nil), sources...)})
+		return "sha256:abc123", nil
 	}
 	t.Cleanup(func() {
 		runExternalCommand = oldRun
-		captureExternalOutput = oldCapture
+		fleetPushImageIndex = oldPushIndex
 	})
 
 	if _, err := runCLI(t,
@@ -249,17 +259,47 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	); err != nil {
 		t.Fatalf("assemble-target error: %v", err)
 	}
+	if len(indexCalls) != 2 {
+		t.Fatalf("expected rolling and versioned index pushes, got %#v", indexCalls)
+	}
+	if indexCalls[0].ref != "registry.example.com/acme/fleet/base-corelts:distroless" ||
+		indexCalls[1].ref != "registry.example.com/acme/fleet/base-corelts:v9.8.7-distroless" {
+		t.Fatalf("unexpected index refs: %#v", indexCalls)
+	}
+	if len(indexCalls[0].sources) != 2 {
+		t.Fatalf("unexpected index sources: %#v", indexCalls[0].sources)
+	}
+	for _, want := range []string{
+		"registry.example.com/acme/fleet/base-corelts:_stage-distroless-amd64",
+		"registry.example.com/acme/fleet/base-corelts:_stage-distroless-arm64",
+	} {
+		var found bool
+		for _, source := range indexCalls[0].sources {
+			if source.Ref == want && source.OS == "linux" && source.Architecture != "" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing index source %q in %#v", want, indexCalls[0].sources)
+		}
+	}
 	allArgs := flattenCalls(calls)
 	for _, want := range []string{
-		"crane index append -t registry.example.com/acme/fleet/base-corelts:distroless -m registry.example.com/acme/fleet/base-corelts:_stage-distroless-amd64 -m registry.example.com/acme/fleet/base-corelts:_stage-distroless-arm64",
-		"cosign sign --yes registry.example.com/acme/fleet/base-corelts:v9.8.7-distroless",
-		"cosign attest --yes --type spdxjson --predicate " + filepath.Join(outputDir, "x86_64", "coreLTS-distroless.sbom.json"),
-		"cosign attest --yes --type custom --predicate " + filepath.Join(outputDir, "aarch64", "coreLTS-distroless.test-results.json"),
-		"crane digest registry.example.com/acme/fleet/base-corelts:distroless",
+		"nix develop --extra-experimental-features nix-command flakes --accept-flake-config --command cosign sign --yes registry.example.com/acme/fleet/base-corelts:v9.8.7-distroless",
+		"--command cosign attest --yes --type spdxjson --predicate " + filepath.Join(outputDir, "x86_64", "coreLTS-distroless.sbom.json"),
+		"--command cosign attest --yes --type custom --predicate " + filepath.Join(outputDir, "aarch64", "coreLTS-distroless.test-results.json"),
 	} {
 		if !strings.Contains(allArgs, want) {
 			t.Fatalf("missing command fragment %q in:\n%s", want, allArgs)
 		}
+	}
+	for _, call := range calls {
+		if call.Name == "cosign" {
+			t.Fatalf("assemble-target should use core-pinned cosign through nix, got direct command: %#v", call)
+		}
+	}
+	if strings.Contains(allArgs, "crane") {
+		t.Fatalf("assemble-target should not shell out to crane, got:\n%s", allArgs)
 	}
 	raw, err := os.ReadFile(filepath.Join(outputDir, "digests", "coreLTS-distroless.digest.json"))
 	if err != nil {
@@ -280,6 +320,10 @@ func TestFleetAggregateDigestsWritesGithubOutput(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outputDir, "node24-slim.digest.json"), raw, 0o644); err != nil {
 		t.Fatalf("write digest: %v", err)
 	}
+	serviceRaw := []byte(`{"image":"ghcr.io/acme/fleet/service-postgres16","digest":"sha256:333","language":"postgres16","tier":"service","rollingTag":"service","versionedTag":"v1.0.0-service"}`)
+	if err := os.WriteFile(filepath.Join(outputDir, "postgres16.digest.json"), serviceRaw, 0o644); err != nil {
+		t.Fatalf("write service digest: %v", err)
+	}
 	ghOut := filepath.Join(t.TempDir(), "github-output")
 	stdout, err := runCLI(t,
 		"--format", "json",
@@ -299,6 +343,12 @@ func TestFleetAggregateDigestsWritesGithubOutput(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(ghRaw), "matrix=[") || !strings.Contains(string(ghRaw), `"digest":"sha256:222"`) {
 		t.Fatalf("unexpected github output: %s", ghRaw)
+	}
+	if !strings.Contains(string(ghRaw), `fleet_matrix=[`) || !strings.Contains(string(ghRaw), `"language":"node24"`) {
+		t.Fatalf("github output missing fleet matrix: %s", ghRaw)
+	}
+	if !strings.Contains(string(ghRaw), `service_matrix=[`) || !strings.Contains(string(ghRaw), `"language":"postgres16"`) {
+		t.Fatalf("github output missing service matrix: %s", ghRaw)
 	}
 }
 

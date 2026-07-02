@@ -48,17 +48,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Go Environment
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: 'cli/go.mod'
-          cache-dependency-path: 'cli/go.sum'
-          cache: true
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix

@@ -50,6 +50,8 @@ func NewCatalogCmd() *cobra.Command {
 	cmd.AddCommand(newCatalogGatherCmd())
 	cmd.AddCommand(newCatalogEnrichCmd())
 	cmd.AddCommand(newCatalogBuildCmd())
+	cmd.AddCommand(newCatalogWorkflowParamsCmd())
+	cmd.AddCommand(newCatalogVexAllCmd())
 	cmd.AddCommand(newCatalogValidateCmd())
 	cmd.AddCommand(newCatalogSummarizeCmd())
 	cmd.AddCommand(newCatalogInspectCmd())
