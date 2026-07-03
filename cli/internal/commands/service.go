@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -37,11 +39,13 @@ type serviceFlags struct {
 	system            string
 	versionTag        string
 	githubOutputPath  string
-	engine            string
+	buildEngine       string
+	containerEngine   string
 	image             string
 	commandOnly       bool
 	githubActions     bool
 	matrixKind        string
+	provenanceRef     string
 }
 
 type serviceFunctionalSmokeProfile struct {
@@ -75,6 +79,10 @@ the generated Nix extension stays an implementation detail.`,
 		Short: "Add a service image to clearcutt.fleet.yaml",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default paths write into the repo root's fleet config and core/
+			// tree even when scaffolding from a subdirectory.
+			resolveRepoRootDefault(cmd, "fleet-config", &serviceOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &serviceOpts.coreDir)
 			return runServiceScaffold(args[0])
 		},
 	}
@@ -110,6 +118,9 @@ the generated Nix extension stays an implementation detail.`,
 		Short: "Validate service image config and generated backend extension",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate the same root-level files service scaffold writes.
+			resolveRepoRootDefault(cmd, "fleet-config", &serviceOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &serviceOpts.coreDir)
 			id := ""
 			if len(args) == 1 {
 				id = args[0]
@@ -167,6 +178,7 @@ the generated Nix extension stays an implementation detail.`,
 	}
 	addServiceCommonFlags(exportCmd)
 	exportCmd.Flags().StringVar(&serviceOpts.buildOutputsDir, "build-outputs", "build-outputs", "Path to release build outputs")
+	exportCmd.Flags().StringVar(&serviceOpts.provenanceRef, "ref", "", "Image reference to export provenance from; prefer immutable image@sha256:... refs")
 
 	smokeCmd := &cobra.Command{
 		Use:   "smoke <service-id>",
@@ -177,7 +189,7 @@ the generated Nix extension stays an implementation detail.`,
 		},
 	}
 	addServiceCommonFlags(smokeCmd)
-	smokeCmd.Flags().StringVar(&serviceOpts.engine, "engine", "docker", "Container engine: docker or podman")
+	smokeCmd.Flags().StringVar(&serviceOpts.containerEngine, "engine", "docker", "Container engine: docker or podman")
 	smokeCmd.Flags().StringVar(&serviceOpts.image, "image", "", "Image reference to smoke; defaults to fleet service image with :current")
 	smokeCmd.Flags().BoolVar(&serviceOpts.commandOnly, "command-only", false, "Only run configured smoke commands; skip built-in functional service probes")
 
@@ -204,6 +216,7 @@ func addServiceCommonFlags(cmd *cobra.Command) {
 func addServiceTargetFlags(cmd *cobra.Command) {
 	addServiceCommonFlags(cmd)
 	cmd.Flags().StringVar(&serviceOpts.buildOutputsDir, "build-outputs-dir", "build-outputs", "Optional path to core build outputs directory")
+	cmd.Flags().StringVar(&serviceOpts.buildEngine, "engine", "go", "Build engine: 'go' (native in-process gates; publish uses go-containerregistry) or 'shell' (legacy pipeline.sh fallback)")
 	cmd.Flags().StringVar(&serviceOpts.system, "system", "", "Nix system to build, for example x86_64-linux (required)")
 	_ = cmd.MarkFlagRequired("system")
 }
@@ -526,6 +539,16 @@ func runServiceTarget(id string, publish bool) error {
 	if !ok {
 		return fmt.Errorf("service %q is not configured", strings.TrimSpace(id))
 	}
+	engine, err := normalizeBuildEngine(serviceOpts.buildEngine)
+	if err != nil {
+		return err
+	}
+	if engine == "go" {
+		if publish {
+			return runServicePublishTargetGo(cfg, service)
+		}
+		return runServiceCertifyTargetGo(service)
+	}
 	args := []string{
 		"develop",
 		"--extra-experimental-features", "nix-command flakes",
@@ -567,6 +590,53 @@ func runServiceTarget(id string, publish bool) error {
 	return nil
 }
 
+func runServiceCertifyTargetGo(service fleet.ServiceImage) error {
+	_, err := certifyServiceTargetGo(service)
+	return err
+}
+
+func runServicePublishTargetGo(cfg fleet.Config, service fleet.ServiceImage) error {
+	outDir, err := certifyServiceTargetGo(service)
+	if err != nil {
+		return err
+	}
+	tarPath := filepath.Join(outDir, service.ID+".tar.gz")
+	stageTag := serviceStageTag(cfg, service.ID, serviceOpts.system)
+	fmt.Fprintf(out, "[service] publishing per-arch staging image with Go engine -> %s\n", stageTag)
+	digest, err := fleetPushImageArchive(fleetOCIClient(), stageTag, tarPath)
+	if err != nil {
+		return fmt.Errorf("OCI per-arch service staging push failed for %s: %w", service.ID, err)
+	}
+	if digest != "" {
+		fmt.Fprintf(out, "[service] pushed staging manifest digest %s\n", digest)
+	}
+	return stageArchReleaseAssets(outDir, service.ID, archSuffixForSystem(serviceOpts.system))
+}
+
+func certifyServiceTargetGo(service fleet.ServiceImage) (string, error) {
+	outDir := resolveBuildOutputsDir(serviceOpts.coreDir, serviceOpts.buildOutputsDir)
+	opts := build.Options{
+		Target:                   service.ID,
+		System:                   serviceOpts.system,
+		Kind:                     "service",
+		CoreDir:                  serviceOpts.coreDir,
+		OutputDir:                outDir,
+		AllowlistPath:            filepath.Join(serviceOpts.coreDir, "tests", "closure-purity-allowlist.txt"),
+		FloorPath:                filepath.Join(serviceOpts.coreDir, "tests", "runtime-dep-floor.json"),
+		ServiceProductionAllowed: service.ProductionAllowed,
+		ServiceLifecycleStatus:   firstNonEmptyString(service.Lifecycle.Status, "preview"),
+	}
+	runner := fleetBuildRunner()
+	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {
+		return "", err
+	}
+	return outDir, nil
+}
+
+func serviceStageTag(cfg fleet.Config, serviceID, system string) string {
+	return fmt.Sprintf("%s:%s", cfg.ServiceImageName(serviceID), "_stage-service-"+archSuffixForSystem(system))
+}
+
 func runServiceSmoke(id string) error {
 	cfg, err := fleet.Load(serviceOpts.fleetConfig)
 	if err != nil {
@@ -576,7 +646,7 @@ func runServiceSmoke(id string) error {
 	if !ok {
 		return fmt.Errorf("service %q is not configured", strings.TrimSpace(id))
 	}
-	engine := strings.TrimSpace(serviceOpts.engine)
+	engine := strings.TrimSpace(serviceOpts.containerEngine)
 	switch engine {
 	case "docker", "podman":
 	default:
@@ -638,6 +708,14 @@ func serviceFunctionalSmokeProfileFor(template string) (serviceFunctionalSmokePr
 			Name:     "valkey",
 			Probe:    []string{"valkey-cli", "-h", "127.0.0.1", "-p", "6379", "PING"},
 			Attempts: 20,
+			Delay:    time.Second,
+		}, true
+	case "postgres":
+		// Attempts match the entrypoint's own 30-second readiness window.
+		return serviceFunctionalSmokeProfile{
+			Name:     "postgres",
+			Probe:    []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432"},
+			Attempts: 30,
 			Delay:    time.Second,
 		}, true
 	default:
@@ -710,44 +788,45 @@ func runServiceAssemble(id string) error {
 	image := cfg.ServiceImageName(service.ID)
 	rolling := image + ":service"
 	versioned := image + ":" + serviceOpts.versionTag + "-service"
-	manifests := []string{}
+	manifests := []oci.IndexImage{}
 	for _, system := range cfg.Matrix.Systems {
-		manifests = append(manifests, image+":_stage-service-"+archSuffixForSystem(system))
+		manifests = append(manifests, oci.IndexImage{
+			Ref:          image + ":_stage-service-" + archSuffixForSystem(system),
+			OS:           "linux",
+			Architecture: ociArchitectureForSystem(system),
+		})
 	}
 	if len(manifests) == 0 {
 		return fmt.Errorf("fleet matrix has no systems")
 	}
-	if err := craneIndexAppend(rolling, manifests); err != nil {
-		return err
-	}
-	if err := craneIndexAppend(versioned, manifests); err != nil {
-		return err
-	}
-	if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"sign", "--yes", rolling}}); err != nil {
-		return err
-	}
-	if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"sign", "--yes", versioned}}); err != nil {
-		return err
-	}
-	for _, system := range cfg.Matrix.Systems {
-		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, service.ID+".sbom.json"), rolling}}); err != nil {
-			return err
-		}
-	}
-	for _, system := range cfg.Matrix.Systems {
-		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, service.ID+".test-results.json"), rolling}}); err != nil {
-			return err
-		}
-	}
-	digestRaw, err := captureExternalOutput(externalCommand{Name: "crane", Args: []string{"digest", rolling}})
+	client := fleetOCIClient()
+	digest, err := fleetPushImageIndex(client, rolling, manifests)
 	if err != nil {
+		return fmt.Errorf("assemble rolling service image index %s: %w", rolling, err)
+	}
+	if _, err := fleetPushImageIndex(client, versioned, manifests); err != nil {
+		return fmt.Errorf("assemble versioned service image index %s: %w", versioned, err)
+	}
+	if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "sign", "--yes", rolling); err != nil {
 		return err
 	}
-	digest := strings.TrimSpace(digestRaw)
+	if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "sign", "--yes", versioned); err != nil {
+		return err
+	}
+	for _, system := range cfg.Matrix.Systems {
+		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
+		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, service.ID+".sbom.json"), rolling); err != nil {
+			return err
+		}
+	}
+	for _, system := range cfg.Matrix.Systems {
+		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
+		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, service.ID+".test-results.json"), rolling); err != nil {
+			return err
+		}
+	}
 	if digest == "" {
-		return fmt.Errorf("crane digest returned an empty digest for %s", rolling)
+		return fmt.Errorf("OCI index push returned an empty digest for %s", rolling)
 	}
 	manifest := fleetDigestManifest{
 		Image:        image,
@@ -791,22 +870,23 @@ func runServiceExportProvenance(id string) error {
 		return fmt.Errorf("service %q is not configured", strings.TrimSpace(id))
 	}
 	rolling := cfg.ServiceImageName(service.ID) + ":service"
+	ref := firstNonEmptyString(serviceOpts.provenanceRef, rolling)
 	if err := os.MkdirAll(serviceOpts.buildOutputsDir, 0o755); err != nil {
 		return err
 	}
 	outputPath := filepath.Join(serviceOpts.buildOutputsDir, service.ID+".intoto.jsonl")
-	if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v1", rolling); err != nil {
+	if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v1", ref, serviceOpts.coreDir); err != nil {
 		return err
 	}
 	if !nonEmptyFile(outputPath) {
-		if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v0.2", rolling); err != nil {
+		if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v0.2", ref, serviceOpts.coreDir); err != nil {
 			return err
 		}
 	}
 	if nonEmptyFile(outputPath) {
 		fmt.Fprintf(out, "[service] provenance exported: %s\n", outputPath)
 	} else {
-		fmt.Fprintf(out, "[service] warning: SLSA provenance could not be downloaded for %s\n", rolling)
+		fmt.Fprintf(out, "[service] warning: SLSA provenance could not be downloaded for %s\n", ref)
 	}
 	return nil
 }

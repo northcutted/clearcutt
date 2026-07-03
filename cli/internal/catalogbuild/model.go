@@ -47,7 +47,6 @@ var gatherLanguageOrder = []string{
 	"node24",
 	"python3.13",
 	"python3.14",
-	"python3.15",
 	"go1.25",
 	"go1.26",
 	"dotnet8",
@@ -64,7 +63,6 @@ var gatherLanguages = map[string]gatherLanguageDef{
 	"node24":     {ID: "node", Display: "Node.js", Version: "24"},
 	"python3.13": {ID: "python", Display: "Python", Version: "3.13"},
 	"python3.14": {ID: "python", Display: "Python", Version: "3.14"},
-	"python3.15": {ID: "python", Display: "Python", Version: "3.15"},
 	"go1.25":     {ID: "go", Display: "Go", Version: "1.25"},
 	"go1.26":     {ID: "go", Display: "Go", Version: "1.26"},
 	"dotnet8":    {ID: "dotnet", Display: ".NET", Version: "8"},
@@ -80,6 +78,11 @@ var gatherTiers = map[string]gatherTierDef{
 	"slim":       {Name: "Slim", Blurb: "Runtime tier — language runtime plus minimal troubleshooting binaries."},
 	"distroless": {Name: "Distroless", Blurb: "Hardened tier — no shells, no coreutils, runtime only."},
 }
+
+// serviceTier is the compatibility tier every service image carries. It is
+// appended to the index tiers list whenever the catalog contains service
+// images so images[].tier always resolves against tiers[].
+var serviceTier = Tier{ID: "service", Name: "Service", Blurb: "Platform-owned service image"}
 
 type Language struct {
 	ID          string  `json:"id"`
@@ -128,17 +131,18 @@ type gatherReleaseEntry struct {
 }
 
 type gatherArchPayload struct {
-	Arch            string                       `json:"arch"`
-	OS              string                       `json:"os"`
-	ImageDigest     *string                      `json:"imageDigest"`
-	ImageSize       *int64                       `json:"imageSize"`
-	LayerCount      *int                         `json:"layerCount"`
-	Layers          []json.RawMessage            `json:"layers"`
-	Labels          json.RawMessage              `json:"labels"`
-	SBOM            gatherSBOMInfo               `json:"sbom"`
-	TestResults     *TestResults                 `json:"testResults"`
-	Vulnerabilities *json.RawMessage             `json:"vulnerabilities,omitempty"`
-	vulnInfo        *catalog.VulnerabilitiesInfo `json:"-"`
+	Arch                   string                       `json:"arch"`
+	OS                     string                       `json:"os"`
+	ImageDigest            *string                      `json:"imageDigest"`
+	ImageSize              *int64                       `json:"imageSize"`
+	ManifestDescriptorSize *int64                       `json:"manifestDescriptorSize,omitempty"`
+	LayerCount             *int                         `json:"layerCount"`
+	Layers                 []json.RawMessage            `json:"layers"`
+	Labels                 json.RawMessage              `json:"labels"`
+	SBOM                   gatherSBOMInfo               `json:"sbom"`
+	TestResults            *TestResults                 `json:"testResults"`
+	Vulnerabilities        *json.RawMessage             `json:"vulnerabilities,omitempty"`
+	vulnInfo               *catalog.VulnerabilitiesInfo `json:"-"`
 }
 
 type gatherSBOMInfo struct {

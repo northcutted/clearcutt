@@ -333,11 +333,12 @@ type Enrichment struct {
 }
 
 type EnrichmentArch struct {
-	Arch   string            `json:"arch"`
-	Digest *string           `json:"digest"`
-	Size   *int64            `json:"size"`
-	Layers []json.RawMessage `json:"layers"`
-	Labels json.RawMessage   `json:"labels"`
+	Arch                   string            `json:"arch"`
+	Digest                 *string           `json:"digest"`
+	Size                   *int64            `json:"size"`
+	ManifestDescriptorSize *int64            `json:"manifestDescriptorSize,omitempty"`
+	Layers                 []json.RawMessage `json:"layers"`
+	Labels                 json.RawMessage   `json:"labels"`
 }
 
 func loadEnrichment(tag, target, enrichmentDir string) *Enrichment {
@@ -389,7 +390,7 @@ func BuildServiceImageRecord(target string, service catalog.ServiceInfo, lifecyc
 		Kind:            "service",
 		SchemaVersion:   catalog.ImageRecordSchemaVersionV2,
 		Language:        Language{ID: "service", DisplayName: "Service", Version: service.Version},
-		Tier:            Tier{ID: "service", Name: "Service", Blurb: "Platform-owned service image"},
+		Tier:            serviceTier,
 		ImageNameKey:    target,
 		Lifecycle:       lifecycle,
 		RuntimeContract: runtimeContract,
@@ -547,6 +548,9 @@ func buildImageRecord(desc *recordTarget, releases []Release, refreshSet map[str
 				}
 				if archEnr.Size != nil {
 					entry.ImageSize = archEnr.Size
+				}
+				if archEnr.ManifestDescriptorSize != nil {
+					entry.ManifestDescriptorSize = archEnr.ManifestDescriptorSize
 				}
 				if archEnr.Layers != nil {
 					layerCount := len(archEnr.Layers)

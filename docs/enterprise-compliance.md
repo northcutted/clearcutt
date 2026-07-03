@@ -57,7 +57,7 @@ mandated source.
 For Ubuntu, Amazon Linux, SLES, or another baseline, change only the
 `dockerTools.pullImage` input and output name. The runtime selection stays on
 the ClearCutt runtime line, for example `runtime = "node22"`,
-`runtime = "python3.15"`, or `runtime = "go1.25"`.
+`runtime = "python3.14"`, or `runtime = "go1.25"`.
 
 ## Closure-Equivalence Predicate
 

@@ -1,5 +1,26 @@
 {
+  "schemaVersion": "clearcutt.catalog.index/v1",
   "generatedAt": "2026-06-01T00:00:00Z",
+  "generator": {
+    "name": "clearcutt",
+    "version": "test",
+    "commit": "fixture"
+  },
+  "source": {
+    "owner": "acme",
+    "repo": "clearcutt",
+    "repoUrl": "https://github.com/acme/clearcutt",
+    "registryBase": "ghcr.io/acme/clearcutt"
+  },
+  "summary": {
+    "imageCount": 2,
+    "releaseCount": 1,
+    "signedCount": 0,
+    "provenanceCount": 0,
+    "sbomCount": 0,
+    "scanCount": 0,
+    "passingCount": 2
+  },
   "owner": "acme",
   "repo": "clearcutt",
   "repoUrl": "https://github.com/acme/clearcutt",
@@ -50,13 +71,19 @@
       "lifecycle": {
         "status": "active",
         "support": "lts",
-        "productionAllowed": true
+        "productionAllowed": true,
+        "deprecatedAt": null,
+        "eolAt": null,
+        "reason": null
       },
       "runtimeContract": {
         "user": "10001",
         "workingDir": "/app",
         "shellPresent": false,
         "packageManagerPresent": false,
+        "caCertificatesPresent": true,
+        "timezoneDataPresent": true,
+        "defaultEntrypoint": "/usr/local/bin/java",
         "productionTier": true
       }
     },
@@ -78,13 +105,19 @@
       "lifecycle": {
         "status": "active",
         "support": "lts",
-        "productionAllowed": false
+        "productionAllowed": false,
+        "deprecatedAt": null,
+        "eolAt": null,
+        "reason": null
       },
       "runtimeContract": {
         "user": "10001",
         "workingDir": "/app",
         "shellPresent": true,
         "packageManagerPresent": true,
+        "caCertificatesPresent": true,
+        "timezoneDataPresent": true,
+        "defaultEntrypoint": "/usr/local/bin/java",
         "productionTier": false
       }
     }

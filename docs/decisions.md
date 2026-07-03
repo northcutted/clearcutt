@@ -14,9 +14,10 @@ This document traces the design logic and rationale behind the key security cons
 
 ## 2. Cryptographic Digest-Pinning (`@sha256`)
 
-* **Decision**: All base image templates and production deployments must pin OCI image references using their immutable SHA-256 digest rather than standard mutable version tags.
+* **Decision**: Digest-pinning is the required **production** posture: production deployments and certified app images must pin OCI image references using their immutable SHA-256 digest rather than standard mutable version tags. Scaffolded app templates and documentation examples deliberately start on mutable tags (`:dev`, `:distroless`) to keep the inner development loop fast, and must carry an explicit "pin your base before production" step.
 * **Rationale**: In standard container registries, tags (like `:latest` or `:1.0.0`) are mutable. An attacker who gains write access to a registry can overwrite the tag with a compromised layer graph without altering downstream deployment configurations. Digest-pinning makes the intended image content explicit.
 * **Reproducibility**: Pinned digests ensure that every deployment, whether local, CI, or production, resolves to the same image archive and closes the common tag-drift path.
+* **Where the gate lives**: `clearcutt certify` rejects app images that are not digest-pinned (`--image-ref ...@sha256:...`), and the generated certification policies require digest-pinned refs. Catalog records carry `latestManifestDigest`; `clearcutt inspect <id>` prints the digest-pinned reference to copy into a production `FROM` line. Digest-resolving scaffolds (generating templates with the digest already substituted) are a deferred follow-up.
 
 ---
 
@@ -40,5 +41,14 @@ This document traces the design logic and rationale behind the key security cons
 
 * **Decision**: ClearCutt pins `nixpkgs-unstable` in `core/flake.nix` rather than a stable NixOS channel.
 * **Rationale**: The image fleet is vulnerability-gated at build/release time and needs fast access to fixed upstream packages. The unstable channel usually carries language-runtime patch releases sooner than stable channels, which reduces the need for custom backports in `core/overlays/cve/`.
-* **Consequence**: Some runtimes can surface preview or beta upstream versions when nixpkgs exposes them, such as Python `3.15` during its pre-GA lifecycle. Preview runtimes must remain policy-bounded in the catalog and should not be promoted as production defaults until upstream lifecycle status and package stability are acceptable for the consuming platform.
+* **Consequence**: Some runtimes can surface preview or beta upstream versions when nixpkgs exposes them — for example, a future Python beta during its pre-GA lifecycle. Any such preview runtime must remain policy-bounded in the catalog and should not be promoted as a production default until upstream lifecycle status and package stability are acceptable for the consuming platform.
 * **Control**: The pinned `flake.lock`, release evidence, SBOM, vulnerability gate, and catalog lifecycle metadata are the review points for each released digest. Moving to a stable channel remains a valid downstream fork decision when slower package movement is preferable to preview-runtime availability.
+
+---
+
+## 6. Priced CVE Triage Routes with Self-Retiring Decisions
+
+* **Decision**: When a CVE fix exists upstream but not in the pinned nixpkgs, `clearcutt remediation triage` computes and prices the full option space: a live fix-availability probe across nixpkgs refs plus six routes (`version_bump`, `substitute_vex`, `unstable_optin`, `fetchpatch_rebuild`, `scanner_ignore`, `wait`), each carrying a cost-now / risk-carried / retirement triple. Policy thresholds pick the default route, a human decides the escalations, and every decision is recorded as a durable, self-retiring evidence artifact whose retirement condition (`pin_carries_fix`, `ref_carries_fix`, or `expiry`) is evaluated mechanically by `remediation status --check-retirements`.
+* **Rationale**: Route decisions previously cost an hour of manual archaeology (nixpkgs branch sweeps, hand-diffing derivations) even though every input was mechanically derivable. Pricing the routes turns that into a sixty-second judgment call, and recording the retirement condition at decision time makes carried risk expire by data rather than by memory — overlays and pin opt-ins get dropped when the pin catches up, not when someone remembers them.
+* **Agentic Seam**: `decidedBy` (`human` | `policy` | `agent:<id>`) is the single field that changes if an agent later makes below-threshold calls; the `clearcutt.triage/v1` contract, validation, and retirement machinery are identical for all three. Triage itself contains no LLM call, no auto-merge, and no fleet-config mutation, consistent with decisions D4/D5 in `docs/analysis/decisions-needed.md`: the deterministic core is the product, and agents get a contract, not a lever.
+* **Escalation Boundary**: `--strict` exit code `2` ("no route available under policy") is the machine-visible line between autonomous handling and human-required review, and probe failures degrade to the static route classifier so triage is never less available than planning. Full design: `docs/analysis/cve-triage-design.md`.

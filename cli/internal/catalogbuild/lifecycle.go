@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/versionpolicy"
 )
 
 // Lifecycle mirrors the lifecycle object the Node producer emits.
@@ -39,31 +40,16 @@ func gatherLangKey(target string) string {
 	return target
 }
 
+// determineLifecycle classifies a target's lifecycle from the shared version
+// policy (core/lib/version-policy.json, mirrored into the versionpolicy
+// package) rather than a hand-maintained switch, so the Go catalog builder and
+// the Nix build stay aligned on one classification.
 func determineLifecycle(target, tier string) Lifecycle {
-	langKey := gatherLangKey(target)
-
-	status, support, productionAllowed := "preview", "preview", false
-	switch langKey {
-	case "coreLTS", "java21", "node22", "dotnet8":
-		status, support = "active", "lts"
-		if tier != "dev" {
-			productionAllowed = true
-		}
-	case "python3.13":
-		status, support = "active", "current"
-		if tier != "dev" {
-			productionAllowed = true
-		}
-	case "java25", "node24", "python3.14", "python3.15", "dotnet10":
-		status, support, productionAllowed = "preview", "preview", false
-	case "go1.25", "go1.26", "rust1.95", "cc15":
-		status, support, productionAllowed = "experimental", "unsupported", false
-	}
-
+	lc := versionpolicy.LifecycleFor(gatherLangKey(target), tier)
 	return Lifecycle{
-		Status:            status,
-		Support:           support,
-		ProductionAllowed: productionAllowed,
+		Status:            lc.Status,
+		Support:           lc.Support,
+		ProductionAllowed: lc.ProductionAllowed,
 	}
 }
 

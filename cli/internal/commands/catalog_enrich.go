@@ -394,10 +394,6 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ca
 		}
 		layers = append(layers, raw)
 	}
-	size := descriptorSize
-	if size == 0 {
-		size = total
-	}
 	labels := cfg.Config.Labels
 	if labels == nil {
 		labels = map[string]string{}
@@ -406,11 +402,18 @@ func enrichmentArchitecture(arch string, descriptorSize int64, img v1.Image) (ca
 	if err != nil {
 		return catalogbuild.EnrichmentArch{}, err
 	}
+	// The image size is the compressed layer sum; the OCI manifest descriptor
+	// byte size is a few KiB and lives in its own field.
+	var manifestDescriptorSize *int64
+	if descriptorSize > 0 {
+		manifestDescriptorSize = &descriptorSize
+	}
 	return catalogbuild.EnrichmentArch{
-		Arch:   arch,
-		Size:   &size,
-		Layers: layers,
-		Labels: labelRaw,
+		Arch:                   arch,
+		Size:                   &total,
+		ManifestDescriptorSize: manifestDescriptorSize,
+		Layers:                 layers,
+		Labels:                 labelRaw,
 	}, nil
 }
 

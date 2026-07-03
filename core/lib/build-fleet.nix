@@ -1,13 +1,15 @@
 # ClearCutt modular fleet base image compiler.
+#
+# `pkgs` is required: a `<nixpkgs>` channel fallback would silently build
+# images from the host channel instead of the locked, CVE-remediated input.
 
-{ pkgs ? import <nixpkgs> {}
+{ pkgs
+, runtimePkgs ? pkgs
 , platformMetadata ? import ./platform-metadata.nix
+, registry ? import ./registry.nix { pkgs = runtimePkgs; }
 }:
 
 let
-  # Import centralized language and runtime registry
-  registry = import ./registry.nix { inherit pkgs; };
-
   # Injected user configurations for secure, rootless compliance
   uid = "10001";
   gid = "10001";
@@ -35,33 +37,27 @@ let
   passwdFile = pkgs.writeTextDir "etc/passwd" passwdContents;
   groupFile = pkgs.writeTextDir "etc/group" groupContents;
 
-  # Isolated filesystem workspaces with optimized permissions
-  tmpDir = pkgs.runCommand "cc-tmp-dir" {} ''
-    mkdir -p $out/tmp
-    chmod 1777 $out/tmp
-  '';
-
   # Compile standard FHS dynamic linker symlinks for non-distroless compatibility
   # tiers. Distroless omits these and relies only on store-bound RPATH/RUNPATH.
   lib64Symlink = pkgs.runCommand "lib64-symlink" {} ''
     mkdir -p $out/lib64 $out/lib
-    if [ -f ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
-      ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+    if [ -f ${runtimePkgs.glibc}/lib/ld-linux-x86-64.so.2 ]; then
+      ln -s ${runtimePkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
     fi
-    if [ -f ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
-      ln -s ${pkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
+    if [ -f ${runtimePkgs.glibc}/lib/ld-linux-aarch64.so.1 ]; then
+      ln -s ${runtimePkgs.glibc}/lib/ld-linux-aarch64.so.1 $out/lib/ld-linux-aarch64.so.1
     fi
     
     # Symlink core libraries to both /lib and /lib64 for FHS compatibility.
     for dir in lib lib64; do
       mkdir -p $out/$dir
-      ln -s ${pkgs.glibc}/lib/libc.so.6 $out/$dir/libc.so.6
-      ln -s ${pkgs.glibc}/lib/libm.so.6 $out/$dir/libm.so.6
-      ln -s ${pkgs.glibc}/lib/libdl.so.2 $out/$dir/libdl.so.2
-      ln -s ${pkgs.glibc}/lib/libpthread.so.0 $out/$dir/libpthread.so.0
-      ln -s ${pkgs.glibc}/lib/librt.so.1 $out/$dir/librt.so.1
-      ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/$dir/libstdc++.so.6
-      ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/$dir/libgcc_s.so.1
+      ln -s ${runtimePkgs.glibc}/lib/libc.so.6 $out/$dir/libc.so.6
+      ln -s ${runtimePkgs.glibc}/lib/libm.so.6 $out/$dir/libm.so.6
+      ln -s ${runtimePkgs.glibc}/lib/libdl.so.2 $out/$dir/libdl.so.2
+      ln -s ${runtimePkgs.glibc}/lib/libpthread.so.0 $out/$dir/libpthread.so.0
+      ln -s ${runtimePkgs.glibc}/lib/librt.so.1 $out/$dir/librt.so.1
+      ln -s ${runtimePkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/$dir/libstdc++.so.6
+      ln -s ${runtimePkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/$dir/libgcc_s.so.1
     done
   '';
 
@@ -69,21 +65,21 @@ let
   resolveTierPackages = { tier }:
     if tier == "dev" then
       [
-        pkgs.coreutils
-        pkgs.bashInteractive
-        pkgs.git
-        pkgs.curl
-        pkgs.cacert
+        runtimePkgs.coreutils
+        runtimePkgs.bashInteractive
+        runtimePkgs.git
+        runtimePkgs.curl
+        runtimePkgs.cacert
       ]
     else if tier == "slim" then
       [
-        pkgs.bash
-        pkgs.busybox
-        pkgs.cacert
+        runtimePkgs.bash
+        runtimePkgs.busybox
+        runtimePkgs.cacert
       ]
     else if tier == "distroless" then
       [
-        pkgs.cacert
+        runtimePkgs.cacert
       ]
     else
       throw "Unsupported lifecycle tier: ${tier}";
@@ -92,16 +88,25 @@ let
   baseContents = [
     passwdFile
     groupFile
-    tmpDir
   ];
 
   baseEnv = [
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     "HOME=/app"
     "TMPDIR=/tmp"
-    "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+    "SSL_CERT_FILE=${runtimePkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
   ];
 
+  # Dev-tier-only FHS escape hatch. glibc resolves libraries in the order
+  # DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, and Nix-built binaries carry
+  # their store-bound dependencies in DT_RUNPATH — so a global
+  # LD_LIBRARY_PATH pointing at /lib:/lib64 outranks the hermetic store
+  # resolution on every binary in the image, which is exactly the drift
+  # class the RPATH/interpreter gate exists to prevent. Production tiers
+  # (slim/distroless) and service images therefore never set it; foreign
+  # FHS binaries in slim/service images are still covered by the
+  # /lib,/lib64 loader symlinks (lib64Symlink), which sit on the dynamic
+  # loader's default search path without overriding DT_RUNPATH.
   fhsCompatibilityEnv = [
     "LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64"
   ];
@@ -110,12 +115,12 @@ let
     baseContents ++ pkgs.lib.optionals (tier != "distroless") [ lib64Symlink ];
 
   envForTier = tier:
-    baseEnv ++ pkgs.lib.optionals (tier != "distroless") fhsCompatibilityEnv;
+    baseEnv ++ pkgs.lib.optionals (tier == "dev") fhsCompatibilityEnv;
 
   splitNixAttrPath = path:
     pkgs.lib.filter (segment: segment != "") (pkgs.lib.splitString "." path);
 
-  getPkg = attrPath: pkgs.lib.attrByPath attrPath null pkgs;
+  getPkg = attrPath: pkgs.lib.attrByPath attrPath null runtimePkgs;
 
   resolvePackageCandidate = candidates: errorMessage:
     let
@@ -153,11 +158,20 @@ let
     chmod 0755 app
   '';
 
+  # /tmp must be created here rather than as a store-path layer: Nix store
+  # canonicalization strips write and sticky bits, so a `chmod 1777` store
+  # directory lands read-only (0555) in the image — breaking every workload
+  # pointed at it by TMPDIR and the postgres entrypoint's `-k /tmp` socket.
+  prepareTmpWorkspace = ''
+    mkdir -p tmp
+    chmod 1777 tmp
+  '';
+
   ownAppWorkspace = ''
     chown ${uid}:${gid} app
   '';
 
-  postgresEntrypoint = pkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
+  postgresEntrypoint = runtimePkgs.writeShellScriptBin "clearcutt-postgres-entrypoint" ''
     set -euo pipefail
     export PGDATA="''${PGDATA:-/var/lib/postgresql/data}"
     if [ -d "$PGDATA" ] && [ ! -O "$PGDATA" ] && [ ! -s "$PGDATA/PG_VERSION" ]; then
@@ -201,7 +215,7 @@ let
 
   serviceTemplatePackages = service:
     if service.template == "postgres" then
-      [ postgresEntrypoint pkgs.bash pkgs.coreutils ]
+      [ postgresEntrypoint runtimePkgs.bash runtimePkgs.coreutils ]
     else
       [];
 
@@ -254,7 +268,7 @@ in
     mergedConfig = pkgs.lib.recursiveUpdate defaultConfig extraConfig;
 
   in
-  pkgs.dockerTools.buildLayeredImage {
+  (pkgs.dockerTools.buildLayeredImage {
     inherit name tag fromImage maxLayers;
     contents = allContents;
     extraCommands = ''
@@ -264,9 +278,15 @@ in
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
       ${prepareAppWorkspace}
+      ${prepareTmpWorkspace}
     '';
     fakeRootCommands = ownAppWorkspace;
     config = mergedConfig;
+  }) // {
+    # Exposed for the flake's closure-purity checks: the exact package set
+    # layered into the image, so `nix flake check` can run closureInfo over
+    # it without unpacking the OCI tarball.
+    clearcuttContents = allContents;
   };
 
   buildServiceImage = {
@@ -281,7 +301,7 @@ in
   let
     servicePkg = resolvePackageCandidate (service.packageCandidates or [])
       "No Nix package candidate is available for service ${service.id}";
-    servicePkgs = [ pkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
+    servicePkgs = [ runtimePkgs.cacert servicePkg ] ++ serviceTemplatePackages service ++ extraPackages;
     allContents = baseContents ++ [ lib64Symlink ] ++ servicePkgs;
     sourceURL = platformMetadata.sourceURL or "https://github.com/northcutted/clearcutt";
     vendor = platformMetadata.vendor or "ClearCutt";
@@ -294,7 +314,7 @@ in
     serviceRuntimeCommands =
       if service.template == "postgres" then ''
         mkdir -p bin
-        ln -sf ${pkgs.bash}/bin/bash bin/sh
+        ln -sf ${runtimePkgs.bash}/bin/bash bin/sh
       '' else "";
 
     ociLabels = {
@@ -317,7 +337,10 @@ in
     defaultConfig = {
       User = "${uid}:${gid}";
       WorkingDir = "/app";
-      Env = baseEnv ++ fhsCompatibilityEnv ++ serviceEnv;
+      # Service images are production surfaces: no LD_LIBRARY_PATH (see
+      # fhsCompatibilityEnv above); the /lib,/lib64 symlinks remain for
+      # foreign FHS binaries.
+      Env = baseEnv ++ serviceEnv;
       Labels = ociLabels;
     }
     // pkgs.lib.optionalAttrs (servicePorts != []) {
@@ -343,6 +366,7 @@ in
       cp ${groupFile}/etc/group etc/group
       chmod 0644 etc/passwd etc/group
       ${prepareAppWorkspace}
+      ${prepareTmpWorkspace}
       ${serviceRuntimeCommands}
       ${prepareDataDirs dataDirs}
     '';

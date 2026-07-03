@@ -90,6 +90,29 @@ help_contains() {
   fi
 }
 
+# Release-pin currency: documented CLI/image release pins (vX.Y.Z) in the files
+# below are deliberate pins, but they must point at the newest published release
+# so docs do not advertise stale versions. Shallow or tagless checkouts (CI uses
+# fetch-depth 1, which fetches no tags) cannot see release tags; skip cleanly
+# there instead of guessing.
+release_pin_files=(
+  docs/certification.md
+  docs/app-lifecycle.md
+  site/src/pages/cli.astro
+  cli/internal/sitetemplate/template/src/pages/cli.astro
+)
+latest_release_tag="$(git tag --list 'v*' --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+if [[ -z "$latest_release_tag" ]]; then
+  echo "notice: no vX.Y.Z release tags visible (shallow or tagless checkout); skipping release-pin currency check" >&2
+else
+  stale_pins="$(grep -hoE 'v[0-9]+\.[0-9]+\.[0-9]+' "${release_pin_files[@]}" | sort -u | grep -vF -x "$latest_release_tag" || true)"
+  if [[ -n "$stale_pins" ]]; then
+    echo "docs command drift: release pins out of date (latest tag is $latest_release_tag): $(echo "$stale_pins" | tr '\n' ' ')" >&2
+    search_regex "v[0-9]+\.[0-9]+\.[0-9]+" "${release_pin_files[@]}" | grep -vF "$latest_release_tag" >&2 || true
+    fail=1
+  fi
+fi
+
 check_absent "clearcutt catalog gather" "use catalog generate or catalog build in docs"
 check_absent "catalog site build --include-services" "--include-services belongs to catalog generate, not catalog site build"
 check_absent "catalog site preview --site" "catalog site preview has no --site flag"

@@ -58,7 +58,14 @@
         "arch": { "type": "string", "enum": ["amd64", "arm64"] },
         "os": { "type": "string" },
         "imageDigest": { "type": ["string", "null"] },
-        "imageSize": { "type": ["integer", "null"] },
+        "imageSize": {
+          "type": ["integer", "null"],
+          "description": "Sum of the compressed layer sizes in bytes — the approximate registry pull size of the image for this architecture."
+        },
+        "manifestDescriptorSize": {
+          "type": ["integer", "null"],
+          "description": "Byte size of the OCI manifest descriptor for this architecture (the manifest document itself, typically a few KiB — not the image contents)."
+        },
         "layerCount": { "type": ["integer", "null"] },
         "layers": {
           "type": "array",

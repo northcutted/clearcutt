@@ -73,9 +73,21 @@ type Site struct {
 }
 
 type Matrix struct {
-	Systems   []string `json:"systems"`
+	Systems []string `json:"systems"`
+	// Languages is the RESOLVED flat list of runtime line ids the matrix builds
+	// ("coreLTS", "java21", ...). It is populated directly from the legacy flat
+	// list, or resolved from LanguageSelectors via the version policy. Downstream
+	// consumers always read this resolved list.
 	Languages []string `json:"languages"`
 	Tiers     []string `json:"tiers"`
+	// Preview is the fleet's persistent opt-in to preview-channel runtimes; it
+	// can be overridden per run by --allow-preview. Only affects the language-
+	// level form (LanguageSelectors); the legacy flat list is explicit.
+	Preview bool `json:"preview,omitempty"`
+	// LanguageSelectors holds the language-level form of matrix.languages when in
+	// use ([{language, channel}, ...]); empty for the legacy flat list. Retained
+	// so --allow-preview can re-resolve and so marshalling preserves the form.
+	LanguageSelectors []LanguageSelector `json:"-"`
 }
 
 type Release struct {
@@ -115,21 +127,143 @@ type Admission struct {
 }
 
 type Remediation struct {
-	Mode                   string            `json:"mode"`
-	ScanDepth              string            `json:"scanDepth"`
-	MaxFindingsPerRun      int               `json:"maxFindingsPerRun"`
-	MaxPatchFailuresPerRun int               `json:"maxPatchFailuresPerRun"`
-	IncludeDevOnly         bool              `json:"includeDevOnly"`
-	Policy                 RemediationPolicy `json:"policy,omitempty"`
+	Mode                   string              `json:"mode"`
+	ScanDepth              string              `json:"scanDepth"`
+	MaxFindingsPerRun      int                 `json:"maxFindingsPerRun"`
+	MaxPatchFailuresPerRun int                 `json:"maxPatchFailuresPerRun"`
+	IncludeDevOnly         bool                `json:"includeDevOnly"`
+	Probe                  RemediationProbe    `json:"probe,omitempty"`
+	Policy                 RemediationPolicy   `json:"policy,omitempty"`
+	Unstable               RemediationUnstable `json:"unstable,omitempty"`
 }
 
+// RemediationProbe configures the live fix-availability probe of CVE triage:
+// whether triage may fetch nixpkgs refs at scan time and which refs it sweeps
+// for the scanner's fixed version. The probe is best-effort by contract — a
+// fetch failure degrades triage to the static route classifier, never blocks
+// planning — so Enabled is a policy statement, not a liveness requirement.
+// See docs/analysis/cve-triage-design.md.
+type RemediationProbe struct {
+	// Enabled: default true. Unset means enabled; --no-probe or offline
+	// operation degrades gracefully either way.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Refs are the nixpkgs refs the probe sweeps, in order. Default
+	// nixos-unstable, master, staging-next; the pin rev itself is always
+	// probed first regardless.
+	Refs []string `json:"refs,omitempty"`
+}
+
+// ProbeEnabled reports whether the fix-availability probe may run; unset
+// defaults to enabled because the probe can only add information (it degrades
+// to the static classifier on any failure).
+func (r Remediation) ProbeEnabled() bool {
+	return r.Probe.Enabled == nil || *r.Probe.Enabled
+}
+
+// EffectiveProbeRefs returns the configured probe ref sweep, falling back to
+// DefaultProbeRefs, so consumers never reimplement the defaulting.
+func (r Remediation) EffectiveProbeRefs() []string {
+	if len(r.Probe.Refs) > 0 {
+		return append([]string(nil), r.Probe.Refs...)
+	}
+	return DefaultProbeRefs()
+}
+
+// DefaultProbeRefs is the default nixpkgs ref sweep for the fix-availability
+// probe: the Hydra-cached channel first, then the branches a fix reaches
+// before it lands on a channel.
+func DefaultProbeRefs() []string {
+	return []string{"nixos-unstable", "master", "staging-next"}
+}
+
+// RemediationUnstable is the opt-in policy for sourcing a CVE fix from a newer
+// (unstable) nixpkgs when the stable pin lacks it. Default-off: the scan only
+// SUGGESTS an unstable fix unless an explicit soft opt-in scopes a single
+// package to a pinned ref (the .NET/node22 dedicated-pin pattern), or `hard`
+// moves the whole fleet. See docs/analysis/cli-pivot-plan.md.
+type RemediationUnstable struct {
+	// Mode: off | suggest | soft | hard. Default suggest.
+	Mode string `json:"mode,omitempty"`
+	// Ref is the default unstable nixpkgs flake ref the scan probes for fixes.
+	Ref string `json:"ref,omitempty"`
+	// SoftOptIns scope individual packages to a pinned unstable ref for a CVE.
+	SoftOptIns []RemediationUnstableOptIn `json:"softOptIns,omitempty"`
+}
+
+// RemediationUnstableOptIn pins one package to a newer nixpkgs ref to clear
+// specific CVEs, scoped so the rest of the fleet stays on the stable pin.
+type RemediationUnstableOptIn struct {
+	Package string                   `json:"package"`
+	Ref     string                   `json:"ref,omitempty"`
+	Reason  string                   `json:"reason,omitempty"`
+	Owner   string                   `json:"owner,omitempty"`
+	Fixes   []RemediationUnstableFix `json:"fixes,omitempty"`
+}
+
+// RemediationUnstableFix records a CVE cleared by the opt-in and the versions.
+type RemediationUnstableFix struct {
+	CVE              string `json:"cve"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	FixedVersion     string `json:"fixedVersion,omitempty"`
+}
+
+// RemediationPolicy is the configurable, risk-based CVE policy. A finding is in
+// scope to remediate/block when it is reachable (present in the production
+// runtime closure) AND materially risky (KEV, OR EPSS percentile >=
+// EPSSPercentile, OR severity >= MinimumSeverity) AND in a production tier;
+// fixability then splits must-fix from must-acknowledge. Everything else is
+// auto-accepted (recorded, expiring). See docs/analysis/cve-risk-policy-design.md.
 type RemediationPolicy struct {
-	ProductionTiers       []string `json:"productionTiers,omitempty"`
-	MinimumSeverity       string   `json:"minimumSeverity,omitempty"`
-	RequireRuntimeLayer   *bool    `json:"requireRuntimeLayer,omitempty"`
-	RequireFixedVersion   *bool    `json:"requireFixedVersion,omitempty"`
-	EPSSPercentileBoostAt float64  `json:"epssPercentileBoostAt,omitempty"`
-	KEVBoost              *bool    `json:"kevBoost,omitempty"`
+	ProductionTiers []string `json:"productionTiers,omitempty"`
+	MinimumSeverity string   `json:"minimumSeverity,omitempty"`
+	// Reachability gates on closure presence: "runtime" (only findings in the
+	// shipped runtime closure are in scope) or "any". This is closure-presence
+	// reachability, NOT exploitability/call-graph reachability.
+	Reachability string `json:"reachability,omitempty"`
+	// EPSSPercentile is the FIRST EPSS percentile (0..1) at/above which a finding
+	// is materially risky. A missing EPSS score falls back to KEV/severity.
+	EPSSPercentile float64 `json:"epssPercentile,omitempty"`
+	// KEV controls CISA KEV handling: "always" (a KEV finding is always in scope,
+	// non-loosenable for crypto) or "off".
+	KEV string `json:"kev,omitempty"`
+	// RequireFixedVersion governs in-scope but UNFIXABLE findings. true (default):
+	// they block until explicitly acknowledged (must_acknowledge) — never a silent
+	// pass. false: a non-KEV unfixable finding auto-accepts (recorded as an
+	// expiring VEX record), the escape hatch for a line that must run with an
+	// unbackported CVE. KEV is non-loosenable either way. A fix always being
+	// present is what separates must_fix from must_acknowledge.
+	RequireFixedVersion *bool `json:"requireFixedVersion,omitempty"`
+	// AcceptedExpiryDays backstops auto-recorded acceptances (re-evaluated each scan).
+	AcceptedExpiryDays int `json:"acceptedExpiryDays,omitempty"`
+	// CryptoTrust selects how the known-good crypto build (openssl/sqlite) is
+	// trusted by the runtime-patch completeness gate and the substitute-first
+	// sourcing. "nixpkgs" (default): trust the pin's patched build, substitute it
+	// from cache, and VEX the scanner version gap. "reproduce": everything nixpkgs
+	// does, plus an independent rebuild of the crypto closure byte-compared against
+	// the substituted build (trust AND verify); a divergence fails the release
+	// evidence. Both ship only provenance-allowlisted crypto identities, so the
+	// gate is identical — only whether a reproducibility compare is also required
+	// differs.
+	CryptoTrust string `json:"cryptoTrust,omitempty"`
+	// PreferSubstitutable breaks route-recommendation ties in triage in favor of
+	// a substitutable (cache-served) fix over a rebuild when both carry the fix.
+	PreferSubstitutable *bool `json:"preferSubstitutable,omitempty"`
+	// WaitMaxSeverity is the ceiling at/below which triage may offer the "wait"
+	// route (fix merged upstream but not yet on a cached ref). A finding above
+	// the ceiling never gets a bare wait.
+	WaitMaxSeverity string `json:"waitMaxSeverity,omitempty"`
+	// WaitMaxDays backstops a wait decision's expiry: it retires at
+	// min(watched ref carries the fix, this many days). A pointer so an
+	// explicit 0 (the wait expires immediately and must be re-decided) is
+	// distinguishable from unset (the 30-day default).
+	WaitMaxDays *int `json:"waitMaxDays,omitempty"`
+
+	// Deprecated — retained for back-compat; normalized into the fields above by
+	// EffectiveRemediationPolicy. RequireRuntimeLayer -> Reachability,
+	// EPSSPercentileBoostAt -> EPSSPercentile, KEVBoost -> KEV.
+	RequireRuntimeLayer   *bool   `json:"requireRuntimeLayer,omitempty"`
+	EPSSPercentileBoostAt float64 `json:"epssPercentileBoostAt,omitempty"`
+	KEVBoost              *bool   `json:"kevBoost,omitempty"`
 }
 
 type Templates struct {
@@ -225,10 +359,9 @@ var supportedRuntimeLines = []RuntimeLine{
 	{ID: "node22", Language: "node", Version: "22", AppTemplateRuntime: "node", Description: "Node.js 22 runtime line"},
 	{ID: "node24", Language: "node", Version: "24", AppTemplateRuntime: "node", Description: "Node.js 24 runtime line"},
 	{ID: "python3.13", Language: "python", Version: "3.13", AppTemplateRuntime: "python", Description: "Python 3.13 runtime line"},
-	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 runtime line"},
-	{ID: "python3.15", Language: "python", Version: "3.15", AppTemplateRuntime: "python", Description: "Python 3.15 runtime line"},
+	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 LTS runtime line"},
 	{ID: "go1.25", Language: "go", Version: "1.25", AppTemplateRuntime: "go", Description: "Go 1.25 toolchain line"},
-	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 toolchain line"},
+	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 LTS toolchain line"},
 	{ID: "dotnet8", Language: "dotnet", Version: "8", Description: ".NET 8 runtime line"},
 	{ID: "dotnet10", Language: "dotnet", Version: "10", Description: ".NET 10 runtime line"},
 	{ID: "rust1.95", Language: "rust", Version: "1.95", Description: "Rust 1.95 toolchain line"},
@@ -335,7 +468,8 @@ func DefaultConfig(owner, repo string) Config {
 				"java25",
 				"node22",
 				"node24",
-				"python3.15",
+				"python3.13",
+				"python3.14",
 				"go1.25",
 				"go1.26",
 				"dotnet8",
@@ -572,10 +706,19 @@ func (c Config) Validate() error {
 	if err := validateRemediationPolicy(c.Remediation.Policy); err != nil {
 		return err
 	}
+	for _, ref := range c.Remediation.Probe.Refs {
+		if strings.TrimSpace(ref) == "" {
+			return fmt.Errorf("remediation.probe.refs must not contain empty values")
+		}
+	}
 	if _, err := c.serviceMap(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func boolPtr(value bool) *bool {
@@ -586,12 +729,26 @@ func DefaultRemediationPolicy() RemediationPolicy {
 	return RemediationPolicy{
 		ProductionTiers:       []string{"slim", "distroless"},
 		MinimumSeverity:       "high",
-		RequireRuntimeLayer:   boolPtr(true),
+		Reachability:          "runtime",
+		EPSSPercentile:        0.90,
+		KEV:                   "always",
 		RequireFixedVersion:   boolPtr(true),
+		AcceptedExpiryDays:    90,
+		RequireRuntimeLayer:   boolPtr(true),
 		EPSSPercentileBoostAt: 0.90,
 		KEVBoost:              boolPtr(true),
+		CryptoTrust:           "nixpkgs",
+		PreferSubstitutable:   boolPtr(true),
+		WaitMaxSeverity:       "medium",
+		WaitMaxDays:           intPtr(30),
 	}
 }
+
+// CryptoTrust modes for RemediationPolicy.CryptoTrust.
+const (
+	CryptoTrustNixpkgs   = "nixpkgs"
+	CryptoTrustReproduce = "reproduce"
+)
 
 func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	def := DefaultRemediationPolicy()
@@ -601,22 +758,69 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	if policy.MinimumSeverity == "" {
 		policy.MinimumSeverity = def.MinimumSeverity
 	}
-	if policy.RequireRuntimeLayer == nil {
-		policy.RequireRuntimeLayer = def.RequireRuntimeLayer
-	}
 	if policy.RequireFixedVersion == nil {
 		policy.RequireFixedVersion = def.RequireFixedVersion
 	}
-	if policy.EPSSPercentileBoostAt == 0 {
-		policy.EPSSPercentileBoostAt = def.EPSSPercentileBoostAt
+
+	// Normalize the gating fields: the new field wins when set, else the
+	// deprecated equivalent, else the default. The resolved value is mirrored
+	// back onto the deprecated field for WIRE-FORMAT compatibility: the
+	// marshaled effective policy travels across binaries (REMEDIATION_POLICY_JSON
+	// in scheduled-scan.yml, fork-pinned CLI versions), so an older consumer
+	// reading only the deprecated names must see the same decision. No in-repo
+	// Go code reads the deprecated fields anymore — do not remove the
+	// mirror-back on that basis.
+	if policy.Reachability == "" {
+		if policy.RequireRuntimeLayer != nil {
+			policy.Reachability = map[bool]string{true: "runtime", false: "any"}[*policy.RequireRuntimeLayer]
+		} else {
+			policy.Reachability = def.Reachability
+		}
 	}
-	if policy.KEVBoost == nil {
-		policy.KEVBoost = def.KEVBoost
+	policy.RequireRuntimeLayer = boolPtr(policy.Reachability == "runtime")
+
+	if policy.EPSSPercentile == 0 {
+		if policy.EPSSPercentileBoostAt > 0 {
+			policy.EPSSPercentile = policy.EPSSPercentileBoostAt
+		} else {
+			policy.EPSSPercentile = def.EPSSPercentile
+		}
+	}
+	policy.EPSSPercentileBoostAt = policy.EPSSPercentile
+
+	if policy.KEV == "" {
+		if policy.KEVBoost != nil {
+			policy.KEV = map[bool]string{true: "always", false: "off"}[*policy.KEVBoost]
+		} else {
+			policy.KEV = def.KEV
+		}
+	}
+	policy.KEVBoost = boolPtr(policy.KEV == "always")
+
+	if policy.AcceptedExpiryDays == 0 {
+		policy.AcceptedExpiryDays = def.AcceptedExpiryDays
+	}
+	if policy.CryptoTrust == "" {
+		policy.CryptoTrust = def.CryptoTrust
+	}
+	if policy.PreferSubstitutable == nil {
+		policy.PreferSubstitutable = def.PreferSubstitutable
+	}
+	if policy.WaitMaxSeverity == "" {
+		policy.WaitMaxSeverity = def.WaitMaxSeverity
+	}
+	if policy.WaitMaxDays == nil {
+		policy.WaitMaxDays = def.WaitMaxDays
 	}
 	return policy
 }
 
 func validateRemediationPolicy(policy RemediationPolicy) error {
+	// Validate the raw deprecated bound before normalization so an out-of-range
+	// deprecated value is caught even when a new field also takes precedence.
+	if policy.EPSSPercentileBoostAt < 0 || policy.EPSSPercentileBoostAt > 1 {
+		return fmt.Errorf("remediation.policy.epssPercentileBoostAt must be between 0 and 1")
+	}
 	policy = EffectiveRemediationPolicy(policy)
 	if len(policy.ProductionTiers) == 0 {
 		return fmt.Errorf("remediation.policy.productionTiers must not be empty")
@@ -628,13 +832,35 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 			return fmt.Errorf("unsupported remediation.policy.productionTiers value %q", tier)
 		}
 	}
-	switch strings.ToLower(policy.MinimumSeverity) {
-	case "critical", "high", "medium", "low", "negligible", "unknown":
-	default:
+	if !KnownSeverity(policy.MinimumSeverity) {
 		return fmt.Errorf("unsupported remediation.policy.minimumSeverity %q", policy.MinimumSeverity)
 	}
-	if policy.EPSSPercentileBoostAt < 0 || policy.EPSSPercentileBoostAt > 1 {
-		return fmt.Errorf("remediation.policy.epssPercentileBoostAt must be between 0 and 1")
+	if !KnownSeverity(policy.WaitMaxSeverity) {
+		return fmt.Errorf("unsupported remediation.policy.waitMaxSeverity %q", policy.WaitMaxSeverity)
+	}
+	switch strings.ToLower(policy.Reachability) {
+	case "runtime", "any":
+	default:
+		return fmt.Errorf("unsupported remediation.policy.reachability %q (use runtime or any)", policy.Reachability)
+	}
+	switch strings.ToLower(policy.KEV) {
+	case "always", "off":
+	default:
+		return fmt.Errorf("unsupported remediation.policy.kev %q (use always or off)", policy.KEV)
+	}
+	if policy.EPSSPercentile < 0 || policy.EPSSPercentile > 1 {
+		return fmt.Errorf("remediation.policy.epssPercentile must be between 0 and 1")
+	}
+	if policy.AcceptedExpiryDays < 0 {
+		return fmt.Errorf("remediation.policy.acceptedExpiryDays must not be negative")
+	}
+	if policy.WaitMaxDays != nil && *policy.WaitMaxDays < 0 {
+		return fmt.Errorf("remediation.policy.waitMaxDays must not be negative")
+	}
+	switch strings.ToLower(policy.CryptoTrust) {
+	case CryptoTrustNixpkgs, CryptoTrustReproduce:
+	default:
+		return fmt.Errorf("unsupported remediation.policy.cryptoTrust %q (use nixpkgs or reproduce)", policy.CryptoTrust)
 	}
 	return nil
 }

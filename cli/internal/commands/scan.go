@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/scan"
 	"github.com/spf13/cobra"
 )
@@ -33,6 +34,9 @@ type scanFlags struct {
 	all         bool
 	kevFile     string
 	concurrency int
+	grypeConfig string
+	updateDB    bool
+	coreDir     string
 }
 
 var scanOpts scanFlags
@@ -67,6 +71,10 @@ in catalog mode it is best-effort.`,
 	cmd.Flags().BoolVar(&scanOpts.all, "all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached tag (overrides --depth)")
 	cmd.Flags().StringVar(&scanOpts.kevFile, "kev-file", os.Getenv("KEV_FILE"), "Optional CISA KEV catalog JSON file for known-exploited enrichment")
 	cmd.Flags().IntVar(&scanOpts.concurrency, "concurrency", 0, "Parallel grype workers (0 = CPU count or $SCAN_CONCURRENCY)")
+	cmd.Flags().StringVar(&scanOpts.grypeConfig, "grype-config", os.Getenv("GRYPE_CONFIG"), "Grype config file with the fleet ignore rules (default: core/.grype.yaml when present)")
+	cmd.Flags().BoolVar(&scanOpts.updateDB, "update-db", parseScanBool(os.Getenv("SCAN_UPDATE_DB")), "Refresh the local Grype vulnerability database before scanning")
+	cmd.Flags().StringVar(&scanOpts.coreDir, "core-dir", "", "Optional Nix fleet core directory; when set, run Grype through the pinned Nix dev shell")
+	cmd.AddCommand(NewScanRefreshKEVCmd())
 	return cmd
 }
 
@@ -169,8 +177,37 @@ func scanWarnf(format string, args ...any) {
 	fmt.Fprintf(errOut, "[scan] "+format+"\n", args...)
 }
 
+type scanCommandSpec struct {
+	name string
+	args []string
+	dir  string
+}
+
+func scanGrypeCommand(grypeBin string, args ...string) scanCommandSpec {
+	if strings.TrimSpace(scanOpts.coreDir) == "" {
+		return scanCommandSpec{name: grypeBin, args: args}
+	}
+	return scanCommandSpec{
+		name: "nix",
+		args: build.NixDevelopCommand(grypeBin, args...),
+		dir:  scanOpts.coreDir,
+	}
+}
+
+func scanCommandOutput(spec scanCommandSpec) ([]byte, error) {
+	cmd := exec.Command(spec.name, spec.args...)
+	cmd.Dir = spec.dir
+	return cmd.Output()
+}
+
+func scanCommandCombinedOutput(spec scanCommandSpec) ([]byte, error) {
+	cmd := exec.Command(spec.name, spec.args...)
+	cmd.Dir = spec.dir
+	return cmd.CombinedOutput()
+}
+
 func grypeVersionProbe(grypeBin string) (string, *string) {
-	out, err := exec.Command(grypeBin, "version", "-o", "json").Output()
+	out, err := scanCommandOutput(scanGrypeCommand(grypeBin, "version", "-o", "json"))
 	if err != nil {
 		return "grype", nil
 	}
@@ -196,6 +233,25 @@ func grypeVersionProbe(grypeBin string) (string, *string) {
 		built = &parsed.DB.Built
 	}
 	return version, built
+}
+
+func refreshGrypeDB(grypeBin string) {
+	scanLogf("updating Grype vulnerability database")
+	out, err := scanCommandCombinedOutput(scanGrypeCommand(grypeBin, "db", "update"))
+	if err == nil {
+		scanLogf("Grype vulnerability database update completed")
+		return
+	}
+	detail := strings.TrimSpace(string(out))
+	if len(detail) > 200 {
+		detail = detail[:200]
+	}
+	if detail == "" {
+		detail = err.Error()
+	} else {
+		detail = fmt.Sprintf("%v: %s", err, detail)
+	}
+	scanWarnf("Grype database update failed, proceeding with active local database: %s", detail)
 }
 
 type scanWorkItem struct {
@@ -232,14 +288,43 @@ func runScan() error {
 	strict := scanStrictModes[scanOpts.mode]
 	grypeBin := envOr("GRYPE_BIN", "grype")
 	grypeOpts := strings.Fields(os.Getenv("GRYPE_OPTS"))
+	toolProbe := grypeBin
+	if strings.TrimSpace(scanOpts.coreDir) != "" {
+		toolProbe = "nix"
+		scanLogf("tool resolver: using Nix dev shell at %s for Grype", scanOpts.coreDir)
+	}
 
-	if _, err := exec.LookPath(grypeBin); err != nil {
-		msg := fmt.Sprintf("[scan] %s not on PATH - install Grype to enable CVE reporting.", grypeBin)
+	// Pass the fleet suppression config explicitly: grype only auto-discovers
+	// .grype.yaml from its working directory, and this command runs from the
+	// repo root (catalog build, release gate), not from core/. Without -c the
+	// published catalog would keep reporting CVEs that the gate has already
+	// remediated-and-suppressed via core/.grype.yaml.
+	grypeConfig := strings.TrimSpace(scanOpts.grypeConfig)
+	explicitConfig := grypeConfig != ""
+	if !explicitConfig {
+		grypeConfig = filepath.Join("core", ".grype.yaml")
+	}
+	if _, err := os.Stat(grypeConfig); err == nil {
+		grypeOpts = append([]string{"-c", grypeConfig}, grypeOpts...)
+		scanLogf("grype config: %s", grypeConfig)
+	} else if explicitConfig {
+		msg := fmt.Sprintf("[scan] grype config %s not found.", grypeConfig)
 		if strict {
 			return fmt.Errorf("%s", msg)
 		}
-		scanWarnf("%s not on PATH - install Grype to enable CVE reporting.", grypeBin)
+		scanWarnf("grype config %s not found.", grypeConfig)
+	}
+
+	if _, err := exec.LookPath(toolProbe); err != nil {
+		msg := fmt.Sprintf("[scan] %s not on PATH - install %s to enable CVE reporting.", toolProbe, toolProbe)
+		if strict {
+			return fmt.Errorf("%s", msg)
+		}
+		scanWarnf("%s not on PATH - install %s to enable CVE reporting.", toolProbe, toolProbe)
 		return nil
+	}
+	if scanOpts.updateDB {
+		refreshGrypeDB(grypeBin)
 	}
 
 	info, err := os.Stat(scanOpts.sbomDir)
@@ -372,7 +457,7 @@ func runScan() error {
 
 func scanSBOM(grypeBin string, grypeOpts []string, item scanWorkItem, scannerVersion string, dbBuiltAt *string, opts scan.NormalizeOptions) (scan.Report, error) {
 	args := append([]string{"sbom:" + item.sbomPath, "-o", "json", "--quiet"}, grypeOpts...)
-	raw, err := exec.Command(grypeBin, args...).Output()
+	raw, err := scanCommandOutput(scanGrypeCommand(grypeBin, args...))
 	if err != nil && len(raw) == 0 {
 		stderr := ""
 		if ee, ok := err.(*exec.ExitError); ok {

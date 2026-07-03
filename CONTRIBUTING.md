@@ -18,6 +18,19 @@ go run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distro
 
 Those commands use committed fixtures and do not require release assets, registry credentials, or generated `site/src/data/catalog` state.
 
+## Pre-PR Gate
+
+`make check` is the canonical pre-PR command. It mirrors the `go-ci` job in
+`.github/workflows/pr-gate.yml` — `go vet`, `gofmt` enforcement, the CLI
+build, the Go coverage floor, documented-command validation, and workflow
+hardening checks — so a clean local run means the Go gate passes in CI:
+
+```bash
+make check
+```
+
+Run it before every pull request, after the focused checks below.
+
 ## Common Checks
 
 For CLI changes:
@@ -44,7 +57,8 @@ cd core
 nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
 ```
 
-For site changes:
+For site changes (`make site-typecheck` and `make site-build` run `npm ci`
+automatically the first time and whenever `site/package-lock.json` changes):
 
 ```bash
 cd site
@@ -53,7 +67,10 @@ npm run typecheck
 npm run build
 ```
 
-On some macOS hosts, `make` can fail before recipes run because of local Xcode tooling. The direct commands above are the preferred contributor path.
+> Troubleshooting: on some macOS hosts, `make` can fail before recipes run
+> because of local Xcode tooling. If `make check` aborts that way, run the
+> direct commands above (and the steps from the `check` recipe in the
+> `Makefile`) until the host toolchain is fixed.
 
 ## Generated State
 

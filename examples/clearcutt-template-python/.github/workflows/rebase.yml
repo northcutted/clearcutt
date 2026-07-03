@@ -9,7 +9,7 @@ on:
       candidate-base:
         description: Patched ClearCutt base reference
         required: true
-        default: ghcr.io/northcutted/clearcutt/clearcutt-python3.15:distroless
+        default: ghcr.io/northcutted/clearcutt/clearcutt-python3.14:distroless
       tag:
         description: Target rebased image reference
         required: true
@@ -54,7 +54,7 @@ jobs:
           clearcutt app diff-base \
             --image "${{ inputs.image }}" \
             --candidate-base "${{ inputs.candidate-base }}" \
-            --candidate-base-id python3.15-distroless \
+            --candidate-base-id python3.14-distroless \
             --fail-on-incompatible
 
       - name: Rebase, sign, and attest
@@ -62,7 +62,7 @@ jobs:
           clearcutt app rebase \
             --image "${{ inputs.image }}" \
             --candidate-base "${{ inputs.candidate-base }}" \
-            --candidate-base-id python3.15-distroless \
+            --candidate-base-id python3.14-distroless \
             --tag "${{ inputs.tag }}" \
             --dev-identity "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/main" \
             --sign \

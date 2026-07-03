@@ -1,0 +1,18 @@
+# ClearCutt closure-purity allowlist (explained exceptions).
+#
+# Consumed by tests/closure-purity-check.py, which gates distroless images on
+# shipping no interactive shells (bin/sh, bin/bash, bin/ash, bin/dash), no
+# package managers (npm, npx, corepack, pip*, apk, dpkg, rpm), and no
+# setuid/setgid regular files — at the /nix/store closure level, not just at
+# FHS paths.
+#
+# Every entry must be:
+#   <store-name-pattern> <one-line reason>
+# where <store-name-pattern> is an fnmatch glob matched against the store
+# component name with the /nix/store hash prefix stripped, e.g.:
+#   bash-5.2p37* temurin launcher scripts require a shell interpreter; tracked in #NNN
+# For setuid/setgid findings outside /nix/store the pattern matches the full
+# in-image path instead.
+#
+# Keep this list empty unless a finding has been consciously reviewed and
+# accepted: an unexplained entry is rejected by the checker.

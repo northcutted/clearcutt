@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/fixprobe"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
@@ -65,31 +65,35 @@ type RemediationPlanSummary struct {
 }
 
 type RemediationCampaign struct {
-	Package               string                       `json:"package"`
-	CVE                   string                       `json:"cve"`
-	PrimaryCVE            string                       `json:"primaryCve"`
-	CVEs                  []string                     `json:"cves"`
-	InstalledVersion      string                       `json:"installedVersion"`
-	FixedVersion          string                       `json:"fixedVersion"`
-	FixState              string                       `json:"fixState"`
-	Severity              string                       `json:"severity"`
-	Layer                 string                       `json:"layer"`
-	CVSSScore             *float64                     `json:"cvssScore,omitempty"`
-	CVSSVector            *string                      `json:"cvssVector,omitempty"`
-	EPSSScore             *float64                     `json:"epssScore,omitempty"`
-	EPSSPercentile        *float64                     `json:"epssPercentile,omitempty"`
-	RiskScore             *float64                     `json:"riskScore,omitempty"`
-	DataSource            *string                      `json:"dataSource,omitempty"`
-	Namespace             *string                      `json:"namespace,omitempty"`
-	Description           *string                      `json:"description,omitempty"`
-	RecommendedRoute      string                       `json:"recommendedRoute"`
-	RiskFactors           RemediationRiskFactors       `json:"riskFactors"`
-	PolicyDecision        RemediationPolicyDecision    `json:"policyDecision"`
-	ExpectedRemoved       []RemediationExpectedFinding `json:"expectedRemoved"`
-	AffectedTargets       []RemediationTarget          `json:"affectedTargets"`
-	ProductionTargetCount int                          `json:"productionTargetCount"`
-	TargetCount           int                          `json:"targetCount"`
-	Score                 float64                      `json:"score"`
+	Package                  string                       `json:"package"`
+	CVE                      string                       `json:"cve"`
+	PrimaryCVE               string                       `json:"primaryCve"`
+	CVEs                     []string                     `json:"cves"`
+	InstalledVersion         string                       `json:"installedVersion"`
+	FixedVersion             string                       `json:"fixedVersion"`
+	FixState                 string                       `json:"fixState"`
+	Severity                 string                       `json:"severity"`
+	Layer                    string                       `json:"layer"`
+	CVSSScore                *float64                     `json:"cvssScore,omitempty"`
+	CVSSVector               *string                      `json:"cvssVector,omitempty"`
+	EPSSScore                *float64                     `json:"epssScore,omitempty"`
+	EPSSPercentile           *float64                     `json:"epssPercentile,omitempty"`
+	RiskScore                *float64                     `json:"riskScore,omitempty"`
+	DataSource               *string                      `json:"dataSource,omitempty"`
+	Namespace                *string                      `json:"namespace,omitempty"`
+	Description              *string                      `json:"description,omitempty"`
+	RecommendedRoute         string                       `json:"recommendedRoute"`
+	RouteReason              string                       `json:"routeReason,omitempty"`
+	RemediationEvidence      map[string]any               `json:"remediationEvidence,omitempty"`
+	DeterministicRemediation map[string]any               `json:"deterministicRemediation,omitempty"`
+	DeterministicRecipe      map[string]any               `json:"deterministicRecipe,omitempty"`
+	RiskFactors              RemediationRiskFactors       `json:"riskFactors"`
+	PolicyDecision           RemediationPolicyDecision    `json:"policyDecision"`
+	ExpectedRemoved          []RemediationExpectedFinding `json:"expectedRemoved"`
+	AffectedTargets          []RemediationTarget          `json:"affectedTargets"`
+	ProductionTargetCount    int                          `json:"productionTargetCount"`
+	TargetCount              int                          `json:"targetCount"`
+	Score                    float64                      `json:"score"`
 }
 
 type RemediationScanSource struct {
@@ -209,18 +213,24 @@ func NewRemediationCmd() *cobra.Command {
 		},
 	}
 
-	planCmd.Flags().StringVar(&remediationOpts.vulnRoot, "vuln-root", remediationDefaultVulnRoot, "Root directory containing versioned vulnerability scan outputs")
+	planCmd.Flags().StringVar(&remediationOpts.vulnRoot, "vuln-root", envOr("VULN_ROOT", remediationDefaultVulnRoot), "Root directory containing versioned vulnerability scan outputs")
 	planCmd.Flags().StringVar(&remediationOpts.vulnDir, "vuln-dir", "", "Specific vulnerability scan directory to read")
-	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", false, "Include dev-tier-only campaigns")
-	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", 0, "Maximum campaigns to emit")
+	planCmd.Flags().BoolVar(&remediationOpts.includeDevOnly, "include-dev-only", parseScanBool(os.Getenv("INCLUDE_DEV_ONLY_REMEDIATION")), "Include dev-tier-only campaigns")
+	planCmd.Flags().IntVar(&remediationOpts.limit, "limit", envIntValue("MAX_FINDINGS_PER_RUN", 0), "Maximum campaigns to emit")
 	planCmd.Flags().StringVar(&remediationOpts.out, "out", "", "Write the plan JSON to this path (in addition to stdout output)")
 	planCmd.Flags().StringVar(&remediationOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 
 	cmd.AddCommand(planCmd)
+	cmd.AddCommand(NewRemediationTriageCmd())
+	cmd.AddCommand(NewRemediationStatusCmd())
 	cmd.AddCommand(NewRemediationReportCmd())
 	cmd.AddCommand(NewRemediationValidateOverlaysCmd())
 	cmd.AddCommand(NewRemediationRunCmd())
 	cmd.AddCommand(NewRemediationOpenPRCmd())
+	cmd.AddCommand(NewRemediationGenerateFloorCmd())
+	cmd.AddCommand(NewRemediationIgnoreCmd())
+	cmd.AddCommand(NewRemediationVexCryptoCmd())
+	cmd.AddCommand(NewRemediationWorkflowParamsCmd())
 	return cmd
 }
 
@@ -234,6 +244,7 @@ func runRemediationPlan() error {
 	if err != nil {
 		return err
 	}
+	enrichPlanRoutesBestEffort(plan, "")
 
 	if remediationOpts.out != "" {
 		if err := writeRemediationPlanFile(remediationOpts.out, plan); err != nil {
@@ -248,7 +259,7 @@ func runRemediationPlan() error {
 		s := plan.Summary
 		fmt.Fprintf(
 			out,
-			"[remediation] campaigns=%d candidates=%d production=%d dev_only=%d deferred=%d criteria=high-critical-runtime-with-fixed-version source=%s\n",
+			"[remediation] campaigns=%d candidates=%d production=%d dev_only=%d deferred=%d criteria=reachable-materially-risky-fixable source=%s\n",
 			s.CampaignCount, s.CandidateCampaignCount, s.ProductionCampaignCount,
 			s.DevOnlyCampaignCount, s.DeferredCount, plan.SourceDir,
 		)
@@ -310,11 +321,25 @@ func latestRemediationVulnDir(root string) (string, error) {
 	if len(dirs) == 0 {
 		return "", fmt.Errorf("no vulnerability scan directory found (%s)", describeRemediationVulnRoot(root))
 	}
-	sort.Slice(dirs, func(i, j int) bool {
-		return compareVersionLike(dirs[i], dirs[j]) > 0
+	// Only release-tag-shaped names compete for latest: a placeholder like
+	// v1.2.x must never beat a real tag, however a lenient comparator would
+	// order it. Fall back to everything when no dir looks like a tag.
+	candidates := []string{}
+	for _, dir := range dirs {
+		if remediationTagDirRe.MatchString(dir) {
+			candidates = append(candidates, dir)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = dirs
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return fixprobe.CompareVersions(candidates[i], candidates[j]) > 0
 	})
-	return filepath.Join(root, dirs[0]), nil
+	return filepath.Join(root, candidates[0]), nil
 }
+
+var remediationTagDirRe = regexp.MustCompile(`^v?[0-9]+(\.[0-9]+)*$`)
 
 func describeRemediationVulnRoot(root string) string {
 	abs, _ := filepath.Abs(root)
@@ -463,21 +488,27 @@ func normalizeRemediationCampaigns(vulnDir string, policy fleet.RemediationPolic
 			if finding.PackageName == "" || finding.ID == "" {
 				continue
 			}
-			severityKey := strings.ToLower(finding.Severity)
 			fix := fixedVersionString(finding.FixedIn)
-			reason := ""
-			switch {
-			case policyBool(policy.RequireRuntimeLayer) && finding.Layer != "runtime":
-				reason = "base_layer"
-			case !severityMeetsThreshold(severityKey, policy.MinimumSeverity):
-				reason = "below_priority_threshold"
-			case policyBool(policy.RequireFixedVersion) && fix == "":
-				reason = "no_fixed_version"
-			}
+			// One risk policy decides scope here — the same fleet.Materiality
+			// the release gate (verify) and the crypto floor consume. It
+			// promotes EPSS/KEV from ranking boosts to gates (a medium finding
+			// with EPSS >= the floor or a KEV listing is now in scope), and
+			// splits an in-scope finding on fixability. ProductionTier is forced
+			// true: the planner ranks across every tier and the dev/prod split
+			// is applied downstream (devOnly filtering + ProductionTargetCount),
+			// so gating on tier here would drop --include-dev-only campaigns.
+			decision := fleet.Materiality(fleet.MaterialityInput{
+				Severity:       finding.Severity,
+				EPSSPercentile: finding.EpssPercentile,
+				KEV:            finding.KEV != nil && finding.KEV.KnownExploited,
+				Layer:          finding.Layer,
+				HasFix:         fix != "",
+				ProductionTier: true,
+			}, policy)
 
-			if reason != "" {
+			if decision.Disposition != fleet.DispositionMustFix {
 				deferred = append(deferred, RemediationDeferred{
-					Reason:   reason,
+					Reason:   plannerDeferredReason(decision),
 					CVE:      finding.ID,
 					Package:  finding.PackageName,
 					Severity: finding.Severity,
@@ -655,46 +686,6 @@ func roundRemediationScore(value float64) float64 {
 	return math.Round(value*1000) / 1000
 }
 
-func parseVersionParts(value string) []int {
-	value = strings.TrimPrefix(value, "v")
-	parts := strings.Split(value, ".")
-	out := make([]int, len(parts))
-	for i, part := range parts {
-		parsed, err := strconv.Atoi(part)
-		if err != nil {
-			return []int{0, 0, 0}
-		}
-		out[i] = parsed
-	}
-	return out
-}
-
-func compareVersionLike(left, right string) int {
-	l := parseVersionParts(left)
-	r := parseVersionParts(right)
-	maxLen := len(l)
-	if len(r) > maxLen {
-		maxLen = len(r)
-	}
-	for i := 0; i < maxLen; i++ {
-		lv := 0
-		rv := 0
-		if i < len(l) {
-			lv = l[i]
-		}
-		if i < len(r) {
-			rv = r[i]
-		}
-		if lv > rv {
-			return 1
-		}
-		if lv < rv {
-			return -1
-		}
-	}
-	return strings.Compare(left, right)
-}
-
 func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
 	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" {
 		return fleet.DefaultRemediationPolicy()
@@ -706,8 +697,36 @@ func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
 	return fleet.EffectiveRemediationPolicy(policy)
 }
 
-func policyBool(value *bool) bool {
-	return value != nil && *value
+// plannerDeferredReason maps a risk decision onto the planner's deferral
+// vocabulary. A must_acknowledge finding (reachable + materially risky, but
+// unfixable) gets its own reason so it is never silently folded into a benign
+// "below threshold" deferral — it is surfaced for an explicit, owned
+// acknowledgement. The planner only ranks; the release gate (verify) is what
+// actually blocks on it.
+func plannerDeferredReason(decision fleet.RiskDecision) string {
+	if decision.Disposition == fleet.DispositionMustAcknowledge {
+		return "requires_acknowledgement"
+	}
+	switch decision.Reason {
+	case "not_reachable_base_layer":
+		return "base_layer"
+	case "no_fix_unrequired":
+		// In scope and unfixable, but the policy does not require a fix
+		// (requireFixedVersion:false): a benign no-fix deferral.
+		return "no_fixed_version"
+	default:
+		// below_risk_threshold (and any future auto-accept reason). non_production
+		// cannot occur on the planner path: it forces ProductionTier:true.
+		return "below_priority_threshold"
+	}
+}
+
+// findingHasFix is the single fixability predicate shared by the planner and the
+// release gate so they never disagree on a finding's disposition. It keys on a
+// usable fixed version (the first comma-delimited candidate), matching what the
+// campaign actually bumps to — not merely a non-empty FixedIn string.
+func findingHasFix(fixedIn *string) bool {
+	return fixedVersionString(fixedIn) != ""
 }
 
 func productionTier(policy fleet.RemediationPolicy, tier string) bool {
@@ -718,23 +737,6 @@ func productionTier(policy fleet.RemediationPolicy, tier string) bool {
 		}
 	}
 	return false
-}
-
-func severityMeetsThreshold(severity, threshold string) bool {
-	order := map[string]int{
-		"critical":   5,
-		"high":       4,
-		"medium":     3,
-		"low":        2,
-		"negligible": 1,
-		"unknown":    0,
-	}
-	sev := order[strings.ToLower(severity)]
-	min, ok := order[strings.ToLower(threshold)]
-	if !ok {
-		min = order["high"]
-	}
-	return sev >= min
 }
 
 func mergeScanSource(source *RemediationScanSource, scan remediationScanFile) {

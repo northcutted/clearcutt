@@ -95,6 +95,6 @@ jobs:
       - name: Certify image against ClearCutt contracts
         run: |
           clearcutt certify app-image.tar \
-            --base python3.15-distroless \
+            --base python3.14-distroless \
             --policy certification-policy.yaml \
             --image-ref "${IMAGE}@${{ steps.build.outputs.digest }}"

@@ -115,6 +115,29 @@ shows the separate trust boundary: developer workflow signs the original app
 image; platform rebase workflow verifies that signature, swaps compatible base
 layers, signs the rebased result, and attaches a rebase attestation.
 
+## 7. Pin The Base Image Digest Before Production
+
+The scaffolded Dockerfiles intentionally start on mutable tags (`:dev`,
+`:distroless`) to keep the inner development loop fast. Before a production
+build, switch the runtime `FROM` line to an immutable digest pin — that is the
+required production posture ([ADR #2](decisions.md)). Catalog records carry the
+released manifest digest (`latestManifestDigest`), and `inspect` prints it as
+the `Digest Reference:` line:
+
+```bash
+./clearcutt --catalog cli/internal/testdata/catalog inspect java21-distroless
+# Digest Reference:   ghcr.io/northcutted/clearcutt/clearcutt-java21@sha256:...
+```
+
+Copy that digest-pinned reference into the runtime stage of your Dockerfile:
+
+```dockerfile
+FROM ghcr.io/northcutted/clearcutt/clearcutt-java21@sha256:<digest>
+```
+
+Mutable tags stay convenient for local iteration; the digest pin is what
+production deployments, `clearcutt certify`, and admission policy key on.
+
 ## Manual Dockerfile Fallback
 
 If the app template does not fit your stack, keep the same tier pattern:

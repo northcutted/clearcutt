@@ -15,6 +15,14 @@ const tierLabels = {
 };
 const decisionsUrl = index ? `${index.repoUrl}/blob/main/docs/decisions.md` : 'https://github.com';
 
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
+const hrefFor = (href = '') => {
+  const value = href.trim();
+  if (!value || value === '/') return base;
+  if (/^(https?:|mailto:|tel:)/.test(value) || value.startsWith('#')) return value;
+  return `${base}${value.replace(/^\/+/, '')}`;
+};
+
 const sample = index?.images.find(img => img.tier === 'distroless') ?? index?.images[0];
 const ownerRepo = index ? `${index.owner}/${index.repo}` : 'OWNER/REPO';
 const latestTag = index?.latestTag ?? 'vX.Y.Z';
@@ -34,6 +42,8 @@ const sampleRefVersioned = `${sampleRegistryBase}/${sampleImageName}:${latestTag
 // workflow path and branch for BOTH signatures and attestations.
 const workflowIdentityRegex =
   `^https://github\\.com/${ownerRepo}/\\.github/workflows/release\\.yml@refs/heads/main$`;
+const releaseWorkflowIdentity =
+  `https://github.com/${ownerRepo}/.github/workflows/release.yml@refs/heads/main`;
 const oidcIssuer = 'https://token.actions.githubusercontent.com';
 ---
 <Base title="About & Audit">
@@ -116,7 +126,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
             The end-to-end ClearCutt trust flow coordinates Nix store base builds, OIDC-based signing and attestation metadata, and Kubernetes dynamic policy checks at admission time:
           </p>
           <div class="rounded-2xl border border-ink-800 bg-ink-950/40 p-4 sm:p-6 shadow-lg">
-            <img src="/supply-chain-flow.svg" alt="ClearCutt Supply Chain Architecture" class="w-full h-auto" />
+            <img src={hrefFor('/supply-chain-flow.svg')} alt="ClearCutt Supply Chain Architecture" class="w-full h-auto" />
           </div>
         </section>
 
@@ -151,7 +161,7 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
                 <h3 class="font-semibold text-xs uppercase tracking-wider text-ink-50">Rescan Without Rebuild</h3>
               </div>
               <p class="text-[11px] text-ink-200 leading-relaxed font-sans">
-                When an SPDX SBOM is attached to an image, the catalog can re-scan it nightly against the current vulnerability database — newly-disclosed CVEs surface without rebuilding the image. A separate scheduled job drafts remediation PRs for review; nothing merges or deploys on its own.
+                When an SPDX SBOM is attached to an image, the catalog can re-scan it nightly against the current vulnerability database — newly-disclosed CVEs surface without rebuilding the image. A scheduled job can draft gated remediation PRs when explicitly enabled; nothing merges or deploys on its own.
               </p>
             </div>
           </div>
@@ -241,12 +251,14 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         </header>
 
         <section class="space-y-3">
-          <h3 class="heading text-base text-ink-50">1. Install tools</h3>
-          <CopyBlock language="shell" code={`# macOS / Linux\nbrew install cosign slsa-verifier crane jq gh`} />
+          <h3 class="heading text-base text-ink-50">1. Verify with the CLI</h3>
+          <CopyBlock language="shell" code={`clearcutt verify release-evidence \\\n  --ref ${sampleRefVersioned} \\\n  --repo ${ownerRepo} \\\n  --workflow-identity "${releaseWorkflowIdentity}" \\\n  --source-ref refs/heads/main \\\n  --source-branch main \\\n  --core-dir core`} />
           <p class="text-xs text-ink-300">
-            Pinned versions in CI: cosign v3.0+, slsa-verifier v2.7+, crane v0.20+. The
-            <code class="font-mono text-ink-100">gh</code> CLI (step 5) is optional — use it if you
-            prefer GitHub's attestation store over running cosign directly.
+            From a scaffolded fleet repo, the CLI resolves the immutable digest and runs
+            Cosign, SLSA verifier, and GitHub attestation checks through the pinned Nix
+            backend. The manual commands below expose the same trust boundaries for
+            inspection; run them from <code class="font-mono text-ink-100">nix develop ./core</code>
+            or with equivalent local tools.
           </p>
         </section>
 

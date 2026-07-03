@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/spf13/cobra"
 )
@@ -31,10 +34,27 @@ and manage hardened multi-architecture platform-owned base images.`,
 		// failure, and let main own error/exit-code presentation.
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Cobra runs only the closest PersistentPreRunE in the command chain,
+		// so a subcommand that defines its own hook must call
+		// ValidateGlobalFormat itself. No subcommand defines one today; keep it
+		// that way or compose explicitly.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateGlobalFormat(GlobalOpts.Format); err != nil {
+				return err
+			}
+			// The default catalog data directory is repo state under
+			// site/src/data/catalog; resolve it against the enclosing repo
+			// root so catalog readers and the catalog build pipeline's default
+			// output sink agree no matter which subdirectory the CLI runs
+			// from. An explicit --catalog keeps its exact (cwd-relative)
+			// meaning.
+			resolveRepoRootDefault(cmd, "catalog", &GlobalOpts.CatalogPath)
+			return nil
+		},
 	}
 
 	rootCmd.PersistentFlags().StringVar(&GlobalOpts.CatalogPath, "catalog", "site/src/data/catalog", "Path to local catalog JSON data directory")
-	rootCmd.PersistentFlags().StringVar(&GlobalOpts.Format, "format", "table", "Output formatting format: table, json, or yaml")
+	rootCmd.PersistentFlags().StringVar(&GlobalOpts.Format, "format", "table", "Output format: table, json, or yaml")
 	rootCmd.PersistentFlags().BoolVar(&GlobalOpts.Quiet, "quiet", false, "Suppress non-essential console outputs")
 	rootCmd.PersistentFlags().BoolVar(&GlobalOpts.Verbose, "verbose", false, "Enable verbose debug outputs")
 	rootCmd.PersistentFlags().BoolVar(&catalog.Strict, "strict", false, "Reject catalog JSON containing fields unknown to the CLI data model")
@@ -91,4 +111,17 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("secure", NewVexCmd())
 
 	return rootCmd
+}
+
+// ValidateGlobalFormat rejects unknown --format values before any command
+// runs, instead of letting them silently fall back to table output. The
+// accepted set (case-insensitive) matches the format switches used across the
+// commands: table, json, yaml, and the yml alias.
+func ValidateGlobalFormat(format string) error {
+	switch strings.ToLower(format) {
+	case "table", "json", "yaml", "yml":
+		return nil
+	default:
+		return fmt.Errorf("unknown --format %q (expected table, json, or yaml)", format)
+	}
 }

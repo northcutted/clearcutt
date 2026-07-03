@@ -34,6 +34,9 @@ type catalogSiteFlags struct {
 	install      bool
 	clean        bool
 	basePath     string
+	siteURL      string
+	generateVEX  bool
+	vexDir       string
 	workDir      string
 	host         string
 	port         int
@@ -95,6 +98,9 @@ func newCatalogSiteBuildCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Run npm install/npm ci in the generated site before building")
 	cmd.Flags().BoolVar(&catalogSiteOpts.clean, "clean", false, "Remove the output directory before writing static site files")
 	cmd.Flags().StringVar(&catalogSiteOpts.basePath, "base-path", "", "Astro base path to pass as BASE_PATH during the build")
+	cmd.Flags().StringVar(&catalogSiteOpts.siteURL, "site-url", "", "Astro site URL to pass as SITE_URL during the build")
+	cmd.Flags().BoolVar(&catalogSiteOpts.generateVEX, "generate-vex", false, "Generate public OpenVEX documents for every catalog image before building")
+	cmd.Flags().StringVar(&catalogSiteOpts.vexDir, "vex-dir", filepath.Join("public", "vex"), "Build-workspace directory for --generate-vex output")
 	cmd.Flags().StringVar(&catalogSiteOpts.workDir, "work-dir", "", "Reusable build workspace; defaults to a temporary directory")
 	cmd.MarkFlagRequired("output")
 	return cmd
@@ -214,12 +220,26 @@ func runCatalogSiteBuild(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+	if catalogSiteOpts.generateVEX {
+		vexDir := catalogSiteOpts.vexDir
+		if !filepath.IsAbs(vexDir) {
+			vexDir = filepath.Join(workDir, vexDir)
+		}
+		result, err := generateOpenVEXForCatalog(catalogPath, vexDir, "", "")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "[site-build] generated %d OpenVEX document(s) in %s\n", result.Count, result.OutputDir)
+	}
 	if err := ensureNodeDependencies(workDir, templatePath, catalogSiteOpts.install); err != nil {
 		return err
 	}
 	env := os.Environ()
 	if catalogSiteOpts.basePath != "" {
 		env = append(env, "BASE_PATH="+catalogSiteOpts.basePath)
+	}
+	if catalogSiteOpts.siteURL != "" {
+		env = append(env, "SITE_URL="+catalogSiteOpts.siteURL)
 	}
 	if err := runNPM(workDir, env, "run", "build"); err != nil {
 		return err

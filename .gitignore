@@ -25,6 +25,11 @@ core/build-outputs/*
 
 /clearcutt
 /cli/clearcutt
+
+# Generated embedded platform source archive (see cli/internal/platformsource/archive/README.md).
+cli/internal/platformsource/archive/source.zip
+cli/internal/platformsource/archive/source.zip.tmp
+
 cli/coverage.out
 cli/coverage.txt
 cli/coverage.html

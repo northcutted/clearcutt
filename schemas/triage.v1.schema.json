@@ -1,0 +1,225 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "clearcutt.triage/v1",
+  "title": "TriageReport",
+  "description": "The `clearcutt remediation triage --format json` report: per-finding priced route options (cost now, risk carried, retirement condition), the fix-availability probe evidence behind them, and — once a route is applied — the recorded decision. This is the published contract a CI fan-out posts as a PR comment and a future agent consumes; `decidedBy` (human | policy | agent:<identifier>) is the only field that changes when an agent starts deciding.",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "degraded", "findings"],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "clearcutt.triage/v1" },
+    "generatedAt": { "type": "string" },
+    "degraded": {
+      "type": "boolean",
+      "description": "True when the fix-availability probe was partially or fully unavailable; recommendations then collapse to the static route classifier and are never worse than probe-less planning."
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/TriageFinding" }
+    }
+  },
+  "definitions": {
+    "TriageFinding": {
+      "type": "object",
+      "required": ["cve", "package", "severity", "options", "recommendedRoute"],
+      "properties": {
+        "cve": { "type": "string" },
+        "package": { "type": "string" },
+        "installedVersion": { "type": "string" },
+        "fixedVersion": { "type": "string" },
+        "severity": { "type": "string" },
+        "exposure": {
+          "type": "object",
+          "description": "Which production-eligible tiers ship the finding.",
+          "properties": {
+            "production": { "type": "boolean" },
+            "tiers": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "materiality": {
+          "type": "object",
+          "description": "The fleet risk-policy verdict — the same fleet.Materiality decision shared by planner, verify gate, and VEX emitter.",
+          "properties": {
+            "disposition": {
+              "type": "string",
+              "enum": ["must_fix", "must_acknowledge", "auto_accept"]
+            },
+            "reason": { "type": "string" }
+          }
+        },
+        "probe": { "$ref": "#/definitions/FixProbeAvailability" },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/RouteOption" }
+        },
+        "recommendedRoute": {
+          "type": "string",
+          "enum": [
+            "version_bump",
+            "substitute_vex",
+            "unstable_optin",
+            "fetchpatch_rebuild",
+            "scanner_ignore",
+            "wait",
+            ""
+          ],
+          "description": "Empty when no route is available under policy — the strict-mode escalation signal (exit code 2)."
+        },
+        "decision": { "$ref": "#/definitions/TriageDecision" }
+      }
+    },
+    "RouteOption": {
+      "type": "object",
+      "required": ["route", "available", "why", "costNow", "riskCarried", "recommended"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "enum": [
+            "version_bump",
+            "substitute_vex",
+            "unstable_optin",
+            "fetchpatch_rebuild",
+            "scanner_ignore",
+            "wait"
+          ]
+        },
+        "available": { "type": "boolean" },
+        "why": {
+          "type": "string",
+          "description": "Why the route is (un)available, as a human sentence."
+        },
+        "costNow": {
+          "type": "string",
+          "enum": ["none_substitutable", "scoped_rebuild", "cold_source_build", "none"]
+        },
+        "riskCarried": {
+          "type": "string",
+          "enum": ["none", "cve_ships_until_expiry", "cve_ships_until_ref_lands", "override_patch_churn"]
+        },
+        "retirement": { "$ref": "#/definitions/Retirement" },
+        "recommended": { "type": "boolean" }
+      }
+    },
+    "Retirement": {
+      "type": "object",
+      "description": "The condition under which a carried decision retires; evaluated by `remediation status --check-retirements`.",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["pin_carries_fix", "ref_carries_fix", "expiry"]
+        },
+        "package": { "type": "string" },
+        "version": {
+          "type": "string",
+          "description": "Fix version the condition watches."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Watched nixpkgs ref for ref_carries_fix."
+        },
+        "expires": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "if": {
+        "properties": { "kind": { "const": "expiry" } }
+      },
+      "then": {
+        "required": ["kind", "expires"]
+      }
+    },
+    "TriageDecision": {
+      "type": "object",
+      "description": "Present once a route was applied via --decide; the same block is stamped as `triage` onto .evidence.json / .ignore.evidence.json / .decision.evidence.json files.",
+      "required": ["route", "decidedBy"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "enum": [
+            "version_bump",
+            "substitute_vex",
+            "unstable_optin",
+            "fetchpatch_rebuild",
+            "scanner_ignore",
+            "wait"
+          ]
+        },
+        "decidedBy": {
+          "type": "string",
+          "description": "Free-form with the convention human | policy | agent:<identifier>."
+        },
+        "decidedAt": { "type": "string" },
+        "owner": { "type": "string" },
+        "reason": { "type": "string" },
+        "retirement": { "$ref": "#/definitions/Retirement" }
+      }
+    },
+    "FixProbeAvailability": {
+      "type": "object",
+      "description": "clearcutt.fixprobe/v1 — the fix-availability probe snapshot: who carries the fix, whether that source is substitutable, and how risky an in-place override is.",
+      "required": ["schemaVersion", "package", "sourcePath", "fixedVersion", "pinHasFix", "refs", "probedAt", "degraded"],
+      "properties": {
+        "schemaVersion": { "type": "string", "const": "clearcutt.fixprobe/v1" },
+        "package": { "type": "string" },
+        "sourcePath": { "type": "string" },
+        "fixedVersion": { "type": "string" },
+        "pinName": {
+          "type": "string",
+          "description": "Which flake input the pin sweep probed (e.g. nixpkgs, nixpkgs-node) — dedicated-pin runtimes are priced and retired against their own pin."
+        },
+        "pinHasFix": {
+          "type": "boolean",
+          "description": "Whether the locked pin already carries the fix — the retirement predicate for rebuild overlays and opt-ins."
+        },
+        "refs": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/FixProbeRefStatus" }
+        },
+        "overrideRisk": { "$ref": "#/definitions/FixProbeOverrideRisk" },
+        "probedAt": { "type": "string" },
+        "degraded": { "type": "boolean" }
+      }
+    },
+    "FixProbeRefStatus": {
+      "type": "object",
+      "required": ["ref", "kind", "hasFix", "hydraCached"],
+      "properties": {
+        "ref": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["channel", "branch", "pin"]
+        },
+        "version": {
+          "type": "string",
+          "description": "Extracted version; absent or empty means indeterminate, never guessed."
+        },
+        "hasFix": { "type": "boolean" },
+        "hydraCached": { "type": "boolean" },
+        "error": {
+          "type": "string",
+          "description": "Per-ref fetch failure, non-fatal."
+        }
+      }
+    },
+    "FixProbeOverrideRisk": {
+      "type": "object",
+      "description": "Heuristic churn estimate for an in-place overrideAttrs bump, diffed pin → nearest fix-carrying ref.",
+      "required": ["level", "changedLines", "reason"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["low", "high", "unknown"]
+        },
+        "changedLines": {
+          "type": "integer",
+          "description": "Lines changed beyond version/hash assignments."
+        },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

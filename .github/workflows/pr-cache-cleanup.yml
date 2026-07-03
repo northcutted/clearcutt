@@ -1,0 +1,49 @@
+# Purge PR-scoped Nix caches when the PR closes.
+#
+# pr-gate.yml and e2e-runtimes.yml key their Nix store caches with a
+# nix-pr-<number>- prefix so repeated pushes to one PR reuse that PR's own
+# heavyweight builds. Those entries are only useful while the PR is open, and
+# they are large (multi-GB per language/tier leg) against the repository's
+# shared 10GB Actions cache quota — left behind, they would LRU-evict the
+# main-branch baseline caches every other job falls back to. This workflow
+# deletes the PR's cache family the moment it closes (merged or not).
+
+name: ClearCutt PR Cache Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  purge:
+    name: Purge PR-Scoped Nix Caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete nix-pr-${{ github.event.pull_request.number }}-* cache entries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # The list endpoint's `key` parameter matches by prefix; deletion is
+          # by id because the delete-by-key endpoint needs an exact key.
+          PREFIX: nix-pr-${{ github.event.pull_request.number }}-
+        run: |
+          deleted=0
+          # Bounded sweep: each pass re-lists the first page of matches and
+          # deletes them; 50 passes covers thousands of entries while still
+          # terminating if the API keeps returning an undeletable entry.
+          for _ in $(seq 1 50); do
+            ids="$(gh api "repos/$REPO/actions/caches?key=$PREFIX&per_page=100" --jq '.actions_caches[].id')"
+            [ -z "$ids" ] && break
+            for id in $ids; do
+              if gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null; then
+                deleted=$((deleted + 1))
+              else
+                echo "warning: failed to delete cache id $id (may already be evicted)" >&2
+              fi
+            done
+          done
+          echo "Purged $deleted cache entr(ies) with prefix $PREFIX."

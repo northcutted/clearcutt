@@ -2,6 +2,8 @@ package commands
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,6 +181,234 @@ func TestScanCommandUsesFakeGrypeAndWritesReports(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "v0.9.0", "python3.13-slim-amd64.json")); !os.IsNotExist(err) {
 		t.Fatalf("explicit tag scan should not write older tag, stat err=%v", err)
+	}
+}
+
+func TestScanUpdateDBWarnsAndContinuesInStrictMode(t *testing.T) {
+	sbomDir := filepath.Join(t.TempDir(), "sboms")
+	outDir := filepath.Join(t.TempDir(), "vulns")
+	writeTestFile(t, filepath.Join(sbomDir, "v1.0.0", "python3.13-slim-amd64.sbom.json"), []byte(`{"spdxVersion":"SPDX-2.3"}`))
+
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	writeTestFile(t, resultPath, []byte(`{"matches":[]}`))
+	logPath := filepath.Join(t.TempDir(), "grype.log")
+	grype := writeScript(t, "grype", `#!/bin/sh
+set -eu
+if [ "$1" = "db" ] && [ "$2" = "update" ]; then
+  printf '%s\n' db-update-attempted >> "$CLEARCUTT_FAKE_GRYPE_LOG"
+  printf '%s\n' 'db temporarily unavailable' >&2
+  exit 9
+fi
+if [ "$1" = "version" ]; then
+  printf '%s\n' '{"version":"0.99.0-test","db":{"built":"2026-02-01T00:00:00Z"}}'
+  exit 0
+fi
+cat "$CLEARCUTT_FAKE_GRYPE_RESULT"
+`)
+	t.Setenv("GRYPE_BIN", grype)
+	t.Setenv("CLEARCUTT_FAKE_GRYPE_RESULT", resultPath)
+	t.Setenv("CLEARCUTT_FAKE_GRYPE_LOG", logPath)
+
+	stdout, err := runCLI(t,
+		"scan",
+		"--mode", "remediation",
+		"--update-db",
+		"--sbom-dir", sbomDir,
+		"--out-dir", outDir,
+		"--concurrency", "1",
+	)
+	if err != nil {
+		t.Fatalf("scan should continue after db update failure: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "Grype database update failed") {
+		t.Fatalf("expected db update warning, got:\n%s", stdout)
+	}
+	rawLog, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read fake grype log: %v", err)
+	}
+	if strings.TrimSpace(string(rawLog)) != "db-update-attempted" {
+		t.Fatalf("expected db update attempt, got %q", rawLog)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "v1.0.0", "python3.13-slim-amd64.json")); err != nil {
+		t.Fatalf("expected scan report after db update warning: %v", err)
+	}
+}
+
+func TestScanUsesNixDevelopWhenCoreDirIsSet(t *testing.T) {
+	old := scanOpts
+	t.Cleanup(func() { scanOpts = old })
+
+	sbomDir := filepath.Join(t.TempDir(), "sboms")
+	outDir := filepath.Join(t.TempDir(), "vulns")
+	writeTestFile(t, filepath.Join(sbomDir, "v1.0.0", "python3.13-slim-amd64.sbom.json"), []byte(`{"spdxVersion":"SPDX-2.3"}`))
+
+	resultPath := filepath.Join(t.TempDir(), "result.json")
+	writeTestFile(t, resultPath, []byte(`{"matches":[]}`))
+	logPath := filepath.Join(t.TempDir(), "nix.log")
+	binDir := t.TempDir()
+	nix := filepath.Join(binDir, "nix")
+	if err := os.WriteFile(nix, []byte(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$CLEARCUTT_FAKE_NIX_LOG"
+while [ "$#" -gt 0 ] && [ "$1" != "--command" ]; do
+  shift
+done
+if [ "$#" -gt 0 ] && [ "$1" = "--command" ]; then
+  shift
+fi
+if [ "${1:-}" = "grype" ]; then
+  shift
+fi
+if [ "${1:-}" = "version" ]; then
+  printf '%s\n' '{"version":"0.99.0-nix","db":{"built":"2026-02-01T00:00:00Z"}}'
+  exit 0
+fi
+if [ "${1:-}" = "db" ] && [ "${2:-}" = "update" ]; then
+  printf '%s\n' db-updated >> "$CLEARCUTT_FAKE_NIX_LOG"
+  exit 0
+fi
+cat "$CLEARCUTT_FAKE_GRYPE_RESULT"
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLEARCUTT_FAKE_GRYPE_RESULT", resultPath)
+	t.Setenv("CLEARCUTT_FAKE_NIX_LOG", logPath)
+
+	coreDir := t.TempDir()
+	stdout, err := runCLI(t,
+		"scan",
+		"--mode", "release",
+		"--core-dir", coreDir,
+		"--update-db",
+		"--sbom-dir", sbomDir,
+		"--out-dir", outDir,
+		"--concurrency", "1",
+	)
+	if err != nil {
+		t.Fatalf("scan through nix develop failed: %v\n%s", err, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "v1.0.0", "python3.13-slim-amd64.json")); err != nil {
+		t.Fatalf("expected scan report through nix develop: %v", err)
+	}
+	rawLog, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read fake nix log: %v", err)
+	}
+	log := string(rawLog)
+	for _, want := range []string{
+		"--command grype version -o json",
+		"--command grype db update",
+		"--command grype sbom:",
+		"db-updated",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("nix log missing %q:\n%s", want, log)
+		}
+	}
+}
+
+func TestScanRefreshKEVWritesCatalogAndStatus(t *testing.T) {
+	old := scanRefreshKEVOpts
+	t.Cleanup(func() { scanRefreshKEVOpts = old })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("User-Agent"); !strings.Contains(got, "clearcutt/") {
+			t.Fatalf("missing ClearCutt user agent: %q", got)
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "catalogVersion": "2026.07.01",
+  "dateReleased": "2026-07-01",
+  "count": 1,
+  "vulnerabilities": [{"cveID": "CVE-2026-0001"}]
+}`))
+	}))
+	t.Cleanup(server.Close)
+
+	outPath := filepath.Join(t.TempDir(), "known_exploited_vulnerabilities.json")
+	statusPath := filepath.Join(t.TempDir(), "kev-status.json")
+	stdout, err := runCLI(t,
+		"scan", "refresh-kev",
+		"--url", server.URL,
+		"--out", outPath,
+		"--status-out", statusPath,
+	)
+	if err != nil {
+		t.Fatalf("refresh-kev failed: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "KEV refresh available") {
+		t.Fatalf("expected availability log, got:\n%s", stdout)
+	}
+	raw, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("expected KEV catalog: %v", err)
+	}
+	if !strings.Contains(string(raw), "CVE-2026-0001") {
+		t.Fatalf("unexpected KEV catalog: %s", raw)
+	}
+	var status kevRefreshStatus
+	rawStatus, err := os.ReadFile(statusPath)
+	if err != nil {
+		t.Fatalf("expected KEV status: %v", err)
+	}
+	if err := json.Unmarshal(rawStatus, &status); err != nil {
+		t.Fatalf("decode status: %v\n%s", err, rawStatus)
+	}
+	if status.Status != "available" || status.CatalogVersion == nil || *status.CatalogVersion != "2026.07.01" || status.Count == nil || *status.Count != 1 {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+}
+
+func TestScanRefreshKEVUnavailableRemovesStaleCatalog(t *testing.T) {
+	old := scanRefreshKEVOpts
+	t.Cleanup(func() { scanRefreshKEVOpts = old })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary outage", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+
+	outPath := filepath.Join(t.TempDir(), "known_exploited_vulnerabilities.json")
+	statusPath := filepath.Join(t.TempDir(), "kev-status.json")
+	writeTestFile(t, outPath, []byte(`{"stale":true}`))
+	stdout, err := runCLI(t,
+		"scan", "refresh-kev",
+		"--url", server.URL,
+		"--out", outPath,
+		"--status-out", statusPath,
+	)
+	if err != nil {
+		t.Fatalf("refresh-kev should be non-fatal by default: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "KEV refresh unavailable") {
+		t.Fatalf("expected unavailable warning, got:\n%s", stdout)
+	}
+	if _, err := os.Stat(outPath); !os.IsNotExist(err) {
+		t.Fatalf("stale KEV catalog should be removed, stat err=%v", err)
+	}
+	var status kevRefreshStatus
+	rawStatus, err := os.ReadFile(statusPath)
+	if err != nil {
+		t.Fatalf("expected unavailable status: %v", err)
+	}
+	if err := json.Unmarshal(rawStatus, &status); err != nil {
+		t.Fatalf("decode status: %v\n%s", err, rawStatus)
+	}
+	if status.Status != "unavailable" || status.Error == nil || !strings.Contains(*status.Error, "503") {
+		t.Fatalf("unexpected unavailable status: %#v", status)
+	}
+
+	stdout, err = runCLI(t,
+		"scan", "refresh-kev",
+		"--url", server.URL,
+		"--out", outPath,
+		"--status-out", statusPath,
+		"--fail-on-unavailable",
+	)
+	if err == nil {
+		t.Fatalf("refresh-kev --fail-on-unavailable should fail:\n%s", stdout)
 	}
 }
 

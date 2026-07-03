@@ -20,7 +20,7 @@ type appTemplateFlags struct {
 var appTemplateOpts appTemplateFlags
 
 const (
-	currentClearCuttRelease = "v0.10.2"
+	currentClearCuttRelease = "v0.17.0"
 
 	appTemplateCheckoutAction    = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2"
 	appTemplateDockerLoginAction = "docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0"
@@ -143,8 +143,8 @@ public final class App {
 		spec.Files["src/server.js"] = `console.log("ClearCutt Node template ready");
 `
 	case "python":
-		spec.RuntimeLine = "python3.15"
-		spec.BaseID = "python3.15-distroless"
+		spec.RuntimeLine = "python3.14"
+		spec.BaseID = "python3.14-distroless"
 		spec.Entrypoint = `["python","/workspace/app/main.py"]`
 		spec.Files["requirements.txt"] = ""
 		spec.Files["app/main.py"] = `print("ClearCutt Python template ready")

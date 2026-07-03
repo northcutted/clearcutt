@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       draft_patches:
-        description: "Opt in to AI-assisted remediation PR drafting after scan/plan"
+        description: "Opt in to remediation PR drafting after scan/plan; LLM fallback is controlled separately"
         required: false
         type: boolean
         default: false
@@ -48,38 +48,24 @@ jobs:
           path: |
             site/src/data/enrichment
             site/src/data/sboms
-          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
+          key: catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-${{ github.run_id }}
           restore-keys: |
-            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
+            catalog-data-${{ runner.os }}-${{ hashFiles('cli/internal/commands/catalog*.go', 'cli/internal/commands/scan*.go', 'cli/internal/catalog/types.go', 'site/src/lib/catalog-schema.ts') }}-
             catalog-data-${{ runner.os }}-
 
       # Both the remediation scan and dispatcher now use the Go CLI: `scan`
       # replaced the retired Node scanner, and `remediation plan` replaced the
       # retired Python broker.
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version: '1.26'
-          cache: true
-          cache-dependency-path: cli/go.sum
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Resolve fleet remediation parameters
         id: fleet
-        run: |
-          set -euo pipefail
-          FLEET=$(./clearcutt --format json matrix export --source fleet)
-          {
-            echo "scan_depth=$(jq -r '.remediation.scanDepth' <<< "$FLEET")"
-            echo "max_findings=$(jq -r '.remediation.maxFindingsPerRun' <<< "$FLEET")"
-            echo "max_failures=$(jq -r '.remediation.maxPatchFailuresPerRun' <<< "$FLEET")"
-            echo "include_dev_only=$(jq -r '.remediation.includeDevOnly' <<< "$FLEET")"
-            echo "policy=$(jq -c '.remediation.policy // {}' <<< "$FLEET")"
-          } >> "$GITHUB_OUTPUT"
+        run: ./clearcutt remediation workflow-params --github-output "$GITHUB_OUTPUT"
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
@@ -88,17 +74,7 @@ jobs:
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
       - name: Refresh CISA KEV cache
-        run: |
-          set -euo pipefail
-          mkdir -p core/build-outputs/security-intel
-          KEV_FILE="core/build-outputs/security-intel/known_exploited_vulnerabilities.json"
-          KEV_STATUS="core/build-outputs/security-intel/kev-status.json"
-          if curl -fsSL "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json" -o "$KEV_FILE"; then
-            jq '{status:"available", catalogVersion, dateReleased, count}' "$KEV_FILE" > "$KEV_STATUS"
-          else
-            rm -f "$KEV_FILE"
-            printf '%s\n' '{"status":"unavailable"}' > "$KEV_STATUS"
-          fi
+        run: ./clearcutt scan refresh-kev
 
       - name: Gather release assets → catalog JSON
         env:
@@ -110,44 +86,41 @@ jobs:
 
       - name: Run Remediation Scan
         env:
-          SCAN_MODE: remediation
           SCAN_TAG_DEPTH: ${{ steps.fleet.outputs.scan_depth }}
-          CLEARCUTT_BIN: ${{ github.workspace }}/clearcutt
           KEV_FILE: ${{ github.workspace }}/core/build-outputs/security-intel/known_exploited_vulnerabilities.json
         run: |
           nix develop ./core \
             --extra-experimental-features "nix-command flakes" \
             --accept-flake-config \
-            --command ./core/scripts/scheduled-scan.sh
+            --command ./clearcutt scan \
+              --mode remediation \
+              --sbom-dir site/src/data/sboms \
+              --out-dir site/src/data/vulnerabilities \
+              --depth "$SCAN_TAG_DEPTH" \
+              --kev-file "$KEV_FILE" \
+              --update-db
 
       - name: Generate approved remediation plan
         env:
           VULN_ROOT: site/src/data/vulnerabilities
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
+          MAX_FINDINGS_PER_RUN: ${{ steps.fleet.outputs.max_findings }}
           REMEDIATION_POLICY_JSON: ${{ steps.fleet.outputs.policy }}
-        run: |
-          set -euo pipefail
-          INCLUDE_ARGS=()
-          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
-            INCLUDE_ARGS+=(--include-dev-only)
-          fi
-          ./clearcutt --format json remediation plan \
-            --vuln-root "$VULN_ROOT" \
-            --limit "${{ steps.fleet.outputs.max_findings }}" \
-            --policy-json "$REMEDIATION_POLICY_JSON" \
-            --out core/build-outputs/remediation-plan.json \
-            "${INCLUDE_ARGS[@]}"
+        run: ./clearcutt --format json remediation plan --out core/build-outputs/remediation-plan.json
 
       - name: Generate remediation report
         if: always()
-        run: |
-          set -euo pipefail
-          if [[ -f core/build-outputs/remediation-plan.json ]]; then
-            ./clearcutt remediation report \
-              --plan core/build-outputs/remediation-plan.json \
-              --summary-dir core/build-outputs \
-              --out core/build-outputs/remediation-report.json
-          fi
+        run: ./clearcutt remediation report --allow-missing --plan core/build-outputs/remediation-plan.json --summary-dir core/build-outputs --out core/build-outputs/remediation-report.json
+
+      # Best-effort priced-route triage report next to the plan
+      # (docs/analysis/cve-triage-design.md). continue-on-error because the
+      # triage subcommand ships alongside this workflow change, so an older
+      # installed release CLI must not fail the scan job.
+      - name: Generate triage report
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./clearcutt --format json remediation triage --plan core/build-outputs/remediation-plan.json > core/build-outputs/triage-report.json
 
       - name: Upload Scanned Vulnerabilities
         if: always()
@@ -166,13 +139,14 @@ jobs:
             core/build-outputs/remediation-plan.json
             core/build-outputs/remediation-report.json
             core/build-outputs/remediation-summary-*.json
+            core/build-outputs/triage-report.json
             core/build-outputs/security-intel/
           retention-days: 7
 
   draft-patches:
     name: Draft Remediation PRs
     needs: scan
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.draft_patches }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.draft_patches) || (github.event_name == 'schedule' && vars.CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -184,29 +158,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version: '1.26'
-          cache: true
-          cache-dependency-path: cli/go.sum
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Resolve fleet remediation parameters
         id: fleet
-        run: |
-          set -euo pipefail
-          FLEET=$(./clearcutt --format json matrix export --source fleet)
-          {
-            echo "max_findings=$(jq -r '.remediation.maxFindingsPerRun' <<< "$FLEET")"
-            echo "max_failures=$(jq -r '.remediation.maxPatchFailuresPerRun' <<< "$FLEET")"
-            echo "include_dev_only=$(jq -r '.remediation.includeDevOnly' <<< "$FLEET")"
-            echo "policy=$(jq -c '.remediation.policy // {}' <<< "$FLEET")"
-          } >> "$GITHUB_OUTPUT"
+        run: ./clearcutt remediation workflow-params --github-output "$GITHUB_OUTPUT"
 
       - name: Download scanned vulnerabilities
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -231,9 +192,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Persist /nix/store between runs. Without this every cold runner has to
-      # re-fetch the unpatched base closure from R2 even when nothing in the
-      # flake.lock, shared build helpers, or CVE overlays changed.
+      # Persist /nix/store between runs so unchanged runtime and scanner
+      # closures do not need to be fetched again on every scheduled run.
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
@@ -248,39 +208,20 @@ jobs:
           OPENROUTER_FREE_MODEL: "openrouter/free"
           OPENROUTER_PAID_MODEL: "openrouter/free"
           OPENROUTER_FALLBACK_MODEL: "openrouter/free"
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           MAX_FINDINGS_PER_RUN: ${{ steps.fleet.outputs.max_findings }}
+          SCHEDULED_REMEDIATION_LIMIT: ${{ vars.CLEARCUTT_SCHEDULED_REMEDIATION_LIMIT || '1' }}
+          REMEDIATION_LLM_MODE: ${{ github.event_name == 'schedule' && 'off' || (vars.CLEARCUTT_REMEDIATION_LLM || 'auto') }}
           INCLUDE_DEV_ONLY_REMEDIATION: ${{ github.event_name == 'workflow_dispatch' && inputs.include_dev_only || steps.fleet.outputs.include_dev_only }}
           VULN_ROOT: ../site/src/data/vulnerabilities
           MAX_PATCH_FAILURES_PER_RUN: ${{ steps.fleet.outputs.max_failures }}
           REMEDIATION_POLICY_JSON: ${{ steps.fleet.outputs.policy }}
         working-directory: core
-        run: |
-          if [[ -z "${OPENROUTER_API_KEY}" ]]; then
-            echo "::error::draft_patches=true requires OPENROUTER_API_KEY"
-            exit 1
-          fi
-          INCLUDE_ARGS=()
-          if [[ "${INCLUDE_DEV_ONLY_REMEDIATION}" == "true" ]]; then
-            INCLUDE_ARGS+=(--include-dev-only)
-          fi
-          ../clearcutt remediation run \
-            --vuln-root "$VULN_ROOT" \
-            --limit "$MAX_FINDINGS_PER_RUN" \
-            --max-failures "$MAX_PATCH_FAILURES_PER_RUN" \
-            --plan-out build-outputs/remediation-plan.json \
-            --policy-json "$REMEDIATION_POLICY_JSON" \
-            "${INCLUDE_ARGS[@]}"
+        run: ../clearcutt remediation run --plan-out build-outputs/remediation-plan.json --require-llm-key
 
       - name: Generate remediation report
         if: always()
-        run: |
-          set -euo pipefail
-          if [[ -f core/build-outputs/remediation-plan.json ]]; then
-            ./clearcutt remediation report \
-              --plan core/build-outputs/remediation-plan.json \
-              --summary-dir core/build-outputs \
-              --out core/build-outputs/remediation-report.json
-          fi
+        run: ./clearcutt remediation report --allow-missing --plan core/build-outputs/remediation-plan.json --summary-dir core/build-outputs --out core/build-outputs/remediation-report.json
 
       - name: Upload Remediation Draft Results
         if: always()

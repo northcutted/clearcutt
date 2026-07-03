@@ -69,7 +69,7 @@ is refused.
 Example:
   clearcutt app rebase \
     --image ghcr.io/acme/payments-api:1.0.0 \
-    --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java25:v0.2.2-distroless \
+    --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java25:v0.17.0-distroless \
     --candidate-base-id java25-distroless \
     --tag ghcr.io/acme/payments-api:1.0.0-rebased \
     --dev-identity 'https://github.com/acme/.+/.github/workflows/release.yml@refs/heads/main' \

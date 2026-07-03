@@ -21,7 +21,10 @@ export const ArchPayload = z.object({
   arch: z.enum(['amd64', 'arm64']),
   os: z.string().default('linux'),
   imageDigest: NullableString,
+  // Compressed layer sum in bytes (approximate registry pull size).
   imageSize: NullableNumber,
+  // Byte size of the OCI manifest descriptor itself, not the image contents.
+  manifestDescriptorSize: NullableNumber,
   layerCount: NullableNumber,
   layers: z
     .array(
@@ -139,7 +142,10 @@ export type AttestationEntry = z.infer<typeof AttestationEntry>;
 
 export const Lifecycle = z.object({
   status: z.enum(['active', 'preview', 'deprecated', 'eol', 'experimental', 'blocked']),
-  support: z.enum(['lts', 'current', 'preview', 'legacy', 'unsupported']),
+  // Free-form support label (e.g. "lts", "current", or a fork's own taxonomy):
+  // the published JSON Schemas type it as a plain string, so the site must not
+  // reject catalogs that use values outside the original enum.
+  support: z.string(),
   productionAllowed: z.boolean(),
   deprecatedAt: NullableString,
   eolAt: NullableString,
@@ -342,6 +348,7 @@ export const CatalogIndex = z.object({
       languageVersion: z.string(),
       tier: z.enum(['dev', 'slim', 'distroless', 'service']),
       latestTag: z.string(),
+      latestManifestDigest: NullableString,
       latestPackageCount: z.number(),
       architectures: z.array(z.string()),
       signed: z.boolean(),

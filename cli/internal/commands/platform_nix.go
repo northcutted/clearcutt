@@ -55,6 +55,9 @@ state, checks that Nix is installed with flakes available, and warms or runs the
 core dev shell used by fleet builds.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default --repo-root resolves to the enclosing repo so setup-nix
+			// finds clearcutt.fleet.yaml and core/ from any subdirectory.
+			resolveRepoRootDefault(cmd, "repo-root", &platformNixOpts.repoRoot)
 			return runPlatformSetupNix(args)
 		},
 	}

@@ -1,0 +1,43 @@
+{
+  "generatedAt": "2026-07-02T00:00:00Z",
+  "sourceDir": "testdata/triage",
+  "campaigns": [
+    {
+      "package": "libwidget",
+      "cve": "CVE-2026-99999",
+      "primaryCve": "CVE-2026-99999",
+      "cves": ["CVE-2026-99999"],
+      "installedVersion": "1.0.0",
+      "fixedVersion": "",
+      "fixState": "not-fixed",
+      "severity": "Critical",
+      "layer": "runtime",
+      "recommendedRoute": "scanner_ignore",
+      "riskFactors": {
+        "severity": "Critical",
+        "knownExploited": true,
+        "fixedVersionAvailable": false,
+        "productionTargetCount": 1,
+        "targetCount": 1
+      },
+      "policyDecision": {
+        "selected": true,
+        "reason": "eligible",
+        "summary": "KEV finding with no upstream fix: carried here to exercise the strict escalation path."
+      },
+      "expectedRemoved": [],
+      "affectedTargets": [
+        {
+          "target": "python3.13-slim",
+          "language": "python3.13",
+          "tier": "slim",
+          "arch": "amd64",
+          "sourceFile": "testdata/triage/python3.13-slim-amd64.json"
+        }
+      ],
+      "productionTargetCount": 1,
+      "targetCount": 1,
+      "score": 1500
+    }
+  ]
+}

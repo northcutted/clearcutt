@@ -153,7 +153,7 @@ import sys
 priority = [
     ("coreLTS", "slim"),
     ("java21", "slim"),
-    ("python3.15", "slim"),
+    ("python3.14", "slim"),
     ("rust1.95", "slim"),
     ("cc15", "distroless"),
 ]
@@ -187,7 +187,7 @@ for language, tier in priority:
   cat <<'EOF'
 core LTS slim coreLTS-slim
 java 21 slim java21-slim
-python 3.15 slim python3.15-slim
+python 3.14 slim python3.14-slim
 rust 1.95 slim rust1.95-slim
 cc 15 distroless cc15-distroless
 EOF
@@ -317,6 +317,81 @@ test_agent_sandbox_isolation() {
 }
 
 # ----------------------------------------------------
+# 1.7. Generated Fleet Matrix Sync Gate
+# ----------------------------------------------------
+test_fleet_matrix_synced() {
+  log_section "Governance Gate: Generated Fleet Matrix Sync (core/lib/fleet-matrix.nix)"
+
+  local fleet_config
+  if ! fleet_config="$(find_fleet_config)"; then
+    log_fail "Fleet config (clearcutt.fleet.yaml) not found; cannot verify the generated fleet matrix."
+  fi
+
+  local fleet_config_abs repo_root
+  fleet_config_abs="$(cd "$(dirname "$fleet_config")" && pwd)/$(basename "$fleet_config")"
+  repo_root="$(cd "$(dirname "$fleet_config")" && pwd)"
+
+  # The fleet config is authoritative: `clearcutt fleet compile` resolves it into
+  # the generated core/lib/fleet-matrix.nix that the flake reads to build the
+  # image matrix AND the realized-closure gate targets. This gate fails if the
+  # committed file has drifted from the config — the in-process byte-compare that
+  # replaces the old registry↔fleet diff (no `nix eval` in the loop). Recipe
+  # coverage (every declared cell resolves to a registry recipe) is enforced
+  # separately at flake eval by the assertRecipe gate in flake.nix, so an
+  # unbuildable line can never reach a build.
+  log_info "Verifying core/lib/fleet-matrix.nix matches clearcutt.fleet.yaml via 'clearcutt fleet compile --check'..."
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    if ! "$cli" fleet compile --check --fleet-config "$fleet_config_abs" --core-dir "${repo_root}/core"; then
+      log_fail "core/lib/fleet-matrix.nix is out of sync with clearcutt.fleet.yaml. Regenerate it: clearcutt fleet compile"
+    fi
+  else
+    log_info "No clearcutt binary found; running the CLI from ${repo_root}/cli via go run."
+    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt fleet compile --check --fleet-config "$fleet_config_abs" --core-dir "${repo_root}/core"; then
+      log_fail "core/lib/fleet-matrix.nix is out of sync with clearcutt.fleet.yaml. Regenerate it: clearcutt fleet compile"
+    fi
+  fi
+
+  log_pass "Generated fleet matrix is in sync with the fleet config."
+}
+
+test_runtime_floor_synced() {
+  log_section "Governance Gate: Known-Good Crypto Identity Allowlist Sync (core/tests/runtime-dep-floor.json)"
+
+  # Derive the repo root from this script's own path (core/tests/verify.sh) so
+  # the gate works regardless of CWD.
+  local repo_root
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+  local flake_dir="${repo_root}/core"
+  local floor_out="${repo_root}/core/tests/runtime-dep-floor.json"
+
+  # The allowlist is the resolved store-path IDENTITIES of the patched
+  # openssl/sqlite across every shipped crypto set, evaluated from the flake's
+  # cryptoIdentities output. This gate fails if the committed allowlist has
+  # drifted from what the flake now resolves (a crypto rebuild without a
+  # regenerate, or vice versa), so the closure-cve-check.py default-deny gate can
+  # never silently lose (or gain) a known-good crypto identity. Requires nix
+  # (pure eval, no build).
+  log_info "Verifying core/tests/runtime-dep-floor.json matches the flake-resolved crypto identities via 'clearcutt remediation generate-crypto-allowlist --check'..."
+  local cli
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    if ! "$cli" remediation generate-crypto-allowlist --check --flake-dir "$flake_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the flake-resolved crypto identities. Regenerate it: clearcutt remediation generate-crypto-allowlist"
+    fi
+  else
+    log_info "No clearcutt binary found; running the CLI from ${repo_root}/cli via go run."
+    if ! go -C "${repo_root}/cli" run ./cmd/clearcutt remediation generate-crypto-allowlist --check --flake-dir "$flake_dir" --out "$floor_out"; then
+      log_fail "core/tests/runtime-dep-floor.json is out of sync with the flake-resolved crypto identities. Regenerate it: clearcutt remediation generate-crypto-allowlist"
+    fi
+  fi
+
+  log_pass "Known-good crypto identity allowlist is in sync with the flake."
+}
+
+# ----------------------------------------------------
 # 2. OCI Image Config & Rootless Metadata Verification
 # ----------------------------------------------------
 test_rootless_boundaries() {
@@ -353,6 +428,8 @@ test_rootless_boundaries() {
   user_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('User', ''))")
   local wdir_val
   wdir_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(d.get('config', {}).get('WorkingDir', ''))")
+  local ld_library_path_val
+  ld_library_path_val=$(python3 -c "import json; d=json.load(open('$config_file')); print(next((e for e in d.get('config', {}).get('Env', []) if e.startswith('LD_LIBRARY_PATH=')), ''))")
 
   chmod -R +w "$tmp_unpack" 2>/dev/null || true
   rm -rf "$tmp_unpack"
@@ -366,6 +443,16 @@ test_rootless_boundaries() {
     log_fail "Metadata WorkingDir mismatch. Got: '$wdir_val', Expected: '/app'"
   fi
   log_pass "Hardcoded rootless working directory mapped: $wdir_val"
+
+  # Production tiers must not bake LD_LIBRARY_PATH into the OCI config: glibc
+  # resolves DT_RPATH > LD_LIBRARY_PATH > DT_RUNPATH, so a global FHS
+  # LD_LIBRARY_PATH outranks the store-bound RUNPATH on every Nix binary —
+  # the exact drift class the RPATH gate exists to prevent. Only the dev tier
+  # keeps it as a foreign-binary convenience.
+  if [[ -n "$ld_library_path_val" ]]; then
+    log_fail "Production image $target_image bakes '$ld_library_path_val' into its OCI config; only the dev tier may set LD_LIBRARY_PATH."
+  fi
+  log_pass "Production OCI config carries no LD_LIBRARY_PATH override."
 }
 
 # ----------------------------------------------------
@@ -512,7 +599,79 @@ test_distroless_boundaries() {
     log_fail "Distroless environment contains interactive shell utilities or coreutils!"
   fi
 
-  log_pass "Distroless boundaries verified. Zero-shell and zero-utility footprint active."
+  log_pass "Distroless FHS boundaries verified. Zero-shell and zero-utility footprint active."
+
+  # Closure-level purity: the FHS checks above only see /bin and /usr/bin,
+  # but every store path's bin/ is reachable via PATH-less absolute
+  # invocation and shows up in SBOMs. Walk the layer tars (header modes
+  # survive non-root extraction) for shells, package managers, and
+  # setuid/setgid files anywhere in the image. Residual findings can be
+  # consciously accepted in tests/closure-purity-allowlist.txt with a
+  # one-line reason — never by weakening this gate.
+  log_info "Walking /nix/store closure for shells, package managers, and setuid/setgid files..."
+  # Native-Go gate (clearcutt verify closure-purity), the port of
+  # tests/closure-purity-check.py. Falls back to `go run` for local runs without
+  # a prebuilt binary, mirroring the fleet-matrix drift check above.
+  local cli purity_root purity_failed=0
+  cli="$(find_clearcutt_cli || true)"
+  if [[ -n "$cli" ]]; then
+    "$cli" verify closure-purity "$build_tar" --allowlist ./tests/closure-purity-allowlist.txt || purity_failed=1
+  else
+    purity_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    log_info "No clearcutt binary found; running the CLI from ${purity_root}/cli via go run."
+    go -C "${purity_root}/cli" run ./cmd/clearcutt verify closure-purity \
+      "$(pwd)/$build_tar" --allowlist "$(pwd)/tests/closure-purity-allowlist.txt" || purity_failed=1
+  fi
+  if [[ "$purity_failed" -ne 0 ]]; then
+    log_fail "Distroless closure purity violated: the /nix/store closure ships shells, package managers, or setuid/setgid files (see findings above)."
+  fi
+
+  log_pass "Distroless closure purity verified across the full /nix/store closure."
+
+  # Runtime-patch completeness (the CVE keystone): walk the SHIPPED closure
+  # of both the slim and distroless tiers — slim ships the openssl-linked
+  # runtime too — and fail if any openssl/sqlite store path's IDENTITY is not on
+  # the committed known-good allowlist (tests/runtime-dep-floor.json).
+  # Default-deny, so an off-allowlist crypto build is a hard failure here, not a
+  # silent ship. Same image archives that the purity gate already consumes.
+  local slim_tar="build-outputs/coreLTS-slim.tar.gz"
+  if [ ! -f "$slim_tar" ]; then
+    log_info "Slim image tarball not found for runtime-cve gate. Invoking build runner..."
+    local slim_link="build-outputs/coreLTS-slim-link"
+    nix build ".#coreLTS-slim" --out-link "$slim_link" --extra-experimental-features "nix-command flakes" --accept-flake-config
+    cp -L "$slim_link" "$slim_tar"
+    rm -f "$slim_link"
+  fi
+
+  log_info "Walking slim + distroless /nix/store closures for off-allowlist openssl/sqlite identities (allowlist: tests/runtime-dep-floor.json)..."
+  # Native-Go gate (clearcutt verify runtime-cve), the port of
+  # tests/closure-cve-check.py, with the same CLI-or-`go run` fallback as the
+  # closure-purity gate above.
+  cli="$(find_clearcutt_cli || true)"
+  local rc_root rc_failed
+  rc_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  rc_failed=0
+  if [[ -n "$cli" ]]; then
+    "$cli" verify runtime-cve "$slim_tar" --floor ./tests/runtime-dep-floor.json || rc_failed=1
+  else
+    go -C "${rc_root}/cli" run ./cmd/clearcutt verify runtime-cve \
+      "$(pwd)/$slim_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
+  fi
+  if [[ "$rc_failed" -ne 0 ]]; then
+    log_fail "Slim runtime-patch completeness violated: the shipped closure carries an off-allowlist openssl/sqlite identity (see findings above)."
+  fi
+  rc_failed=0
+  if [[ -n "$cli" ]]; then
+    "$cli" verify runtime-cve "$build_tar" --floor ./tests/runtime-dep-floor.json || rc_failed=1
+  else
+    go -C "${rc_root}/cli" run ./cmd/clearcutt verify runtime-cve \
+      "$(pwd)/$build_tar" --floor "$(pwd)/tests/runtime-dep-floor.json" || rc_failed=1
+  fi
+  if [[ "$rc_failed" -ne 0 ]]; then
+    log_fail "Distroless runtime-patch completeness violated: the shipped closure carries an off-allowlist openssl/sqlite identity (see findings above)."
+  fi
+
+  log_pass "Runtime-patch completeness verified: slim + distroless ship only patched openssl/sqlite."
 }
 
 # ----------------------------------------------------
@@ -523,10 +682,14 @@ test_native_nix_integration() {
 
   log_info "Verifying Nix Native Overlays default compiler outputs..."
   local overlay_check
+  # Evaluate against the flake's locked nixpkgs input, not the host <nixpkgs>
+  # channel: the gate must certify the pinned package set consumers get.
   overlay_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
     let
       flake = builtins.getFlake (toString ./.);
-      pkgs = import <nixpkgs> {
+      pkgs = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
         overlays = [ flake.overlays.default ];
       };
     in
@@ -537,6 +700,43 @@ test_native_nix_integration() {
     log_fail "Nix Native Overlay failed to evaluate clearcuttJava21 and clearcuttDotnet8Runtime attributes."
   fi
   log_pass "Nix Native overlays default evaluated successfully."
+
+  log_info "Verifying CVE remediation flows through overlays.default..."
+  local remediation_check
+  # Each CVE overlay exposes its patched build as a `clearcutt*` handle (e.g.
+  # clearcuttOpenssl, clearcuttPython313). Assert every handle resolves to a real
+  # derivation THROUGH overlays.default — proving the barrel is composed in and
+  # the patches are non-vacuous. The deep guarantee (that the patched build
+  # actually SHIPS in the production image closures, with no stock copy) is the
+  # runtime-patch-completeness gate run over the shipped closures, not here.
+  # Passes vacuously only when overlays/cve/ is empty.
+  remediation_check=$(nix-instantiate --eval --extra-experimental-features "nix-command flakes" -E '
+    let
+      flake = builtins.getFlake (toString ./.);
+      base = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
+      };
+      patched = import flake.inputs.nixpkgs {
+        system = builtins.currentSystem;
+        config.allowUnfree = true;
+        overlays = [ flake.overlays.default ];
+      };
+      clearcuttNames = builtins.filter
+        (n: builtins.substring 0 12 n == "clearcuttCve")
+        (builtins.attrNames (flake.overlays.cveRemediation base base));
+      isPatchedDrv = name:
+        let r = builtins.tryEval (patched.${name}.drvPath or "");
+        in r.success && builtins.isString r.value && r.value != "";
+      empty = clearcuttNames == [];
+    in
+      empty || builtins.all isPatchedDrv clearcuttNames
+  ')
+
+  if [[ "$remediation_check" != "true" ]]; then
+    log_fail "overlays.default does not expose the CVE remediation clearcutt* handles as derivations."
+  fi
+  log_pass "CVE remediation overlay verified through overlays.default."
 
   log_info "Verifying Nix Native lib.mkHardenedShell generator..."
   local shell_check
@@ -743,6 +943,8 @@ main() {
   
   test_credential_broker
   test_agent_sandbox_isolation
+  test_fleet_matrix_synced
+  test_runtime_floor_synced
   test_rootless_boundaries
   test_dynamic_binary_headers
   test_distroless_boundaries

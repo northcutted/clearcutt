@@ -1,25 +1,62 @@
 # ClearCutt Decisions Needed
 
-Date: 2026-06-07
+Date: 2026-06-30
 
-Status: historical owner-decision snapshot. Several recommended choices in this file have now been applied in the post-audit hardening pass, including leading with forkable platform kit/reference implementation, using a fixture-backed first proof path, qualifying top-level evidence claims, and documenting `verify image` as a catalog policy gate. For the current branch state, use `docs/analysis/post-hardening-readiness.md`.
+## D1: Product packaging direction
 
-These are owner-level decisions that should be made before implementation work expands. Leaving them unresolved will keep producing drift between product story, docs, site, CLI, workflows, and trust claims.
+- **Decision:** Should the primary product become a released CLI that scaffolds and operates a standalone fleet repo, with forking the monorepo demoted to contributor/reference mode?
+- **Recommended answer:** Yes.
+- **Why:** This matches the desired user mental model: a platform engineer downloads `clearcutt`, points it at or asks it to create a GitHub repo, and gets the code, workflows, Nix recipes, catalog, verification, and remediation setup needed to own a base image fleet.
+- **Implication:** Keep `platform new` as the released-CLI scaffold path now that it has an embedded source archive, drift guard, and verified released-CLI workflow install action, then prioritize native Go release/remediation engines over new fleet breadth.
 
-| Decision | Why it matters | Options | Recommended choice | Tradeoff | Consequence if left undecided |
-|---|---|---|---|---|---|
-| What is the lead category for ClearCutt? | The current repo can be read as product, blueprint, catalog generator, image factory, governance CLI, or platform kit. | Lead with hosted/product language; lead with catalog generator; lead with image factory; lead with forkable platform kit/reference implementation. | Lead with forkable platform kit and reference implementation. Treat catalog generator, image factory, governance CLI, app workflow, and evidence portal as components. | Less product-y, but more credible and accurate. | Reviewers will judge each subsystem as a standalone product and find it incomplete. |
-| What is the first useful command path? | Clean-clone evaluators need one success before learning the platform. | Default generated catalog path; fixture-backed path; full fork setup path. | Start with fixture-backed `--catalog internal/testdata/catalog` commands, then branch to fork setup. | Fixture proof is smaller than the full platform, but it reliably demonstrates value. | New evaluators hit missing-catalog errors before seeing value. |
-| How should top-level evidence claims be worded? | Universal trust claims are the biggest credibility risk. | Keep "every image signed"; qualify as workflow-configured; require catalog proof before claim. | Qualify: published releases are configured to emit signatures/SBOM/provenance, and the catalog reports missing evidence independently. | More cautious language, but stronger under audit. | Security reviewers will flag the story as misleading if any evidence is absent. |
-| Is `verify image` a catalog gate or cryptographic verification command? | The command name/docs affect trust semantics. | Keep current command and clarify docs; rename/re-scope command; add separate crypto verification command. | Short term: document it as a catalog policy gate. Longer term: add explicit release-evidence crypto verification UX. | Avoids breaking CLI behavior now; may require future naming cleanup. | Auditors will assume cryptographic verification and find a mismatch in code. |
-| Should releases be main-only? | Workflow identity is part of the trust boundary. | Main-only releases; explicit multi-ref trusted identities; leave dynamic `${{ github.ref }}`. | Main-only unless there is a concrete hotfix identity policy. | Less flexible, but much easier to audit and explain. | Non-main releases can produce signatures that docs/policies do not trust consistently. |
-| Are service images first-class or preview? | Service lane copy affects trust and roadmap expectations. | First-class now; preview/scaffolded; defer from top-level story. | Preview/scaffolded until current catalog and release evidence prove them. | Less exciting, but more honest. | Platform reviewers will see service claims ahead of proof. |
-| What is the generated portal's identity? | The Astro site can be a ClearCutt marketing site or a fork-owner evidence portal. | ClearCutt-branded product site; generated portal for owner/catalog; hybrid. | Generated portal for owner/catalog, with ClearCutt credited as renderer/tooling. | Requires config-driven copy and IA cleanup. | App teams may not understand whose evidence they are viewing. |
-| How should ClearCutt compare to alternatives? | Commercial vendors and buildpacks already offer overlapping primitives. | Avoid comparisons; claim open-source parity; category-level tradeoff comparison. | Category-level "use when / do not use when" focused on ownership vs vendor SLA/drop-in/source-to-image tradeoffs. | Less aggressive positioning, but defensible. | Managers may misread ClearCutt as a free vendor-image replacement. |
-| What is the default remediation posture after fork? | Scheduled workflows can be write-capable and depend on AI secrets. | Weekly write-capable remediation by default; scan/plan by default and AI drafting opt-in; disable remediation until configured. | Scan/plan by default; AI patch drafting opt-in with documented secrets. | Slower automation, but safer fork experience. | Fork owners get noisy or failing automation and may distrust the platform. |
-| Should CLI release assets have image-equivalent evidence? | Users download the CLI to operate the trust system. | Signed/checksummed only; add SBOM/provenance; narrow release-evidence wording to images. | Either add CLI SBOM/provenance or clearly narrow "release evidence" claims to image artifacts. | Adding evidence costs workflow work; narrowing wording is faster. | Broad release-evidence claims will overstate CLI binary proof. |
-| What is the policy bundle support level? | Admission policy is security-sensitive. | Kyverno first-class and Gatekeeper scaffolded; both first-class; examples only. | Kyverno first-class only if tests prove it; Gatekeeper scaffolded until real verification semantics exist. | Narrower support, but safer. | Users may deploy generated policies that do not enforce what docs imply. |
-| What is BYO base overlay supposed to be? | Enterprise base-image language can imply hardened equivalence. | First-class hardened runtime path; migration bridge; advanced appendix only. | Position as migration bridge for mandated base images with inherited-risk caveats. | Reduces broad enterprise appeal, but aligns with actual trust boundaries. | Reviewers will compare overlays to native ClearCutt runtimes and find unproven inheritance claims. |
-| Should docs be role-routed or feature-routed? | Current flat docs make each audience work too hard. | Keep flat docs; feature categories only; role-routed docs index with feature depth below. | Role-routed docs index plus concept/glossary/readiness docs. | Adds IA work, but preserves technical depth. | New visitors keep asking "where do I start?" |
-| Does the catalog require a committed/demo dataset? | The site and CLI experience differ between local generated state and clean checkout. | Commit generated sample catalog; rely only on fixtures; generate on first run; keep ignored local data. | Use fixture-backed first-run and clearly label generated site data as build output. Consider a small committed demo catalog only if owner wants the site to work offline. | Avoids generated churn, but requires explicit docs. | Local state will continue masking clean-clone failures. |
-| Should docs examples be tested? | Current command drift creates first-run failure risk. | Manual review only; generated command reference; CI command-snippet validation. | Add lightweight docs drift checks for high-traffic command examples. | CI work and false-positive handling. | Broken flags and stale commands will keep reaching README/site/docs. |
+## D2: SLSA claim boundary
+
+- **Decision:** What exact SLSA language should the project use?
+- **Recommended answer:** "SLSA Build L3 provenance for images published by the configured GitHub Actions release workflow from `refs/heads/main`, when verified against the pinned workflow identity."
+- **Why:** The project uses the GitHub SLSA generator and registry-side verification, but the CLI does not itself produce all SLSA evidence independent of Actions.
+- **Implication:** Avoid broad "SLSA-compliant" or registry-agnostic SLSA claims until other build engines are proven.
+
+## D3: Registry support posture
+
+- **Decision:** Is GHCR the only fully supported registry for the first serious release?
+- **Recommended answer:** Yes. Position GHCR as the reference path. Document other registries as configurable but support-tiered.
+- **Why:** The repo defaults to GHCR and GitHub APIs; non-GHCR registries need proof for auth, referrers, GitHub attestations, SLSA verifier compatibility, and catalog enrichment.
+- **Implication:** Fix single-source registry config now, but do not promise complete portability before testing a second registry.
+
+## D4: Remediation autonomy
+
+- **Decision:** Should the project market remediation as zero-touch?
+- **Recommended answer:** No, not yet.
+- **Why:** Current implementation supports weekly scan/report, optional scheduled deterministic draft PRs for evidence-backed recipes, manual bounded AI-assisted patch drafting, aggregate draft PRs, overlay validation, VEX, exceptions, and human review. That is valuable, but not autonomous patching or merging.
+- **Implication:** Use "approved remediation PR drafting" as the release-facing phrase. Keep scheduled drafting deterministic-only by default, and keep LLM assistance optional and explicitly untrusted.
+- **Status 2026-07:** `remediation triage` + `remediation status` landed (priced six-route decisions with a fix-availability probe, self-retiring decision records, `decidedBy` attribution — docs/analysis/cve-triage-design.md). Posture unchanged: drafting + human merge; triage is deterministic, no LLM.
+
+## D5: LLM role in remediation
+
+- **Decision:** What should the LLM tier be allowed to do?
+- **Recommended answer:** Optional draft assistance only, behind an explicit flag/key, with no merge authority and no credentials beyond what draft generation needs.
+- **Why:** Advisory text is prompt-injection capable and model output is untrusted code. The deterministic route and validation gates are the product.
+- **Implication:** Continue porting deterministic remediation into Go; scheduled drafting should stay LLM-off, while manual LLM assistance remains explicit and replaceable.
+- **Status 2026-07:** substantially done — deterministic drafting is native-Go-first (cli/internal/commands/remediation_run.go); the Python agent remains only as the automatic fallback tier when deterministic evidence is missing (hash-iteration/build-probe/rescan/optional-LLM loop). Triage records `decidedBy: agent:<id>` with no merge authority, consistent with this boundary.
+
+## D6: Service image release policy
+
+- **Decision:** Should preview service images publish by default?
+- **Recommended answer:** Either is defensible, but the release policy must be explicit. If the goal is Show HN clarity, publish preview services only when clearly labeled and never imply production approval.
+- **Why:** Service images are useful catalog content, but `productionAllowed: false` must not look like production endorsement.
+- **Implication:** Add release matrix behavior and docs that align with lifecycle status.
+
+## D7: First-run proof
+
+- **Decision:** What should a new visitor be able to do in 10-15 minutes?
+- **Recommended answer:** Install or run the CLI, inspect fixture catalog data, verify catalog policy gates, generate an app template, and build/render a fixture-backed catalog site. Full registry-side release proof should be a second path.
+- **Why:** Requiring a registry, fork, Pages setup, and release workflow before seeing value is too much for Show HN.
+- **Implication:** Add a demo-local/app path that is honest about what cannot be proven offline.
+
+## D8: Native Go engine sequencing
+
+- **Decision:** Should native Go publish/remediation ports block the CLI-first repositioning?
+- **Recommended answer:** They should block the full "self-contained CLI" claim, but not all docs repositioning.
+- **Why:** The CLI already owns many release verbs, but still shells into `pipeline.sh` and `cve-draft-agent.py` for important paths.
+- **Status 2026-07:** the Go engine is now the default on every workflow route (`CLEARCUTT_BUILD_ENGINE || 'go'`); `pipeline.sh` is reachable only via the `--engine shell` opt-out, and `cve-draft-agent.py` only as the automatic fallback when deterministic evidence is missing. The full "self-contained CLI" claim still waits on retiring those two escape hatches.
+- **Implication:** Phrase near-term positioning as "CLI-scaffolded, GitHub Actions-oriented fleet ownership"; reserve "fully self-contained released CLI" for after scaffolded workflows install the released CLI and native ports replace remaining shell/Python paths.

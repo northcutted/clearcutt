@@ -52,6 +52,10 @@ when the fleet needs a new language family or version that is not built in.`,
 		Short: "Generate a custom runtime line and backend extension",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default paths write into the repo root's fleet config and core/
+			// tree even when scaffolding from a subdirectory.
+			resolveRepoRootDefault(cmd, "fleet-config", &runtimeOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &runtimeOpts.coreDir)
 			return runRuntimeScaffold(args[0])
 		},
 	}
@@ -72,6 +76,9 @@ when the fleet needs a new language family or version that is not built in.`,
 		Short: "Validate a runtime line and generated backend extension",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Validate the same root-level files runtime scaffold writes.
+			resolveRepoRootDefault(cmd, "fleet-config", &runtimeOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "core-dir", &runtimeOpts.coreDir)
 			return runRuntimeValidate(args[0])
 		},
 	}

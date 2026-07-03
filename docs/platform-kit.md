@@ -1,9 +1,9 @@
 # ClearCutt Forkable Platform Kit
 
-ClearCutt is meant to be forked by a platform team and operated under that
-team's own registry, GitHub Actions OIDC identities, catalog site, and admission
-policies. The reference repository is a working blueprint, not a hosted control
-plane.
+ClearCutt is meant to be scaffolded or forked by a platform team and operated
+under that team's own registry, GitHub Actions OIDC identities, catalog site,
+and admission policies. The reference repository is a working blueprint, not a
+hosted control plane.
 
 The fork owns two platform image lanes:
 
@@ -18,10 +18,36 @@ the backend authoring path.
 
 ## Golden Path
 
-1. Fork the repository into the organization that will own the image platform.
-2. Build the CLI, then run `clearcutt platform init --owner YOUR_ORG --repo
-   YOUR_REPO --force` to rewrite the fleet config, platform-kit doc, and app
-   templates for your fork.
+1. Build or install the CLI, then scaffold the fleet repository:
+
+   ```bash
+   clearcutt platform new ./golden-images \
+     --owner YOUR_ORG \
+     --repo golden-images \
+     --registry-host ghcr.io
+   ```
+
+   When run inside the reference checkout this copies local files. When run from
+   an installed CLI outside a checkout it uses the embedded ClearCutt source
+   archive; `--source` can point at a custom checkout or zip archive when a fork
+   wants to scaffold from its own kit. Either way it materializes the reference
+   workflows, CLI source, Nix fleet core, site, schemas, docs, and examples, then
+   localizes the fleet config, platform-kit doc, metadata, policies, and app
+   templates. If you forked the reference repo directly, run `clearcutt platform
+   init --owner YOUR_ORG --repo YOUR_REPO --force` inside that fork instead.
+2. Push the scaffolded repository to GitHub under the organization that will own
+   the image platform.
+   The scaffolded workflows use `.github/actions/install-clearcutt` to install a
+   verified ClearCutt release binary by default. Set `CLEARCUTT_CLI_VERSION` when
+   pinning a newer CLI release, `CLEARCUTT_CLI_REPO` when consuming a forked CLI
+   publisher, or `CLEARCUTT_CLI_MODE=local` only when intentionally dogfooding
+   the checked-out CLI source. Fleet release, PR-gate, and cache-seeding
+   workflows default `CLEARCUTT_BUILD_ENGINE=go`; set it to `shell` only as a
+   temporary fallback while debugging parity.
+   For remediation, the weekly scan plans and reports by default. Set
+   `CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS=true` to let it also draft the single
+   rolling remediation PR for deterministic, evidence-backed fixes; scheduled
+   drafting runs with LLM escalation off and remains gated by PR review.
 3. Edit `clearcutt.fleet.yaml` for enabled runtimes, service images,
    architectures, catalog scan window, admission profile, remediation limits,
    branding, templates, and optional cache settings. Use
@@ -33,26 +59,51 @@ the backend authoring path.
    GitHub Actions.
 5. Run `clearcutt platform status` to verify the kit is wired together,
    including fork-local metadata and supported fleet runtime lines.
-6. Run `clearcutt platform setup-nix --core-dir core --write-user-config` only
+6. Run `clearcutt platform release-plan` to print the first-release operating
+   plan generated from `clearcutt.fleet.yaml`. The plan lists the configured
+   registry support tier, matrix size, required GitHub variables/secrets, local
+   checks, release steps, verification commands, and the current boundary
+   between CLI-owned orchestration, GitHub Actions/SLSA, Nix, Sigstore tooling,
+   and remediation PR drafting.
+7. Run `clearcutt platform doctor --github` after pushing the repo to GitHub to
+   verify Actions, workflow token permissions, the `production` environment,
+   Pages, default branch, registry credential readiness, local workflow
+   permissions, and optional remediation/cache prerequisites before first
+   release.
+8. Run `clearcutt platform setup-nix --core-dir core --write-user-config` only
    on machines that will build or publish the fleet. In CI the workflows call
    the same command with `--github-env "$GITHUB_ENV"` so fork cache trust comes
    from `clearcutt.fleet.yaml`, not workflow constants.
-7. Run the release workflow from `main` to publish the configured base-image
-   fleet to GHCR. The reference trust policy is main-only:
+9. Run the release workflow from `main` to publish the configured base-image
+   fleet to the registry in `registry.host`. The reference trust policy is
+   main-only:
    `release.workflowIdentity`, verifier examples, and admission policies pin
    `refs/heads/main`.
    The workflow is a GitHub identity runner; the reusable mechanics live behind
    `clearcutt platform setup-nix`, `clearcutt fleet certify-target`,
    `clearcutt fleet publish-target`, `clearcutt fleet assemble-target`,
-   `clearcutt fleet verify-target`, `clearcutt fleet export-provenance`, and
-   `clearcutt fleet finalize-release`.
-8. Let the catalog workflow run `clearcutt catalog build --include-services`
+   `clearcutt fleet verify-target`, `clearcutt fleet export-provenance`,
+   `clearcutt fleet build-cli-assets`, and `clearcutt fleet finalize-release`.
+   Runtime and service matrix output is generated by `clearcutt fleet
+   workflow-matrices`; Actions consumes those outputs for fan-out instead of
+   shaping JSON with inline shell/JQ.
+   CLI binary assets are generated by `clearcutt fleet build-cli-assets`; Actions
+   supplies Go, Cosign, and OIDC, but the binary matrix, version stamping,
+   optional blob-signing loop, asset manifest, and checksum manifest are owned
+   by the CLI.
+   Cache-seeding analysis uses `clearcutt fleet seed-cache-plan`; Actions only
+   carries the approved environment, matrix fan-out, and cache-write secrets.
+10. Let the catalog workflow run `clearcutt catalog build --include-services`
    for the full release-evidence pipeline, or
    `clearcutt catalog generate --include-services` when you need portable mixed
-   runtime and service catalog artifacts. Deploy the generated site to GitHub
+   runtime and service catalog artifacts. Pages-specific parameter export uses
+   `clearcutt catalog workflow-params`, scanning uses `clearcutt catalog build
+   --core-dir core --update-db`, and site packaging uses `clearcutt catalog site
+   build --generate-vex` so the workflow does not parse catalog internals or
+   install scanner tooling with shell/JQ. Deploy the generated site to GitHub
    Pages or another static host.
-9. Give application teams the templates under `examples/clearcutt-template-*`.
-10. Gate on required signature, SBOM, provenance, and optional rebase-attestation
+11. Give application teams the templates under `examples/clearcutt-template-*`.
+12. Gate on required signature, SBOM, provenance, and optional rebase-attestation
    evidence in CI and Kubernetes admission policy.
 
 ## Trust Story
@@ -68,6 +119,10 @@ the backend authoring path.
 - SBOM and test-result attestations are attached to the OCI manifest.
 - SLSA Build L3 provenance is generated by the `slsa-github-generator`
   reusable workflow against the multi-architecture manifest digest.
+- Each release target writes a machine-readable
+  `*.release-verification.json` checklist from `clearcutt fleet verify-target`
+  and uploads it with the GitHub Release assets, so verification results are
+  inspectable after the workflow completes.
 - The catalog displays each evidence channel independently so missing
   signatures, SBOMs, provenance, test results, or vulnerability scans remain
   visible.
@@ -75,15 +130,30 @@ the backend authoring path.
   shows how to compare a registry-side verification result with the catalog
   record.
 - Remediation is approved automation: the scheduled workflow creates a ranked
-  scan/plan/report by default. AI-assisted patch PR drafting is an explicit
-  `workflow_dispatch` opt-in that requires `OPENROUTER_API_KEY`; it does not
-  silently merge, deploy, or mutate production workloads.
+  scan/plan/report by default. Fork owners can opt into scheduled deterministic
+  draft PRs with `CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS=true`; those scheduled
+  drafts run with LLM escalation off and only attempt evidence-backed recipes.
+  Direct deterministic overlay recipes and source/patch URL plus hash evidence
+  are drafted by the Go CLI; recipes that still need hash iteration or build
+  probing can fall back to the retained drafting backend. Manual
+  `workflow_dispatch` drafting can use AI assistance when `OPENROUTER_API_KEY`
+  is configured. Neither mode silently merges, deploys, or mutates production
+  workloads.
 
 ## Operator Commands
 
 ```bash
 # Inspect the forkable platform surface.
 clearcutt platform status
+
+# Print the first-release operating plan and trust boundaries.
+clearcutt platform release-plan
+
+# Check GitHub first-release readiness after pushing the repo.
+clearcutt platform doctor --github
+
+# Scaffold a standalone fleet repo from the reference kit.
+clearcutt platform new ./golden-images --owner YOUR_ORG --repo golden-images
 
 # Explain a runtime line from the public fleet config contract.
 clearcutt matrix explain java21
@@ -102,9 +172,11 @@ clearcutt service scaffold valkey8 --template valkey --version 8
 clearcutt service scaffold oauth2-proxy7 --template oauth2-proxy --version 7
 clearcutt service validate --all
 
-# Emit the release matrix used by GitHub Actions.
-clearcutt --format json matrix export --source fleet --github-actions --matrix release
-clearcutt --format json service matrix --github-actions --matrix release
+# Emit the runtime and service matrices used by GitHub Actions.
+clearcutt fleet workflow-matrices --github-output "$GITHUB_OUTPUT"
+
+# Build, optionally sign, and checksum released CLI binaries.
+clearcutt fleet build-cli-assets --version-tag v1.2.3 --build-outputs build-outputs --sign
 
 # Configure and warm the Nix client on fleet-builder machines only.
 clearcutt platform setup-nix --core-dir core --write-user-config
@@ -130,13 +202,16 @@ clearcutt fleet verify-target --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_PREFIX-java2
 clearcutt app template java --output examples/my-java-service
 
 # Build catalog data from release evidence, registry metadata, SBOMs, and scans.
-clearcutt catalog build --limit 10 --scan-depth 4
+clearcutt catalog build --limit 10 --scan-depth 4 --core-dir core --update-db --include-services
+
+# Emit catalog workflow parameters for GitHub Actions.
+clearcutt catalog workflow-params --github-output "$GITHUB_OUTPUT"
 
 # Or generate portable catalog artifacts for policy, audit, and site rendering.
 clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output ./dist/catalog
 
 # Render a static evidence portal from those artifacts.
-clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install
+clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install --generate-vex
 ```
 
 ## App-Team Flow

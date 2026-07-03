@@ -110,8 +110,23 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "string",
-            "minLength": 1
+            "oneOf": [
+              {
+                "description": "Legacy explicit form: a runtime line id such as java21 or coreLTS.",
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "description": "Language-level form: a language plus a release channel, resolved to runtime lines via the version policy.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["language", "channel"],
+                "properties": {
+                  "language": { "type": "string", "minLength": 1 },
+                  "channel": { "enum": ["lts", "current", "preview", "experimental"] }
+                }
+              }
+            ]
           }
         },
         "tiers": {
@@ -120,6 +135,10 @@
           "items": {
             "enum": ["dev", "slim", "distroless"]
           }
+        },
+        "preview": {
+          "description": "Persistent opt-in to preview-channel runtimes for the language-level form; overridable per run by clearcutt fleet compile --allow-preview.",
+          "type": "boolean"
         }
       }
     },
@@ -250,6 +269,58 @@
         "includeDevOnly": {
           "type": "boolean"
         },
+        "probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Live fix-availability probe for CVE triage: sweeps nixpkgs refs for the scanner-reported fixed version. Best-effort by contract — any fetch failure degrades triage to the static route classifier and never blocks planning.",
+          "properties": {
+            "enabled": {
+              "description": "Whether triage may probe nixpkgs refs at scan time. Default true; --no-probe or offline operation degrades gracefully either way.",
+              "type": "boolean"
+            },
+            "refs": {
+              "description": "nixpkgs refs the probe sweeps, in order (default nixos-unstable, master, staging-next). The pin rev itself is always probed first regardless. An omitted or empty list falls back to the default sweep.",
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "unstable": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Opt-in policy for sourcing a CVE fix from a newer (unstable) nixpkgs when the stable pin lacks it. Default-off: suggest unless a soft opt-in scopes a package.",
+          "properties": {
+            "mode": { "enum": ["off", "suggest", "soft", "hard"] },
+            "ref": { "type": "string", "minLength": 1 },
+            "softOptIns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["package"],
+                "properties": {
+                  "package": { "type": "string", "minLength": 1 },
+                  "ref": { "type": "string", "minLength": 1 },
+                  "reason": { "type": "string" },
+                  "owner": { "type": "string" },
+                  "fixes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["cve"],
+                      "properties": {
+                        "cve": { "type": "string", "minLength": 1 },
+                        "installedVersion": { "type": "string" },
+                        "fixedVersion": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "policy": {
           "type": "object",
           "additionalProperties": false,
@@ -258,24 +329,64 @@
               "type": "array",
               "minItems": 1,
               "items": {
-                "enum": ["dev", "slim", "distroless"]
+                "enum": ["slim", "distroless"]
               }
             },
             "minimumSeverity": {
               "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
             },
-            "requireRuntimeLayer": {
-              "type": "boolean"
+            "reachability": {
+              "description": "Closure-presence reachability gate: runtime (only findings in the shipped runtime closure) or any. Not exploitability/call-graph reachability.",
+              "enum": ["runtime", "any"]
+            },
+            "epssPercentile": {
+              "description": "FIRST EPSS percentile (0-1) at/above which a finding is materially risky. Missing EPSS falls back to KEV/severity.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kev": {
+              "description": "CISA KEV handling: always (a KEV finding is always in scope) or off.",
+              "enum": ["always", "off"]
             },
             "requireFixedVersion": {
+              "description": "true (default): an in-scope finding with no upstream fix blocks until acknowledged. false: it auto-accepts as an expiring record (escape hatch for unbackported CVEs). KEV is non-loosenable either way.",
+              "type": "boolean"
+            },
+            "acceptedExpiryDays": {
+              "description": "Backstop expiry (days) for auto-recorded acceptances, which re-evaluate each scan.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "cryptoTrust": {
+              "description": "How the known-good crypto build (openssl/sqlite) is trusted. nixpkgs (default): trust the pin's patched build, substitute from cache, and VEX the scanner version gap. reproduce: also independently rebuild the crypto closure and byte-compare it against the substituted build (trust AND verify); a divergence fails the release evidence.",
+              "enum": ["nixpkgs", "reproduce"]
+            },
+            "preferSubstitutable": {
+              "description": "Break triage route-recommendation ties in favor of a substitutable (cache-served) fix over a rebuild when both carry the fix. Default true.",
+              "type": "boolean"
+            },
+            "waitMaxSeverity": {
+              "description": "Ceiling at/below which triage may offer the wait route (fix merged upstream but not yet on a cached ref). A finding above the ceiling never gets a bare wait. Default medium.",
+              "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
+            },
+            "waitMaxDays": {
+              "description": "Backstop expiry (days) for wait decisions: a wait retires at min(watched ref carries the fix, this many days). Default 30; an explicit 0 makes every wait expire immediately (must be re-decided each sweep).",
+              "type": "integer",
+              "minimum": 0
+            },
+            "requireRuntimeLayer": {
+              "description": "Deprecated: use reachability. true maps to reachability=runtime, false to any.",
               "type": "boolean"
             },
             "epssPercentileBoostAt": {
+              "description": "Deprecated: use epssPercentile.",
               "type": "number",
               "minimum": 0,
               "maximum": 1
             },
             "kevBoost": {
+              "description": "Deprecated: use kev. true maps to kev=always, false to off.",
               "type": "boolean"
             }
           }
@@ -291,7 +402,61 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "enum": ["java", "node", "python", "go"]
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "runtimeLines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "language", "version", "packageCandidates"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "appTemplateRuntime": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "packageCandidates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "devPackages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "omitInProduction": {
+            "type": "boolean"
+          },
+          "smoke": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
@@ -388,7 +553,7 @@
             "additionalProperties": false,
             "properties": {
               "status": {
-                "enum": ["preview", "active", "deprecated", "experimental"]
+                "enum": ["preview", "active", "deprecated", "experimental", "eol", "blocked"]
               },
               "support": {
                 "type": "string"

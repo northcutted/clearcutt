@@ -98,6 +98,6 @@ these admission checks across every supported stack, see
 4.  Test policy gating. If you try to deploy an unsigned app image or one
     without the required base-image evidence, Kyverno should block admission:
     ```bash
-    kubectl run uncertified --image=ghcr.io/northcutted/clearcutt/clearcutt-python3.15:slim
+    kubectl run uncertified --image=ghcr.io/northcutted/clearcutt/clearcutt-python3.14:slim
     # Outputs: Error from server: policy clearcutt-verify-provenance error: image verification failed...
     ```

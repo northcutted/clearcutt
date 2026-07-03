@@ -64,26 +64,29 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Install ClearCutt CLI
+        uses: ./.github/actions/install-clearcutt
         with:
-          go-version-file: cli/go.mod
-          cache: true
-          cache-dependency-path: cli/go.sum
-
-      - name: Build ClearCutt CLI
-        run: |
-          cd cli
-          go build -o ../clearcutt ./cmd/clearcutt
+          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
+          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
+          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      - name: Authenticate to GHCR
+      - name: Resolve Registry Login
+        id: registry
         env:
-          REGISTRY_USER: ${{ vars.CLEARCUTT_REBASE_REGISTRY_USER || github.actor }}
-          REGISTRY_PASSWORD: ${{ secrets.CLEARCUTT_REBASE_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
-        run: echo "$REGISTRY_PASSWORD" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          CLEARCUTT_REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: ./clearcutt platform registry-env --github-output "$GITHUB_OUTPUT"
+
+      - name: Authenticate to registry
+        env:
+          REGISTRY_HOST: ${{ vars.CLEARCUTT_REBASE_REGISTRY_HOST || steps.registry.outputs.host }}
+          REGISTRY_USER: ${{ vars.CLEARCUTT_REBASE_REGISTRY_USER || steps.registry.outputs.username }}
+          REGISTRY_PASSWORD: ${{ secrets.CLEARCUTT_REBASE_REGISTRY_TOKEN || secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       - name: Check base compatibility
         env:

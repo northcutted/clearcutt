@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -29,8 +30,13 @@ func TestCatalogValidateSummarizeAndInspectNamespace(t *testing.T) {
 	}
 
 	schemaOut, err := runCLI(t, "--catalog", fixtureCatalog(), "catalog", "validate", "--schema-version", catalog.ImageRecordSchemaVersion)
-	if !errors.Is(err, ErrCheckFailed) || !strings.Contains(schemaOut, "schemaVersion <missing>") {
-		t.Fatalf("schema-version should require generated image records, got err=%v\n%s", err, schemaOut)
+	if err != nil {
+		t.Fatalf("fixture records declare %s and should satisfy it, got err=%v\n%s", catalog.ImageRecordSchemaVersion, err, schemaOut)
+	}
+
+	schemaOut, err = runCLI(t, "--catalog", fixtureCatalog(), "catalog", "validate", "--schema-version", catalog.ImageRecordSchemaVersionV2)
+	if !errors.Is(err, ErrCheckFailed) || !strings.Contains(schemaOut, "does not match requested") {
+		t.Fatalf("schema-version should reject records declaring a different version, got err=%v\n%s", err, schemaOut)
 	}
 
 	summaryOut, err := runCLI(t, "--catalog", fixtureCatalog(), "--format", "json", "catalog", "summarize")
@@ -398,8 +404,11 @@ if [ "$1" = "install" ] || [ "$1" = "ci" ]; then
 fi
 if [ "$1" = "run" ] && [ "${2:-}" = "build" ]; then
   mkdir -p dist
-  printf 'base=%s\n' "${BASE_PATH:-}" > dist/index.html
+  printf 'base=%s\nsite=%s\n' "${BASE_PATH:-}" "${SITE_URL:-}" > dist/index.html
   cp -R public/catalog dist/catalog
+  if [ -d public/vex ]; then
+    cp -R public/vex dist/vex
+  fi
   exit 0
 fi
 exit 2
@@ -417,6 +426,8 @@ exit 2
 		"--output", outDir,
 		"--install",
 		"--base-path", "/docs",
+		"--site-url", "https://acme.github.io",
+		"--generate-vex",
 	)
 	if err != nil {
 		t.Fatalf("catalog site build failed: %v\n%s", err, stdout)
@@ -425,11 +436,14 @@ exit 2
 	if err != nil {
 		t.Fatalf("expected built index: %v", err)
 	}
-	if string(index) != "base=/docs\n" {
-		t.Fatalf("BASE_PATH was not passed to build: %q", index)
+	if string(index) != "base=/docs\nsite=https://acme.github.io\n" {
+		t.Fatalf("build env was not passed through: %q", index)
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "catalog", "index.json")); err != nil {
 		t.Fatalf("expected catalog assets in built output: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "vex", "java21-distroless.json")); err != nil {
+		t.Fatalf("expected generated OpenVEX assets in built output: %v", err)
 	}
 	logRaw, err := os.ReadFile(logPath)
 	if err != nil {
@@ -441,6 +455,9 @@ exit 2
 	}
 	if !strings.Contains(stdout, "Built catalog site at") {
 		t.Fatalf("expected build success output, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[site-build] generated ") || !strings.Contains(stdout, " OpenVEX document(s)") {
+		t.Fatalf("expected VEX generation output, got:\n%s", stdout)
 	}
 }
 
@@ -813,7 +830,8 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	if index.SchemaVersion != catalog.CatalogIndexSchemaVersion {
 		t.Fatalf("expected generated index schemaVersion %q, got %q", catalog.CatalogIndexSchemaVersion, index.SchemaVersion)
 	}
-	if index.Generator == nil || index.Generator.Name != "clearcutt" || index.Generator.Version != Version || index.Generator.Commit != "unknown" {
+	wantGeneratorVersion, wantGeneratorCommit := generatorIdentity()
+	if index.Generator == nil || index.Generator.Name != "clearcutt" || index.Generator.Version != wantGeneratorVersion || index.Generator.Commit != wantGeneratorCommit {
 		t.Fatalf("unexpected generated index generator metadata: %#v", index.Generator)
 	}
 	if index.Source == nil || index.Source.Owner != "northcutted" || index.Source.Repo != "clearcutt" || index.Source.RegistryBase != "ghcr.io/northcutted/clearcutt" {
@@ -1309,7 +1327,8 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if index.Owner != "acme" || index.Repo != "base-images" || index.RegistryBase != "ghcr.io" {
 		t.Fatalf("unexpected generic index identity: %#v", index)
 	}
-	if index.Generator == nil || index.Generator.Name != "clearcutt" || index.Generator.Version != Version || index.Generator.Commit != "unknown" {
+	wantGeneratorVersion, wantGeneratorCommit := generatorIdentity()
+	if index.Generator == nil || index.Generator.Name != "clearcutt" || index.Generator.Version != wantGeneratorVersion || index.Generator.Commit != wantGeneratorCommit {
 		t.Fatalf("unexpected generic generator metadata: %#v", index.Generator)
 	}
 	if index.Source == nil || index.Source.Owner != "acme" || index.Source.Repo != "base-images" || index.Source.RegistryBase != "ghcr.io" {
@@ -1476,4 +1495,57 @@ func writeMinimalSiteTemplate(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestGeneratorIdentityFromBuildInfo(t *testing.T) {
+	info := &debug.BuildInfo{Settings: []debug.BuildSetting{
+		{Key: "vcs.revision", Value: "abc123def456"},
+		{Key: "vcs.modified", Value: "false"},
+	}}
+	version, commit := generatorIdentityFromBuildInfo("", info)
+	if version != "dev" || commit != "abc123def456" {
+		t.Fatalf("expected dev/abc123def456, got %q/%q", version, commit)
+	}
+
+	info.Settings[1].Value = "true"
+	version, commit = generatorIdentityFromBuildInfo("v1.2.3", info)
+	if version != "v1.2.3" || commit != "abc123def456-dirty" {
+		t.Fatalf("expected v1.2.3/abc123def456-dirty, got %q/%q", version, commit)
+	}
+
+	version, commit = generatorIdentityFromBuildInfo("", nil)
+	if version != "dev" || commit != "unknown" {
+		t.Fatalf("expected dev/unknown without build info, got %q/%q", version, commit)
+	}
+}
+
+func TestGeneratedIndexGeneratorCommitFromVCS(t *testing.T) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Skip("build info unavailable")
+	}
+	revision := ""
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			revision = setting.Value
+		}
+	}
+	if revision == "" {
+		t.Skip("build info carries no vcs.revision (test binaries are not VCS-stamped)")
+	}
+	outDir := t.TempDir()
+	writeTestFile(t, filepath.Join(outDir, "index.json"), []byte(`{"generatedAt":"2026-06-05T20:00:00Z","owner":"acme","repo":"images","repoUrl":"https://github.com/acme/images","registryBase":"ghcr.io/acme","latestTag":"v1.0.0","releases":[],"languages":[],"tiers":[],"images":[]}`))
+	if err := stampCatalogIndexMetadata(outDir); err != nil {
+		t.Fatalf("stampCatalogIndexMetadata: %v", err)
+	}
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		t.Fatalf("LoadCatalogIndex: %v", err)
+	}
+	if index.Generator == nil || index.Generator.Commit == "unknown" || index.Generator.Commit == "" {
+		t.Fatalf("expected real generator commit from VCS build info, got %#v", index.Generator)
+	}
+	if !strings.HasPrefix(index.Generator.Commit, revision) {
+		t.Fatalf("expected generator commit %q to start with vcs.revision %q", index.Generator.Commit, revision)
+	}
 }

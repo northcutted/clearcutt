@@ -25,7 +25,7 @@ However, OpenShift's `restricted` SCC **forbids hardcoded UIDs**.
 ## Blueprint Manifests
 
 This blueprint contains:
-* **`deployment.yaml`:** An OpenShift-optimized Deployment manifest configured to comply with the standard `restricted-v2` SCC while locking down all other kernel capabilities.
+* **`deployment.yaml`:** An OpenShift-optimized Deployment manifest configured to comply with the standard `restricted-v2` SCC while locking down all other kernel capabilities. It deploys the published `clearcutt-corelts:slim` image (bash + busybox + CA certificates) with a placeholder command so the walkthrough below works literally. Distroless-tier images are intentionally **not** runnable on their own — they contain zero executables and no entrypoint, because they are scratch runtimes for *your* application layer. When adapting this manifest, swap in your app image built `FROM` a ClearCutt base (see [`examples/k8s-deployment/`](../k8s-deployment/) for that pattern) and remove the placeholder command.
 * **`scc-binding.yaml`:** Demonstrates how to bind service accounts to specific security context constraints if your cluster requires customized privileges.
 
 ---
@@ -40,15 +40,33 @@ oc new-project clearcutt-sandbox
 ### 2. Apply the Hardened OpenShift Deployment
 ```bash
 oc apply -f deployment.yaml
+oc rollout status deployment/clearcutt-openshift
 ```
 
 ### 3. Verify the Dynamically Allocated UID
-Once the pod is running, inspect the execution user to confirm that OpenShift successfully assigned a random high-range UID and root group (`gid: 0`):
+Once the rollout completes, inspect the execution user to confirm that OpenShift assigned a random high-range UID and root group (`gid: 0`). The `id` binary comes from busybox in the slim tier:
 ```bash
-oc exec -it deployment/clearcutt-openshift -- id
+oc exec deployment/clearcutt-openshift -- id
+```
+**Expected Output** (your UID will differ — it comes from the range allocated to your namespace):
+```text
+uid=1000070000 gid=0(root) groups=0(root),1000070000
+```
+Reading that output carefully:
+* The UID is **nameless** — no `(appuser)` suffix. The image's static `/etc/passwd` only maps UID `10001` to `appuser`; OpenShift's dynamically assigned UID has no passwd entry by design, so `id` prints the bare number. That is expected and correct under the arbitrary-UID pattern.
+* `gid=0(root)` confirms the forced root-group membership that makes the mounted `emptyDir` volumes writeable.
+* The trailing numeric supplemental group is the `fsGroup` the SCC admission controller applies from the namespace range; depending on cluster configuration it may be absent, leaving just `groups=0(root)`.
+
+### 4. Inspect What the SCC Admission Controller Injected
+Confirm the pod was admitted under `restricted-v2` and see the exact UID the admission controller wrote into the container security context:
+```bash
+oc get pod -l app=clearcutt-openshift \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\n  scc: "}{.metadata.annotations.openshift\.io/scc}{"\n  runAsUser: "}{.spec.containers[0].securityContext.runAsUser}{"\n"}{end}'
 ```
 **Expected Output:**
 ```text
-uid=1000070000(appuser) gid=0(root) groups=0(root)
+clearcutt-openshift-5d9c7b6f4-abcde
+  scc: restricted-v2
+  runAsUser: 1000070000
 ```
-This confirms that the container is running securely without root privileges under OpenShift's strict security boundaries!
+This confirms that the container is running without root privileges under OpenShift's strict security boundaries, with the UID assigned at admission time rather than hardcoded in the image or manifest.

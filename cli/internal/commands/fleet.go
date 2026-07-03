@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +30,14 @@ type fleetFlags struct {
 	workflowIdentity    string
 	sourceRef           string
 	sourceBranch        string
+	provenanceRef       string
+	cliSourceDir        string
+	cosignBin           string
 	archiveReleaseNotes bool
+	checkOnly           bool
+	allowPreview        bool
+	signCLIAssets       bool
+	engine              string
 }
 
 type externalCommand struct {
@@ -68,6 +77,7 @@ GitHub Release finalization.`,
 		},
 	}
 	addFleetTargetFlags(certifyTargetCmd)
+	certifyTargetCmd.Flags().StringVar(&fleetOpts.engine, "engine", "go", "Build engine: 'go' (native in-process gates) or 'shell' (legacy pipeline.sh fallback)")
 
 	publishTargetCmd := &cobra.Command{
 		Use:   "publish-target",
@@ -78,6 +88,7 @@ GitHub Release finalization.`,
 		},
 	}
 	addFleetTargetFlags(publishTargetCmd)
+	publishTargetCmd.Flags().StringVar(&fleetOpts.engine, "engine", "go", "Build engine: 'go' (native in-process gates plus go-containerregistry publish) or 'shell' (legacy pipeline.sh fallback)")
 	publishTargetCmd.Flags().StringVar(&fleetOpts.versionTag, "version-tag", "", "Release version tag, for example v1.2.3")
 
 	publishCacheCmd := &cobra.Command{
@@ -95,6 +106,22 @@ GitHub Release finalization.`,
 	_ = publishCacheCmd.MarkFlagRequired("system")
 	_ = publishCacheCmd.MarkFlagRequired("language")
 	_ = publishCacheCmd.MarkFlagRequired("tier")
+
+	seedCachePlanCmd := &cobra.Command{
+		Use:   "seed-cache-plan",
+		Short: "Plan which fleet cells still need Nix cache seeding",
+		Long: `Dry-runs each configured release matrix cell against the Nix backend and
+emits only the cells that would still build. This owns the seed-cache workflow's
+analyze phase: no compilation, no cache writes, and no partial matrix output if
+any cell fails to evaluate.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFleetSeedCachePlan()
+		},
+	}
+	seedCachePlanCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	seedCachePlanCmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
+	seedCachePlanCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append seed_matrix=<json> and has_work=<bool> to")
 
 	assembleCmd := &cobra.Command{
 		Use:   "assemble-target",
@@ -124,6 +151,42 @@ GitHub Release finalization.`,
 	addFleetCommonFlags(aggregateCmd)
 	aggregateCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append matrix=<json> to")
 
+	workflowMatricesCmd := &cobra.Command{
+		Use:   "workflow-matrices",
+		Short: "Export fleet and service matrices for GitHub Actions workflows",
+		Long: `Exports every matrix shape used by the release and PR-gate workflows in one
+CLI-owned step. Use --github-output in GitHub Actions to append release_matrix,
+image_matrix, service_release_matrix, and service_image_matrix outputs.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runFleetWorkflowMatrices()
+		},
+	}
+	workflowMatricesCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	workflowMatricesCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append workflow matrix JSON outputs")
+
+	buildCLIAssetsCmd := &cobra.Command{
+		Use:   "build-cli-assets",
+		Short: "Build, optionally sign, and checksum release CLI binaries",
+		Long: `Builds the ClearCutt CLI release asset matrix from the checked-out Go
+module, signs each binary with cosign when --sign is set, writes a
+clearcutt-cli-assets.json manifest, and emits SHA256SUMS.txt for installer
+verification. GitHub Actions still provides OIDC identity; the CLI owns the
+asset matrix and deterministic release packaging mechanics.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolveRepoRootDefault(cmd, "source-dir", &fleetOpts.cliSourceDir)
+			return runFleetBuildCLIAssets()
+		},
+	}
+	buildCLIAssetsCmd.Flags().StringVar(&fleetOpts.versionTag, "version-tag", "", "Release version tag, for example v1.2.3 (required)")
+	buildCLIAssetsCmd.Flags().StringVar(&fleetOpts.cliSourceDir, "source-dir", "cli", "Path to the ClearCutt CLI Go module")
+	buildCLIAssetsCmd.Flags().StringVar(&fleetOpts.buildOutputsDir, "build-outputs", "build-outputs", "Directory for release CLI assets")
+	buildCLIAssetsCmd.Flags().BoolVar(&fleetOpts.signCLIAssets, "sign", false, "Keylessly sign each binary with cosign sign-blob")
+	buildCLIAssetsCmd.Flags().StringVar(&fleetOpts.cosignBin, "cosign-bin", "cosign", "Cosign executable to use when --sign is set")
+	buildCLIAssetsCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append cli_assets_manifest, cli_assets_checksum, and cli_assets_count")
+	_ = buildCLIAssetsCmd.MarkFlagRequired("version-tag")
+
 	exportCmd := &cobra.Command{
 		Use:   "export-provenance",
 		Short: "Export SLSA provenance from OCI attestations as a release asset",
@@ -135,6 +198,7 @@ GitHub Release finalization.`,
 	addFleetCommonFlags(exportCmd)
 	exportCmd.Flags().StringVar(&fleetOpts.language, "language", "", "Fleet language/runtime target, for example node24 (required)")
 	exportCmd.Flags().StringVar(&fleetOpts.tier, "tier", "", "Fleet tier: dev, slim, or distroless (required)")
+	exportCmd.Flags().StringVar(&fleetOpts.provenanceRef, "ref", "", "Image reference to export provenance from; prefer immutable image@sha256:... refs")
 	_ = exportCmd.MarkFlagRequired("language")
 	_ = exportCmd.MarkFlagRequired("tier")
 
@@ -152,6 +216,7 @@ GitHub Release finalization.`,
 	verifyCmd.Flags().StringVar(&fleetOpts.workflowIdentity, "workflow-identity", "", "Exact Sigstore certificate identity override")
 	verifyCmd.Flags().StringVar(&fleetOpts.sourceRef, "source-ref", "", "Source ref for GitHub-native provenance verification")
 	verifyCmd.Flags().StringVar(&fleetOpts.sourceBranch, "source-branch", "", "Source branch for slsa-verifier")
+	verifyCmd.Flags().StringVar(&releaseEvidenceOpts.outPath, "out", "", "Write the machine-readable verification checklist to this JSON file")
 	_ = verifyCmd.MarkFlagRequired("ref")
 
 	finalizeCmd := &cobra.Command{
@@ -167,8 +232,73 @@ GitHub Release finalization.`,
 	finalizeCmd.Flags().BoolVar(&fleetOpts.archiveReleaseNotes, "archive-release-notes", false, "Commit published release notes to docs/releases/<tag>.md on the source branch when possible")
 	_ = finalizeCmd.MarkFlagRequired("version-tag")
 
-	cmd.AddCommand(certifyTargetCmd, publishTargetCmd, publishCacheCmd, assembleCmd, aggregateCmd, exportCmd, verifyCmd, finalizeCmd)
+	compileCmd := &cobra.Command{
+		Use:   "compile",
+		Short: "Compile clearcutt.fleet.yaml into the generated core/lib/fleet-matrix.nix build set",
+		Long: `Resolves matrix.languages × matrix.tiers from clearcutt.fleet.yaml into the
+concrete (language, version, tier) image cells, stamps each with its lifecycle
+from the shared version policy, derives the realized-closure gate targets, and
+writes the result to core/lib/fleet-matrix.nix.
+
+The file is generated data, not logic: the hardened per-runtime recipes stay in
+lib/registry.nix. Use --check in CI to fail when the committed file has drifted
+from the fleet config without writing anything.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resolveRepoRootDefault(cmd, "fleet-config", &fleetOpts.configPath)
+			resolveRepoRootDefault(cmd, "core-dir", &fleetOpts.coreDir)
+			return runFleetCompile()
+		},
+	}
+	compileCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	compileCmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
+	compileCmd.Flags().BoolVar(&fleetOpts.checkOnly, "check", false, "Verify core/lib/fleet-matrix.nix is up to date without writing; exit non-zero on drift")
+	compileCmd.Flags().BoolVar(&fleetOpts.allowPreview, "allow-preview", false, "Union preview-channel runtimes into the matrix (language-level matrix.languages only)")
+
+	cmd.AddCommand(certifyTargetCmd, publishTargetCmd, publishCacheCmd, seedCachePlanCmd, assembleCmd, aggregateCmd, workflowMatricesCmd, buildCLIAssetsCmd, exportCmd, verifyCmd, finalizeCmd, compileCmd)
 	return cmd
+}
+
+func fleetMatrixPath(coreDir string) string {
+	return filepath.Join(coreDir, "lib", "fleet-matrix.nix")
+}
+
+func runFleetCompile() error {
+	cfg, err := fleet.Load(fleetOpts.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load fleet config: %w", err)
+	}
+	matrix, err := cfg.CompileMatrix(fleetOpts.allowPreview)
+	if err != nil {
+		return fmt.Errorf("compile fleet matrix: %w", err)
+	}
+	rendered := fleet.RenderMatrixNix(matrix)
+	path := fleetMatrixPath(fleetOpts.coreDir)
+
+	if fleetOpts.checkOnly {
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w (run `clearcutt fleet compile` to generate it)", path, err)
+		}
+		if string(existing) != rendered {
+			return fmt.Errorf("%s is out of date; run `clearcutt fleet compile` to regenerate it", path)
+		}
+		if !GlobalOpts.Quiet {
+			fmt.Fprintf(out, "%s is up to date (%d cells)\n", path, len(matrix.Cells))
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create fleet matrix directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if !GlobalOpts.Quiet {
+		fmt.Fprintf(out, "wrote %s (%d cells)\n", path, len(matrix.Cells))
+	}
+	return nil
 }
 
 func addFleetCommonFlags(cmd *cobra.Command) {
@@ -199,6 +329,19 @@ func runFleetPublishTarget() error {
 	return stageArchReleaseAssets(resolveBuildOutputsDir(fleetOpts.coreDir, fleetOpts.buildOutputsDir), target, archSuffixForSystem(fleetOpts.system))
 }
 
+func normalizeBuildEngine(engine string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(engine))
+	if normalized == "" {
+		normalized = "go"
+	}
+	switch normalized {
+	case "go", "shell":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("--engine must be go or shell")
+	}
+}
+
 func runFleetTarget(publish bool) error {
 	cfg, err := fleet.Load(fleetOpts.configPath)
 	if err != nil {
@@ -206,6 +349,20 @@ func runFleetTarget(publish bool) error {
 	}
 	target := fleetTarget(fleetOpts.language, fleetOpts.tier)
 	coreDir := fleetOpts.coreDir
+
+	engine, err := normalizeBuildEngine(fleetOpts.engine)
+	if err != nil {
+		return err
+	}
+	// Native-Go build engine: runs the build + in-process boundary gates instead
+	// of shelling into pipeline.sh. The publish path pushes the staging image
+	// through the in-process OCI client, so no shell script owns the target mechanics.
+	if engine == "go" {
+		if publish {
+			return runFleetPublishTargetGo(cfg, target, coreDir)
+		}
+		return runFleetCertifyTargetGo(target, coreDir)
+	}
 	args := []string{
 		"develop",
 		"--extra-experimental-features", "nix-command flakes",
@@ -239,6 +396,88 @@ func runFleetTarget(publish bool) error {
 		return err
 	}
 	return nil
+}
+
+var fleetBuildRunner = func() build.Runner {
+	return build.NixToolRunner{
+		Runner: build.ExecRunner{Stdout: out, Stderr: errOut},
+	}
+}
+
+var fleetOCIClient = func() *oci.Client {
+	user, token := registryDestCredentialPair()
+	if strings.TrimSpace(user) != "" && strings.TrimSpace(token) != "" {
+		return oci.NewClientWithBasicAuth(user, token)
+	}
+	return oci.NewClient()
+}
+
+var fleetPushImageArchive = func(client *oci.Client, ref, archivePath string) (string, error) {
+	return client.PushImageArchive(ref, archivePath)
+}
+
+var fleetPushImageIndex = func(client *oci.Client, ref string, sources []oci.IndexImage) (string, error) {
+	return client.PushImageIndex(ref, sources)
+}
+
+// runFleetCertifyTargetGo runs the certify path through the native-Go build
+// engine: nix build + Syft/Grype + the in-process closure-purity and runtime-cve
+// gates, emitting the same test-results predicate pipeline.sh produces.
+func runFleetCertifyTargetGo(target, coreDir string) error {
+	outDir := resolveBuildOutputsDir(coreDir, fleetOpts.buildOutputsDir)
+	opts := build.Options{
+		Target:        target,
+		System:        fleetOpts.system,
+		Kind:          "runtime",
+		CoreDir:       coreDir,
+		OutputDir:     outDir,
+		AllowlistPath: filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"),
+		FloorPath:     filepath.Join(coreDir, "tests", "runtime-dep-floor.json"),
+	}
+	runner := fleetBuildRunner()
+	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {
+		return err
+	}
+	return nil
+}
+
+func runFleetPublishTargetGo(cfg fleet.Config, target, coreDir string) error {
+	outDir := resolveBuildOutputsDir(coreDir, fleetOpts.buildOutputsDir)
+	opts := build.Options{
+		Target:        target,
+		System:        fleetOpts.system,
+		Kind:          "runtime",
+		CoreDir:       coreDir,
+		OutputDir:     outDir,
+		AllowlistPath: filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"),
+		FloorPath:     filepath.Join(coreDir, "tests", "runtime-dep-floor.json"),
+	}
+	runner := fleetBuildRunner()
+	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {
+		return err
+	}
+	tarPath := filepath.Join(outDir, target+".tar.gz")
+	stageTag := fleetStageTag(cfg, fleetOpts.language, fleetOpts.tier, fleetOpts.system)
+	fmt.Fprintf(out, "[fleet] publishing per-arch staging image with Go engine -> %s\n", stageTag)
+	digest, err := fleetPushImageArchive(fleetOCIClient(), stageTag, tarPath)
+	if err != nil {
+		return fmt.Errorf("OCI per-arch staging push failed for %s: %w", target, err)
+	}
+	if digest != "" {
+		fmt.Fprintf(out, "[fleet] pushed staging manifest digest %s\n", digest)
+	}
+	return nil
+}
+
+func fleetStageTag(cfg fleet.Config, language, tier, system string) string {
+	arch := archSuffixForSystem(system)
+	return fmt.Sprintf("%s:%s", cfg.ImageName(language), "_stage-"+tier+"-"+arch)
+}
+
+func registryDestCredentialPair() (string, string) {
+	user := firstNonEmptyString(os.Getenv("REGISTRY_USER"), os.Getenv("CLEARCUTT_REGISTRY_USER"), os.Getenv("GITHUB_ACTOR"))
+	token := firstNonEmptyString(os.Getenv("REGISTRY_TOKEN"), os.Getenv("CLEARCUTT_REGISTRY_TOKEN"), os.Getenv("GITHUB_TOKEN"))
+	return user, token
 }
 
 func runFleetPublishCache() error {
@@ -337,46 +576,47 @@ func runFleetAssembleTarget() error {
 	image := cfg.ImageName(fleetOpts.language)
 	rolling := image + ":" + fleetOpts.tier
 	versioned := image + ":" + fleetOpts.versionTag + "-" + fleetOpts.tier
-	manifests := []string{}
+	manifests := []oci.IndexImage{}
 	for _, system := range cfg.Matrix.Systems {
-		manifests = append(manifests, image+":_stage-"+fleetOpts.tier+"-"+archSuffixForSystem(system))
+		manifests = append(manifests, oci.IndexImage{
+			Ref:          image + ":_stage-" + fleetOpts.tier + "-" + archSuffixForSystem(system),
+			OS:           "linux",
+			Architecture: ociArchitectureForSystem(system),
+		})
 	}
 	if len(manifests) == 0 {
 		return fmt.Errorf("fleet matrix has no systems")
 	}
 
-	if err := craneIndexAppend(rolling, manifests); err != nil {
+	client := fleetOCIClient()
+	digest, err := fleetPushImageIndex(client, rolling, manifests)
+	if err != nil {
+		return fmt.Errorf("assemble rolling image index %s: %w", rolling, err)
+	}
+	if _, err := fleetPushImageIndex(client, versioned, manifests); err != nil {
+		return fmt.Errorf("assemble versioned image index %s: %w", versioned, err)
+	}
+	if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "sign", "--yes", rolling); err != nil {
 		return err
 	}
-	if err := craneIndexAppend(versioned, manifests); err != nil {
-		return err
-	}
-	if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"sign", "--yes", rolling}}); err != nil {
-		return err
-	}
-	if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"sign", "--yes", versioned}}); err != nil {
+	if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "sign", "--yes", versioned); err != nil {
 		return err
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(fleetOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, target+".sbom.json"), rolling}}); err != nil {
+		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, target+".sbom.json"), rolling); err != nil {
 			return err
 		}
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(fleetOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runExternalCommand(externalCommand{Name: "cosign", Args: []string{"attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, target+".test-results.json"), rolling}}); err != nil {
+		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, target+".test-results.json"), rolling); err != nil {
 			return err
 		}
 	}
 
-	digestRaw, err := captureExternalOutput(externalCommand{Name: "crane", Args: []string{"digest", rolling}})
-	if err != nil {
-		return err
-	}
-	digest := strings.TrimSpace(digestRaw)
 	if digest == "" {
-		return fmt.Errorf("crane digest returned an empty digest for %s", rolling)
+		return fmt.Errorf("OCI index push returned an empty digest for %s", rolling)
 	}
 	manifest := fleetDigestManifest{
 		Image:        image,
@@ -420,7 +660,17 @@ func runFleetAggregateDigests() error {
 		return err
 	}
 	if fleetOpts.githubOutputPath != "" {
+		fleetRaw, serviceRaw, err := splitFleetDigestMatrixOutputs(digests)
+		if err != nil {
+			return err
+		}
 		if err := appendGitHubOutputs(fleetOpts.githubOutputPath, map[string]string{"matrix": string(raw)}); err != nil {
+			return err
+		}
+		if err := appendGitHubOutputs(fleetOpts.githubOutputPath, map[string]string{
+			"fleet_matrix":   string(fleetRaw),
+			"service_matrix": string(serviceRaw),
+		}); err != nil {
 			return err
 		}
 	}
@@ -446,22 +696,23 @@ func runFleetExportProvenance() error {
 	}
 	target := fleetTarget(fleetOpts.language, fleetOpts.tier)
 	rolling := cfg.ImageName(fleetOpts.language) + ":" + fleetOpts.tier
+	ref := firstNonEmptyString(fleetOpts.provenanceRef, rolling)
 	if err := os.MkdirAll(fleetOpts.buildOutputsDir, 0o755); err != nil {
 		return err
 	}
 	outputPath := filepath.Join(fleetOpts.buildOutputsDir, target+".intoto.jsonl")
-	if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v1", rolling); err != nil {
+	if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v1", ref, fleetOpts.coreDir); err != nil {
 		return err
 	}
 	if !nonEmptyFile(outputPath) {
-		if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v0.2", rolling); err != nil {
+		if err := downloadAttestation(outputPath, "https://slsa.dev/provenance/v0.2", ref, fleetOpts.coreDir); err != nil {
 			return err
 		}
 	}
 	if nonEmptyFile(outputPath) {
 		fmt.Fprintf(out, "[fleet] provenance exported: %s\n", outputPath)
 	} else {
-		fmt.Fprintf(out, "[fleet] warning: SLSA provenance could not be downloaded for %s\n", rolling)
+		fmt.Fprintf(out, "[fleet] warning: SLSA provenance could not be downloaded for %s\n", ref)
 	}
 	return nil
 }
@@ -476,6 +727,7 @@ func runFleetVerifyTarget() error {
 	releaseEvidenceOpts.oidcIssuer = firstNonEmptyString(releaseEvidenceOpts.oidcIssuer, "https://token.actions.githubusercontent.com")
 	releaseEvidenceOpts.sourceRef = firstNonEmptyString(fleetOpts.sourceRef, "refs/heads/"+cfg.Release.SourceBranch)
 	releaseEvidenceOpts.sourceBranch = firstNonEmptyString(fleetOpts.sourceBranch, cfg.Release.SourceBranch)
+	releaseEvidenceOpts.coreDir = fleetOpts.coreDir
 	return runVerifyReleaseEvidence()
 }
 
@@ -557,6 +809,13 @@ func fleetTarget(language, tier string) string {
 }
 
 func archSuffixForSystem(system string) string {
+	if strings.Contains(system, "aarch64") || strings.Contains(system, "arm64") {
+		return "arm64"
+	}
+	return "amd64"
+}
+
+func ociArchitectureForSystem(system string) string {
 	if strings.Contains(system, "aarch64") || strings.Contains(system, "arm64") {
 		return "arm64"
 	}
@@ -664,14 +923,6 @@ func waitForPublicNarinfo(url, signingKeyName string) error {
 	return fmt.Errorf("public cache narinfo still does not expose %s signature: %s", signingKeyName, url)
 }
 
-func craneIndexAppend(tag string, manifests []string) error {
-	args := []string{"index", "append", "-t", tag}
-	for _, manifest := range manifests {
-		args = append(args, "-m", manifest)
-	}
-	return runExternalCommand(externalCommand{Name: "crane", Args: args})
-}
-
 func readFleetDigestManifests(dir string) ([]fleetDigestManifest, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -701,8 +952,37 @@ func readFleetDigestManifests(dir string) ([]fleetDigestManifest, error) {
 	return digests, nil
 }
 
-func downloadAttestation(path, predicateType, ref string) error {
-	raw, err := captureExternalOutput(externalCommand{Name: "cosign", Args: []string{"download", "attestation", "--predicate-type", predicateType, ref}})
+func splitFleetDigestMatrixOutputs(digests []fleetDigestManifest) ([]byte, []byte, error) {
+	fleetDigests := make([]fleetDigestManifest, 0, len(digests))
+	serviceDigests := make([]fleetDigestManifest, 0)
+	for _, digest := range digests {
+		if digest.Tier == "service" {
+			serviceDigests = append(serviceDigests, digest)
+			continue
+		}
+		fleetDigests = append(fleetDigests, digest)
+	}
+	fleetRaw, err := json.Marshal(fleetDigests)
+	if err != nil {
+		return nil, nil, err
+	}
+	serviceRaw, err := json.Marshal(serviceDigests)
+	if err != nil {
+		return nil, nil, err
+	}
+	return fleetRaw, serviceRaw, nil
+}
+
+func runCoreToolCommand(coreDir, name string, args ...string) error {
+	return runExternalCommand(externalCommand{Name: "nix", Args: build.NixDevelopCommand(name, args...), Dir: coreDir})
+}
+
+func captureCoreToolOutput(coreDir, name string, args ...string) (string, error) {
+	return captureExternalOutput(externalCommand{Name: "nix", Args: build.NixDevelopCommand(name, args...), Dir: coreDir})
+}
+
+func downloadAttestation(path, predicateType, ref, coreDir string) error {
+	raw, err := captureCoreToolOutput(coreDir, "cosign", "download", "attestation", "--predicate-type", predicateType, ref)
 	if err != nil {
 		raw = ""
 	}
@@ -799,6 +1079,7 @@ func uploadReleaseAssetWithRetry(tag, file string) error {
 func isReleaseAsset(name string) bool {
 	return strings.HasSuffix(name, ".sbom.json") ||
 		strings.HasSuffix(name, ".test-results.json") ||
+		strings.HasSuffix(name, ".release-verification.json") ||
 		strings.HasSuffix(name, ".intoto.jsonl") ||
 		strings.HasSuffix(name, ".sig") ||
 		strings.HasPrefix(name, "clearcutt-") ||
