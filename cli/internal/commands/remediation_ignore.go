@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,7 +53,8 @@ type grypeConfig struct {
 
 // ignoreEvidence documents a scanner suppression so it is never silent: who
 // owns it, why, and when it expires. Pairs with the .grype.yaml rule, mirroring
-// the overlays/cve evidence convention.
+// the overlays/cve evidence convention. Triage is stamped only when the
+// suppression was applied through `remediation triage --decide`.
 type ignoreEvidence struct {
 	SchemaVersion string            `json:"schemaVersion"`
 	Status        string            `json:"status"`
@@ -63,6 +65,7 @@ type ignoreEvidence struct {
 	Expires       string            `json:"expires,omitempty"`
 	GeneratedBy   string            `json:"generatedBy"`
 	Suppressions  []grypeIgnoreRule `json:"suppressions"`
+	Triage        *triageEvidence   `json:"triage,omitempty"`
 }
 
 // NewRemediationIgnoreCmd manages a tracked Grype suppression (and its evidence)
@@ -97,7 +100,14 @@ the package set; the next scan re-flags it once a real remediation is possible.`
 }
 
 func runRemediationIgnore() error {
-	o := remediationIgnoreOpts
+	return runRemediationIgnoreWith(remediationIgnoreOpts, nil, out)
+}
+
+// runRemediationIgnoreWith is the shared write path: the standalone ignore
+// command passes its flags verbatim, and `remediation triage --decide
+// scanner_ignore` delegates here with the triage decision block to stamp onto
+// the evidence, so both entry points share one validation + write path.
+func runRemediationIgnoreWith(o remediationIgnoreFlags, triage *triageEvidence, w io.Writer) error {
 	if !cveIDPattern.MatchString(strings.TrimSpace(o.cve)) {
 		return fmt.Errorf("--cve %q is not a valid CVE/GHSA id", o.cve)
 	}
@@ -153,12 +163,12 @@ func runRemediationIgnore() error {
 	}
 
 	evidencePath := filepath.Join(evidenceDir, fmt.Sprintf("%s-%s.ignore.evidence.json", strings.ToLower(o.cve), grypeIgnoreSlug(o.pkg)))
-	if err := writeIgnoreEvidence(evidencePath, o, rules); err != nil {
+	if err := writeIgnoreEvidence(evidencePath, o, rules, triage); err != nil {
 		return fmt.Errorf("write evidence %s: %w", evidencePath, err)
 	}
 
-	fmt.Fprintf(out, "[remediation-ignore] %d new suppression(s) for %s (%s) in %s\n", added, o.cve, o.pkg, grypePath)
-	fmt.Fprintf(out, "[remediation-ignore] evidence -> %s (expires %s, owner %q)\n", evidencePath, o.expires, o.owner)
+	fmt.Fprintf(w, "[remediation-ignore] %d new suppression(s) for %s (%s) in %s\n", added, o.cve, o.pkg, grypePath)
+	fmt.Fprintf(w, "[remediation-ignore] evidence -> %s (expires %s, owner %q)\n", evidencePath, o.expires, o.owner)
 	return nil
 }
 
@@ -231,7 +241,11 @@ func grypeRuleExists(rules []grypeIgnoreRule, want grypeIgnoreRule) bool {
 	return false
 }
 
-func writeIgnoreEvidence(path string, o remediationIgnoreFlags, rules []grypeIgnoreRule) error {
+func writeIgnoreEvidence(path string, o remediationIgnoreFlags, rules []grypeIgnoreRule, triage *triageEvidence) error {
+	generatedBy := "clearcutt remediation ignore"
+	if triage != nil {
+		generatedBy = "clearcutt remediation triage"
+	}
 	ev := ignoreEvidence{
 		SchemaVersion: "clearcutt.remediation.evidence/v1",
 		Status:        "scanner_suppressed",
@@ -240,8 +254,9 @@ func writeIgnoreEvidence(path string, o remediationIgnoreFlags, rules []grypeIgn
 		Owner:         o.owner,
 		Reason:        o.reason,
 		Expires:       o.expires,
-		GeneratedBy:   "clearcutt remediation ignore",
+		GeneratedBy:   generatedBy,
 		Suppressions:  rules,
+		Triage:        triage,
 	}
 	encoded, err := json.MarshalIndent(ev, "", "  ")
 	if err != nil {

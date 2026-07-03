@@ -269,6 +269,22 @@
         "includeDevOnly": {
           "type": "boolean"
         },
+        "probe": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Live fix-availability probe for CVE triage: sweeps nixpkgs refs for the scanner-reported fixed version. Best-effort by contract — any fetch failure degrades triage to the static route classifier and never blocks planning.",
+          "properties": {
+            "enabled": {
+              "description": "Whether triage may probe nixpkgs refs at scan time. Default true; --no-probe or offline operation degrades gracefully either way.",
+              "type": "boolean"
+            },
+            "refs": {
+              "description": "nixpkgs refs the probe sweeps, in order (default nixos-unstable, master, staging-next). The pin rev itself is always probed first regardless. An omitted or empty list falls back to the default sweep.",
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "unstable": {
           "type": "object",
           "additionalProperties": false,
@@ -345,6 +361,19 @@
             "cryptoTrust": {
               "description": "How the known-good crypto build (openssl/sqlite) is trusted. nixpkgs (default): trust the pin's patched build, substitute from cache, and VEX the scanner version gap. reproduce: also independently rebuild the crypto closure and byte-compare it against the substituted build (trust AND verify); a divergence fails the release evidence.",
               "enum": ["nixpkgs", "reproduce"]
+            },
+            "preferSubstitutable": {
+              "description": "Break triage route-recommendation ties in favor of a substitutable (cache-served) fix over a rebuild when both carry the fix. Default true.",
+              "type": "boolean"
+            },
+            "waitMaxSeverity": {
+              "description": "Ceiling at/below which triage may offer the wait route (fix merged upstream but not yet on a cached ref). A finding above the ceiling never gets a bare wait. Default medium.",
+              "enum": ["critical", "high", "medium", "low", "negligible", "unknown"]
+            },
+            "waitMaxDays": {
+              "description": "Backstop expiry (days) for wait decisions: a wait retires at min(watched ref carries the fix, this many days). Default 30; an explicit 0 makes every wait expire immediately (must be re-decided each sweep).",
+              "type": "integer",
+              "minimum": 0
             },
             "requireRuntimeLayer": {
               "description": "Deprecated: use reachability. true maps to reachability=runtime, false to any.",

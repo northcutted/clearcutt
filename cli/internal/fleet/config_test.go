@@ -87,7 +87,12 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 		!*loaded.Remediation.Policy.RequireFixedVersion ||
 		loaded.Remediation.Policy.KEVBoost == nil ||
 		!*loaded.Remediation.Policy.KEVBoost ||
-		loaded.Remediation.Policy.EPSSPercentileBoostAt != 0.90 {
+		loaded.Remediation.Policy.EPSSPercentileBoostAt != 0.90 ||
+		loaded.Remediation.Policy.PreferSubstitutable == nil ||
+		!*loaded.Remediation.Policy.PreferSubstitutable ||
+		loaded.Remediation.Policy.WaitMaxSeverity != "medium" ||
+		loaded.Remediation.Policy.WaitMaxDays == nil ||
+		*loaded.Remediation.Policy.WaitMaxDays != 30 {
 		t.Fatalf("unexpected remediation policy defaults: %#v", loaded.Remediation.Policy)
 	}
 }
@@ -297,6 +302,9 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 		"remediationPolicyTier":         func(c *Config) { c.Remediation.Policy.ProductionTiers = []string{"dev"} },
 		"remediationPolicySeverity":     func(c *Config) { c.Remediation.Policy.MinimumSeverity = "urgent" },
 		"remediationPolicyEPSSBoundary": func(c *Config) { c.Remediation.Policy.EPSSPercentileBoostAt = 1.1 },
+		"remediationPolicyWaitSeverity": func(c *Config) { c.Remediation.Policy.WaitMaxSeverity = "urgent" },
+		"remediationPolicyWaitDays":     func(c *Config) { c.Remediation.Policy.WaitMaxDays = intPtr(-1) },
+		"remediationProbeEmptyRef":      func(c *Config) { c.Remediation.Probe.Refs = []string{" "} },
 	} {
 		bad := cfg
 		mutate(&bad)
@@ -310,5 +318,65 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 	}
 	if _, err := Load(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
 		t.Fatal("Load should fail for missing file")
+	}
+}
+
+func TestRemediationTriagePolicyDefaultsAndOverrides(t *testing.T) {
+	eff := EffectiveRemediationPolicy(RemediationPolicy{})
+	if eff.PreferSubstitutable == nil || !*eff.PreferSubstitutable {
+		t.Errorf("preferSubstitutable should default true, got %#v", eff.PreferSubstitutable)
+	}
+	if eff.WaitMaxSeverity != "medium" {
+		t.Errorf("waitMaxSeverity should default medium, got %q", eff.WaitMaxSeverity)
+	}
+	if eff.WaitMaxDays == nil || *eff.WaitMaxDays != 30 {
+		t.Errorf("waitMaxDays should default 30, got %#v", eff.WaitMaxDays)
+	}
+	zero := EffectiveRemediationPolicy(RemediationPolicy{WaitMaxDays: intPtr(0)})
+	if zero.WaitMaxDays == nil || *zero.WaitMaxDays != 0 {
+		t.Errorf("explicit waitMaxDays 0 must survive normalization, got %#v", zero.WaitMaxDays)
+	}
+
+	// Explicit values survive normalization untouched, including the false
+	// pointer that omitempty would otherwise conflate with unset.
+	set := EffectiveRemediationPolicy(RemediationPolicy{
+		PreferSubstitutable: boolPtr(false),
+		WaitMaxSeverity:     "low",
+		WaitMaxDays:         intPtr(7),
+	})
+	if set.PreferSubstitutable == nil || *set.PreferSubstitutable || set.WaitMaxSeverity != "low" || set.WaitMaxDays == nil || *set.WaitMaxDays != 7 {
+		t.Errorf("explicit triage policy values not preserved: %#v", set)
+	}
+}
+
+func TestRemediationProbeDefaultsAndAccessors(t *testing.T) {
+	var rem Remediation
+	if !rem.ProbeEnabled() {
+		t.Error("probe should default to enabled")
+	}
+	if got := rem.EffectiveProbeRefs(); len(got) != 3 || got[0] != "nixos-unstable" || got[1] != "master" || got[2] != "staging-next" {
+		t.Errorf("unexpected default probe refs: %#v", got)
+	}
+
+	rem.Probe = RemediationProbe{
+		Enabled: boolPtr(false),
+		Refs:    []string{"nixos-25.11"},
+	}
+	if rem.ProbeEnabled() {
+		t.Error("explicit enabled:false should disable the probe")
+	}
+	if got := rem.EffectiveProbeRefs(); len(got) != 1 || got[0] != "nixos-25.11" {
+		t.Errorf("configured probe refs not honored: %#v", got)
+	}
+
+	// A config that never mentions probe/triage keys must load with the
+	// defaults resolvable — omitempty absence is the published contract.
+	cfg := DefaultConfig("acme", "platform")
+	cfg.applyDefaults()
+	if !cfg.Remediation.ProbeEnabled() || len(cfg.Remediation.EffectiveProbeRefs()) != 3 {
+		t.Fatalf("default config should resolve probe defaults: %#v", cfg.Remediation.Probe)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("default config with unset probe should validate: %v", err)
 	}
 }

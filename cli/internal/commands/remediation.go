@@ -221,6 +221,8 @@ func NewRemediationCmd() *cobra.Command {
 	planCmd.Flags().StringVar(&remediationOpts.policyJSON, "policy-json", os.Getenv("REMEDIATION_POLICY_JSON"), "Effective remediation policy JSON from clearcutt.fleet.yaml")
 
 	cmd.AddCommand(planCmd)
+	cmd.AddCommand(NewRemediationTriageCmd())
+	cmd.AddCommand(NewRemediationStatusCmd())
 	cmd.AddCommand(NewRemediationReportCmd())
 	cmd.AddCommand(NewRemediationValidateOverlaysCmd())
 	cmd.AddCommand(NewRemediationRunCmd())

@@ -112,6 +112,16 @@ jobs:
         if: always()
         run: ./clearcutt remediation report --allow-missing --plan core/build-outputs/remediation-plan.json --summary-dir core/build-outputs --out core/build-outputs/remediation-report.json
 
+      # Best-effort priced-route triage report next to the plan
+      # (docs/analysis/cve-triage-design.md). continue-on-error because the
+      # triage subcommand ships alongside this workflow change, so an older
+      # installed release CLI must not fail the scan job.
+      - name: Generate triage report
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./clearcutt --format json remediation triage --plan core/build-outputs/remediation-plan.json > core/build-outputs/triage-report.json
+
       - name: Upload Scanned Vulnerabilities
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -129,6 +139,7 @@ jobs:
             core/build-outputs/remediation-plan.json
             core/build-outputs/remediation-report.json
             core/build-outputs/remediation-summary-*.json
+            core/build-outputs/triage-report.json
             core/build-outputs/security-intel/
           retention-days: 7
 

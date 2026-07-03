@@ -116,3 +116,43 @@ func TestFleetSchemaAcceptsRuntimeLinesExtension(t *testing.T) {
 		t.Fatalf("expected additionalProperties violation for unknownTopLevelKey, got: %v", err)
 	}
 }
+
+// TestFleetSchemaAcceptsTriageProbeAndPolicyKeys proves the CVE-triage knobs
+// (remediation.probe, preferSubstitutable, waitMaxSeverity, waitMaxDays)
+// satisfy the published schema, and that the probe object keeps the
+// additionalProperties guard.
+func TestFleetSchemaAcceptsTriageProbeAndPolicyKeys(t *testing.T) {
+	cfg := DefaultConfig("acme", "images")
+	cfg.Remediation.Probe = RemediationProbe{
+		Enabled: boolPtr(true),
+		Refs:    []string{"nixos-unstable", "master", "staging-next", "nixos-25.11"},
+	}
+	cfg.Remediation.Policy.PreferSubstitutable = boolPtr(false)
+	cfg.Remediation.Policy.WaitMaxSeverity = "low"
+	cfg.Remediation.Policy.WaitMaxDays = intPtr(14)
+
+	rawYAML, err := Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal triage fleet config: %v", err)
+	}
+
+	schema := compileFleetSchema(t)
+	if err := validateYAMLAgainstFleetSchema(t, schema, rawYAML); err != nil {
+		t.Fatalf("triage keys do not satisfy schemas/%s:\n%v", fleetSchemaName, err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(rawYAML, &doc); err != nil {
+		t.Fatalf("reparse marshalled fleet config: %v", err)
+	}
+	doc["remediation"].(map[string]any)["probe"].(map[string]any)["unknownProbeKey"] = true
+	brokenYAML, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatalf("remarshal broken fleet config: %v", err)
+	}
+	if err := validateYAMLAgainstFleetSchema(t, schema, brokenYAML); err == nil {
+		t.Fatal("schema accepted an unknown remediation.probe key; additionalProperties guard lost")
+	} else if !strings.Contains(fmt.Sprint(err), "unknownProbeKey") {
+		t.Fatalf("expected additionalProperties violation for unknownProbeKey, got: %v", err)
+	}
+}

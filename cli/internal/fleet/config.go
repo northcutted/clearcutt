@@ -132,8 +132,48 @@ type Remediation struct {
 	MaxFindingsPerRun      int                 `json:"maxFindingsPerRun"`
 	MaxPatchFailuresPerRun int                 `json:"maxPatchFailuresPerRun"`
 	IncludeDevOnly         bool                `json:"includeDevOnly"`
+	Probe                  RemediationProbe    `json:"probe,omitempty"`
 	Policy                 RemediationPolicy   `json:"policy,omitempty"`
 	Unstable               RemediationUnstable `json:"unstable,omitempty"`
+}
+
+// RemediationProbe configures the live fix-availability probe of CVE triage:
+// whether triage may fetch nixpkgs refs at scan time and which refs it sweeps
+// for the scanner's fixed version. The probe is best-effort by contract — a
+// fetch failure degrades triage to the static route classifier, never blocks
+// planning — so Enabled is a policy statement, not a liveness requirement.
+// See docs/analysis/cve-triage-design.md.
+type RemediationProbe struct {
+	// Enabled: default true. Unset means enabled; --no-probe or offline
+	// operation degrades gracefully either way.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Refs are the nixpkgs refs the probe sweeps, in order. Default
+	// nixos-unstable, master, staging-next; the pin rev itself is always
+	// probed first regardless.
+	Refs []string `json:"refs,omitempty"`
+}
+
+// ProbeEnabled reports whether the fix-availability probe may run; unset
+// defaults to enabled because the probe can only add information (it degrades
+// to the static classifier on any failure).
+func (r Remediation) ProbeEnabled() bool {
+	return r.Probe.Enabled == nil || *r.Probe.Enabled
+}
+
+// EffectiveProbeRefs returns the configured probe ref sweep, falling back to
+// DefaultProbeRefs, so consumers never reimplement the defaulting.
+func (r Remediation) EffectiveProbeRefs() []string {
+	if len(r.Probe.Refs) > 0 {
+		return append([]string(nil), r.Probe.Refs...)
+	}
+	return DefaultProbeRefs()
+}
+
+// DefaultProbeRefs is the default nixpkgs ref sweep for the fix-availability
+// probe: the Hydra-cached channel first, then the branches a fix reaches
+// before it lands on a channel.
+func DefaultProbeRefs() []string {
+	return []string{"nixos-unstable", "master", "staging-next"}
 }
 
 // RemediationUnstable is the opt-in policy for sourcing a CVE fix from a newer
@@ -205,6 +245,18 @@ type RemediationPolicy struct {
 	// gate is identical — only whether a reproducibility compare is also required
 	// differs.
 	CryptoTrust string `json:"cryptoTrust,omitempty"`
+	// PreferSubstitutable breaks route-recommendation ties in triage in favor of
+	// a substitutable (cache-served) fix over a rebuild when both carry the fix.
+	PreferSubstitutable *bool `json:"preferSubstitutable,omitempty"`
+	// WaitMaxSeverity is the ceiling at/below which triage may offer the "wait"
+	// route (fix merged upstream but not yet on a cached ref). A finding above
+	// the ceiling never gets a bare wait.
+	WaitMaxSeverity string `json:"waitMaxSeverity,omitempty"`
+	// WaitMaxDays backstops a wait decision's expiry: it retires at
+	// min(watched ref carries the fix, this many days). A pointer so an
+	// explicit 0 (the wait expires immediately and must be re-decided) is
+	// distinguishable from unset (the 30-day default).
+	WaitMaxDays *int `json:"waitMaxDays,omitempty"`
 
 	// Deprecated — retained for back-compat; normalized into the fields above by
 	// EffectiveRemediationPolicy. RequireRuntimeLayer -> Reachability,
@@ -654,10 +706,19 @@ func (c Config) Validate() error {
 	if err := validateRemediationPolicy(c.Remediation.Policy); err != nil {
 		return err
 	}
+	for _, ref := range c.Remediation.Probe.Refs {
+		if strings.TrimSpace(ref) == "" {
+			return fmt.Errorf("remediation.probe.refs must not contain empty values")
+		}
+	}
 	if _, err := c.serviceMap(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func boolPtr(value bool) *bool {
@@ -677,6 +738,9 @@ func DefaultRemediationPolicy() RemediationPolicy {
 		EPSSPercentileBoostAt: 0.90,
 		KEVBoost:              boolPtr(true),
 		CryptoTrust:           "nixpkgs",
+		PreferSubstitutable:   boolPtr(true),
+		WaitMaxSeverity:       "medium",
+		WaitMaxDays:           intPtr(30),
 	}
 }
 
@@ -734,6 +798,15 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	if policy.CryptoTrust == "" {
 		policy.CryptoTrust = def.CryptoTrust
 	}
+	if policy.PreferSubstitutable == nil {
+		policy.PreferSubstitutable = def.PreferSubstitutable
+	}
+	if policy.WaitMaxSeverity == "" {
+		policy.WaitMaxSeverity = def.WaitMaxSeverity
+	}
+	if policy.WaitMaxDays == nil {
+		policy.WaitMaxDays = def.WaitMaxDays
+	}
 	return policy
 }
 
@@ -754,10 +827,11 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 			return fmt.Errorf("unsupported remediation.policy.productionTiers value %q", tier)
 		}
 	}
-	switch strings.ToLower(policy.MinimumSeverity) {
-	case "critical", "high", "medium", "low", "negligible", "unknown":
-	default:
+	if !KnownSeverity(policy.MinimumSeverity) {
 		return fmt.Errorf("unsupported remediation.policy.minimumSeverity %q", policy.MinimumSeverity)
+	}
+	if !KnownSeverity(policy.WaitMaxSeverity) {
+		return fmt.Errorf("unsupported remediation.policy.waitMaxSeverity %q", policy.WaitMaxSeverity)
 	}
 	switch strings.ToLower(policy.Reachability) {
 	case "runtime", "any":
@@ -774,6 +848,9 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 	}
 	if policy.AcceptedExpiryDays < 0 {
 		return fmt.Errorf("remediation.policy.acceptedExpiryDays must not be negative")
+	}
+	if policy.WaitMaxDays != nil && *policy.WaitMaxDays < 0 {
+		return fmt.Errorf("remediation.policy.waitMaxDays must not be negative")
 	}
 	switch strings.ToLower(policy.CryptoTrust) {
 	case CryptoTrustNixpkgs, CryptoTrustReproduce:

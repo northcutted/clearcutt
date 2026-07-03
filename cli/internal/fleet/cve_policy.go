@@ -107,3 +107,16 @@ func severityRank(severity string) int {
 func SeverityAtLeast(severity, threshold string) bool {
 	return severityRank(severity) >= severityRank(threshold)
 }
+
+// KnownSeverity reports whether severity names one of the ranked levels above
+// (case-insensitive). Policy thresholds (minimumSeverity, waitMaxSeverity)
+// reject anything else so a typo cannot silently move the bar — severityRank
+// alone can't tell a typo from "unknown".
+func KnownSeverity(severity string) bool {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical", "high", "medium", "low", "negligible", "unknown":
+		return true
+	default:
+		return false
+	}
+}

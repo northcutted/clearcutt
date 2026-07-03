@@ -271,12 +271,46 @@ func runRemediationValidateOverlays() error {
 			}
 		}
 	}
+	now := time.Now().UTC()
+	decisionFiles, err := filepath.Glob(filepath.Join(remediationValidateOverlaysOpts.overlayDir, "*.decision.evidence.json"))
+	if err != nil {
+		return fmt.Errorf("failed to list triage decision evidence: %w", err)
+	}
+	sort.Strings(decisionFiles)
+	for _, path := range decisionFiles {
+		if err := validateDecisionEvidence(path, now); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	// Ignore evidence gets the same optional-triage-block validation as overlay
+	// evidence; the glob is scoped to *.ignore.evidence.json so paired overlay
+	// evidence and decision records are not validated twice.
+	ignoreFiles, err := filepath.Glob(filepath.Join(remediationValidateOverlaysOpts.overlayDir, "*.ignore.evidence.json"))
+	if err != nil {
+		return fmt.Errorf("failed to list ignore evidence: %w", err)
+	}
+	sort.Strings(ignoreFiles)
+	for _, path := range ignoreFiles {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: read failed: %v", path, err))
+			continue
+		}
+		var data map[string]any
+		if err := json.Unmarshal(raw, &data); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: parse failed: %v", path, err))
+			continue
+		}
+		if err := validateEvidenceTriage(path, data, now); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
 	if remediationValidateOverlaysOpts.checkIgnores {
 		grypePath := remediationValidateOverlaysOpts.grypeConfig
 		if grypePath == "" {
 			grypePath = filepath.Clean(filepath.Join(remediationValidateOverlaysOpts.overlayDir, "..", "..", ".grype.yaml"))
 		}
-		if grypeProblems, err := validateGrypeIgnoreEvidence(grypePath, remediationValidateOverlaysOpts.overlayDir, time.Now().UTC()); err != nil {
+		if grypeProblems, err := validateGrypeIgnoreEvidence(grypePath, remediationValidateOverlaysOpts.overlayDir, now); err != nil {
 			problems = append(problems, err.Error())
 		} else {
 			problems = append(problems, grypeProblems...)
@@ -286,6 +320,9 @@ func runRemediationValidateOverlays() error {
 		return fmt.Errorf("remediation overlay governance failed:\n%s", strings.Join(problems, "\n"))
 	}
 	fmt.Fprintf(out, "Validated %d remediation overlay(s) under %s.\n", len(files), remediationValidateOverlaysOpts.overlayDir)
+	if len(decisionFiles) > 0 {
+		fmt.Fprintf(out, "Validated %d triage decision record(s).\n", len(decisionFiles))
+	}
 	return nil
 }
 
@@ -349,6 +386,13 @@ func loadRemediationEvidenceRecords(dir string) ([]remediationEvidenceRecord, er
 	sort.Strings(files)
 	records := make([]remediationEvidenceRecord, 0, len(files))
 	for _, path := range files {
+		// Decision records (wait / pin-hop / hand-off) never carry grype
+		// suppressions and hold their expiry inside the triage block, so they
+		// must not compete with .ignore.evidence.json in the suppression match
+		// pool; validateDecisionEvidence sweeps them separately.
+		if strings.HasSuffix(path, ".decision.evidence.json") {
+			continue
+		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("%s: read failed: %v", path, err)
@@ -364,6 +408,10 @@ func loadRemediationEvidenceRecords(dir string) ([]remediationEvidenceRecord, er
 }
 
 func matchingGrypeEvidence(rule grypeIgnoreRule, records []remediationEvidenceRecord) *remediationEvidenceRecord {
+	// Two passes: a record that names the rule explicitly (its own suppression
+	// list or an expectedRemoved entry) always beats the package-name fallback,
+	// so a looser sibling record earlier in filename order can never shadow the
+	// evidence that actually owns the suppression.
 	for i := range records {
 		record := &records[i]
 		if !sameVulnerability(record.CVE, rule.Vulnerability) {
@@ -378,6 +426,12 @@ func matchingGrypeEvidence(rule grypeIgnoreRule, records []remediationEvidenceRe
 			if sameVulnerability(removed.CVE, rule.Vulnerability) && grypeRulePackageMatches(rule, removed.Package, removed.InstalledVersion) {
 				return record
 			}
+		}
+	}
+	for i := range records {
+		record := &records[i]
+		if !sameVulnerability(record.CVE, rule.Vulnerability) {
+			continue
 		}
 		if record.Package != "" && grypeRulePackageMatches(rule, record.Package, "") {
 			return record
@@ -431,6 +485,9 @@ func validateOverlayEvidence(path string) (string, error) {
 		return "", fmt.Errorf("evidence file %s missing policyDecision", path)
 	}
 	status := strings.ToLower(fmt.Sprint(data["status"]))
+	if err := validateEvidenceTriage(path, data, time.Now().UTC()); err != nil {
+		return status, err
+	}
 	if status == "manual_accepted" {
 		if strings.TrimSpace(fmt.Sprint(data["owner"])) == "" || strings.TrimSpace(fmt.Sprint(data["reason"])) == "" {
 			return status, fmt.Errorf("manual evidence file %s requires owner and reason", path)
@@ -441,4 +498,106 @@ func validateOverlayEvidence(path string) (string, error) {
 		return status, fmt.Errorf("generated evidence file %s missing validation", path)
 	}
 	return status, nil
+}
+
+// The six routes a triage decision may record: the five static classifier
+// routes plus the probe-gated "wait" (docs/analysis/cve-triage-design.md).
+var evidenceTriageRoutes = map[string]bool{
+	RouteVersionBump:       true,
+	RouteSubstituteVEX:     true,
+	RouteUnstableOptIn:     true,
+	RouteFetchpatchRebuild: true,
+	RouteScannerIgnore:     true,
+	"wait":                 true,
+}
+
+var evidenceRetirementKinds = map[string]bool{
+	"pin_carries_fix": true,
+	"ref_carries_fix": true,
+	"expiry":          true,
+}
+
+// evidenceField returns the trimmed string value of a key, treating a missing
+// key or JSON null as empty (fmt.Sprint would render an absent value "<nil>").
+func evidenceField(data map[string]any, key string) string {
+	value, ok := data[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+// validateEvidenceTriage checks the optional triage decision block a
+// `remediation triage --decide` stamps onto evidence files. Files without the
+// block are untouched by this gate; when present, the route and retirement
+// must be well-formed and an expiry-kind retirement must not have lapsed —
+// the same no-silent-carry rule the grype ignore sweep enforces.
+func validateEvidenceTriage(path string, data map[string]any, now time.Time) error {
+	rawTriage, ok := data["triage"]
+	if !ok || rawTriage == nil {
+		return nil
+	}
+	triage, ok := rawTriage.(map[string]any)
+	if !ok {
+		return fmt.Errorf("evidence file %s triage must be an object", path)
+	}
+	if route := evidenceField(triage, "route"); !evidenceTriageRoutes[route] {
+		return fmt.Errorf("evidence file %s triage route %q is not a known route", path, route)
+	}
+	rawRetirement, ok := triage["retirement"]
+	if !ok || rawRetirement == nil {
+		return nil
+	}
+	retirement, ok := rawRetirement.(map[string]any)
+	if !ok {
+		return fmt.Errorf("evidence file %s triage retirement must be an object", path)
+	}
+	kind := evidenceField(retirement, "kind")
+	if !evidenceRetirementKinds[kind] {
+		return fmt.Errorf("evidence file %s triage retirement kind %q is not a known kind", path, kind)
+	}
+	if kind != "expiry" {
+		return nil
+	}
+	expiresText := evidenceField(retirement, "expires")
+	if expiresText == "" {
+		return fmt.Errorf("evidence file %s triage expiry retirement requires expires (YYYY-MM-DD)", path)
+	}
+	expires, err := time.Parse("2006-01-02", expiresText)
+	if err != nil {
+		return fmt.Errorf("evidence file %s triage retirement expires is invalid: %v", path, err)
+	}
+	if !expires.After(truncateDate(now)) {
+		return fmt.Errorf("evidence file %s triage retirement expired %s", path, expiresText)
+	}
+	return nil
+}
+
+// validateDecisionEvidence checks a standalone triage decision record — the
+// cve-<id>-<pkg>.decision.evidence.json files written for routes that leave no
+// other artifact (wait, pin-hop snippets). Unlike overlay evidence the triage
+// block is mandatory: the record exists only to carry the decision.
+func validateDecisionEvidence(path string, now time.Time) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read decision evidence %s: %w", path, err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return fmt.Errorf("failed to parse decision evidence %s: %w", path, err)
+	}
+	if version := evidenceField(data, "schemaVersion"); version != "clearcutt.remediation.evidence/v1" {
+		return fmt.Errorf("decision evidence %s has schemaVersion %q, want clearcutt.remediation.evidence/v1", path, version)
+	}
+	status := strings.ToLower(evidenceField(data, "status"))
+	if status != "triage_wait" && status != "triage_decided" {
+		return fmt.Errorf("decision evidence %s has status %q, want triage_wait or triage_decided", path, status)
+	}
+	if evidenceField(data, "owner") == "" || evidenceField(data, "reason") == "" {
+		return fmt.Errorf("decision evidence %s requires owner and reason", path)
+	}
+	if rawTriage, ok := data["triage"]; !ok || rawTriage == nil {
+		return fmt.Errorf("decision evidence %s missing triage block", path)
+	}
+	return validateEvidenceTriage(path, data, now)
 }

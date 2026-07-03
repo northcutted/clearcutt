@@ -110,3 +110,18 @@ func TestSeverityAtLeast(t *testing.T) {
 		t.Error("unknown >= negligible")
 	}
 }
+
+func TestKnownSeverity(t *testing.T) {
+	for _, s := range []string{"critical", "High", " medium ", "low", "negligible", "unknown"} {
+		if !KnownSeverity(s) {
+			t.Errorf("KnownSeverity(%q) = false, want true", s)
+		}
+	}
+	// severityRank maps these to the unknown rank; validation must still reject
+	// them so a threshold typo cannot silently move the bar.
+	for _, s := range []string{"", "urgent", "moderate"} {
+		if KnownSeverity(s) {
+			t.Errorf("KnownSeverity(%q) = true, want false", s)
+		}
+	}
+}

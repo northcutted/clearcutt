@@ -297,6 +297,88 @@ GitHub Actions no longer invokes `cve-draft-agent.py` directly. The output
 remains an aggregated draft PR path, not an auto-merge or production mutation
 path.
 
+## Triage And Decision Commands
+
+```bash
+./clearcutt remediation triage --plan core/build-outputs/remediation-plan.json --core-dir core
+./clearcutt --format json remediation triage > triage-report.json
+./clearcutt remediation triage --cve CVE-2026-88888 \
+  --decide scanner_ignore \
+  --decided-by human \
+  --owner platform-team \
+  --reason "vulnerable path not reachable from shipped entrypoints" \
+  --expires 2026-09-30
+./clearcutt remediation status
+./clearcutt remediation status --check-retirements --strict
+```
+
+`remediation triage` composes materiality, the static route context, and a live
+fix-availability probe into one priced decision record per finding. Scope the
+run with `--cve` or `--package`, feed it an existing plan (`--plan plan.json`)
+or scan output (`--scan-dir`), and point `--core-dir` at the core workspace so
+the probe can resolve nixpkgs source paths against the local pin. `--no-probe`
+— or any probe failure — degrades to the static route classifier, so triage is
+never less available than `remediation plan`. The default table output prints
+one block per finding: a CVE header line (severity, exposure tiers, upstream
+state) followed by the route table. `--format json` emits the versioned
+`clearcutt.triage/v1` report (`schemas/triage.v1.schema.json`) that the
+scheduled scan uploads and future agents consume.
+
+Every finding is priced across six routes. Cost is what applying the route
+costs today; retirement is the condition recorded at decision time under which
+the decision stops being carried:
+
+| Route | Available when | Cost now | Retires |
+| --- | --- | --- | --- |
+| `version_bump` | the pinned nixpkgs already carries the fix | none (substitutable) | immediately — the fix ships and the evidence closes |
+| `substitute_vex` | crypto CVE already provenance-allowlisted | none (substitutable) | pin carries the fix |
+| `unstable_optin` | a Hydra-cached ref carries the fix | scoped rebuild of the hopped runtime subtree (conservatively priced — the crypto rebind rebuilds it even when the hop itself substitutes) | pin carries the fix — drop the opt-in |
+| `fetchpatch_rebuild` | upstream fix exists but no cached ref carries it | cold from-source build | pin carries the fix — drop the overlay |
+| `scanner_ignore` | policy permits per materiality (never KEV) | none | expiry (policy accepted-expiry default) |
+| `wait` | fix visible on an uncached ref and severity at or below the policy wait ceiling | none | a cached ref carries the fix, with an expiry backstop |
+
+`--decide ROUTE` applies a route non-interactively and stamps a `triage` block
+(`decidedBy`, retirement condition, probe snapshot at decision time) onto the
+decision artifact. `scanner_ignore` delegates to the existing ignore writer
+(grype rule plus expiring ignore evidence); `unstable_optin` writes the decision
+record and prints the exact `remediation.unstable.softOptIns` snippet rather
+than rewriting `clearcutt.fleet.yaml`; `wait` writes a standalone
+`.decision.evidence.json`; `version_bump`, `fetchpatch_rebuild`, and
+`substitute_vex` write the record and hand the mechanical part to
+`remediation run`. `--decided-by` accepts `human` (the default), `policy`, or
+`agent:<id>`.
+
+`remediation status` is the ledger. It aggregates every carried decision — CVE
+overlays and evidence, ignore evidence, fleet soft opt-ins, crypto allowlist
+entries, wait records — into one table of what is carried, its route, and when
+it retires. `--check-retirements` (probe required) evaluates each
+recorded retirement condition now: `pin_carries_fix` and `ref_carries_fix`
+probe the watched ref for the fix version, `expiry` is a date compare using the
+same rule `validate-overlays` enforces.
+
+Both commands follow the standard exit-code contract above: `0` decided or
+informational, `1` operational error. With `--strict`, `remediation triage`
+exits `2` when any in-scope finding has no available route under policy — the
+escalation signal a pipeline turns into a PR comment or issue — and
+`remediation status --check-retirements` exits `2` when any retirement
+condition fired, the scheduled hook for opening retirement PRs.
+
+Example table output for a critical production finding whose fix has reached
+staging-next but no cached ref:
+
+```text
+CVE-2026-88888 openssl 3.6.2 -> 3.6.3  severity=critical  exposure=production(distroless)  disposition=must_fix(severity)
+probe: pin ✗ · nixos-unstable ✗ · master ✗ · staging-next ✓ uncached
+
+    ROUTE               AVAILABLE  COST NOW           RISK CARRIED  RETIRES         WHY
+    substitute_vex      no         none_substitutable none          -               not a provenance-allowlisted crypto finding; the substitute+VEX bridge does not apply
+    version_bump        no         none_substitutable none          -               the pin still builds 3.6.2, below the scanner fix 3.6.3
+    unstable_optin      no         scoped_rebuild     none          -               no Hydra-cached ref carries the fix yet
+  ▸ fetchpatch_rebuild  yes        cold_source_build  none          pin >= 3.6.3    upstream fix 3.6.3 exists but the pin lacks it; rebuild from source via an in-place override
+    wait                no         none               cve_ships_until_ref_lands  -  severity critical is above the wait ceiling (medium)
+    scanner_ignore      no         none               cve_ships_until_expiry     -  policy blocks: reachable, materially risky, and fixable in a production tier
+```
+
 ## Drift Check Scope
 
 The PR gate validates high-traffic command snippets that are expected to be

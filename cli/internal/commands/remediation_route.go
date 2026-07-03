@@ -30,6 +30,12 @@ const (
 	RouteUnstableOptIn     = "unstable_optin"
 	RouteFetchpatchRebuild = "fetchpatch_rebuild"
 	RouteScannerIgnore     = "scanner_ignore"
+	// RouteWait is the sixth route, offered only by `remediation triage`
+	// (docs/analysis/cve-triage-design.md): do nothing now because the
+	// fix-availability probe can SEE the fix progressing on an uncached ref, and
+	// the finding sits at/below the policy's wait severity ceiling. It is
+	// probe-gated by construction, so this static classifier never emits it.
+	RouteWait = "wait"
 )
 
 // cryptoTrackedDeps are the packages the runtime crypto overlay patches; a
