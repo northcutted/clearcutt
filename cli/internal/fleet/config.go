@@ -763,8 +763,13 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	}
 
 	// Normalize the gating fields: the new field wins when set, else the
-	// deprecated equivalent, else the default. Then mirror the resolved value
-	// back onto the deprecated field so existing consumers stay consistent.
+	// deprecated equivalent, else the default. The resolved value is mirrored
+	// back onto the deprecated field for WIRE-FORMAT compatibility: the
+	// marshaled effective policy travels across binaries (REMEDIATION_POLICY_JSON
+	// in scheduled-scan.yml, fork-pinned CLI versions), so an older consumer
+	// reading only the deprecated names must see the same decision. No in-repo
+	// Go code reads the deprecated fields anymore — do not remove the
+	// mirror-back on that basis.
 	if policy.Reachability == "" {
 		if policy.RequireRuntimeLayer != nil {
 			policy.Reachability = map[bool]string{true: "runtime", false: "any"}[*policy.RequireRuntimeLayer]

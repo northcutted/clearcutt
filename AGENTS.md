@@ -196,10 +196,15 @@ their recipes run because of local macOS `xcrun` toolchain issues.
 CLI:
 
 ```bash
+make cli-build   # generates the embedded platform-source archive, then builds
 cd cli && go test ./...
 cd cli && go vet ./...
-cd cli && go build -o ../clearcutt ./cmd/clearcutt
 ```
+
+A bare `go build -o ../clearcutt ./cmd/clearcutt` works but skips the embedded
+source generation (`make cli-embed-source`); the resulting binary falls back to
+the release-download path for `platform new`. Use `make cli-build` for anything
+that exercises platform scaffolding.
 
 Site:
 
@@ -284,7 +289,8 @@ The repo-scoped Codex setup lives in:
 - `.agents/reviewers/` for read-only custom reviewers.
 - `.codex/rules/` for command approval guardrails.
 - `.agents/skills/` for reusable ClearCutt workflows.
-- `.github/codex/prompts/` for GitHub Action, PR review, CI triage, and automation prompt templates.
+- `.github/codex/prompts/` for PR review, CI triage, and automation prompt templates
+  (invoked by out-of-repo Codex automations; no workflow in `.github/workflows/` references them).
 
 Use custom agents for broad, read-heavy audits. Use a single implementation
 agent for write-heavy changes unless the owner explicitly approves a partitioned

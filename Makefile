@@ -1,7 +1,9 @@
 .PHONY: cli-embed-source cli-build cli-test cli-vet cli-fmt-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan test check agent-sync e2e-test
 
+# .agents/ is upstream-only tooling (excluded from platform-new scaffolds), so
+# the target degrades to a note instead of erroring in fork checkouts.
 agent-sync:
-	bash .agents/sync.sh
+	@if [ -d .agents ]; then bash .agents/sync.sh; else echo "agent-sync: no .agents/ harness in this checkout (upstream-only tooling); nothing to do"; fi
 
 # The platform source archive is generated (gitignored), not committed; build
 # and test through these targets so the binary ships it and its tests run.
@@ -65,7 +67,7 @@ core-verify:
 	cd core && nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh
 
 core-remediation-tests:
-	cd core && python3 -m unittest tests/test_remediation_pipeline.py
+	cd core && python3 -m unittest tests/test_remediation_pipeline.py tests/test_closure_cve_check.py tests/test_pipeline_evidence.py
 
 e2e-test: cli-build
 	bash core/tests/e2e-runtimes.sh $(STACK)

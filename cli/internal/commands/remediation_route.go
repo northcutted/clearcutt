@@ -21,9 +21,12 @@ import (
 //
 // This is a STATIC classifier driven by committed policy data — the crypto
 // identity allowlist (which crypto CVEs are already patched+provenance-vetted),
-// the unstable soft opt-ins, and fixability. The live scan-time probe that
-// queries nixpkgs-unstable for an arbitrary CVE's fix is a future slice; until
-// then a fixable finding with no opt-in routes to version_bump.
+// the unstable soft opt-ins, and fixability. It stays probe-free by design and
+// remains the sole routing on the plan/run paths (and triage's degradation
+// fallback): a fixable finding with no opt-in routes to version_bump here. The
+// live nixpkgs probe that refines these routes lives in internal/fixprobe and
+// runs only inside `remediation triage` / `remediation status` (see
+// docs/analysis/cve-triage-design.md).
 const (
 	RouteVersionBump       = "version_bump"
 	RouteSubstituteVEX     = "substitute_vex"

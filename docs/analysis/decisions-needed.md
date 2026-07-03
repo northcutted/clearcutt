@@ -29,6 +29,7 @@ Date: 2026-06-30
 - **Recommended answer:** No, not yet.
 - **Why:** Current implementation supports weekly scan/report, optional scheduled deterministic draft PRs for evidence-backed recipes, manual bounded AI-assisted patch drafting, aggregate draft PRs, overlay validation, VEX, exceptions, and human review. That is valuable, but not autonomous patching or merging.
 - **Implication:** Use "approved remediation PR drafting" as the release-facing phrase. Keep scheduled drafting deterministic-only by default, and keep LLM assistance optional and explicitly untrusted.
+- **Status 2026-07:** `remediation triage` + `remediation status` landed (priced six-route decisions with a fix-availability probe, self-retiring decision records, `decidedBy` attribution — docs/analysis/cve-triage-design.md). Posture unchanged: drafting + human merge; triage is deterministic, no LLM.
 
 ## D5: LLM role in remediation
 
@@ -36,6 +37,7 @@ Date: 2026-06-30
 - **Recommended answer:** Optional draft assistance only, behind an explicit flag/key, with no merge authority and no credentials beyond what draft generation needs.
 - **Why:** Advisory text is prompt-injection capable and model output is untrusted code. The deterministic route and validation gates are the product.
 - **Implication:** Continue porting deterministic remediation into Go; scheduled drafting should stay LLM-off, while manual LLM assistance remains explicit and replaceable.
+- **Status 2026-07:** substantially done — deterministic drafting is native-Go-first (cli/internal/commands/remediation_run.go); the Python agent remains only as the automatic fallback tier when deterministic evidence is missing (hash-iteration/build-probe/rescan/optional-LLM loop). Triage records `decidedBy: agent:<id>` with no merge authority, consistent with this boundary.
 
 ## D6: Service image release policy
 
@@ -56,4 +58,5 @@ Date: 2026-06-30
 - **Decision:** Should native Go publish/remediation ports block the CLI-first repositioning?
 - **Recommended answer:** They should block the full "self-contained CLI" claim, but not all docs repositioning.
 - **Why:** The CLI already owns many release verbs, but still shells into `pipeline.sh` and `cve-draft-agent.py` for important paths.
+- **Status 2026-07:** the Go engine is now the default on every workflow route (`CLEARCUTT_BUILD_ENGINE || 'go'`); `pipeline.sh` is reachable only via the `--engine shell` opt-out, and `cve-draft-agent.py` only as the automatic fallback when deterministic evidence is missing. The full "self-contained CLI" claim still waits on retiring those two escape hatches.
 - **Implication:** Phrase near-term positioning as "CLI-scaffolded, GitHub Actions-oriented fleet ownership"; reserve "fully self-contained released CLI" for after scaffolded workflows install the released CLI and native ports replace remaining shell/Python paths.

@@ -1,7 +1,11 @@
 # Runbook: `clearcutt dev` — drop into a ClearCutt environment locally
 
-Status: **proposed, not started.** Self-contained handoff. Owner approved the
-concept and the two-path design (native Nix preferred, dev container fallback).
+Status: **shipped (2026-07 status note).** `clearcutt dev <image-id>` exists with
+`--devcontainer`/`--container`/`--nix`/`--command` (cli/internal/commands/dev.go),
+tests, and the dev-catalog fixture; the per-target dev shells landed in
+core/flake.nix (devTargetShells). Residual gap: `--nix` still uses the v1
+`nix shell #<runtime>-native` path rather than this runbook's incremental
+design. Historical handoff below is retained for context — do not re-implement.
 
 ## Start here
 

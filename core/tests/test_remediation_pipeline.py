@@ -615,10 +615,12 @@ echo '{"matches":[]}'
 
         self.assertIn("site/src/data/vulnerabilities", publish_pages)
         self.assertIn("./clearcutt catalog build", publish_pages)
-        self.assertIn("--scan-depth", publish_pages)
-        self.assertIn("jq -r '.catalog.scanDepth'", publish_pages)
-        self.assertIn("steps.params.outputs.scan_depth", publish_pages)
-        self.assertIn("SCAN_ALL_TAGS:", publish_pages)
+        # The scan window rides env (SCAN_TAG_DEPTH from catalog
+        # workflow-params), not a --scan-depth flag or a jq read of the fleet
+        # config — the CLI owns parameter resolution.
+        self.assertIn("./clearcutt catalog workflow-params", publish_pages)
+        self.assertIn("SCAN_TAG_DEPTH: ${{ steps.params.outputs.scan_depth }}", publish_pages)
+        self.assertNotIn("jq -r '.catalog.scanDepth'", publish_pages)
         self.assertIn("github.event.inputs.force_refresh_all == 'true'", publish_pages)
         self.assertIn("./clearcutt remediation workflow-params --github-output \"$GITHUB_OUTPUT\"", scheduled_scan)
         self.assertNotIn("jq -r '.remediation.", scheduled_scan)

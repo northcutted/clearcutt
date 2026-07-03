@@ -423,15 +423,13 @@ func checkStatusRetirements(entries []RemediationStatusEntry, coreDir string, no
 }
 
 // probeStatusRef asks the probe about exactly one ref: the ref rides the pin
-// slot (always probed first) and the default sweep is suppressed with a single
-// blank ref name, which Probe skips.
+// slot (always probed first) and empty Refs means pin-only probing.
 func probeStatusRef(fetcher fixprobe.Fetcher, sourcePath, ref, anchorVersion, fixedVersion string) (fixprobe.RefStatus, error) {
 	availability, err := fixprobe.Probe(context.Background(), fetcher, fixprobe.Input{
 		SourcePath:       sourcePath,
 		PinRev:           ref,
 		InstalledVersion: anchorVersion,
 		FixedVersion:     fixedVersion,
-		Refs:             []fixprobe.Ref{{Name: ""}},
 	})
 	if err != nil {
 		return fixprobe.RefStatus{}, err

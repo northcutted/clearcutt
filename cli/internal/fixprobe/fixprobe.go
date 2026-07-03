@@ -57,7 +57,7 @@ type Input struct {
 	PinName          string // flake input name, e.g. "nixpkgs" / "nixpkgs-node"
 	InstalledVersion string
 	FixedVersion     string // scanner-reported fixed version
-	Refs             []Ref  // refs to sweep; DefaultRefs when empty
+	Refs             []Ref  // refs to sweep beyond the pin; empty probes the pin only
 	// Now stamps ProbedAt so callers keep the probe deterministic; the wall
 	// clock is consulted only when zero.
 	Now time.Time
@@ -106,22 +106,12 @@ type Availability struct {
 	Degraded     bool          `json:"degraded"` // probe partially/fully unavailable
 }
 
-// DefaultRefs is the sweep used when Input.Refs is empty, mirroring the fleet
-// default (remediation.probe.refs): the Hydra-cached unstable channel first,
-// then the branches a fix reaches before any channel does. Callers append
-// their configured stable channel when one is set.
-func DefaultRefs() []Ref {
-	return []Ref{
-		{Name: "nixos-unstable", Kind: RefKindChannel},
-		{Name: "master", Kind: RefKindBranch},
-		{Name: "staging-next", Kind: RefKindBranch},
-	}
-}
-
 // Probe sweeps the pin rev plus the configured refs and reports fix
 // availability. It is pure given its Fetcher: no exec, and no wall-clock read
 // beyond the Now default. Per-ref fetch failures land on RefStatus.Error and
-// flip Degraded — they never fail the call.
+// flip Degraded — they never fail the call. Empty Input.Refs probes the pin
+// only; the default sweep list is policy, owned by fleet.DefaultProbeRefs and
+// threaded in by the caller.
 func Probe(ctx context.Context, f Fetcher, in Input) (*Availability, error) {
 	if f == nil {
 		return nil, fmt.Errorf("fixprobe: Fetcher is required")
@@ -140,15 +130,11 @@ func Probe(ctx context.Context, f Fetcher, in Input) (*Availability, error) {
 		now = time.Now()
 	}
 
-	refs := in.Refs
-	if len(refs) == 0 {
-		refs = DefaultRefs()
-	}
 	// The pin rev is always probed first: PinHasFix is what retires rebuild
 	// overlays and opt-ins, so it must be answered even on a custom sweep.
-	sweep := make([]Ref, 0, len(refs)+1)
+	sweep := make([]Ref, 0, len(in.Refs)+1)
 	sweep = append(sweep, Ref{Name: in.PinRev, Kind: RefKindPin})
-	for _, ref := range refs {
+	for _, ref := range in.Refs {
 		if strings.TrimSpace(ref.Name) == "" {
 			continue
 		}

@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+// Entries is the scaffold allowlist. Upstream's AI-harness surfaces (AGENTS.md,
+// .github/codex, .github/copilot-instructions.md — see SkipPath) are excluded:
+// they point at .agents/ and .codex/ trees that are upstream-only, so shipping
+// them would hand every fork broken first-run pointers.
 var Entries = []string{
 	".github",
 	"cli",
@@ -15,7 +19,6 @@ var Entries = []string{
 	"schemas",
 	"site",
 	".gitignore",
-	"AGENTS.md",
 	"CHANGELOG.md",
 	"CODE_OF_CONDUCT.md",
 	"CONTRIBUTING.md",
@@ -39,6 +42,8 @@ func SkipPath(rel string, info fs.FileInfo) bool {
 		return true
 	}
 	for _, prefix := range []string{
+		".github/codex",
+		".github/copilot-instructions.md",
 		"cli/coverage",
 		"cli/coverage.html",
 		"cli/coverage-low-functions.txt",

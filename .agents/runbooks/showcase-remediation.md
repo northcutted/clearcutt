@@ -1,5 +1,12 @@
 # Runbook: Showcase Remediation Plan
 
+Status: **completed (2026-07 status note).** All phases landed on main: showcase/p2–p11
+branches merged, Phase 1's substance (writable /tmp via the tmpDir derivation in
+core/lib/build-fleet.nix) arrived through the repo-structure refactor, Phase 8 ships as
+`clearcutt verify closure-purity` / `verify boundaries`, and Phase 12 was extracted to
+docs/analysis/phase-12-horizon-epics.md. The Ground Rules section remains live
+institutional knowledge; the phase tasks below are historical.
+
 This runbook is the execution plan for fixing the findings from the 2026-06-10 multi-agent
 showcase review (18 agents; every critical/high finding adversarially re-verified against the
 code, the pinned nixpkgs, the live Pages site, and the GitHub API). It is written for an agent

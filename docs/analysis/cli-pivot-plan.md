@@ -13,6 +13,8 @@ and works against an arbitrary repo without a checkout of *this* tree.
 
 ## The core insight (why "native Go" and "the pivot" are one initiative)
 
+*(Historical snapshot from when this plan was written — the shells-out description below no longer holds: the Go engine is the workflow default, `pipeline.sh` survives only behind `--engine shell`, and deterministic drafting is native with the Python agent as fallback. See the Progress section.)*
+
 Today the CLI is a thin orchestrator that **shells into a second logic tier** in
 `core/` by hardcoded relative paths:
 

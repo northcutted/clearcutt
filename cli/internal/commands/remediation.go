@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
+	"github.com/northcutted/clearcutt/internal/fixprobe"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
@@ -321,11 +321,25 @@ func latestRemediationVulnDir(root string) (string, error) {
 	if len(dirs) == 0 {
 		return "", fmt.Errorf("no vulnerability scan directory found (%s)", describeRemediationVulnRoot(root))
 	}
-	sort.Slice(dirs, func(i, j int) bool {
-		return compareVersionLike(dirs[i], dirs[j]) > 0
+	// Only release-tag-shaped names compete for latest: a placeholder like
+	// v1.2.x must never beat a real tag, however a lenient comparator would
+	// order it. Fall back to everything when no dir looks like a tag.
+	candidates := []string{}
+	for _, dir := range dirs {
+		if remediationTagDirRe.MatchString(dir) {
+			candidates = append(candidates, dir)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = dirs
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return fixprobe.CompareVersions(candidates[i], candidates[j]) > 0
 	})
-	return filepath.Join(root, dirs[0]), nil
+	return filepath.Join(root, candidates[0]), nil
 }
+
+var remediationTagDirRe = regexp.MustCompile(`^v?[0-9]+(\.[0-9]+)*$`)
 
 func describeRemediationVulnRoot(root string) string {
 	abs, _ := filepath.Abs(root)
@@ -670,46 +684,6 @@ func remediationFindingScore(campaign RemediationCampaign) float64 {
 
 func roundRemediationScore(value float64) float64 {
 	return math.Round(value*1000) / 1000
-}
-
-func parseVersionParts(value string) []int {
-	value = strings.TrimPrefix(value, "v")
-	parts := strings.Split(value, ".")
-	out := make([]int, len(parts))
-	for i, part := range parts {
-		parsed, err := strconv.Atoi(part)
-		if err != nil {
-			return []int{0, 0, 0}
-		}
-		out[i] = parsed
-	}
-	return out
-}
-
-func compareVersionLike(left, right string) int {
-	l := parseVersionParts(left)
-	r := parseVersionParts(right)
-	maxLen := len(l)
-	if len(r) > maxLen {
-		maxLen = len(r)
-	}
-	for i := 0; i < maxLen; i++ {
-		lv := 0
-		rv := 0
-		if i < len(l) {
-			lv = l[i]
-		}
-		if i < len(r) {
-			rv = r[i]
-		}
-		if lv > rv {
-			return 1
-		}
-		if lv < rv {
-			return -1
-		}
-	}
-	return strings.Compare(left, right)
 }
 
 func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {

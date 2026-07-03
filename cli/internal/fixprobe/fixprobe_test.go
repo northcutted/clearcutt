@@ -52,7 +52,12 @@ func TestProbeOpensslMultiVersionMatchesInstalledLine(t *testing.T) {
 		PinName:          "nixpkgs",
 		InstalledVersion: "3.6.2",
 		FixedVersion:     "3.6.3",
-		Now:              probeNow,
+		Refs: []Ref{
+			{Name: "nixos-unstable", Kind: RefKindChannel},
+			{Name: "master", Kind: RefKindBranch},
+			{Name: "staging-next", Kind: RefKindBranch},
+		},
+		Now: probeNow,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +91,30 @@ func TestProbeOpensslMultiVersionMatchesInstalledLine(t *testing.T) {
 	}
 	if !strings.Contains(got.OverrideRisk.Reason, "nixos-unstable") {
 		t.Fatalf("override risk reason must name the diffed ref: %q", got.OverrideRisk.Reason)
+	}
+}
+
+// TestProbeEmptyRefsProbesPinOnly pins the contract that the default sweep is
+// the caller's policy (fleet.DefaultProbeRefs), not the probe's: no Refs means
+// the pin slot alone.
+func TestProbeEmptyRefsProbesPinOnly(t *testing.T) {
+	pinRev := "abc123def456abc123def456abc123def456abcd"
+	fetcher := &fakeFetcher{files: map[string]string{pinRev: "openssl-pin.nix"}}
+	got, err := Probe(context.Background(), fetcher, Input{
+		Package:      "openssl",
+		SourcePath:   "pkgs/development/libraries/openssl/default.nix",
+		PinRev:       pinRev,
+		FixedVersion: "3.6.3",
+		Now:          probeNow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Refs) != 1 || got.Refs[0].Kind != RefKindPin {
+		t.Fatalf("empty Refs must probe the pin only, got %+v", got.Refs)
+	}
+	if got.Degraded {
+		t.Fatalf("pin-only probe with a healthy fetch reported degraded: %+v", got)
 	}
 }
 
@@ -159,7 +188,12 @@ func TestProbeDegradedFetchNeverFails(t *testing.T) {
 		PinRev:           pinRev,
 		InstalledVersion: "3.6.2",
 		FixedVersion:     "3.6.3",
-		Now:              probeNow,
+		Refs: []Ref{
+			{Name: "nixos-unstable", Kind: RefKindChannel},
+			{Name: "master", Kind: RefKindBranch},
+			{Name: "staging-next", Kind: RefKindBranch},
+		},
+		Now: probeNow,
 	})
 	if err != nil {
 		t.Fatalf("per-ref fetch failures must not fail the probe: %v", err)
@@ -195,7 +229,12 @@ func TestProbePinFetchFailureMakesOverrideRiskUnknown(t *testing.T) {
 		PinRev:           pinRev,
 		InstalledVersion: "3.6.2",
 		FixedVersion:     "3.6.3",
-		Now:              probeNow,
+		Refs: []Ref{
+			{Name: "nixos-unstable", Kind: RefKindChannel},
+			{Name: "master", Kind: RefKindBranch},
+			{Name: "staging-next", Kind: RefKindBranch},
+		},
+		Now: probeNow,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +304,9 @@ func TestProbePinCarriesFixSkipsOverrideRisk(t *testing.T) {
 	}
 }
 
-func TestProbeDefaultRefSweepOrder(t *testing.T) {
+// TestProbeSweepOrderPinFirst pins that the pin slot always leads the sweep
+// and caller refs follow in the order given.
+func TestProbeSweepOrderPinFirst(t *testing.T) {
 	pinRev := "6666666666666666666666666666666666666666"
 	fetcher := &fakeFetcher{files: map[string]string{
 		pinRev:           "openssl-pin.nix",
@@ -279,7 +320,12 @@ func TestProbeDefaultRefSweepOrder(t *testing.T) {
 		PinRev:           pinRev,
 		InstalledVersion: "3.6.2",
 		FixedVersion:     "3.6.3",
-		Now:              probeNow,
+		Refs: []Ref{
+			{Name: "nixos-unstable", Kind: RefKindChannel},
+			{Name: "master", Kind: RefKindBranch},
+			{Name: "staging-next", Kind: RefKindBranch},
+		},
+		Now: probeNow,
 	}); err != nil {
 		t.Fatal(err)
 	}
