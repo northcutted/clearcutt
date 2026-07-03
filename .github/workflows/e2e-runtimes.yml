@@ -64,8 +64,13 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-e2e-${{ runner.os }}-${{ matrix.language }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-e2e-${{ runner.os }}-${{ matrix.language }}-
+          # Scope PR caches to the caller PR number (or manual branch) so
+          # repeated pushes can reuse prior heavyweight lifecycle builds before
+          # falling back to the broader E2E cache family.
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-e2e-${{ runner.os }}-${{ matrix.language }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-e2e-${{ runner.os }}-${{ matrix.language }}-
+            nix-e2e-${{ runner.os }}-${{ matrix.language }}-
 
       - name: Install Cosign & Skopeo Natively
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2

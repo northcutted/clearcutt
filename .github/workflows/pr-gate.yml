@@ -155,8 +155,11 @@ jobs:
           # successful job saves, so every other leg's runtime stack (java,
           # node, python...) would rebuild cold on every run whenever the CVE
           # overlays diverge from upstream binary caches.
-          primary-key: nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          # Scope PR caches to the PR number or manually dispatched branch so
+          # repeated pushes reuse prior local builds before broader fallbacks.
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: |
+            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
             nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
             nix-${{ matrix.system }}-
 
@@ -224,8 +227,9 @@ jobs:
           # Service image closures also depend on shared lib/build helpers, not
           # just service-extensions.nix. Per-service key for the same reason as
           # validate-matrix: a shared key is only saved by the first success.
-          primary-key: nix-service-x86_64-linux-${{ matrix.service }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-service-x86_64-linux-${{ matrix.service }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
           restore-prefixes-first-match: |
+            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-service-x86_64-linux-${{ matrix.service }}-
             nix-service-x86_64-linux-${{ matrix.service }}-
             nix-service-x86_64-linux-
 
@@ -333,8 +337,10 @@ jobs:
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
-          restore-prefixes-first-match: nix-integration-${{ runner.os }}-
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          restore-prefixes-first-match: |
+            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-
+            nix-integration-${{ runner.os }}-
 
       - name: Execute Gating Suite
         run: ./clearcutt verify boundary-suite --core-dir core
