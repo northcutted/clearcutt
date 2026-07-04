@@ -815,13 +815,13 @@ func runServiceAssemble(id string) error {
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, service.ID+".sbom.json"), rolling); err != nil {
+		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", absToolPath(filepath.Join(dir, service.ID+".sbom.json")), rolling); err != nil {
 			return err
 		}
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(serviceOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, service.ID+".test-results.json"), rolling); err != nil {
+		if err := runCoreToolCommand(serviceOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", absToolPath(filepath.Join(dir, service.ID+".test-results.json")), rolling); err != nil {
 			return err
 		}
 	}
