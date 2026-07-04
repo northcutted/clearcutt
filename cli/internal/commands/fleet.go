@@ -604,13 +604,13 @@ func runFleetAssembleTarget() error {
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(fleetOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", filepath.Join(dir, target+".sbom.json"), rolling); err != nil {
+		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "spdxjson", "--predicate", absToolPath(filepath.Join(dir, target+".sbom.json")), rolling); err != nil {
 			return err
 		}
 	}
 	for _, system := range cfg.Matrix.Systems {
 		dir := filepath.Join(fleetOpts.buildOutputsDir, artifactSystemDir(system))
-		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", filepath.Join(dir, target+".test-results.json"), rolling); err != nil {
+		if err := runCoreToolCommand(fleetOpts.coreDir, "cosign", "attest", "--yes", "--type", "custom", "--predicate", absToolPath(filepath.Join(dir, target+".test-results.json")), rolling); err != nil {
 			return err
 		}
 	}
@@ -975,6 +975,18 @@ func splitFleetDigestMatrixOutputs(digests []fleetDigestManifest) ([]byte, []byt
 
 func runCoreToolCommand(coreDir, name string, args ...string) error {
 	return runExternalCommand(externalCommand{Name: "nix", Args: build.NixDevelopCommand(name, args...), Dir: coreDir})
+}
+
+// absToolPath anchors a predicate/artifact path to an absolute path before it
+// is handed to a core-pinned tool. runCoreToolCommand runs the tool through
+// `nix develop` with cwd = coreDir, so a path relative to the CLI's own cwd
+// (where the release workflow stages build-outputs) would otherwise resolve
+// against coreDir and miss. Falls back to the input if Abs fails.
+func absToolPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 func captureCoreToolOutput(coreDir, name string, args ...string) (string, error) {

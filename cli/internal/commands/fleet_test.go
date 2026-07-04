@@ -314,6 +314,66 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	}
 }
 
+// TestFleetAssembleTargetPredicatePathsAreAbsolute guards the release-blocking
+// regression where a RELATIVE --build-outputs produced a relative cosign
+// --predicate path: runCoreToolCommand runs cosign with cwd=coreDir, so a path
+// relative to the CLI's own cwd resolved against coreDir and cosign reported
+// "no such file or directory" for every target. The predicate must be absolute
+// regardless of how build-outputs was passed.
+func TestFleetAssembleTargetPredicatePathsAreAbsolute(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
+		Registry: fleet.Registry{Host: "registry.example.com", Owner: "acme", Repository: "fleet", ImagePrefix: "base"},
+		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux", "aarch64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"distroless"}},
+	})
+	// Resolve the relative --build-outputs under a temp cwd so the real
+	// digest-manifest write lands there and is cleaned up, not in the package.
+	t.Chdir(t.TempDir())
+
+	var calls []externalCommand
+	oldRun := runExternalCommand
+	oldPushIndex := fleetPushImageIndex
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		return nil
+	}
+	fleetPushImageIndex = func(_ *oci.Client, _ string, _ []oci.IndexImage) (string, error) {
+		return "sha256:abc123", nil
+	}
+	t.Cleanup(func() {
+		runExternalCommand = oldRun
+		fleetPushImageIndex = oldPushIndex
+	})
+
+	// Relative --build-outputs is what the release workflow actually passes.
+	if _, err := runCLI(t,
+		"fleet", "assemble-target",
+		"--fleet-config", cfgPath,
+		"--build-outputs", "build-outputs",
+		"--language", "coreLTS",
+		"--tier", "distroless",
+		"--version-tag", "v9.8.7",
+	); err != nil {
+		t.Fatalf("assemble-target error: %v", err)
+	}
+
+	predicates := 0
+	for _, call := range calls {
+		for i, arg := range call.Args {
+			if arg != "--predicate" || i+1 >= len(call.Args) {
+				continue
+			}
+			predicates++
+			if !filepath.IsAbs(call.Args[i+1]) {
+				t.Fatalf("cosign --predicate must be absolute, got %q", call.Args[i+1])
+			}
+		}
+	}
+	if predicates == 0 {
+		t.Fatal("expected at least one cosign --predicate invocation")
+	}
+}
+
 func TestFleetAggregateDigestsWritesGithubOutput(t *testing.T) {
 	outputDir := t.TempDir()
 	raw := []byte(`{"image":"ghcr.io/acme/fleet/base-node24","digest":"sha256:222","language":"node24","tier":"slim","rollingTag":"slim","versionedTag":"v1.0.0-slim"}`)
