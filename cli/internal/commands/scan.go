@@ -298,13 +298,17 @@ func runScan() error {
 	// .grype.yaml from its working directory, and this command runs from the
 	// repo root (catalog build, release gate), not from core/. Without -c the
 	// published catalog would keep reporting CVEs that the gate has already
-	// remediated-and-suppressed via core/.grype.yaml.
+	// remediated-and-suppressed via core/.grype.yaml. The path MUST be absolute:
+	// with --core-dir set, grype runs through `nix develop` with cwd=core/, so a
+	// repo-root-relative "core/.grype.yaml" would resolve to core/core/.grype.yaml
+	// and grype aborts with "invalid application config: file does not exist".
 	grypeConfig := strings.TrimSpace(scanOpts.grypeConfig)
 	explicitConfig := grypeConfig != ""
 	if !explicitConfig {
 		grypeConfig = filepath.Join("core", ".grype.yaml")
 	}
 	if _, err := os.Stat(grypeConfig); err == nil {
+		grypeConfig = absToolPath(grypeConfig)
 		grypeOpts = append([]string{"-c", grypeConfig}, grypeOpts...)
 		scanLogf("grype config: %s", grypeConfig)
 	} else if explicitConfig {
@@ -456,7 +460,10 @@ func runScan() error {
 }
 
 func scanSBOM(grypeBin string, grypeOpts []string, item scanWorkItem, scannerVersion string, dbBuiltAt *string, opts scan.NormalizeOptions) (scan.Report, error) {
-	args := append([]string{"sbom:" + item.sbomPath, "-o", "json", "--quiet"}, grypeOpts...)
+	// Absolute SBOM source for the same reason as the grype config: with
+	// --core-dir set grype runs with cwd=core/, so a repo-root-relative SBOM
+	// path would resolve under core/ and not be found.
+	args := append([]string{"sbom:" + absToolPath(item.sbomPath), "-o", "json", "--quiet"}, grypeOpts...)
 	raw, err := scanCommandOutput(scanGrypeCommand(grypeBin, args...))
 	if err != nil && len(raw) == 0 {
 		stderr := ""
