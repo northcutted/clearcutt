@@ -309,6 +309,90 @@ cat "$CLEARCUTT_FAKE_GRYPE_RESULT"
 	}
 }
 
+// TestScanThroughNixResolvesRelativePathsAbsolutely guards the release/nightly
+// regression where the catalog scan handed grype repo-root-RELATIVE paths
+// (core/.grype.yaml, site/src/data/sboms/...) while grype ran through
+// `nix develop` with cwd=core/. grype resolved them under core/ and aborted
+// every scan with "invalid application config: file does not exist", so the
+// catalog gained zero vulnerability coverage and catalog build failed. With
+// relative --sbom-dir and --grype-config the -c and sbom: args grype receives
+// must be absolute.
+func TestScanThroughNixResolvesRelativePathsAbsolutely(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	// Relative layout mirroring the workflow: core/.grype.yaml + sboms/<tag>/.
+	if err := os.MkdirAll(filepath.Join(root, "core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "core", ".grype.yaml"), []byte("ignore: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tagDir := filepath.Join(root, "sboms", "v1.0.0")
+	if err := os.MkdirAll(tagDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tagDir, "python3.13-slim-amd64.sbom.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	binDir := t.TempDir()
+	logPath := filepath.Join(root, "nix.log")
+	resultPath := filepath.Join(root, "grype-result.json")
+	if err := os.WriteFile(resultPath, []byte(`{"matches":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nix := filepath.Join(binDir, "nix")
+	if err := os.WriteFile(nix, []byte(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$CLEARCUTT_FAKE_NIX_LOG"
+while [ "$#" -gt 0 ] && [ "$1" != "--command" ]; do shift; done
+[ "$#" -gt 0 ] && [ "$1" = "--command" ] && shift
+[ "${1:-}" = "grype" ] && shift
+if [ "${1:-}" = "version" ]; then printf '%s\n' '{"version":"0.99.0-nix","db":{"built":"2026-02-01T00:00:00Z"}}'; exit 0; fi
+if [ "${1:-}" = "db" ]; then exit 0; fi
+# Faithfully reproduce grype's cwd-relative resolution: it runs with cwd=core/
+# (nix develop dir), so any relative -c/sbom path must fail here.
+for a in "$@"; do
+  case "$a" in
+    -c) expect_cfg=1 ;;
+    sbom:*) p=${a#sbom:}; [ -f "$p" ] || { echo "sbom not found: $p" >&2; exit 1; } ;;
+    *) if [ "${expect_cfg:-}" = "1" ]; then [ -f "$a" ] || { echo "config not found: $a" >&2; exit 1; }; expect_cfg=0; fi ;;
+  esac
+done
+cat "$CLEARCUTT_FAKE_GRYPE_RESULT"
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CLEARCUTT_FAKE_GRYPE_RESULT", resultPath)
+	t.Setenv("CLEARCUTT_FAKE_NIX_LOG", logPath)
+
+	stdout, err := runCLI(t,
+		"scan", "--mode", "release",
+		"--core-dir", "core",
+		"--sbom-dir", "sboms",
+		"--grype-config", filepath.Join("core", ".grype.yaml"),
+		"--out-dir", filepath.Join(root, "out"),
+		"--concurrency", "1",
+	)
+	if err != nil {
+		t.Fatalf("scan failed (relative paths not absolutized?): %v\n%s", err, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(root, "out", "v1.0.0", "python3.13-slim-amd64.json")); err != nil {
+		t.Fatalf("scan produced no report — grype rejected the relative paths: %v\n%s", err, stdout)
+	}
+	rawLog, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range strings.Fields(string(rawLog)) {
+		if sbom, ok := strings.CutPrefix(tok, "sbom:"); ok && !filepath.IsAbs(sbom) {
+			t.Fatalf("grype SBOM source must be absolute, got %q", tok)
+		}
+	}
+}
+
 func TestScanRefreshKEVWritesCatalogAndStatus(t *testing.T) {
 	old := scanRefreshKEVOpts
 	t.Cleanup(func() { scanRefreshKEVOpts = old })
