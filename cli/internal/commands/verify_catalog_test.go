@@ -85,8 +85,8 @@ func TestVerifyCatalogFailsWhenSignatureInferredFromProvenance(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected verification to fail, got success:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "index signed=true") {
-		t.Fatalf("expected signed/evidence mismatch, got:\n%s", stdout)
+	if !strings.Contains(stdout, "Sigstore signature is missing") {
+		t.Fatalf("expected missing signature failure, got:\n%s", stdout)
 	}
 }
 
@@ -121,6 +121,44 @@ func TestVerifyCatalogAcceptsCompleteLatestEvidence(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "ok: 1 latest images") {
 		t.Fatalf("expected ok summary, got:\n%s", stdout)
+	}
+}
+
+func TestVerifyCatalogRejectsStaleAndObservedEvidence(t *testing.T) {
+	dir := t.TempDir()
+	lifecycle := map[string]any{"status": "active", "support": "lts", "productionAllowed": true}
+	runtimeContract := map[string]any{"shellPresent": false, "packageManagerPresent": false, "productionTier": true}
+	evidence := completeEvidence(true)
+	evidence["statuses"] = map[string]any{
+		"signature":       map[string]any{"status": "observed"},
+		"provenance":      map[string]any{"status": "attested"},
+		"sbom":            map[string]any{"status": "stale"},
+		"tests":           map[string]any{"status": "stale"},
+		"vulnerabilities": map[string]any{"status": "stale"},
+	}
+	index := map[string]any{
+		"latestTag": "v1.0.0",
+		"images": []any{map[string]any{
+			"id": "coreLTS-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
+			"lifecycle": lifecycle, "runtimeContract": runtimeContract, "evidence": evidence,
+		}},
+	}
+	release := map[string]any{
+		"tag": "v1.0.0", "lifecycle": lifecycle, "runtimeContract": runtimeContract,
+		"exceptions": zeroExceptions(), "evidence": evidence,
+		"architectures": []any{map[string]any{"arch": "amd64"}},
+	}
+	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
+	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
+
+	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
+	if err == nil {
+		t.Fatalf("stale and observed evidence must fail strict catalog verification:\n%s", stdout)
+	}
+	for _, want := range []string{"Sigstore signature is missing", "SLSA provenance is missing", "SBOM coverage incomplete", "test evidence incomplete", "vulnerability scan coverage incomplete"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in output:\n%s", want, stdout)
+		}
 	}
 }
 

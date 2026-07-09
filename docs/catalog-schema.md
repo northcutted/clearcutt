@@ -12,7 +12,12 @@ Current schema version identifiers:
 - `clearcutt.catalog.image/v1`
 - `clearcutt.catalog.index/v2`
 - `clearcutt.catalog.image/v2`
-- `clearcutt.catalog.evidence-manifest/v1`
+- `clearcutt.catalog.evidence-manifest/v2`
+
+Evidence manifest v1 remains published for compatibility with its legacy
+presence-based status vocabulary. New catalogs emit v2, which records
+`missing`, `observed`, `verified`, `attested`, `stale`, and `unknown` states and
+can carry imported-image origin claims without treating observation as proof.
 
 Runtime-only catalogs may remain on v1. Catalogs containing first-class service
 records emit v2 and add `kind` plus service metadata while preserving the
@@ -46,6 +51,7 @@ catalog/
     catalog-index.v1.schema.json
     catalog-index.v2.schema.json
     evidence-manifest.v1.schema.json
+    evidence-manifest.v2.schema.json
     image-record.v1.schema.json
     image-record.v2.schema.json
 ```
@@ -109,6 +115,8 @@ from `images/*.json`. It gives auditors one index of:
 
 - image id, release tag, image ref, immutable digest ref when available, and
   catalog record path,
+- imported-image origin, ClearCutt creation status, and provenance claim when
+  applicable,
 - expected and observed channel status for signature, provenance, SBOM, tests,
   vulnerability scans, exceptions, and VEX,
 - missing evidence channels,

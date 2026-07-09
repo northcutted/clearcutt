@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import MatrixGrid from '../components/MatrixGrid.astro';
 import ServiceGrid from '../components/ServiceGrid.astro';
+import ImportedImageList from '../components/ImportedImageList.astro';
 import Search from '../components/Search.astro';
 import { loadIndex } from '../lib/catalog';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
@@ -12,40 +13,41 @@ try { index = loadIndex(); } catch (e: any) { error = e.message; }
 
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const siteConfig = loadSiteConfig();
+const importedMode = siteConfig.site.catalogMode === 'imported';
 const devLabel = tierLabel(siteConfig, 'dev');
 const releaseTags = index?.releases.map((r) => r.tag) ?? [];
 const runtimeImages = index ? index.images.filter((i) => (i.kind ?? 'runtime') === 'runtime' && i.tier !== 'service') : [];
 const serviceImages = index ? index.images.filter((i) => i.kind === 'service') : [];
-const published = index ? runtimeImages.filter((i) => i.latestTag === index.latestTag).length : 0;
-const lagging = index ? runtimeImages.filter((i) => i.latestTag !== index.latestTag).length : 0;
+const importedImages = index ? index.images.filter((i) => i.governance?.imported || i.origin?.kind === 'imported' || i.origin?.createdByClearCutt === false || i.origin?.provenanceClaim === 'none') : [];
+const displayedImages = importedMode ? importedImages : runtimeImages;
+const published = index ? (importedMode ? displayedImages.length : displayedImages.filter((i) => i.latestTag === index.latestTag).length) : 0;
+const lagging = index && !importedMode ? displayedImages.filter((i) => i.latestTag !== index.latestTag).length : 0;
 // One slot per language-version × tier, read from the catalog index so it can't
 // drift from the flake matrix.
-const totalSlots = index ? index.languages.length * index.tiers.length : 0;
-const pending = index ? Math.max(0, totalSlots - runtimeImages.length) : 0;
+const totalSlots = index ? (importedMode ? displayedImages.length : index.languages.length * index.tiers.length) : 0;
+const pending = index && !importedMode ? Math.max(0, totalSlots - runtimeImages.length) : 0;
 const evidenceCoverage = index
   ? {
-      signatures: runtimeImages.filter((i) => i.latestTag === index.latestTag && (i.evidence?.signature ?? i.signed)).length,
-      provenance: runtimeImages.filter((i) => i.latestTag === index.latestTag && (i.evidence?.provenance ?? i.provenance)).length,
-      scans: runtimeImages.filter((i) => i.latestTag === index.latestTag && !!i.evidence?.vulnerabilities).length,
+      signatures: displayedImages.filter((i) => (importedMode || i.latestTag === index.latestTag) && (i.evidence?.signature ?? i.signed)).length,
+      provenance: displayedImages.filter((i) => (importedMode || i.latestTag === index.latestTag) && (i.evidence?.provenance ?? i.provenance)).length,
+      scans: displayedImages.filter((i) => (importedMode || i.latestTag === index.latestTag) && !!i.evidence?.vulnerabilities).length,
     }
   : null;
 ---
 <Base title="Catalog">
   <section class="space-y-8 pb-10">
     <div class="space-y-4 max-w-3xl">
-      <span class="chip-accent">Image selection</span>
-      <h1 class="heading text-4xl sm:text-5xl">Pick a runtime image.</h1>
+      <span class="chip-accent">{importedMode ? 'Imported inventory' : 'Image selection'}</span>
+      <h1 class="heading text-4xl sm:text-5xl">{importedMode ? 'Inspect governed images.' : 'Pick a runtime image.'}</h1>
       <p class="text-base text-ink-200">
-        Use the matrix to compare runtime, tier, release state, service images,
-        and attached evidence before you containerize or admit an application.
+        {importedMode
+          ? 'Review images ClearCutt did not build, their observed metadata, and explicit evidence gaps before applying policy.'
+          : 'Use the matrix to compare runtime, tier, release state, service images, and attached evidence before you containerize or admit an application.'}
       </p>
       <p class="text-sm text-ink-300">
-        CVE counts on the catalog are refreshed nightly against current vulnerability
-        advisories, so a stable SBOM picks up newly-disclosed issues without a new release.
-        Each image page explains whether a safe fix is available, no fix was found yet, the
-        finding comes from the base image, or the finding is listed for awareness. {devLabel}
-        images include full toolchains and are deliberately not optimized for CVE surface area;
-        never deploy them.
+        {importedMode
+          ? 'Evidence is shown exactly as recorded. Catalog-only mode does not imply a scan schedule, build provenance, signatures, or production approval.'
+          : `CVE counts on the catalog are refreshed nightly against current vulnerability advisories, so a stable SBOM picks up newly-disclosed issues without a new release. Each image page explains fix state and evidence. ${devLabel} images include full toolchains and must not be deployed.`}
       </p>
       <div class="flex flex-wrap gap-3 pt-1">
         <a href={`${base}about?tab=audit`} class="chip border-accent/40 bg-accent/10 text-accent-soft">Verification guide →</a>
@@ -67,7 +69,7 @@ const evidenceCoverage = index
         <div class="surface-soft flex flex-wrap items-center justify-between gap-4 px-5 py-3 text-xs text-ink-200">
           <div class="flex flex-wrap items-center gap-x-5 gap-y-1">
             <span>
-              <strong class="text-ink-50">{published}</strong> on {index!.latestTag}
+              <strong class="text-ink-50">{published}</strong> {importedMode ? 'imported images' : `on ${index!.latestTag}`}
             </span>
             {lagging > 0 && (
               <span>
@@ -80,10 +82,15 @@ const evidenceCoverage = index
                 <strong class="text-ink-100">{pending}</strong> pending
               </span>
             )}
-            <span class="text-ink-300">of {totalSlots} target slots</span>
+            {!importedMode && <span class="text-ink-300">of {totalSlots} target slots</span>}
             {serviceImages.length > 0 && (
               <span class="text-ink-300">
                 services: <strong class="text-ink-100">{serviceImages.length}</strong>
+              </span>
+            )}
+            {!importedMode && importedImages.length > 0 && (
+              <span class="text-ink-300">
+                imported: <strong class="text-ink-100">{importedImages.length}</strong>
               </span>
             )}
             {evidenceCoverage && (
@@ -92,7 +99,7 @@ const evidenceCoverage = index
               </span>
             )}
           </div>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {!importedMode && <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span class="text-ink-300">Releases:</span>
             {releaseTags.map((tag, i) => (
               <a
@@ -101,11 +108,11 @@ const evidenceCoverage = index
                 target="_blank" rel="noreferrer"
               >{tag}{i === 0 && <span class="ml-1 text-[10px] text-accent-soft">latest</span>}</a>
             ))}
-          </div>
+          </div>}
         </div>
 
         <!-- Evidence and policy legend -->
-        <div class="relative rounded-2xl border border-ink-800/60 bg-ink-950/20 p-5 shadow-lg overflow-hidden">
+        {!importedMode && <div class="relative rounded-2xl border border-ink-800/60 bg-ink-950/20 p-5 shadow-lg overflow-hidden">
           <div class="absolute -right-24 -top-24 h-48 w-48 rounded-full bg-accent/5 blur-[50px] pointer-events-none" />
           <div class="space-y-3 relative z-10">
             <h2 class="text-xs font-bold uppercase tracking-wider text-ink-400 font-sans">Evidence &amp; Policy Legend</h2>
@@ -157,9 +164,13 @@ const evidenceCoverage = index
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
         <div data-pagefind-body class="space-y-3">
+          {importedMode ? (
+            <ImportedImageList index={index!} />
+          ) : (
+            <>
           <div class="surface-soft flex flex-wrap items-center gap-3 px-5 py-3 text-xs text-ink-200" data-matrix-filters>
             <span class="text-ink-300">View:</span>
             <button type="button" data-filter-btn="all" data-active="true" aria-pressed="true" class="chip data-[active=true]:border-accent/40 data-[active=true]:bg-accent/10 data-[active=true]:text-accent-soft">
@@ -179,9 +190,12 @@ const evidenceCoverage = index
           <div data-matrix-root data-view="all">
             <MatrixGrid index={index!} />
           </div>
+          <ImportedImageList index={index!} />
           <ServiceGrid index={index!} />
+            </>
+          )}
         </div>
-        <script is:inline>
+        {!importedMode && <script is:inline>
           (function () {
             const root = document.querySelector('[data-matrix-root]');
             const buttons = document.querySelectorAll('[data-filter-btn]');
@@ -243,7 +257,7 @@ const evidenceCoverage = index
             document.addEventListener('clearcutt:matrix-version-change', sync);
             sync();
           })();
-        </script>
+        </script>}
       </>
     )}
   </section>

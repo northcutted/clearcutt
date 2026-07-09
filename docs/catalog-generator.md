@@ -49,6 +49,32 @@ Generic OCI mode does not require Nix, ClearCutt release workflows, or a
 ClearCutt fork. It converts an explicit `images.yaml` inventory into catalog
 records and preserves unavailable evidence as missing-evidence states.
 
+Imported-fleet mode starts one step earlier: `clearcutt import images` converts a
+plain refs file into the same generic OCI `images.yaml`, with optional
+`origin`, `governance`, and `evidencePolicy` metadata. Imported catalog records
+mark `createdByClearCutt: false` and `provenanceClaim: none` so the catalog can
+govern an image without claiming ClearCutt built it.
+
+This is the backend used by the `catalog-only` platform bootstrap profile. The
+bootstrap command renders a lightweight GitHub control-plane repo with
+`images.yaml`, catalog/Pages workflows, desired GitHub state, and local docs:
+
+```bash
+clearcutt platform bootstrap github \
+  --profile catalog-only \
+  --owner acme \
+  --repo image-platform \
+  --registry-base ghcr.io/acme/image-platform \
+  --pages \
+  --environment production \
+  --dir ./image-platform \
+  --dry-run \
+  --force
+```
+
+The generated `catalog.yml` workflow runs the same data path shown below, then
+validates the catalog and builds the static site artifact.
+
 ```bash
 clearcutt catalog generate \
   --images images.yaml \
@@ -59,7 +85,8 @@ clearcutt catalog generate \
 ```
 
 See [generic OCI mode](generic-oci-mode.md) for the `images.yaml` shape and
-limitations.
+limitations, and [imported fleets](imported-fleets.md) for the import,
+observation, assessment, report, and rebase planning flow.
 
 ## Output Layout
 
@@ -80,6 +107,7 @@ dist/catalog/
   schemas/
     catalog-index.v1.schema.json
     evidence-manifest.v1.schema.json
+    evidence-manifest.v2.schema.json
     image-record.v1.schema.json
 ```
 
@@ -98,7 +126,7 @@ clearcutt --catalog ./dist/catalog catalog validate \
 clearcutt --catalog ./dist/catalog catalog validate \
   --schema-version clearcutt.catalog.image/v1
 clearcutt --catalog ./dist/catalog catalog validate \
-  --schema-version clearcutt.catalog.evidence-manifest/v1
+  --schema-version clearcutt.catalog.evidence-manifest/v2
 ```
 
 Warnings are used for missing optional evidence. Turn them into failures when a

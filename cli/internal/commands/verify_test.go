@@ -50,6 +50,48 @@ func TestVerify_AllRequirementsPass(t *testing.T) {
 	}
 }
 
+func TestVerify_StaleAndObservedEvidenceDoNotSatisfyRequirements(t *testing.T) {
+	dir := writeCommandSmokeCatalog(t)
+	record, err := catalog.LoadImageRecord(dir, "java21-distroless")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := &record.Releases[0]
+	release.ManifestDigest = stringPtr("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	release.Evidence = &catalog.EvidenceSummary{
+		Signature:              true,
+		Provenance:             true,
+		SBOM:                   true,
+		Tests:                  true,
+		Vulnerabilities:        true,
+		ArchCount:              1,
+		SBOMArchCount:          1,
+		TestArchCount:          1,
+		PassedTestArchCount:    1,
+		VulnerabilityArchCount: 1,
+		Statuses: &catalog.EvidenceStatuses{
+			Signature:       catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusObserved},
+			Provenance:      catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusAttested},
+			SBOM:            catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusStale},
+			Tests:           catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusStale},
+			Vulnerabilities: catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusStale},
+		},
+	}
+	writeCatalogJSON(t, filepath.Join(dir, "images", "java21-distroless.json"), record)
+
+	stdout, err := runCLI(t, "--catalog", dir, "--format", "json", "verify", "image", "java21-distroless",
+		"--allow-preview", "--require-signature", "--require-sbom", "--require-provenance", "--require-tests", "--require-vuln-scan")
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("non-verified and stale evidence must fail: %v\n%s", err, stdout)
+	}
+	resp := decodeVerify(t, stdout)
+	for _, id := range []string{"signature.present", "sbom.present", "provenance.present", "tests.passed", "vulnerabilities.scanned"} {
+		if status, ok := checkStatus(resp.Checks, id); !ok || status != "fail" {
+			t.Fatalf("%s should fail, got %q (present=%v): %+v", id, status, ok, resp.Checks)
+		}
+	}
+}
+
 func TestVerify_ThresholdFailsAndReturnsSentinel(t *testing.T) {
 	stdout, err := runCLI(t, "verify", "image", "java21-distroless",
 		"--catalog", fixtureCatalog(), "--format", "json", "--max-high", "0")

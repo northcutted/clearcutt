@@ -2,6 +2,7 @@
 import type { CatalogIndex } from '../lib/catalog-schema';
 import LangIcon from './LangIcon.astro';
 import { loadSiteConfig, tierLabel } from '../lib/site-config';
+import { channelStatus, evidenceTextClass, evidenceTitle as evidenceStatusTitle, statusLabel } from '../lib/evidence-status';
 
 interface Props { index: CatalogIndex }
 const { index } = Astro.props;
@@ -165,8 +166,8 @@ function vulnBadgeTitle(v: VulnSummary | null | undefined): string {
     ? `Critical/high fix status: ${parts.join(', ')}.`
     : 'No critical/high findings in this catalog scan.';
 }
-function evidenceTitle(label: string, ok: boolean | undefined): string {
-  return ok ? `${label} evidence is present for this release.` : `${label} evidence is missing or incomplete for this release.`;
+function isImportedImage(img: CatalogIndex['images'][number]): boolean {
+  return Boolean(img.governance?.imported || img.origin?.kind === 'imported' || img.origin?.createdByClearCutt === false || img.origin?.provenanceClaim === 'none');
 }
 function tierDescription(tier: 'distroless' | 'slim' | 'dev'): string {
   switch (tier) {
@@ -328,6 +329,11 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
             const tagShown = img!.latestTag;
             const vs = img!.vulnSummary;
             const evidence = img!.evidence;
+            const signatureEvidence = channelStatus(evidence, 'signature', img!.signed);
+            const provenanceEvidence = channelStatus(evidence, 'provenance', img!.provenance);
+            const sbomEvidence = channelStatus(evidence, 'sbom', evidence?.sbom);
+            const scanEvidence = channelStatus(evidence, 'vulnerabilities', evidence?.vulnerabilities);
+            const imported = isImportedImage(img!);
             const vulnBucket =
               !vs ? 'none' : vs.critical > 0 ? 'critical' : vs.high > 0 ? 'high' : 'clean';
             return (
@@ -352,6 +358,7 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
                       {repo}
                     </span>
                     <span class="font-mono text-[9px] text-ink-400">:{tier}</span>
+                    {imported && <span class="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[7.5px] font-bold uppercase tracking-wider text-sky-300">Imported image</span>}
                   </div>
                   <span class="shrink-0 font-mono text-[9px] text-ink-400 bg-ink-950/80 border border-ink-800/80 rounded px-1.5 py-0.5" title="Release tag">{tagShown}</span>
                 </div>
@@ -367,19 +374,19 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
                   <!-- Cryptographic Supply Chain locks -->
                   <div class="flex items-center gap-1 rounded bg-ink-950/50 border border-ink-800 px-1.5 py-0.5 shrink-0" title="Cryptographic Supply Chain Evidence: Signature, SLSA L3, SBOM">
                     <!-- Signature -->
-                    <span class={evidence?.signature ?? img!.signed ? "text-emerald-400 flex items-center" : "text-amber-500 flex items-center"} title={evidenceTitle('Sigstore signature', evidence?.signature ?? img!.signed)}>
+                    <span class={`${evidenceTextClass(signatureEvidence.status)} flex items-center`} title={evidenceStatusTitle('Sigstore signature', signatureEvidence)}>
                       <svg viewBox="0 0 16 16" fill="currentColor" class="w-3 h-3 shrink-0">
                         <path d="M8 0c-.26 0-.5.1-.68.27L1.83 5.75c-.2.2-.33.48-.33.78v4.54c0 .32.14.62.38.82l5.5 4.54c.18.15.4.23.62.23s.44-.08.62-.23l5.5-4.54c.24-.2.38-.5.38-.82V6.53c0-.3-.13-.58-.33-.78L8.68.27A.96.96 0 008 0zm2.7 5.7a.75.75 0 010 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-1.5-1.5a.75.75 0 111.06-1.06L7 9.44l2.97-2.97a.75.75 0 011.06 0z"/>
                       </svg>
                     </span>
                     <!-- SLSA -->
-                    <span class={evidence?.provenance ?? img!.provenance ? "text-emerald-400 flex items-center border-l border-ink-800/80 pl-1" : "text-amber-500 flex items-center border-l border-ink-800/80 pl-1"} title={evidenceTitle('SLSA provenance', evidence?.provenance ?? img!.provenance)}>
+                    <span class={`${evidenceTextClass(provenanceEvidence.status)} flex items-center border-l border-ink-800/80 pl-1`} title={evidenceStatusTitle('SLSA provenance', provenanceEvidence)}>
                       <svg viewBox="0 0 16 16" fill="currentColor" class="w-3 h-3 shrink-0">
                         <path fill-rule="evenodd" d="M8 1a3.5 3.5 0 00-3.5 3.5V7A1.5 1.5 0 003 8.5v5A1.5 1.5 0 004.5 15h7a1.5 1.5 0 001.5-1.5v-5A1.5 1.5 0 0011.5 7V4.5A3.5 3.5 0 008 1zm2 6V4.5a2 2 0 10-4 0V7h4z" clip-rule="evenodd"/>
                       </svg>
                     </span>
                     <!-- SBOM -->
-                    <span class={evidence?.sbom ? "text-emerald-400 flex items-center border-l border-ink-800/80 pl-1" : "text-amber-500 flex items-center border-l border-ink-800/80 pl-1"} title={evidenceTitle('SBOM', evidence?.sbom)}>
+                    <span class={`${evidenceTextClass(sbomEvidence.status)} flex items-center border-l border-ink-800/80 pl-1`} title={evidenceStatusTitle('SBOM', sbomEvidence)}>
                       <svg viewBox="0 0 16 16" fill="currentColor" class="w-3 h-3 shrink-0">
                         <path fill-rule="evenodd" d="M2.5 12a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75zm0-4a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75zm0-4a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75z" clip-rule="evenodd"/>
                       </svg>
@@ -423,9 +430,9 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
                       STALE
                     </span>
                   ) : (
-                    <span class="inline-flex items-center gap-1 text-[7.5px] font-bold uppercase tracking-wider text-emerald-400">
-                      <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Scan data attached
+                    <span class={`inline-flex items-center gap-1 text-[7.5px] font-bold uppercase tracking-wider ${evidenceTextClass(scanEvidence.status)}`}>
+                      <span class={`h-1.5 w-1.5 rounded-full ${scanEvidence.status === 'missing' ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
+                      Vulnerability scan: {statusLabel(scanEvidence.status)}
                     </span>
                   )}
                 </div>
@@ -552,6 +559,11 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
 
                   const vs = img!.vulnSummary;
                   const evidence = img!.evidence;
+                  const signatureEvidence = channelStatus(evidence, 'signature', img!.signed);
+                  const provenanceEvidence = channelStatus(evidence, 'provenance', img!.provenance);
+                  const sbomEvidence = channelStatus(evidence, 'sbom', evidence?.sbom);
+                  const scanEvidence = channelStatus(evidence, 'vulnerabilities', evidence?.vulnerabilities);
+                  const imported = isImportedImage(img!);
                   const vulnBucket =
                     !vs ? 'none' : vs.critical > 0 ? 'critical' : vs.high > 0 ? 'high' : 'clean';
                   return (
@@ -572,6 +584,7 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
                             {row.versions.length > 1 && <span class="rounded border border-accent/20 bg-accent/10 px-1 font-mono text-[10px] font-bold text-accent-soft">{ver}</span>}
                             <span class="min-w-0 truncate font-mono text-[11px] font-semibold text-ink-100">{repo}</span>
                             <span class="shrink-0 font-mono text-[9px] text-ink-400">:{tier}</span>
+                            {imported && <span class="shrink-0 rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[7.5px] font-bold uppercase tracking-wider text-sky-300">Imported image</span>}
                           </div>
                           <p class="mt-1 font-mono text-[10px] text-ink-300">{img!.architectures.join(' · ')}</p>
                         </div>
@@ -594,18 +607,18 @@ function rowSlotSummaryText(summary: ReturnType<typeof rowSlotSummary>): string 
 
                       <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-ink-800/40 pt-2">
                         <div class="flex items-center gap-1 rounded border border-ink-800 bg-ink-950/50 px-1.5 py-0.5" title="Signature, provenance, and SBOM evidence">
-                          <span class={evidence?.signature ?? img!.signed ? "text-emerald-400" : "text-amber-500"} title={evidenceTitle('Sigstore signature', evidence?.signature ?? img!.signed)}>sig</span>
+                          <span class={evidenceTextClass(signatureEvidence.status)} title={evidenceStatusTitle('Sigstore signature', signatureEvidence)}>sig</span>
                           <span class="text-ink-700">/</span>
-                          <span class={evidence?.provenance ?? img!.provenance ? "text-emerald-400" : "text-amber-500"} title={evidenceTitle('SLSA provenance', evidence?.provenance ?? img!.provenance)}>prov</span>
+                          <span class={evidenceTextClass(provenanceEvidence.status)} title={evidenceStatusTitle('SLSA provenance', provenanceEvidence)}>prov</span>
                           <span class="text-ink-700">/</span>
-                          <span class={evidence?.sbom ? "text-emerald-400" : "text-amber-500"} title={evidenceTitle('SBOM', evidence?.sbom)}>sbom</span>
+                          <span class={evidenceTextClass(sbomEvidence.status)} title={evidenceStatusTitle('SBOM', sbomEvidence)}>sbom</span>
                         </div>
                         {state === 'lagging' ? (
                           <span class="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[7.5px] font-bold uppercase tracking-wider text-amber-400" title={`No clean SBOM in ${index.latestTag} yet. Showing data from ${img!.latestTag}.`}>
                             Stale
                           </span>
                         ) : (
-                          <span class="text-[7.5px] font-bold uppercase tracking-wider text-emerald-400">Scan data attached</span>
+                          <span class={`text-[7.5px] font-bold uppercase tracking-wider ${evidenceTextClass(scanEvidence.status)}`}>Scan: {statusLabel(scanEvidence.status)}</span>
                         )}
                       </div>
                     </a>

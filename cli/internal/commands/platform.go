@@ -130,10 +130,11 @@ type PlatformReleaseBoundary struct {
 func NewPlatformCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "platform",
-		Short: "Initialize and inspect a forkable ClearCutt platform kit",
-		Long: `Initialize and inspect the forkable ClearCutt platform kit. The kit ties
-fleet config, release workflows, catalog publishing, app templates, policy
-generation, and approved remediation into one operator-facing product surface.`,
+		Short: "Bootstrap and inspect ClearCutt control-plane repositories",
+		Long: `Bootstrap and inspect GitHub-native ClearCutt control-plane repositories.
+The catalog-only profile renders a lightweight Nix-free repository around an
+images.yaml inventory. The fleet profile keeps the existing platform scaffold
+path for teams that want ClearCutt to build and operate a base-image fleet.`,
 	}
 
 	initCmd := &cobra.Command{
@@ -265,7 +266,7 @@ using CLEARCUTT_REGISTRY_TOKEN or GITHUB_TOKEN.`,
 	registryEnvCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
 	registryEnvCmd.Flags().StringVar(&platformOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append host, username, registry_base, owner, repository, image_prefix, and auth_mode")
 
-	cmd.AddCommand(initCmd, newCmd, statusCmd, doctorCmd, releasePlanCmd, registryEnvCmd, NewPlatformSetupNixCmd())
+	cmd.AddCommand(initCmd, newCmd, statusCmd, doctorCmd, releasePlanCmd, registryEnvCmd, NewPlatformSetupNixCmd(), NewPlatformRenderCmd(), NewPlatformPlanCmd(), NewPlatformApplyCmd(), NewPlatformBootstrapCmd())
 	return cmd
 }
 

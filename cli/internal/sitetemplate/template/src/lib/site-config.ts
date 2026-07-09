@@ -10,6 +10,7 @@ const SiteConfigInput = z
         title: z.string().optional(),
         description: z.string().optional(),
         logo: z.string().optional(),
+		catalogMode: z.enum(['fleet', 'imported']).optional(),
         theme: z
           .object({
             mode: z.enum(['system', 'light', 'dark']).optional(),
@@ -119,6 +120,7 @@ export type SiteConfig = {
     title: string;
     description: string;
     logo: string;
+	catalogMode: 'fleet' | 'imported';
     theme: {
       mode: 'system' | 'light' | 'dark';
       accent: string;
@@ -168,6 +170,7 @@ export const defaultSiteConfig: SiteConfig = {
     description:
       'Static evidence portal for base-image signatures, SBOMs, provenance, vulnerability findings, and runtime contracts.',
     logo: '',
+	catalogMode: 'fleet',
     theme: {
       mode: 'system',
       accent: '#7c3aed',
@@ -242,10 +245,10 @@ export const defaultSiteConfig: SiteConfig = {
               ctaLabel: 'Open matrix',
             },
             {
-              title: 'Fork and configure the fleet',
-              description: 'Review the platform kit commands, fleet config contract, and generated site workflow.',
+              title: 'Bootstrap the control plane',
+              description: 'Render a catalog-only repo first, then graduate to the fleet profile when ClearCutt should build images.',
               href: 'platform-kit',
-              ctaLabel: 'Open platform kit',
+              ctaLabel: 'Open bootstrap guide',
             },
             {
               title: 'Publish refreshed catalog data',

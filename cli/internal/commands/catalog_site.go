@@ -95,7 +95,7 @@ func newCatalogSiteBuildCmd() *cobra.Command {
 	cmd.Flags().StringVar(&catalogSiteOpts.template, "template", "", "Astro template directory (defaults to templates/astro-catalog or site)")
 	cmd.Flags().StringVar(&catalogSiteOpts.siteConfig, "site-config", "", "Optional clearcutt.site.yaml to copy into the build workspace")
 	cmd.Flags().StringVar(&catalogSiteOpts.overrides, "overrides", "", "Optional site-overrides directory with components/, pages/, styles/, or public/")
-	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Run npm install/npm ci in the generated site before building")
+	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Install generated site dependencies with the detected package manager before building")
 	cmd.Flags().BoolVar(&catalogSiteOpts.clean, "clean", false, "Remove the output directory before writing static site files")
 	cmd.Flags().StringVar(&catalogSiteOpts.basePath, "base-path", "", "Astro base path to pass as BASE_PATH during the build")
 	cmd.Flags().StringVar(&catalogSiteOpts.siteURL, "site-url", "", "Astro site URL to pass as SITE_URL during the build")
@@ -110,7 +110,7 @@ func newCatalogSitePreviewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "preview",
 		Short: "Run a local Astro preview server for catalog data",
-		Long: `Scaffold a temporary Astro catalog site and run npm run dev. If
+		Long: `Scaffold a temporary Astro catalog site and run the detected package manager's dev script. If
 dependencies are not installed and --install is not set, the command prints
 next steps instead of failing so preview remains optional for catalog data
 generation workflows.`,
@@ -123,7 +123,7 @@ generation workflows.`,
 	cmd.Flags().StringVar(&catalogSiteOpts.template, "template", "", "Astro template directory (defaults to templates/astro-catalog or site)")
 	cmd.Flags().StringVar(&catalogSiteOpts.siteConfig, "site-config", "", "Optional clearcutt.site.yaml to copy into the preview workspace")
 	cmd.Flags().StringVar(&catalogSiteOpts.overrides, "overrides", "", "Optional site-overrides directory with components/, pages/, styles/, or public/")
-	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Run npm install/npm ci in the generated site before previewing")
+	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Install generated site dependencies with the detected package manager before previewing")
 	cmd.Flags().StringVar(&catalogSiteOpts.basePath, "base-path", "", "Astro base path to pass as BASE_PATH during preview")
 	cmd.Flags().StringVar(&catalogSiteOpts.workDir, "work-dir", "", "Reusable preview workspace; defaults to a temporary directory")
 	cmd.Flags().StringVar(&catalogSiteOpts.host, "host", "127.0.0.1", "Preview server host")
@@ -167,7 +167,7 @@ func runCatalogSiteScaffold() error {
 	fmt.Fprintf(out, "Created catalog site at %s\n\n", outputDir)
 	fmt.Fprintln(out, "Next:")
 	fmt.Fprintf(out, "  cd %s\n", outputDir)
-	fmt.Fprintln(out, "  npm install")
+	fmt.Fprintln(out, "  npm install  # or the package manager matching your lockfile")
 	fmt.Fprintln(out, "  npm run dev")
 	return nil
 }
@@ -182,7 +182,7 @@ func runCatalogSiteEject() error {
 	fmt.Fprintf(out, "Ejected catalog site template at %s\n\n", catalogSiteOpts.output)
 	fmt.Fprintln(out, "Next:")
 	fmt.Fprintf(out, "  cd %s\n", catalogSiteOpts.output)
-	fmt.Fprintln(out, "  npm install")
+	fmt.Fprintln(out, "  npm install  # or the package manager matching your lockfile")
 	fmt.Fprintln(out, "  npm run dev")
 	fmt.Fprintln(out, "  # add catalog data under public/catalog before building")
 	return nil
@@ -231,7 +231,8 @@ func runCatalogSiteBuild(cmd *cobra.Command) error {
 		}
 		fmt.Fprintf(out, "[site-build] generated %d OpenVEX document(s) in %s\n", result.Count, result.OutputDir)
 	}
-	if err := ensureNodeDependencies(workDir, templatePath, catalogSiteOpts.install); err != nil {
+	pm := detectPackageManager(workDir)
+	if err := ensureNodeDependencies(workDir, templatePath, catalogSiteOpts.install, pm); err != nil {
 		return err
 	}
 	env := os.Environ()
@@ -241,7 +242,7 @@ func runCatalogSiteBuild(cmd *cobra.Command) error {
 	if catalogSiteOpts.siteURL != "" {
 		env = append(env, "SITE_URL="+catalogSiteOpts.siteURL)
 	}
-	if err := runNPM(workDir, env, "run", "build"); err != nil {
+	if err := runPackageManager(pm, workDir, env, pm.runArgs("build")...); err != nil {
 		return err
 	}
 
@@ -361,18 +362,20 @@ func runCatalogSitePreview() error {
 	if err != nil {
 		return err
 	}
-	if err := ensureNodeDependencies(workDir, templatePath, catalogSiteOpts.install); err != nil {
+	pm := detectPackageManager(workDir)
+	if err := ensureNodeDependencies(workDir, templatePath, catalogSiteOpts.install, pm); err != nil {
 		if catalogSiteOpts.install {
 			return err
 		}
 		printPreviewFallback(workDir, catalogPath, err)
 		return nil
 	}
-	if !npmAvailable() {
+	if _, err := exec.LookPath(pm.binary); err != nil {
+		pmErr := packageManagerNotFoundError(pm)
 		if catalogSiteOpts.install {
-			return fmt.Errorf("npm was not found on PATH")
+			return pmErr
 		}
-		printPreviewFallback(workDir, catalogPath, fmt.Errorf("npm was not found on PATH"))
+		printPreviewFallback(workDir, catalogPath, pmErr)
 		return nil
 	}
 
@@ -381,7 +384,7 @@ func runCatalogSitePreview() error {
 		env = append(env, "BASE_PATH="+catalogSiteOpts.basePath)
 	}
 	fmt.Fprintf(out, "Starting catalog site preview at http://%s:%d\n", catalogSiteOpts.host, catalogSiteOpts.port)
-	return runNPM(workDir, env, "run", "dev", "--", "--host", catalogSiteOpts.host, "--port", fmt.Sprintf("%d", catalogSiteOpts.port))
+	return runPackageManager(pm, workDir, env, pm.runArgs("dev", "--", "--host", catalogSiteOpts.host, "--port", fmt.Sprintf("%d", catalogSiteOpts.port))...)
 }
 
 func materializeCatalogSite(catalogPath, outputDir string, force bool) (string, error) {
@@ -517,9 +520,70 @@ func prepareBuildOutput(outputDir string, clean bool) error {
 	return os.MkdirAll(outputDir, 0o755)
 }
 
-func ensureNodeDependencies(workDir, templatePath string, install bool) error {
+type sitePackageManager struct {
+	name          string
+	binary        string
+	detectedFrom  string
+	installArgs   []string
+	installAction string
+}
+
+func (pm sitePackageManager) runArgs(script string, args ...string) []string {
+	out := []string{"run", script}
+	return append(out, args...)
+}
+
+func detectPackageManager(workDir string) sitePackageManager {
+	switch {
+	case fileExists(filepath.Join(workDir, "pnpm-lock.yaml")):
+		return sitePackageManager{
+			name:          "pnpm",
+			binary:        "pnpm",
+			detectedFrom:  "pnpm-lock.yaml",
+			installArgs:   []string{"install", "--frozen-lockfile"},
+			installAction: "pnpm install --frozen-lockfile",
+		}
+	case fileExists(filepath.Join(workDir, "package-lock.json")):
+		return sitePackageManager{
+			name:          "npm",
+			binary:        "npm",
+			detectedFrom:  "package-lock.json",
+			installArgs:   []string{"ci"},
+			installAction: "npm ci",
+		}
+	case fileExists(filepath.Join(workDir, "yarn.lock")):
+		return sitePackageManager{
+			name:          "yarn",
+			binary:        "yarn",
+			detectedFrom:  "yarn.lock",
+			installArgs:   []string{"install", "--frozen-lockfile"},
+			installAction: "yarn install --frozen-lockfile",
+		}
+	case fileExists(filepath.Join(workDir, "bun.lockb")):
+		return sitePackageManager{
+			name:          "bun",
+			binary:        "bun",
+			detectedFrom:  "bun.lockb",
+			installArgs:   []string{"install", "--frozen-lockfile"},
+			installAction: "bun install --frozen-lockfile",
+		}
+	default:
+		return sitePackageManager{
+			name:          "npm",
+			binary:        "npm",
+			detectedFrom:  "no lockfile",
+			installArgs:   []string{"install"},
+			installAction: "npm install",
+		}
+	}
+}
+
+func ensureNodeDependencies(workDir, templatePath string, install bool, pm sitePackageManager) error {
 	if fileExists(filepath.Join(workDir, "node_modules")) {
 		return nil
+	}
+	if install {
+		return runPackageManager(pm, workDir, os.Environ(), pm.installArgs...)
 	}
 	if templatePath != "" {
 		templateNodeModules := filepath.Join(templatePath, "node_modules")
@@ -531,18 +595,7 @@ func ensureNodeDependencies(workDir, templatePath string, install bool) error {
 			return os.Symlink(absNodeModules, filepath.Join(workDir, "node_modules"))
 		}
 	}
-	if !install {
-		return fmt.Errorf("site dependencies are not installed; pass --install to run npm install/npm ci")
-	}
-	if fileExists(filepath.Join(workDir, "package-lock.json")) {
-		return runNPM(workDir, os.Environ(), "ci")
-	}
-	return runNPM(workDir, os.Environ(), "install")
-}
-
-func npmAvailable() bool {
-	_, err := exec.LookPath("npm")
-	return err == nil
+	return fmt.Errorf("site dependencies are not installed; pass --install to run %s (detected %s from %s)", pm.installAction, pm.name, pm.detectedFrom)
 }
 
 func printPreviewFallback(workDir, catalogPath string, cause error) {
@@ -555,20 +608,29 @@ func printPreviewFallback(workDir, catalogPath string, cause error) {
 		return
 	}
 	fmt.Fprintf(out, "  cd %s\n", workDir)
-	fmt.Fprintln(out, "  npm install")
-	fmt.Fprintf(out, "  npm run dev -- --host %s --port %d\n", catalogSiteOpts.host, catalogSiteOpts.port)
+	pm := detectPackageManager(workDir)
+	fmt.Fprintf(out, "  %s\n", pm.installAction)
+	fmt.Fprintf(out, "  %s run dev -- --host %s --port %d\n", pm.name, catalogSiteOpts.host, catalogSiteOpts.port)
 }
 
-func runNPM(workDir string, env []string, args ...string) error {
-	cmd := exec.Command("npm", args...)
+func runPackageManager(pm sitePackageManager, workDir string, env []string, args ...string) error {
+	bin, err := exec.LookPath(pm.binary)
+	if err != nil {
+		return packageManagerNotFoundError(pm)
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
 	cmd.Stdout = out
 	cmd.Stderr = errOut
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("npm %s failed in %s: %w", strings.Join(args, " "), workDir, err)
+		return fmt.Errorf("%s %s failed in %s: %w", pm.name, strings.Join(args, " "), workDir, err)
 	}
 	return nil
+}
+
+func packageManagerNotFoundError(pm sitePackageManager) error {
+	return fmt.Errorf("%s was not found on PATH (detected %s from %s)", pm.binary, pm.name, pm.detectedFrom)
 }
 
 func fileExists(path string) bool {
@@ -1025,14 +1087,14 @@ This Astro project renders ClearCutt catalog data as a static evidence portal.
 ## Run Locally
 
 ~~~bash
-npm install
+npm install  # or the package manager matching your lockfile
 npm run dev
 ~~~
 
 Build static output with:
 
 ~~~bash
-npm run build
+npm run build  # or pnpm/yarn/bun run build when that lockfile is present
 ~~~
 
 Generated catalog data is expected under ` + "`public/catalog`" + `. The scaffold command copies

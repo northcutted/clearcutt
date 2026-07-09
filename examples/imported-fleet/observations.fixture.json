@@ -1,0 +1,184 @@
+{
+  "apiVersion": "clearcutt.dev/v1",
+  "kind": "ImportedFleetObservations",
+  "generatedAt": "2026-01-01T00:00:00Z",
+  "images": [
+    {
+      "id": "java21-runtime-2026-06-01",
+      "sourceRef": "registry.acme.dev/platform/java21-runtime:2026.06.01",
+      "digestRef": "registry.acme.dev/platform/java21-runtime@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "manifestDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "configDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "created": "2025-12-01T00:00:00Z",
+      "user": "10001",
+      "entrypoint": [],
+      "cmd": ["java", "-jar", "app.jar"],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        { "digest": "sha256:java-old-base-layer-1", "size": 120, "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip" },
+        { "digest": "sha256:java-old-base-layer-2", "size": 450, "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip" }
+      ],
+      "history": [],
+      "evidence": {
+        "signature": { "status": "missing", "source": "none", "claim": "No signature evidence inferred for imported image" },
+        "sbom": { "status": "missing", "source": "none", "claim": "Observed SBOM is not build provenance" },
+        "provenance": { "status": "missing", "source": "none", "claim": "No build provenance inferred for imported image" },
+        "vulnerabilityScan": { "status": "missing", "source": "none" },
+        "tests": { "status": "missing", "source": "none" }
+      },
+      "warnings": []
+    },
+    {
+      "id": "java21-runtime-2026-07-01",
+      "sourceRef": "registry.acme.dev/platform/java21-runtime:2026.07.01",
+      "digestRef": "registry.acme.dev/platform/java21-runtime@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "configDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "created": "2026-01-01T00:00:00Z",
+      "user": "10001",
+      "entrypoint": [],
+      "cmd": ["java", "-jar", "app.jar"],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:java-base-layer-1",
+          "size": 123,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:java-base-layer-2",
+          "size": 456,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [],
+      "evidence": {
+        "signature": {
+          "status": "observed",
+          "source": "offline-fixture",
+          "claim": "Fixture simulates observed signature metadata; no verifier ran"
+        },
+        "sbom": {
+          "status": "observed",
+          "source": "user-supplied",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "node24-runtime-2026-07-01",
+      "sourceRef": "registry.acme.dev/platform/node24-runtime:2026.07.01",
+      "digestRef": "registry.acme.dev/platform/node24-runtime@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "configDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "platforms": ["linux/amd64"],
+      "created": "2026-01-01T00:00:00Z",
+      "user": "10001",
+      "entrypoint": [],
+      "cmd": ["node", "server.js"],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:node-base-layer-1",
+          "size": 123,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [],
+      "evidence": {
+        "signature": { "status": "missing", "source": "none", "claim": "No signature evidence inferred for imported image" },
+        "sbom": { "status": "missing", "source": "none", "claim": "Observed SBOM is not build provenance" },
+        "provenance": { "status": "missing", "source": "none", "claim": "No build provenance inferred for imported image" },
+        "vulnerabilityScan": { "status": "missing", "source": "none" },
+        "tests": { "status": "missing", "source": "none" }
+      },
+      "warnings": []
+    },
+    {
+      "id": "python314-runtime-2026-07-01",
+      "sourceRef": "registry.acme.dev/platform/python314-runtime:2026.07.01",
+      "digestRef": "",
+      "manifestDigest": "",
+      "configDigest": "",
+      "platforms": [],
+      "created": "",
+      "user": "",
+      "entrypoint": [],
+      "cmd": [],
+      "labels": {},
+      "annotations": {},
+      "layers": [],
+      "history": [],
+      "evidence": {
+        "signature": { "status": "missing", "source": "none", "claim": "No signature evidence inferred for imported image" },
+        "sbom": { "status": "missing", "source": "none", "claim": "Observed SBOM is not build provenance" },
+        "provenance": { "status": "missing", "source": "none", "claim": "No build provenance inferred for imported image" },
+        "vulnerabilityScan": { "status": "missing", "source": "none" },
+        "tests": { "status": "missing", "source": "none" }
+      },
+      "warnings": ["offline fixture intentionally leaves this ref unresolved"]
+    },
+    {
+      "id": "payments-api",
+      "sourceRef": "registry.acme.dev/apps/payments-api:1.4.7",
+      "digestRef": "registry.acme.dev/apps/payments-api@sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "manifestDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "configDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "platforms": ["linux/amd64"],
+      "created": "2026-01-01T00:00:00Z",
+      "user": "10001",
+      "entrypoint": [],
+      "cmd": ["java", "-jar", "payments.jar"],
+      "labels": {
+        "org.opencontainers.image.base.name": "java21-runtime-2026-06-01",
+        "org.opencontainers.image.base.digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:java-old-base-layer-1",
+          "size": 123,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:java-old-base-layer-2",
+          "size": 456,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:payments-app-layer-1",
+          "size": 789,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [],
+      "evidence": {
+        "signature": { "status": "missing", "source": "none", "claim": "No signature evidence inferred for imported image" },
+        "sbom": { "status": "missing", "source": "none", "claim": "Observed SBOM is not build provenance" },
+        "provenance": { "status": "missing", "source": "none", "claim": "No build provenance inferred for imported image" },
+        "vulnerabilityScan": { "status": "missing", "source": "none" },
+        "tests": { "status": "missing", "source": "none" }
+      },
+      "warnings": []
+    }
+  ]
+}

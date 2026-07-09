@@ -6,6 +6,7 @@ document, one first command, and then deeper links.
 | Role | First document | First command | Then read |
 | --- | --- | --- | --- |
 | App developer | [Getting started](getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` | [App lifecycle](app-lifecycle.md), [Certification](certification.md) |
+| Imported fleet owner | [Imported fleets](imported-fleets.md) | `go -C cli run ./cmd/clearcutt import images --refs ../examples/imported-fleet/refs.txt --output /tmp/clearcutt-import/images.yaml --force` | [Generic OCI mode](generic-oci-mode.md), [Catalog generator](catalog-generator.md) |
 | Platform owner | [Platform kit](platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` | [Fork validation](fork-validation.md), [Site generator](site-generator.md), [Service images](service-images.md) |
 | Security or auditor | [Trust evidence walkthrough](trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` | [Catalog evidence](trust/catalog-evidence.md), [Security model](security-model.md), [Policy bundles](policy-bundles.md) |
 | Manager | [Alternatives and fit](alternatives.md) | `sed -n '1,120p' docs/alternatives.md` | [Enterprise adoption](enterprise-adoption.md), [Platform kit](platform-kit.md) |
@@ -23,6 +24,8 @@ document, one first command, and then deeper links.
   release workflow, image digest, SBOM, provenance, catalog record, and policy.
 - [Catalog evidence walkthrough](trust/catalog-evidence.md): understand evidence
   badges, missing data, raw evidence, and generic OCI mode.
+- [Imported fleets](imported-fleets.md): import existing OCI refs, observe
+  evidence without provenance claims, assess governance gaps, and plan rebases.
 - [CVE draft agent threat model](trust/cve-agent-threat-model.md): understand
   the untrusted advisory/model-output boundary for remediation drafts.
 - [Catalog generator](catalog-generator.md): generate and validate catalog data.
@@ -45,3 +48,12 @@ document, one first command, and then deeper links.
 - [App lifecycle](app-lifecycle.md): app build, diff-base, rebase, and
   attestation examples across stacks.
 - [Certification](certification.md): local/offline app-image checks.
+
+## Contributor Checks
+
+If the platform-source drift check fails, regenerate the embedded source archive
+before testing or building release assets:
+
+```bash
+go -C cli run ./internal/platformsource/internal/genplatformsource
+```

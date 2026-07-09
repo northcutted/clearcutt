@@ -1,0 +1,4 @@
+registry.acme.dev/platform/java21-runtime:2026.06.01
+registry.acme.dev/platform/java21-runtime:2026.07.01
+registry.acme.dev/platform/node24-runtime:2026.07.01
+registry.acme.dev/platform/python314-runtime:2026.07.01

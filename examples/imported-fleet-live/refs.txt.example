@@ -1,0 +1,10 @@
+# Copy this file to refs.txt and replace the placeholders with digest-pinned
+# images from a registry you are allowed to inspect.
+#
+# Digest-pinned refs produce more stable observations. Tag refs are accepted
+# only for manual exploration; tags can move and public registries can
+# rate-limit requests.
+#
+# Placeholder examples:
+# ghcr.io/example/platform/java21-runtime@sha256:<digest>
+# registry.example.com/team/node24-runtime@sha256:<digest>

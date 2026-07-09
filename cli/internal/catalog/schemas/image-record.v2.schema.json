@@ -26,6 +26,9 @@
     "fullName": { "type": "string" },
     "lifecycle": { "$ref": "catalog-index.v2.schema.json#/definitions/Lifecycle" },
     "runtimeContract": { "$ref": "catalog-index.v2.schema.json#/definitions/RuntimeContract" },
+    "origin": { "$ref": "catalog-index.v2.schema.json#/definitions/ImageOrigin" },
+    "governance": { "$ref": "catalog-index.v2.schema.json#/definitions/ImageGovernance" },
+    "evidencePolicy": { "$ref": "catalog-index.v2.schema.json#/definitions/EvidencePolicy" },
     "service": { "$ref": "catalog-index.v2.schema.json#/definitions/ServiceInfo" },
     "releases": {
       "type": "array",

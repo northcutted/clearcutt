@@ -117,11 +117,68 @@
         "sbom": { "type": "boolean" },
         "tests": { "type": "boolean" },
         "vulnerabilities": { "type": "boolean" },
+        "statuses": { "$ref": "#/definitions/EvidenceStatuses" },
         "archCount": { "type": "integer" },
         "sbomArchCount": { "type": "integer" },
         "testArchCount": { "type": "integer" },
         "passedTestArchCount": { "type": "integer" },
         "vulnerabilityArchCount": { "type": "integer" }
+      }
+    },
+    "EvidenceStatuses": {
+      "type": "object",
+      "properties": {
+        "signature": { "$ref": "#/definitions/EvidenceChannelStatus" },
+        "provenance": { "$ref": "#/definitions/EvidenceChannelStatus" },
+        "sbom": { "$ref": "#/definitions/EvidenceChannelStatus" },
+        "tests": { "$ref": "#/definitions/EvidenceChannelStatus" },
+        "vulnerabilities": { "$ref": "#/definitions/EvidenceChannelStatus" }
+      }
+    },
+    "EvidenceChannelStatus": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["missing", "observed", "verified", "attested", "stale", "unknown"]
+        },
+        "source": { "type": "string" },
+        "claim": { "type": "string" }
+      }
+    },
+    "ImageOrigin": {
+      "type": "object",
+      "required": ["kind", "createdByClearCutt"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["clearcutt", "imported"] },
+        "createdByClearCutt": { "type": "boolean" },
+        "sourceRef": { "type": "string" },
+        "digestRef": { "type": "string" },
+        "observedAt": { "type": "string" },
+        "observationMode": { "type": "string" },
+        "provenanceClaim": { "type": "string", "enum": ["none", "external", "clearcutt"] }
+      }
+    },
+    "ImageGovernance": {
+      "type": "object",
+      "required": ["imported"],
+      "properties": {
+        "imported": { "type": "boolean" },
+        "owner": { "type": "string" },
+        "classificationConfidence": { "type": "string" },
+        "productionIntent": { "type": "string" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "EvidencePolicy": {
+      "type": "object",
+      "properties": {
+        "signature": { "type": "string" },
+        "sbom": { "type": "string" },
+        "provenance": { "type": "string" },
+        "vulnerabilityScan": { "type": "string" },
+        "tests": { "type": "string" }
       }
     },
     "Lifecycle": {
@@ -222,6 +279,9 @@
         "passed": { "type": "boolean" },
         "lifecycle": { "$ref": "#/definitions/Lifecycle" },
         "runtimeContract": { "$ref": "#/definitions/RuntimeContract" },
+        "origin": { "$ref": "#/definitions/ImageOrigin" },
+        "governance": { "$ref": "#/definitions/ImageGovernance" },
+        "evidencePolicy": { "$ref": "#/definitions/EvidencePolicy" },
         "service": { "$ref": "#/definitions/ServiceInfo" },
         "vulnSummary": { "type": ["object", "null"] }
       }

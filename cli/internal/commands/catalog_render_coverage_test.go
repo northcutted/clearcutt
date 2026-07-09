@@ -148,13 +148,14 @@ func TestPlatformNixAndSiteHelperBranches(t *testing.T) {
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureNodeDependencies(workDir, templatePath, false); err != nil {
+	if err := ensureNodeDependencies(workDir, templatePath, false, detectPackageManager(workDir)); err != nil {
 		t.Fatalf("expected template node_modules symlink: %v", err)
 	}
 	if !fileExists(filepath.Join(workDir, "node_modules")) {
 		t.Fatal("node_modules symlink was not created")
 	}
-	if err := ensureNodeDependencies(filepath.Join(root, "missing-deps"), "", false); err == nil {
+	missingDeps := filepath.Join(root, "missing-deps")
+	if err := ensureNodeDependencies(missingDeps, "", false, detectPackageManager(missingDeps)); err == nil {
 		t.Fatal("ensureNodeDependencies should require install when node_modules is unavailable")
 	}
 

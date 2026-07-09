@@ -8,7 +8,7 @@ inputs:
   version:
     description: ClearCutt release tag to install when mode=release.
     required: false
-    default: v0.17.0
+    default: latest
   repo:
     description: GitHub repository that publishes ClearCutt CLI release assets.
     required: false
@@ -43,7 +43,11 @@ runs:
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
         ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
         ASSET="clearcutt-${OS}-${ARCH}"
-        BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+        if [[ "${VERSION}" == "latest" ]]; then
+          BASE_URL="https://github.com/${REPO}/releases/latest/download"
+        else
+          BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
+        fi
         SIGNING_IDENTITY="https://github.com/${REPO}/.github/workflows/release.yml@refs/heads/main"
         echo "[clearcutt] Installing verified ${ASSET} from ${REPO}@${VERSION}"
         mkdir -p "$(dirname "${OUTPUT}")"

@@ -131,7 +131,7 @@ Use a fat JAR or another single executable JAR as the artifact.
 cp target/payments-api-*-all.jar target/app.jar
 
 export BASE_ID="java21-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-java21:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -159,7 +159,7 @@ npx esbuild src/server.ts \
   --outfile=dist/server.mjs
 
 export BASE_ID="node22-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-node22:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-node22:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -184,7 +184,7 @@ pex . \
   -o dist/payments-api.pyz
 
 export BASE_ID="python3.14-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.14:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-python3.14:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -204,7 +204,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   -o dist/payments-api ./cmd/payments-api
 
 export BASE_ID="go1.25-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.25:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.25:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -231,7 +231,7 @@ dotnet publish src/Payments.Api/Payments.Api.csproj \
   -o out
 
 export BASE_ID="dotnet8-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -254,7 +254,7 @@ mkdir -p dist
 cp target/x86_64-unknown-linux-musl/release/payments-api dist/payments-api
 
 export BASE_ID="rust1.95-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-rust1.95:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-rust1.95:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -277,7 +277,7 @@ cmake -S . -B build \
 cmake --build build --target payments-api
 
 export BASE_ID="cc15-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-cc15:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-cc15:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -301,7 +301,7 @@ zig cc -target x86_64-linux-musl -O2 -static \
   -o dist/worker src/worker.c
 
 export BASE_ID="coreLTS-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-corelts:v0.17.0-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-corelts:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -324,7 +324,7 @@ differ, `--diffoscope-out` records the detailed local mismatch report.
 
 ```bash
 clearcutt verify rebuild \
-  ghcr.io/acme/clearcutt/clearcutt-java21:v0.17.0-distroless \
+  ghcr.io/acme/clearcutt/clearcutt-java21:vX.Y.Z-distroless \
   --target java21-distroless \
   --rebuild \
   --pull-registry-archive \

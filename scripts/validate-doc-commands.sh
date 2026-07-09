@@ -15,6 +15,7 @@ docs=(
   docs/getting-started.md
   docs/cli-reference.md
   docs/demo.md
+  docs/imported-fleets.md
   docs/catalog-generator.md
   docs/site-generator.md
   docs/platform-kit.md
@@ -119,7 +120,17 @@ check_absent "catalog site preview --site" "catalog site preview has no --site f
 check_absent "clearcutt policy verify" "policy generates admission policy; it is not a policy verify subcommand"
 check_absent "v0.11.1" "documented ClearCutt release pins must point at a published release"
 check_absent "platform status --output .. --fleet-config clearcutt.fleet.yaml" "go -C cli run resolves relative paths from cli/; use --output \"$PWD\" or build ./clearcutt first"
+check_absent "imported-fleet mode requires Nix" "imported-fleet mode must stay Nix-free"
+check_absent "imported images have provenance by default" "imported images must not claim provenance by default"
 check_absent_site "catalog site scaffold --output ./catalog-site" "generated catalog site scaffold examples must pass --catalog ./dist/catalog"
+for token in \
+  "ClearCutt does not need to create an image to govern it" \
+  "ClearCutt did not build"; do
+  if ! search_fixed "$token" docs/imported-fleets.md >/dev/null; then
+    echo "docs command drift: docs/imported-fleets.md must include '$token'" >&2
+    fail=1
+  fi
+done
 if search_regex "build provenance and SBOM|SBOM.*gh attestation verify|gh attestation verify.*SBOM" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
   echo "docs command drift: GitHub CLI attestation examples must not imply SBOM verification" >&2
   cat /tmp/clearcutt-doc-drift.txt >&2

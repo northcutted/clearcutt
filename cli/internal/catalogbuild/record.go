@@ -185,7 +185,7 @@ func releaseEvidenceFromGather(rel *gatherReleaseEntry) catalog.EvidenceSummary 
 			vulnArch++
 		}
 	}
-	return catalog.EvidenceSummary{
+	evidence := catalog.EvidenceSummary{
 		Signature:              rel.Signature != nil && rel.Signature.CosignBundlePresent,
 		Provenance:             rel.Provenance != nil,
 		SBOM:                   archCount > 0 && sbomArch == archCount,
@@ -197,6 +197,28 @@ func releaseEvidenceFromGather(rel *gatherReleaseEntry) catalog.EvidenceSummary 
 		PassedTestArchCount:    passedTestArch,
 		VulnerabilityArchCount: vulnArch,
 	}
+	evidence.Statuses = &catalog.EvidenceStatuses{
+		Signature:       clearcuttVerifiedChannel(evidence.Signature, "sigstore"),
+		Provenance:      clearcuttVerifiedChannel(evidence.Provenance, "slsa"),
+		SBOM:            clearcuttVerifiedChannel(evidence.SBOM, "spdx-sbom"),
+		Tests:           clearcuttVerifiedChannel(evidence.Tests, "test-results"),
+		Vulnerabilities: observedChannel(evidence.Vulnerabilities, "vulnerability-scan"),
+	}
+	return evidence
+}
+
+func clearcuttVerifiedChannel(present bool, source string) catalog.EvidenceChannelStatus {
+	if present {
+		return catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusVerified, Source: source}
+	}
+	return catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none"}
+}
+
+func observedChannel(present bool, source string) catalog.EvidenceChannelStatus {
+	if present {
+		return catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusObserved, Source: source}
+	}
+	return catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none"}
 }
 
 func SummarizeImageForIndex(img ImageRecord) ImageSummary {

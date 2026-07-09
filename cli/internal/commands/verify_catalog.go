@@ -259,7 +259,9 @@ func runVerifyCatalog() error {
 // releaseEvidence() fallback in the retired Node verifier.
 func releaseEvidenceSummary(rel *catalog.ReleaseEntry) catalog.EvidenceSummary {
 	if rel.Evidence != nil {
-		return *rel.Evidence
+		evidence := *rel.Evidence
+		catalog.NormalizeEvidenceSummary(&evidence)
+		return evidence
 	}
 	archCount := len(rel.Architectures)
 	var sbomArch, testArch, passedTestArch, vulnArch int
@@ -278,7 +280,7 @@ func releaseEvidenceSummary(rel *catalog.ReleaseEntry) catalog.EvidenceSummary {
 			vulnArch++
 		}
 	}
-	return catalog.EvidenceSummary{
+	evidence := catalog.EvidenceSummary{
 		Signature:              rel.Signature != nil && rel.Signature.CosignBundlePresent,
 		Provenance:             rel.Provenance != nil,
 		SBOM:                   archCount > 0 && sbomArch == archCount,
@@ -290,6 +292,21 @@ func releaseEvidenceSummary(rel *catalog.ReleaseEntry) catalog.EvidenceSummary {
 		PassedTestArchCount:    passedTestArch,
 		VulnerabilityArchCount: vulnArch,
 	}
+	evidence.Statuses = &catalog.EvidenceStatuses{
+		Signature:       boolEvidenceChannel(evidence.Signature, catalog.EvidenceStatusVerified, "sigstore"),
+		Provenance:      boolEvidenceChannel(evidence.Provenance, catalog.EvidenceStatusVerified, "slsa"),
+		SBOM:            boolEvidenceChannel(evidence.SBOM, catalog.EvidenceStatusVerified, "spdx-sbom"),
+		Tests:           boolEvidenceChannel(evidence.Tests, catalog.EvidenceStatusVerified, "test-results"),
+		Vulnerabilities: boolEvidenceChannel(evidence.Vulnerabilities, catalog.EvidenceStatusObserved, "vulnerability-scan"),
+	}
+	return evidence
+}
+
+func boolEvidenceChannel(present bool, presentStatus, source string) catalog.EvidenceChannelStatus {
+	if present {
+		return catalog.EvidenceChannelStatus{Status: presentStatus, Source: source}
+	}
+	return catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none"}
 }
 
 func loadRawCatalogIndex(catalogPath string) (rawCatalogIndex, error) {

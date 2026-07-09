@@ -7,7 +7,7 @@ reviewing README, docs, site copy, examples, and generated catalog language.
 
 | Claim family | Preferred wording | Evidence or boundary |
 | :--- | :--- | :--- |
-| Product identity | ClearCutt is a forkable platform kit for hardened base images. | The adopter runs the fork under their registry, workflows, catalog, and admission policies. |
+| Product identity | ClearCutt is a CLI for bootstrapping user-owned GitHub container image control planes. | The adopter runs the generated repository under their registry, workflows, catalog, and admission policies. |
 | Fleet ownership | Platform teams own and publish their base-image fleet as code. | `clearcutt.fleet.yaml`, `matrix add`, `runtime scaffold`, release workflows, catalog build. |
 | Evidence publishing | Signatures, SBOMs, provenance, tests, scans, and catalog status are reported independently. | Catalog data and site telemetry must show missing channels instead of collapsing them into one trust badge. |
 | App onboarding | App teams can use published images, devcontainers, templates, and CLI gates without learning Nix. | Nix stays on the platform-authoring path unless an app team intentionally customizes the fleet. |

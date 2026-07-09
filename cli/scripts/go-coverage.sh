@@ -17,6 +17,10 @@ go run ./internal/platformsource/internal/genplatformsource
 export CLEARCUTT_REQUIRE_EMBEDDED_SOURCE=1
 
 go test -v -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./...
+# Some Go toolchain/package combinations append an empty record to a combined
+# profile. Normalize it before handing the profile to `go tool cover`.
+awk 'NF' "$profile" > "${profile}.tmp"
+mv "${profile}.tmp" "$profile"
 go tool cover -func="$profile" > "$text_report"
 go tool cover -html="$profile" -o "$html_report"
 

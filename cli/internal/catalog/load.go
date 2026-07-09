@@ -55,6 +55,7 @@ func LoadCatalogIndex(catalogPath string) (*CatalogIndex, error) {
 	if err := decodeJSON(data, &index); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal catalog index: %w", err)
 	}
+	NormalizeCatalogIndex(&index)
 
 	return &index, nil
 }
@@ -79,6 +80,30 @@ func LoadImageRecord(catalogPath, imageID string) (*ImageRecord, error) {
 	if err := decodeJSON(data, &record); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal image record: %w", err)
 	}
+	NormalizeImageRecord(&record)
 
 	return &record, nil
+}
+
+func NormalizeCatalogIndex(index *CatalogIndex) {
+	if index == nil {
+		return
+	}
+	for i := range index.Images {
+		NormalizeEvidenceSummary(index.Images[i].Evidence)
+		if index.Images[i].Evidence != nil {
+			index.Images[i].Signed = index.Images[i].Evidence.Signature
+			index.Images[i].Provenance = index.Images[i].Evidence.Provenance
+			index.Images[i].Passed = index.Images[i].Evidence.Tests
+		}
+	}
+}
+
+func NormalizeImageRecord(record *ImageRecord) {
+	if record == nil {
+		return
+	}
+	for i := range record.Releases {
+		NormalizeEvidenceSummary(record.Releases[i].Evidence)
+	}
 }

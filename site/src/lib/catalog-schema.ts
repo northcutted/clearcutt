@@ -35,7 +35,7 @@ export const ArchPayload = z.object({
       })
     )
     .default([]),
-  labels: z.record(z.string()).default({}),
+  labels: z.record(z.string(), z.string()).default({}),
   sbom: z.object({
     tool: z.string(),
     createdAt: z.string(),
@@ -165,6 +165,97 @@ export const RuntimeContract = z.object({
 });
 export type RuntimeContract = z.infer<typeof RuntimeContract>;
 
+export const ImageOrigin = z.object({
+  kind: z.string(),
+  createdByClearCutt: z.boolean(),
+  sourceRef: z.string().optional(),
+  digestRef: z.string().optional(),
+  observedAt: z.string().optional(),
+  observationMode: z.string().optional(),
+  provenanceClaim: z.string().optional(),
+});
+export type ImageOrigin = z.infer<typeof ImageOrigin>;
+
+export const ImageGovernance = z.object({
+  imported: z.boolean().optional().default(false),
+  owner: z.string().optional(),
+  classificationConfidence: z.string().optional(),
+  productionIntent: z.string().optional(),
+  notes: z.array(z.string()).optional().default([]),
+});
+export type ImageGovernance = z.infer<typeof ImageGovernance>;
+
+export const EvidencePolicy = z.object({
+  signature: z.string().optional(),
+  sbom: z.string().optional(),
+  provenance: z.string().optional(),
+  vulnerabilityScan: z.string().optional(),
+  tests: z.string().optional(),
+});
+export type EvidencePolicy = z.infer<typeof EvidencePolicy>;
+
+export const EvidenceStatus = z.enum(['missing', 'observed', 'verified', 'attested', 'stale', 'unknown']);
+export type EvidenceStatus = z.infer<typeof EvidenceStatus>;
+
+const EvidenceChannelStatusInput = z.object({
+  status: EvidenceStatus.optional(),
+  source: z.string().optional(),
+  claim: z.string().optional(),
+});
+
+export type EvidenceChannelStatus = {
+  status: EvidenceStatus;
+  source?: string;
+  claim?: string;
+};
+
+function legacyEvidenceChannel(present: boolean, presentStatus: EvidenceStatus): EvidenceChannelStatus {
+  return { status: present ? presentStatus : 'missing', source: 'legacy-boolean' };
+}
+
+function normalizeEvidenceChannel(
+  channel: z.infer<typeof EvidenceChannelStatusInput> | undefined,
+  present: boolean,
+  presentStatus: EvidenceStatus,
+): EvidenceChannelStatus {
+  if (!channel?.status) return legacyEvidenceChannel(present, presentStatus);
+  return { status: channel.status, source: channel.source, claim: channel.claim };
+}
+
+export const EvidenceSummary = z
+  .object({
+    signature: z.boolean(),
+    provenance: z.boolean(),
+    sbom: z.boolean(),
+    tests: z.boolean(),
+    vulnerabilities: z.boolean(),
+    statuses: z
+      .object({
+        signature: EvidenceChannelStatusInput.optional(),
+        provenance: EvidenceChannelStatusInput.optional(),
+        sbom: EvidenceChannelStatusInput.optional(),
+        tests: EvidenceChannelStatusInput.optional(),
+        vulnerabilities: EvidenceChannelStatusInput.optional(),
+      })
+      .optional(),
+    archCount: z.number(),
+    sbomArchCount: z.number(),
+    testArchCount: z.number(),
+    passedTestArchCount: z.number(),
+    vulnerabilityArchCount: z.number(),
+  })
+  .transform((evidence) => ({
+    ...evidence,
+    statuses: {
+      signature: normalizeEvidenceChannel(evidence.statuses?.signature, evidence.signature, 'verified'),
+      provenance: normalizeEvidenceChannel(evidence.statuses?.provenance, evidence.provenance, 'verified'),
+      sbom: normalizeEvidenceChannel(evidence.statuses?.sbom, evidence.sbom, 'observed'),
+      tests: normalizeEvidenceChannel(evidence.statuses?.tests, evidence.tests, 'verified'),
+      vulnerabilities: normalizeEvidenceChannel(evidence.statuses?.vulnerabilities, evidence.vulnerabilities, 'observed'),
+    },
+  }));
+export type EvidenceSummary = z.infer<typeof EvidenceSummary>;
+
 export const ServiceInfo = z.object({
   template: z.string(),
   version: z.string(),
@@ -233,25 +324,12 @@ export const ReleaseEntry = z.object({
     .optional(),
   attestations: z.array(AttestationEntry).default([]),
   assetUrls: z.object({
-    sbom: z.record(z.string()).default({}),
+    sbom: z.record(z.string(), z.string()).default({}),
     provenance: NullableString,
-    testResults: z.record(z.string()).default({}),
+    testResults: z.record(z.string(), z.string()).default({}),
     digest: NullableString,
   }),
-  evidence: z
-    .object({
-      signature: z.boolean(),
-      provenance: z.boolean(),
-      sbom: z.boolean(),
-      tests: z.boolean(),
-      vulnerabilities: z.boolean(),
-      archCount: z.number(),
-      sbomArchCount: z.number(),
-      testArchCount: z.number(),
-      passedTestArchCount: z.number(),
-      vulnerabilityArchCount: z.number(),
-    })
-    .optional(),
+  evidence: EvidenceSummary.optional(),
   lifecycle: Lifecycle,
   runtimeContract: RuntimeContract,
   exceptions: ExceptionSummary,
@@ -280,6 +358,9 @@ export const ImageRecord = z.object({
   lifecycle: Lifecycle,
   runtimeContract: RuntimeContract,
   service: ServiceInfo.optional(),
+  origin: ImageOrigin.optional(),
+  governance: ImageGovernance.optional(),
+  evidencePolicy: EvidencePolicy.optional(),
 });
 export type ImageRecord = z.infer<typeof ImageRecord>;
 
@@ -353,20 +434,7 @@ export const CatalogIndex = z.object({
       architectures: z.array(z.string()),
       signed: z.boolean(),
       provenance: z.boolean(),
-      evidence: z
-        .object({
-          signature: z.boolean(),
-          provenance: z.boolean(),
-          sbom: z.boolean(),
-          tests: z.boolean(),
-          vulnerabilities: z.boolean(),
-          archCount: z.number(),
-          sbomArchCount: z.number(),
-          testArchCount: z.number(),
-          passedTestArchCount: z.number(),
-          vulnerabilityArchCount: z.number(),
-        })
-        .optional(),
+      evidence: EvidenceSummary.optional(),
       passed: z.boolean(),
       vulnSummary: z
         .object({
@@ -390,6 +458,9 @@ export const CatalogIndex = z.object({
       lifecycle: Lifecycle,
       runtimeContract: RuntimeContract,
       service: ServiceInfo.optional(),
+      origin: ImageOrigin.optional(),
+      governance: ImageGovernance.optional(),
+      evidencePolicy: EvidencePolicy.optional(),
     }),
   ),
 });

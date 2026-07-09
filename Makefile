@@ -1,4 +1,4 @@
-.PHONY: cli-embed-source cli-build cli-test cli-vet cli-fmt-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan test check agent-sync e2e-test
+.PHONY: cli-embed-source cli-build cli-test cli-vet cli-fmt-check platformsource-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan demo-imported-fleet-offline demo-imported-fleet-live test check agent-sync e2e-test
 
 # .agents/ is upstream-only tooling (excluded from platform-new scaffolds), so
 # the target degrades to a note instead of erroring in fork checkouts.
@@ -26,6 +26,9 @@ cli-fmt-check:
 		echo "$$unformatted"; \
 		exit 1; \
 	fi
+
+platformsource-check:
+	cd cli && go run ./internal/platformsource/internal/genplatformsource --check
 
 # npm ci sentinel: site targets work from a clean clone without a manual
 # `make site-install`, and skip the reinstall until package-lock.json changes.
@@ -62,6 +65,12 @@ catalog-build: cli-build
 
 catalog-scan: cli-build
 	./clearcutt scan --mode catalog
+
+demo-imported-fleet-offline:
+	./scripts/demo-imported-fleet-offline.sh
+
+demo-imported-fleet-live:
+	./scripts/demo-imported-fleet-live.sh
 
 core-verify:
 	cd core && nix develop --extra-experimental-features "nix-command flakes" --accept-flake-config --command ./tests/verify.sh

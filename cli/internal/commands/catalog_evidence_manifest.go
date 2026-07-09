@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 )
@@ -27,22 +28,25 @@ type evidenceManifestSummary struct {
 }
 
 type evidenceManifestRelease struct {
-	ImageID        string                         `json:"imageId"`
-	Kind           string                         `json:"kind"`
-	Tag            string                         `json:"tag"`
-	PublishedAt    string                         `json:"publishedAt"`
-	IsLatest       bool                           `json:"isLatest"`
-	FullName       string                         `json:"fullName"`
-	ImageRef       string                         `json:"imageRef"`
-	ImmutableRef   *string                        `json:"immutableRef,omitempty"`
-	ManifestDigest *string                        `json:"manifestDigest,omitempty"`
-	Channels       evidenceManifestChannels       `json:"channels"`
-	Missing        []string                       `json:"missing,omitempty"`
-	Architectures  []evidenceManifestArchitecture `json:"architectures"`
-	Signature      *evidenceManifestSignature     `json:"signature,omitempty"`
-	Provenance     *evidenceManifestProvenance    `json:"provenance,omitempty"`
-	Assets         catalog.AssetURLs              `json:"assets"`
-	CatalogRecord  string                         `json:"catalogRecord"`
+	ImageID            string                         `json:"imageId"`
+	Kind               string                         `json:"kind"`
+	Tag                string                         `json:"tag"`
+	PublishedAt        string                         `json:"publishedAt"`
+	IsLatest           bool                           `json:"isLatest"`
+	FullName           string                         `json:"fullName"`
+	ImageRef           string                         `json:"imageRef"`
+	ImmutableRef       *string                        `json:"immutableRef,omitempty"`
+	ManifestDigest     *string                        `json:"manifestDigest,omitempty"`
+	Channels           evidenceManifestChannels       `json:"channels"`
+	Missing            []string                       `json:"missing,omitempty"`
+	Architectures      []evidenceManifestArchitecture `json:"architectures"`
+	Imported           bool                           `json:"imported,omitempty"`
+	CreatedByClearCutt *bool                          `json:"createdByClearCutt,omitempty"`
+	ProvenanceClaim    string                         `json:"provenanceClaim,omitempty"`
+	Signature          *evidenceManifestSignature     `json:"signature,omitempty"`
+	Provenance         *evidenceManifestProvenance    `json:"provenance,omitempty"`
+	Assets             catalog.AssetURLs              `json:"assets"`
+	CatalogRecord      string                         `json:"catalogRecord"`
 }
 
 type evidenceManifestChannels struct {
@@ -59,6 +63,8 @@ type evidenceManifestChannel struct {
 	Expected bool   `json:"expected"`
 	Observed bool   `json:"observed"`
 	Status   string `json:"status"`
+	Source   string `json:"source,omitempty"`
+	Claim    string `json:"claim,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 }
 
@@ -168,17 +174,23 @@ func evidenceManifestReleaseForRecord(record *catalog.ImageRecord, release catal
 		immutable := record.FullName + "@" + *release.ManifestDigest
 		row.ImmutableRef = &immutable
 	}
+	if record.Origin != nil && record.Origin.Kind == "imported" {
+		row.Imported = true
+		row.CreatedByClearCutt = &record.Origin.CreatedByClearCutt
+		row.ProvenanceClaim = firstNonEmpty(record.Origin.ProvenanceClaim, "none")
+	}
+	catalog.NormalizeEvidenceSummary(&evidence)
 	row.Channels = evidenceManifestChannels{
-		Signature:       channelStatus(archCount > 0, evidence.Signature, "catalog release record reports Sigstore signature evidence"),
-		Provenance:      channelStatus(archCount > 0, evidence.Provenance, "catalog release record reports SLSA provenance evidence"),
-		SBOM:            countedChannelStatus(archCount > 0, evidence.SBOM, evidence.SBOMArchCount, archCount, "architecture SBOMs"),
-		Tests:           countedChannelStatus(archCount > 0, evidence.Tests, evidence.PassedTestArchCount, archCount, "passing test results"),
-		Vulnerabilities: countedChannelStatus(archCount > 0, evidence.Vulnerabilities, evidence.VulnerabilityArchCount, archCount, "vulnerability scans"),
+		Signature:       channelStatus(archCount > 0, evidence.Statuses.Signature, "catalog release record reports Sigstore signature evidence"),
+		Provenance:      channelStatus(archCount > 0, evidence.Statuses.Provenance, "catalog release record reports SLSA provenance evidence"),
+		SBOM:            countedChannelStatus(archCount > 0, evidence.Statuses.SBOM, evidence.SBOMArchCount, archCount, "architecture SBOMs"),
+		Tests:           countedChannelStatus(archCount > 0, evidence.Statuses.Tests, evidence.PassedTestArchCount, archCount, "passing test results"),
+		Vulnerabilities: countedChannelStatus(archCount > 0, evidence.Statuses.Vulnerabilities, evidence.VulnerabilityArchCount, archCount, "vulnerability scans"),
 		Exceptions:      exceptionsChannelStatus(release.Exceptions),
 		VEX:             vexChannelStatus(record.ID, release.Tag, release.Exceptions),
 	}
 	row.Missing = missingEvidenceChannels(row.Channels)
-	// evidence-manifest.v1.schema.json types architectures as an array, so
+	// evidence-manifest.v2.schema.json types architectures as an array, so
 	// releases without architectures must serialize as [] rather than null.
 	row.Architectures = []evidenceManifestArchitecture{}
 	for _, arch := range release.Architectures {
@@ -219,21 +231,25 @@ func releaseImageRef(record *catalog.ImageRecord, release catalog.ReleaseEntry) 
 	return record.FullName + ":" + tag
 }
 
-func channelStatus(expected, observed bool, detail string) evidenceManifestChannel {
-	status := "missing"
+func channelStatus(expected bool, status catalog.EvidenceChannelStatus, detail string) evidenceManifestChannel {
+	normalized := strings.TrimSpace(status.Status)
+	if normalized == "" {
+		normalized = catalog.EvidenceStatusMissing
+	}
+	observed := catalog.EvidenceChannelPresent(catalog.EvidenceChannelStatus{Status: normalized})
 	switch {
 	case !expected:
-		status = "not_applicable"
-	case observed:
-		status = "present"
+		normalized = "not_applicable"
+		observed = false
 	}
-	return evidenceManifestChannel{Expected: expected, Observed: observed, Status: status, Detail: detail}
+	return evidenceManifestChannel{Expected: expected, Observed: observed, Status: normalized, Source: status.Source, Claim: status.Claim, Detail: detail}
 }
 
-func countedChannelStatus(expected, observed bool, count, total int, label string) evidenceManifestChannel {
-	ch := channelStatus(expected, observed, fmt.Sprintf("%d/%d %s", count, total, label))
-	if expected && count > 0 && count < total {
-		ch.Status = "partial"
+func countedChannelStatus(expected bool, status catalog.EvidenceChannelStatus, count, total int, label string) evidenceManifestChannel {
+	ch := channelStatus(expected, status, fmt.Sprintf("%d/%d %s", count, total, label))
+	if expected && count > 0 && count < total && ch.Status == catalog.EvidenceStatusMissing {
+		ch.Status = catalog.EvidenceStatusObserved
+		ch.Observed = true
 	}
 	return ch
 }

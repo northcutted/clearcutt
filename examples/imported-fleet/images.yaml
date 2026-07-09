@@ -1,0 +1,135 @@
+apiVersion: clearcutt.dev/v1
+generatedAt: "2026-01-01T00:00:00Z"
+images:
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: acme
+    productionIntent: unknown
+  id: java21-runtime-2026-06-01
+  image: registry.acme.dev/platform/java21-runtime:2026.06.01
+  language:
+    displayName: Java
+    id: java
+    version: "21"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-01-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: registry.acme.dev/platform/java21-runtime:2026.06.01
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: acme
+    productionIntent: unknown
+  id: java21-runtime-2026-07-01
+  image: registry.acme.dev/platform/java21-runtime:2026.07.01
+  language:
+    displayName: Java
+    id: java
+    version: "21"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-01-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: registry.acme.dev/platform/java21-runtime:2026.07.01
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: acme
+    productionIntent: unknown
+  id: node24-runtime-2026-07-01
+  image: registry.acme.dev/platform/node24-runtime:2026.07.01
+  language:
+    displayName: Node.js
+    id: node
+    version: "24"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-01-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: registry.acme.dev/platform/node24-runtime:2026.07.01
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: acme
+    productionIntent: unknown
+  id: python314-runtime-2026-07-01
+  image: registry.acme.dev/platform/python314-runtime:2026.07.01
+  language:
+    displayName: Python
+    id: python
+    version: "314"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-01-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: registry.acme.dev/platform/python314-runtime:2026.07.01
+  tier: slim
+kind: ImportedFleetInventory
+owner: acme
+registryBase: registry.acme.dev/platform
+repo: imported-fleet

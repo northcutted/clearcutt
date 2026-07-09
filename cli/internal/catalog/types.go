@@ -14,8 +14,10 @@ const (
 	ImageRecordSchemaVersion = "clearcutt.catalog.image/v1"
 	// ImageRecordSchemaVersionV2 identifies individual mixed-kind images/*.json records.
 	ImageRecordSchemaVersionV2 = "clearcutt.catalog.image/v2"
-	// EvidenceManifestSchemaVersion identifies the generated per-release evidence manifest.
-	EvidenceManifestSchemaVersion = "clearcutt.catalog.evidence-manifest/v1"
+	// EvidenceManifestSchemaVersionV1 identifies the legacy presence-based manifest contract.
+	EvidenceManifestSchemaVersionV1 = "clearcutt.catalog.evidence-manifest/v1"
+	// EvidenceManifestSchemaVersion identifies the generated status-aware evidence manifest.
+	EvidenceManifestSchemaVersion = "clearcutt.catalog.evidence-manifest/v2"
 )
 
 // CatalogIndex represents the top-level index.json structure.
@@ -107,20 +109,146 @@ type CatalogImageSummary struct {
 	Lifecycle            Lifecycle        `json:"lifecycle"`
 	RuntimeContract      RuntimeContract  `json:"runtimeContract"`
 	Service              *ServiceInfo     `json:"service,omitempty"`
+	Origin               *ImageOrigin     `json:"origin,omitempty"`
+	Governance           *ImageGovernance `json:"governance,omitempty"`
+	EvidencePolicy       *EvidencePolicy  `json:"evidencePolicy,omitempty"`
 }
 
 // EvidenceSummary tracks the presence of various supply-chain evidence pieces.
 type EvidenceSummary struct {
-	Signature              bool `json:"signature"`
-	Provenance             bool `json:"provenance"`
-	SBOM                   bool `json:"sbom"`
-	Tests                  bool `json:"tests"`
-	Vulnerabilities        bool `json:"vulnerabilities"`
-	ArchCount              int  `json:"archCount"`
-	SBOMArchCount          int  `json:"sbomArchCount"`
-	TestArchCount          int  `json:"testArchCount"`
-	PassedTestArchCount    int  `json:"passedTestArchCount"`
-	VulnerabilityArchCount int  `json:"vulnerabilityArchCount"`
+	Signature              bool              `json:"signature"`
+	Provenance             bool              `json:"provenance"`
+	SBOM                   bool              `json:"sbom"`
+	Tests                  bool              `json:"tests"`
+	Vulnerabilities        bool              `json:"vulnerabilities"`
+	Statuses               *EvidenceStatuses `json:"statuses,omitempty"`
+	ArchCount              int               `json:"archCount"`
+	SBOMArchCount          int               `json:"sbomArchCount"`
+	TestArchCount          int               `json:"testArchCount"`
+	PassedTestArchCount    int               `json:"passedTestArchCount"`
+	VulnerabilityArchCount int               `json:"vulnerabilityArchCount"`
+}
+
+const (
+	EvidenceStatusMissing  = "missing"
+	EvidenceStatusObserved = "observed"
+	EvidenceStatusVerified = "verified"
+	EvidenceStatusAttested = "attested"
+	EvidenceStatusStale    = "stale"
+	EvidenceStatusUnknown  = "unknown"
+)
+
+type EvidenceStatuses struct {
+	Signature       EvidenceChannelStatus `json:"signature"`
+	Provenance      EvidenceChannelStatus `json:"provenance"`
+	SBOM            EvidenceChannelStatus `json:"sbom"`
+	Tests           EvidenceChannelStatus `json:"tests"`
+	Vulnerabilities EvidenceChannelStatus `json:"vulnerabilities"`
+}
+
+type EvidenceChannelStatus struct {
+	Status string `json:"status"`
+	Source string `json:"source,omitempty"`
+	Claim  string `json:"claim,omitempty"`
+}
+
+func NormalizeEvidenceSummary(e *EvidenceSummary) {
+	if e == nil {
+		return
+	}
+	if e.Statuses == nil {
+		e.Statuses = &EvidenceStatuses{
+			Signature:       legacyEvidenceChannel(e.Signature, EvidenceStatusVerified),
+			Provenance:      legacyEvidenceChannel(e.Provenance, EvidenceStatusVerified),
+			SBOM:            legacyEvidenceChannel(e.SBOM, EvidenceStatusObserved),
+			Tests:           legacyEvidenceChannel(e.Tests, EvidenceStatusVerified),
+			Vulnerabilities: legacyEvidenceChannel(e.Vulnerabilities, EvidenceStatusObserved),
+		}
+		syncEvidenceBooleans(e)
+		return
+	}
+	normalizeEvidenceChannel(&e.Statuses.Signature, e.Signature, EvidenceStatusVerified)
+	normalizeEvidenceChannel(&e.Statuses.Provenance, e.Provenance, EvidenceStatusVerified)
+	normalizeEvidenceChannel(&e.Statuses.SBOM, e.SBOM, EvidenceStatusObserved)
+	normalizeEvidenceChannel(&e.Statuses.Tests, e.Tests, EvidenceStatusVerified)
+	normalizeEvidenceChannel(&e.Statuses.Vulnerabilities, e.Vulnerabilities, EvidenceStatusObserved)
+	syncEvidenceBooleans(e)
+}
+
+func legacyEvidenceChannel(present bool, presentStatus string) EvidenceChannelStatus {
+	if present {
+		return EvidenceChannelStatus{Status: presentStatus, Source: "legacy-boolean"}
+	}
+	return EvidenceChannelStatus{Status: EvidenceStatusMissing, Source: "legacy-boolean"}
+}
+
+func normalizeEvidenceChannel(ch *EvidenceChannelStatus, present bool, presentStatus string) {
+	ch.Status = strings.ToLower(strings.TrimSpace(ch.Status))
+	if ch.Status == "" {
+		*ch = legacyEvidenceChannel(present, presentStatus)
+	}
+}
+
+func syncEvidenceBooleans(e *EvidenceSummary) {
+	// The legacy booleans are still consumed by older catalog clients and policy
+	// gates. Keep them conservative: a channel is true only when its status
+	// satisfies the channel's current policy requirement, not merely because an
+	// artifact was observed at some point.
+	e.Signature = EvidenceChannelVerified(e.Statuses.Signature)
+	e.Provenance = EvidenceChannelVerified(e.Statuses.Provenance)
+	e.SBOM = EvidenceChannelCurrent(e.Statuses.SBOM)
+	e.Tests = EvidenceChannelVerified(e.Statuses.Tests)
+	e.Vulnerabilities = EvidenceChannelCurrent(e.Statuses.Vulnerabilities)
+}
+
+func EvidenceChannelPresent(ch EvidenceChannelStatus) bool {
+	switch ch.Status {
+	case EvidenceStatusObserved, EvidenceStatusVerified, EvidenceStatusAttested, EvidenceStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// EvidenceChannelCurrent reports whether a channel has current usable evidence.
+// Stale evidence remains visible in the catalog, but must not satisfy a gate.
+func EvidenceChannelCurrent(ch EvidenceChannelStatus) bool {
+	switch ch.Status {
+	case EvidenceStatusObserved, EvidenceStatusVerified, EvidenceStatusAttested:
+		return true
+	default:
+		return false
+	}
+}
+
+func EvidenceChannelVerified(ch EvidenceChannelStatus) bool {
+	return ch.Status == EvidenceStatusVerified
+}
+
+// EvidenceSummarySatisfies reports whether the named evidence channel satisfies
+// the policy semantics used by catalog and image verification.
+func EvidenceSummarySatisfies(e *EvidenceSummary, channel string) bool {
+	if e == nil {
+		return false
+	}
+	NormalizeEvidenceSummary(e)
+	if e.Statuses == nil {
+		return false
+	}
+	switch channel {
+	case "signature":
+		return EvidenceChannelVerified(e.Statuses.Signature)
+	case "provenance":
+		return EvidenceChannelVerified(e.Statuses.Provenance)
+	case "sbom":
+		return EvidenceChannelCurrent(e.Statuses.SBOM)
+	case "tests":
+		return EvidenceChannelVerified(e.Statuses.Tests)
+	case "vulnerabilities":
+		return EvidenceChannelCurrent(e.Statuses.Vulnerabilities)
+	default:
+		return false
+	}
 }
 
 // VulnSummary aggregates vulnerability counts and scanning timestamps.
@@ -196,18 +324,53 @@ type ServicePortInfo struct {
 
 // ImageRecord represents individual image records under images/*.json.
 type ImageRecord struct {
-	SchemaVersion   string          `json:"schemaVersion,omitempty"`
-	ID              string          `json:"id"`
-	Kind            string          `json:"kind,omitempty"`
-	Language        LanguageInfo    `json:"language"`
-	Tier            TierInfo        `json:"tier"`
-	Registry        string          `json:"registry"`
-	ImageName       string          `json:"imageName"`
-	FullName        string          `json:"fullName"`
-	Lifecycle       Lifecycle       `json:"lifecycle"`
-	RuntimeContract RuntimeContract `json:"runtimeContract"`
-	Service         *ServiceInfo    `json:"service,omitempty"`
-	Releases        []ReleaseEntry  `json:"releases"`
+	SchemaVersion   string           `json:"schemaVersion,omitempty"`
+	ID              string           `json:"id"`
+	Kind            string           `json:"kind,omitempty"`
+	Language        LanguageInfo     `json:"language"`
+	Tier            TierInfo         `json:"tier"`
+	Registry        string           `json:"registry"`
+	ImageName       string           `json:"imageName"`
+	FullName        string           `json:"fullName"`
+	Lifecycle       Lifecycle        `json:"lifecycle"`
+	RuntimeContract RuntimeContract  `json:"runtimeContract"`
+	Service         *ServiceInfo     `json:"service,omitempty"`
+	Origin          *ImageOrigin     `json:"origin,omitempty"`
+	Governance      *ImageGovernance `json:"governance,omitempty"`
+	EvidencePolicy  *EvidencePolicy  `json:"evidencePolicy,omitempty"`
+	Releases        []ReleaseEntry   `json:"releases"`
+}
+
+// ImageOrigin records whether an image was produced by ClearCutt or imported
+// for governance without build provenance claims.
+type ImageOrigin struct {
+	Kind               string `json:"kind"`
+	CreatedByClearCutt bool   `json:"createdByClearCutt"`
+	SourceRef          string `json:"sourceRef,omitempty"`
+	DigestRef          string `json:"digestRef,omitempty"`
+	ObservedAt         string `json:"observedAt,omitempty"`
+	ObservationMode    string `json:"observationMode,omitempty"`
+	ProvenanceClaim    string `json:"provenanceClaim,omitempty"`
+}
+
+// ImageGovernance carries imported-fleet review posture without changing the
+// core runtime catalog contract.
+type ImageGovernance struct {
+	Imported                 bool     `json:"imported"`
+	Owner                    string   `json:"owner,omitempty"`
+	ClassificationConfidence string   `json:"classificationConfidence,omitempty"`
+	ProductionIntent         string   `json:"productionIntent,omitempty"`
+	Notes                    []string `json:"notes,omitempty"`
+}
+
+// EvidencePolicy records the per-channel evidence expectation for a cataloged
+// image. Required evidence can be enforced by catalog validation policy.
+type EvidencePolicy struct {
+	Signature         string `json:"signature,omitempty"`
+	SBOM              string `json:"sbom,omitempty"`
+	Provenance        string `json:"provenance,omitempty"`
+	VulnerabilityScan string `json:"vulnerabilityScan,omitempty"`
+	Tests             string `json:"tests,omitempty"`
 }
 
 // ReleaseEntry represents a detailed release record inside ImageRecord.

@@ -7,6 +7,10 @@ workflows, or ClearCutt-specific GitHub release assets.
 Use this mode when you want the portal shape first and will add richer evidence
 later.
 
+Imported-fleet mode builds on this data path. Use
+`clearcutt import images` when you have a plain list of external image refs and
+want ClearCutt to generate the compatible `images.yaml` for you.
+
 ## Inventory File
 
 Create an `images.yaml` file:
@@ -54,6 +58,9 @@ Optional fields:
 - `architectures`
 - `lifecycle`
 - `runtimeContract`
+- `origin`
+- `governance`
+- `evidencePolicy`
 
 Supported tiers are `distroless`, `slim`, and `dev`. Supported architectures
 are currently `amd64` and `arm64`.
@@ -98,6 +105,11 @@ Generic OCI mode intentionally records unavailable evidence as missing:
 That means `catalog validate` may report warnings such as missing signature
 evidence or incomplete SBOM evidence. These warnings are useful: they tell
 operators which evidence channels have not been wired yet.
+
+For imported images, `origin.kind: imported`,
+`origin.createdByClearCutt: false`, and `origin.provenanceClaim: none` make the
+boundary explicit. ClearCutt does not infer signatures or SLSA provenance for
+images it did not build.
 
 ## Validation
 

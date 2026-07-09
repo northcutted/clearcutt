@@ -74,7 +74,7 @@ action tags that predate the verified CLI install path.
 - name: Install verified ClearCutt CLI
   run: |
     set -euo pipefail
-    VERSION="v0.17.0"
+    VERSION="vX.Y.Z"
     REPO="northcutted/clearcutt"
     ASSET="clearcutt-linux-amd64"
     BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
@@ -142,7 +142,7 @@ The default trust model is dual-control at rebase time:
 ```bash
 clearcutt app rebase \
   --image ghcr.io/acme/payments-api:1.0.0 \
-  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.17.0-distroless \
+  --candidate-base ghcr.io/northcutted/clearcutt/clearcutt-java21:vX.Y.Z-distroless \
   --candidate-base-id java21-distroless \
   --tag ghcr.io/acme/payments-api:1.0.0-rebased \
   --dev-identity 'https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main' \
@@ -159,7 +159,7 @@ certify:
   # Pin a released CLI version — never track a moving tag in a supply-chain gate.
   # Bump this as you adopt new releases.
   variables:
-    CLEARCUTT_VERSION: "v0.17.0"
+    CLEARCUTT_VERSION: "vX.Y.Z"
   before_script:
     - apk add --no-cache curl cosign coreutils
     - export ASSET=clearcutt-linux-amd64

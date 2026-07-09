@@ -12,23 +12,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
+	"github.com/northcutted/clearcutt/internal/importedfleet"
 	"sigs.k8s.io/yaml"
 )
-
-type genericImagesFile struct {
-	Images []genericImageSpec `json:"images"`
-}
-
-type genericImageSpec struct {
-	ID              string                   `json:"id"`
-	Image           string                   `json:"image"`
-	Tag             string                   `json:"tag,omitempty"`
-	Language        catalog.LanguageInfo     `json:"language"`
-	Tier            string                   `json:"tier"`
-	Architectures   []string                 `json:"architectures,omitempty"`
-	Lifecycle       *catalog.Lifecycle       `json:"lifecycle,omitempty"`
-	RuntimeContract *catalog.RuntimeContract `json:"runtimeContract,omitempty"`
-}
 
 type genericImageRecordBundle struct {
 	Summary catalog.CatalogImageSummary
@@ -72,7 +58,7 @@ func loadGenericImageBundles(path string, generatedAt string) ([]genericImageRec
 	if err != nil {
 		return nil, fmt.Errorf("read generic OCI images inventory: %w", err)
 	}
-	var inventory genericImagesFile
+	var inventory importedfleet.ImagesFile
 	if err := yaml.Unmarshal(raw, &inventory); err != nil {
 		return nil, fmt.Errorf("parse generic OCI images inventory: %w", err)
 	}
@@ -93,7 +79,7 @@ func loadGenericImageBundles(path string, generatedAt string) ([]genericImageRec
 	return bundles, nil
 }
 
-func genericImageBundle(spec genericImageSpec, generatedAt string) (genericImageRecordBundle, error) {
+func genericImageBundle(spec importedfleet.ImageSpec, generatedAt string) (genericImageRecordBundle, error) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return genericImageRecordBundle{}, fmt.Errorf("missing id")
 	}
@@ -138,8 +124,33 @@ func genericImageBundle(spec genericImageSpec, generatedAt string) (genericImage
 	if spec.RuntimeContract != nil {
 		runtime = *spec.RuntimeContract
 	}
+	if spec.Origin == nil {
+		spec.Origin = &catalog.ImageOrigin{
+			Kind:               "imported",
+			CreatedByClearCutt: false,
+			SourceRef:          spec.Image,
+			ObservationMode:    "inventory-only",
+			ProvenanceClaim:    "none",
+		}
+	}
+	if spec.Governance == nil {
+		spec.Governance = &catalog.ImageGovernance{
+			Imported:                 true,
+			ClassificationConfidence: "user-supplied",
+			ProductionIntent:         "unassessed",
+		}
+	}
 	tier := catalog.TierInfo{ID: spec.Tier, Name: genericTierName(spec.Tier), Blurb: genericTierBlurb(spec.Tier)}
-	evidence := catalog.EvidenceSummary{ArchCount: len(architectures)}
+	evidence := catalog.EvidenceSummary{
+		ArchCount: len(architectures),
+		Statuses: &catalog.EvidenceStatuses{
+			Signature:       catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none", Claim: "No signature evidence inferred for generic OCI image"},
+			Provenance:      catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none", Claim: "No build provenance inferred for generic OCI image"},
+			SBOM:            catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none", Claim: "No SBOM evidence supplied for generic OCI image"},
+			Tests:           catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none", Claim: "No test evidence supplied for generic OCI image"},
+			Vulnerabilities: catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "none", Claim: "No vulnerability scan evidence supplied for generic OCI image"},
+		},
+	}
 	release := catalog.ReleaseEntry{
 		Tag:             tag,
 		PublishedAt:     generatedAt,
@@ -163,6 +174,9 @@ func genericImageBundle(spec genericImageSpec, generatedAt string) (genericImage
 		FullName:        fullName,
 		Lifecycle:       lifecycle,
 		RuntimeContract: runtime,
+		Origin:          spec.Origin,
+		Governance:      spec.Governance,
+		EvidencePolicy:  spec.EvidencePolicy,
 		Releases:        []catalog.ReleaseEntry{release},
 	}
 	summary := catalog.CatalogImageSummary{
@@ -182,6 +196,9 @@ func genericImageBundle(spec genericImageSpec, generatedAt string) (genericImage
 		VulnSummary:          &catalog.VulnSummary{Remediation: &catalog.RemediationCounts{}},
 		Lifecycle:            lifecycle,
 		RuntimeContract:      runtime,
+		Origin:               spec.Origin,
+		Governance:           spec.Governance,
+		EvidencePolicy:       spec.EvidencePolicy,
 	}
 	return genericImageRecordBundle{Summary: summary, Record: record}, nil
 }

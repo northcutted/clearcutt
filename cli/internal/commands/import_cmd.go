@@ -1,0 +1,337 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/output"
+	"github.com/spf13/cobra"
+)
+
+type importImagesFlags struct {
+	refs             string
+	output           string
+	owner            string
+	repo             string
+	registryBase     string
+	defaultTier      string
+	defaultLifecycle string
+	generatedAt      string
+	force            bool
+}
+
+type importObserveFlags struct {
+	images          string
+	output          string
+	offlineFixtures string
+	generatedAt     string
+	strict          bool
+}
+
+type importAssessFlags struct {
+	images       string
+	observations string
+	catalog      string
+	output       string
+	generatedAt  string
+}
+
+type importReportFlags struct {
+	assessment string
+	output     string
+}
+
+type importApplyEvidenceFlags struct {
+	catalog      string
+	observations string
+}
+
+var importImagesOpts importImagesFlags
+var importObserveOpts importObserveFlags
+var importAssessOpts importAssessFlags
+var importReportOpts importReportFlags
+var importApplyEvidenceOpts importApplyEvidenceFlags
+
+func NewImportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Govern OCI image fleets ClearCutt did not build",
+		Long: `Import existing OCI image references into ClearCutt-compatible catalog
+inventories, observe available metadata, assess governance gaps, and generate
+deterministic reports without claiming ClearCutt build provenance.`,
+	}
+	cmd.AddCommand(newImportImagesCmd())
+	cmd.AddCommand(newImportObserveCmd())
+	cmd.AddCommand(newImportAssessCmd())
+	cmd.AddCommand(newImportReportCmd())
+	cmd.AddCommand(newImportApplyEvidenceCmd())
+	cmd.AddCommand(newImportRebaseCmd())
+	return cmd
+}
+
+func newImportImagesCmd() *cobra.Command {
+	importImagesOpts = importImagesFlags{defaultTier: "slim", defaultLifecycle: "active"}
+	cmd := &cobra.Command{
+		Use:   "images",
+		Short: "Convert OCI refs into a generic ClearCutt images.yaml",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImportImages()
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&importImagesOpts.refs, "refs", "", "Path to newline-delimited OCI image refs")
+	f.StringVar(&importImagesOpts.output, "output", "", "Output images.yaml path")
+	f.StringVar(&importImagesOpts.owner, "owner", "", "Imported fleet owner label")
+	f.StringVar(&importImagesOpts.repo, "repo", "", "Imported fleet repo label")
+	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace for generated catalog examples")
+	f.StringVar(&importImagesOpts.defaultTier, "default-tier", "slim", "Default tier for imported images")
+	f.StringVar(&importImagesOpts.defaultLifecycle, "default-lifecycle", "active", "Default lifecycle status for imported images")
+	f.StringVar(&importImagesOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
+	f.BoolVar(&importImagesOpts.force, "force", false, "Overwrite an existing output file")
+	_ = cmd.MarkFlagRequired("refs")
+	_ = cmd.MarkFlagRequired("output")
+	return cmd
+}
+
+func runImportImages() error {
+	if !importImagesOpts.force {
+		if _, err := os.Stat(importImagesOpts.output); err == nil {
+			return fmt.Errorf("%s already exists; pass --force to overwrite", importImagesOpts.output)
+		}
+	}
+	inventory, summary, err := importedfleet.ImportRefs(importedfleet.ImportOptions{
+		RefsPath:         importImagesOpts.refs,
+		Owner:            importImagesOpts.owner,
+		Repo:             importImagesOpts.repo,
+		RegistryBase:     importImagesOpts.registryBase,
+		DefaultTier:      importImagesOpts.defaultTier,
+		DefaultLifecycle: importImagesOpts.defaultLifecycle,
+		GeneratedAt:      importImagesOpts.generatedAt,
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(importImagesOpts.output), 0o755); err != nil {
+		return err
+	}
+	if err := importedfleet.WriteImagesFile(importImagesOpts.output, inventory); err != nil {
+		return err
+	}
+	summary.Output = importImagesOpts.output
+	if strings.EqualFold(GlobalOpts.Format, "json") {
+		return output.PrintJSON(out, summary)
+	}
+	fmt.Fprintf(out, "[import-images] wrote %d imported image(s) to %s\n", summary.ImageCount, importImagesOpts.output)
+	if summary.LowConfidence > 0 {
+		fmt.Fprintf(out, "[import-images] %d image(s) need classification review\n", summary.LowConfidence)
+	}
+	return nil
+}
+
+func newImportObserveCmd() *cobra.Command {
+	importObserveOpts = importObserveFlags{}
+	cmd := &cobra.Command{
+		Use:   "observe",
+		Short: "Observe imported image metadata without inferring provenance",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImportObserve(cmd.Context())
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&importObserveOpts.images, "images", "", "Imported images.yaml inventory")
+	f.StringVar(&importObserveOpts.output, "output", "", "Output observations.json path")
+	f.StringVar(&importObserveOpts.offlineFixtures, "offline-fixtures", "", "Offline observations fixture JSON")
+	f.StringVar(&importObserveOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
+	f.BoolVar(&importObserveOpts.strict, "strict", false, "Fail the command when any image cannot be observed")
+	_ = cmd.MarkFlagRequired("images")
+	_ = cmd.MarkFlagRequired("output")
+	return cmd
+}
+
+func runImportObserve(ctx context.Context) error {
+	inventory, err := importedfleet.ReadImagesFile(importObserveOpts.images)
+	if err != nil {
+		return fmt.Errorf("read images inventory: %w", err)
+	}
+	var observer importedfleet.ImageObserver = importedfleet.RegistryObserver{}
+	var fixtureObservations *importedfleet.Observations
+	if importObserveOpts.offlineFixtures != "" {
+		fixtures, err := importedfleet.ReadObservations(importObserveOpts.offlineFixtures)
+		if err != nil {
+			return fmt.Errorf("read offline fixtures: %w", err)
+		}
+		fixtureObservations = &fixtures
+		observer = importedfleet.NewFixtureObserver(fixtures)
+	}
+	observations, err := importedfleet.ObserveImages(ctx, inventory, observer, importedfleet.ObserveOptions{GeneratedAt: importObserveOpts.generatedAt, Strict: importObserveOpts.strict})
+	if err != nil {
+		return err
+	}
+	if fixtureObservations != nil {
+		observations = mergeExtraFixtureObservations(observations, *fixtureObservations)
+	}
+	if err := os.MkdirAll(filepath.Dir(importObserveOpts.output), 0o755); err != nil {
+		return err
+	}
+	if err := importedfleet.WriteObservations(importObserveOpts.output, observations); err != nil {
+		return err
+	}
+	if strings.EqualFold(GlobalOpts.Format, "json") {
+		return output.PrintJSON(out, observations)
+	}
+	fmt.Fprintf(out, "[import-observe] wrote observations for %d image(s) to %s\n", len(observations.Images), importObserveOpts.output)
+	return nil
+}
+
+func newImportApplyEvidenceCmd() *cobra.Command {
+	importApplyEvidenceOpts = importApplyEvidenceFlags{}
+	cmd := &cobra.Command{
+		Use:    "apply-evidence",
+		Short:  "Apply imported observation evidence statuses to a generated catalog",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImportApplyEvidence()
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&importApplyEvidenceOpts.catalog, "catalog", "", "Generated catalog directory to update")
+	f.StringVar(&importApplyEvidenceOpts.observations, "observations", "", "Imported observations.json")
+	_ = cmd.MarkFlagRequired("catalog")
+	_ = cmd.MarkFlagRequired("observations")
+	return cmd
+}
+
+func runImportApplyEvidence() error {
+	observations, err := importedfleet.ReadObservations(importApplyEvidenceOpts.observations)
+	if err != nil {
+		return fmt.Errorf("read observations: %w", err)
+	}
+	updated, err := importedfleet.ApplyObservationEvidenceToCatalog(importApplyEvidenceOpts.catalog, observations)
+	if err != nil {
+		return err
+	}
+	if err := writeEvidenceManifestFile(importApplyEvidenceOpts.catalog); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[import-apply-evidence] updated evidence statuses for %d catalog image(s) in %s\n", updated, importApplyEvidenceOpts.catalog)
+	return nil
+}
+
+func mergeExtraFixtureObservations(observed importedfleet.Observations, fixtures importedfleet.Observations) importedfleet.Observations {
+	seen := map[string]bool{}
+	for _, obs := range observed.Images {
+		if obs.ID != "" {
+			seen["id:"+obs.ID] = true
+		}
+		if obs.SourceRef != "" {
+			seen["source:"+obs.SourceRef] = true
+		}
+	}
+	for _, obs := range fixtures.Images {
+		if obs.ID != "" && seen["id:"+obs.ID] {
+			continue
+		}
+		if obs.SourceRef != "" && seen["source:"+obs.SourceRef] {
+			continue
+		}
+		observed.Images = append(observed.Images, obs)
+	}
+	sort.SliceStable(observed.Images, func(i, j int) bool { return observed.Images[i].ID < observed.Images[j].ID })
+	return observed
+}
+
+func newImportAssessCmd() *cobra.Command {
+	importAssessOpts = importAssessFlags{}
+	cmd := &cobra.Command{
+		Use:   "assess",
+		Short: "Assess imported fleet evidence and runtime governance gaps",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImportAssess()
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&importAssessOpts.images, "images", "", "Imported images.yaml inventory")
+	f.StringVar(&importAssessOpts.observations, "observations", "", "Imported observations.json")
+	f.StringVar(&importAssessOpts.catalog, "catalog", "", "Generated catalog directory")
+	f.StringVar(&importAssessOpts.output, "output", "", "Output governance directory")
+	f.StringVar(&importAssessOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
+	_ = cmd.MarkFlagRequired("images")
+	_ = cmd.MarkFlagRequired("observations")
+	_ = cmd.MarkFlagRequired("output")
+	return cmd
+}
+
+func runImportAssess() error {
+	inventory, err := importedfleet.ReadImagesFile(importAssessOpts.images)
+	if err != nil {
+		return err
+	}
+	observations, err := importedfleet.ReadObservations(importAssessOpts.observations)
+	if err != nil {
+		return err
+	}
+	assessment, err := importedfleet.Assess(inventory, observations, importedfleet.AssessOptions{GeneratedAt: importAssessOpts.generatedAt, CatalogPath: importAssessOpts.catalog})
+	if err != nil {
+		return err
+	}
+	if err := importedfleet.WriteAssessmentDir(importAssessOpts.output, assessment); err != nil {
+		return err
+	}
+	if strings.EqualFold(GlobalOpts.Format, "json") {
+		return output.PrintJSON(out, assessment)
+	}
+	fmt.Fprintf(out, "[import-assess] wrote imported fleet governance report to %s\n", importAssessOpts.output)
+	return nil
+}
+
+func newImportReportCmd() *cobra.Command {
+	importReportOpts = importReportFlags{}
+	cmd := &cobra.Command{
+		Use:   "report",
+		Short: "Render a deterministic imported-fleet report",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImportReport()
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&importReportOpts.assessment, "assessment", "", "Assessment output directory")
+	f.StringVar(&importReportOpts.output, "output", "", "Output markdown report path")
+	_ = cmd.MarkFlagRequired("assessment")
+	_ = cmd.MarkFlagRequired("output")
+	return cmd
+}
+
+func runImportReport() error {
+	assessment, err := importedfleet.ReadAssessmentDir(importReportOpts.assessment)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(importReportOpts.output), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(importReportOpts.output, []byte(importedfleet.ReportMarkdown(assessment)), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[import-report] wrote %s\n", importReportOpts.output)
+	return nil
+}
+
+func newImportRebaseCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rebase",
+		Short: "Discover imported-fleet rebase candidates and plans",
+	}
+	cmd.AddCommand(newRebaseDiscoverCmd())
+	cmd.AddCommand(newRebasePlanCmd())
+	return cmd
+}

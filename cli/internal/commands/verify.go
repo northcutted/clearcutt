@@ -210,8 +210,8 @@ func runVerify(imageID string) error {
 	}
 
 	// 2. Check Signature
-	hasSig := release.Evidence != nil && release.Evidence.Signature
-	if !hasSig && release.Signature != nil {
+	hasSig := catalog.EvidenceSummarySatisfies(release.Evidence, "signature")
+	if release.Evidence == nil && release.Signature != nil {
 		hasSig = release.Signature.CosignBundlePresent
 	}
 	if verifyOpts.requireSignature {
@@ -225,7 +225,7 @@ func runVerify(imageID string) error {
 	}
 
 	// 3. Check SBOM
-	hasSBOM := release.Evidence != nil && release.Evidence.SBOM
+	hasSBOM := catalog.EvidenceSummarySatisfies(release.Evidence, "sbom")
 	if verifyOpts.requireSBOM {
 		if hasSBOM {
 			addCheck("sbom.present", "pass", "catalog release record reports SPDX SBOM evidence for all platforms")
@@ -241,8 +241,8 @@ func runVerify(imageID string) error {
 	}
 
 	// 4. Check SLSA Provenance
-	hasProv := release.Evidence != nil && release.Evidence.Provenance
-	if !hasProv && release.Provenance != nil {
+	hasProv := catalog.EvidenceSummarySatisfies(release.Evidence, "provenance")
+	if release.Evidence == nil && release.Provenance != nil {
 		hasProv = true
 	}
 	if verifyOpts.requireProvenance {
@@ -256,7 +256,7 @@ func runVerify(imageID string) error {
 	}
 
 	// 5. Check Conformance Tests
-	hasTests := release.Evidence != nil && release.Evidence.Tests
+	hasTests := catalog.EvidenceSummarySatisfies(release.Evidence, "tests")
 	if verifyOpts.requireTests {
 		if hasTests {
 			addCheck("tests.passed", "pass", "conformance and smoke tests passed on all platforms")
@@ -272,7 +272,7 @@ func runVerify(imageID string) error {
 	}
 
 	// 6. Check Vulnerability Scanning
-	hasScan := release.Evidence != nil && release.Evidence.Vulnerabilities
+	hasScan := catalog.EvidenceSummarySatisfies(release.Evidence, "vulnerabilities")
 	if verifyOpts.requireVulnScan {
 		if hasScan {
 			addCheck("vulnerabilities.scanned", "pass", "vulnerability scan results present for all platforms")

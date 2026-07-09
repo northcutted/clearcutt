@@ -630,7 +630,7 @@ func serviceEvidenceSummary(release catalog.ReleaseEntry) catalog.EvidenceSummar
 			vulnArch++
 		}
 	}
-	return catalog.EvidenceSummary{
+	evidence := catalog.EvidenceSummary{
 		Signature:              release.Signature != nil && release.Signature.CosignBundlePresent,
 		Provenance:             release.Provenance != nil,
 		SBOM:                   archCount > 0 && sbomArch == archCount,
@@ -642,6 +642,14 @@ func serviceEvidenceSummary(release catalog.ReleaseEntry) catalog.EvidenceSummar
 		PassedTestArchCount:    passedTestArch,
 		VulnerabilityArchCount: vulnArch,
 	}
+	evidence.Statuses = &catalog.EvidenceStatuses{
+		Signature:       boolEvidenceChannel(evidence.Signature, catalog.EvidenceStatusVerified, "sigstore"),
+		Provenance:      boolEvidenceChannel(evidence.Provenance, catalog.EvidenceStatusVerified, "slsa"),
+		SBOM:            boolEvidenceChannel(evidence.SBOM, catalog.EvidenceStatusVerified, "spdx-sbom"),
+		Tests:           boolEvidenceChannel(evidence.Tests, catalog.EvidenceStatusVerified, "test-results"),
+		Vulnerabilities: boolEvidenceChannel(evidence.Vulnerabilities, catalog.EvidenceStatusObserved, "vulnerability-scan"),
+	}
+	return evidence
 }
 
 func serviceCatalogLifecycle(service fleet.ServiceImage) catalog.Lifecycle {

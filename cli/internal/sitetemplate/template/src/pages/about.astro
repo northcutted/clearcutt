@@ -8,6 +8,7 @@ import { loadSiteConfig, tierLabel } from '../lib/site-config';
 let index;
 try { index = loadIndex(); } catch { index = null; }
 const siteConfig = loadSiteConfig();
+const importedMode = siteConfig.site.catalogMode === 'imported';
 const tierLabels = {
   distroless: tierLabel(siteConfig, 'distroless'),
   slim: tierLabel(siteConfig, 'slim'),
@@ -53,6 +54,27 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
       <p class="text-xs sm:text-sm text-ink-300">Understand the ClearCutt threat model boundaries, runtime tiers, and run cryptographic verification checks.</p>
     </header>
 
+    {importedMode ? (
+      <section class="surface space-y-5 p-6 text-sm text-ink-200">
+        <div>
+          <span class="chip-accent">Catalog-only trust boundary</span>
+          <h2 class="heading mt-3 text-2xl text-ink-50">Verify evidence before trusting it.</h2>
+        </div>
+        <p>
+          This catalog governs OCI images that ClearCutt did not build. Observed metadata, supplied artifacts,
+          and missing evidence are reported separately; no signature, SBOM, provenance, test, or scan is inferred.
+        </p>
+        <ul class="list-disc space-y-2 pl-6">
+          <li><strong class="text-ink-50">Observed</strong> means metadata or an artifact was recorded, not cryptographically verified.</li>
+          <li><strong class="text-ink-50">Verified</strong> is reserved for a ClearCutt verifier result.</li>
+          <li><strong class="text-ink-50">Stale</strong> evidence remains visible but does not satisfy current policy gates.</li>
+          <li>Use digest-pinned OCI references and run registry-side Cosign or provenance verification independently.</li>
+        </ul>
+        <p class="text-ink-300">
+          Catalog-only mode has no Nix build claim, automatic scan schedule, or production approval unless the owning repository explicitly implements and proves those controls.
+        </p>
+      </section>
+    ) : (<>
     <!-- Glassmorphic Tabs Selector -->
     <div class="flex justify-start">
       <div class="inline-flex rounded-full border border-ink-800 bg-ink-950/60 p-1 font-sans text-xs" role="tablist" aria-label="About page sections">
@@ -108,11 +130,11 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
           
           <!-- Project Status & Maturity Notice -->
           <div class="rounded-xl border border-blue-500/20 bg-blue-950/10 p-4 text-xs text-blue-200/90 leading-relaxed font-sans mb-4">
-            <strong>Project Status &amp; Readiness:</strong> ClearCutt is a pre-1.0 open-source blueprint currently maintained by a single author. The public catalog serves as a worked-example of a live image hardening feed. Before utilizing these runtimes in critical production environments, downstream organizations are strongly encouraged to fork the repository, host their own builds, and conduct independent verification.
+            <strong>Project Status &amp; Readiness:</strong> ClearCutt is a pre-1.0 open-source blueprint currently maintained by a single author. The public catalog serves as a worked-example of a live image hardening feed. Before using these runtimes in critical production environments, downstream organizations should bootstrap their own control-plane repository, operate their own builds or imported image inventory, and conduct independent verification.
           </div>
 
           <p>
-            ClearCutt is a free, open-source base image blueprint designed for platform and security engineers who want signed, evidence-backed runtime tiers with shell-free distroless options. Unlike traditional opinionated base OS projects, ClearCutt is a forkable framework built with Nix. Downstream teams are expected to fork this repository to compile and govern their own custom internal container feeds, or overlay scoped Nix closures on top of standard base images (like Red Hat UBI or Ubuntu Pro).
+            ClearCutt is a free, open-source CLI and reference implementation for platform and security engineers who want GitHub-native container image control planes, signed evidence-backed runtime tiers, and shell-free distroless options. Teams can start with a Nix-free catalog-only control plane around images they already publish, then graduate to the fleet profile when they want ClearCutt to build and govern custom internal container feeds.
           </p>
           <p>
             Our supply chain pipeline compiles target runtimes as isolated <code class="font-mono text-ink-100">/nix/store</code> closures with declared inputs. The catalog serves as a live worked example for inspecting OCI build evidence, from OIDC-based signing to OpenVEX exploitability records.
@@ -316,9 +338,10 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         </section>
       </article>
     </div>
+    </>)}
   </div>
 
-  <script is:inline>
+  {!importedMode && <script is:inline>
     (function () {
       const triggers = document.querySelectorAll('[data-tab-trigger]');
       const panels = document.querySelectorAll('[data-tab-panel]');
@@ -382,5 +405,5 @@ const oidcIssuer = 'https://token.actions.githubusercontent.com';
         });
       });
     })();
-  </script>
+  </script>}
 </Base>

@@ -1,7 +1,8 @@
 # ClearCutt
 
-**The forkable platform kit and reference implementation for publishing owned,
-evidence-backed base images.**
+**A CLI for bootstrapping GitHub-native container image control planes: catalog,
+release, signing, attestation, policy, and app-team adoption workflows generated
+into your own repo.**
 
 [![Live Catalog Site](https://img.shields.io/badge/Live%20Catalog-Site-blueviolet.svg?logo=astro&logoColor=white)](https://northcutted.github.io/clearcutt)
 [![ClearCutt PR Gating](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml)
@@ -10,28 +11,35 @@ evidence-backed base images.**
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-ClearCutt is a free, open-source platform kit for teams that want to own their
-container image supply chain. Use the CLI to scaffold a fleet repository, or
-fork the reference repo directly, then operate an image fleet, release workflows
-configured for signing and attestation, catalog data, a static evidence portal,
-CI/CD gates, admission policy examples, app-team templates, and remediation
-workflows under **your** registry, GitHub Actions OIDC identities, and review
-process.
+ClearCutt is a free, open-source CLI for teams that want to own their container
+image supply chain in a GitHub-native, git-based control-plane repository. Use
+the CLI to generate the repo that owns catalog inputs, workflows, static
+evidence portal publishing, CI/CD gates, admission policy examples, app-team
+templates, release/signing/attestation paths, and remediation workflows under
+**your** registry, GitHub Actions OIDC identities, and review process.
 
-There is no hosted ClearCutt control plane. The repository is the control plane:
-your fork owns the configuration, builds, evidence, catalog, policies, and
-operational burden.
+ClearCutt can govern image fleets it did not build. Start by importing existing
+OCI images into a catalog, then add evidence, policy, app onboarding, and rebase
+planning over time. If you later want full provenance and reproducible rebuilds,
+graduate to a ClearCutt-operated fleet.
+
+There is no hosted ClearCutt control plane. The generated repository is the
+control plane: it owns configuration, builds or imported image inventory,
+evidence, catalog, policies, and operational burden. The upstream
+`northcutted/clearcutt` repository remains the CLI and reference implementation
+source; direct forks remain an advanced/backward-compatible path.
 
 ![Terminal demo of fixture-backed ClearCutt catalog inspection, image verification, app template generation, and catalog site build](docs/images/demo.gif)
 
 ## What It Is
 
-ClearCutt is best understood as a **CLI-scaffolded platform kit and reference
-implementation**, not a hosted product. It provides the pieces a platform team
-can scaffold or fork, configure, run, inspect, and adapt:
+ClearCutt is best understood as a **CLI that bootstraps user-owned container
+image control planes**, not a hosted product. It provides the pieces a platform
+team can render, configure, run, inspect, and adapt:
 
 | Surface | What it does today | Owner |
 | --- | --- | --- |
+| Catalog-only control plane | Generates a lightweight Nix-free repo around `images.yaml`, catalog generation, validation, and static site publishing. | Platform team |
 | Runtime base images | Publishes language runtime images in `dev`, `slim`, and `distroless` tiers. | Platform team |
 | Service images | Publishes platform-owned service images such as Postgres, Valkey, and oauth2-proxy. | Platform team |
 | Catalog and portal | Reports image metadata, evidence channels, vulnerability scans, tests, and missing data. | Platform team |
@@ -106,12 +114,36 @@ Building from source stays the contributor path; see
 | Role | First document | First useful command |
 | --- | --- | --- |
 | App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
-| Platform owner | [Platform kit](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform new ./golden-images --owner YOUR_ORG --repo golden-images` |
+| Imported fleet owner | [Imported fleets](docs/imported-fleets.md) | `go -C cli run ./cmd/clearcutt import images --refs ../examples/imported-fleet/refs.txt --output /tmp/clearcutt-import/images.yaml --force` |
+| Platform owner | [Platform bootstrap](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform bootstrap github --profile catalog-only --owner YOUR_ORG --repo image-platform --registry-base ghcr.io/YOUR_ORG/image-platform --dir ./image-platform --dry-run --force` |
 | Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
 | Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,120p' docs/alternatives.md` |
 | Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |
 
+For a deterministic imported-fleet proof that does not require Nix or registry
+access:
+
+```bash
+# Offline deterministic demo
+./scripts/demo-imported-fleet-offline.sh
+
+# The script prints a unique output directory. To use a fixed path:
+OUT=/tmp/clearcutt-import-demo ./scripts/demo-imported-fleet-offline.sh
+cat /tmp/clearcutt-import-demo/imported-fleet-report.md
+```
+
+ClearCutt can govern imported images without trusting them by default. It
+records what can be observed, preserves missing evidence, and only treats
+provenance as verified when actual provenance evidence exists.
+
 The full documentation index is [docs/README.md](docs/README.md).
+
+Contributor note: if the platform-source drift check fails, refresh the
+embedded source archive with:
+
+```bash
+go -C cli run ./internal/platformsource/internal/genplatformsource
+```
 
 ## Portal Preview
 
@@ -137,7 +169,7 @@ from ignored local site data.
   non-claims.
 - [Policy bundles](docs/policy-bundles.md) covers Kyverno and Gatekeeper policy
   generation.
-- [Fork validation](docs/fork-validation.md) lists checks to run before a fork's
+- [Fork validation](docs/fork-validation.md) lists checks to run before an advanced fork's
   first release.
 
 ## Repo Layout

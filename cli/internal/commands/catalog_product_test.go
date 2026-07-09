@@ -13,7 +13,27 @@ import (
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/importedfleet"
 )
+
+func TestGenericImageBundleDefaultsToImportedGovernance(t *testing.T) {
+	bundle, err := genericImageBundle(importedfleet.ImageSpec{
+		ID:            "sample",
+		Image:         "registry.example.com/sample:1",
+		Language:      catalog.LanguageInfo{ID: "sample", DisplayName: "Sample", Version: "1"},
+		Tier:          "slim",
+		Architectures: []string{"amd64"},
+	}, "2026-01-01T00:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.Record.Origin == nil || bundle.Record.Origin.Kind != "imported" || bundle.Record.Origin.CreatedByClearCutt || bundle.Record.Origin.ProvenanceClaim != "none" {
+		t.Fatalf("generic record origin = %#v", bundle.Record.Origin)
+	}
+	if bundle.Summary.Governance == nil || !bundle.Summary.Governance.Imported || bundle.Summary.Governance.ProductionIntent != "unassessed" {
+		t.Fatalf("generic summary governance = %#v", bundle.Summary.Governance)
+	}
+}
 
 func TestCatalogValidateSummarizeAndInspectNamespace(t *testing.T) {
 	validateOut, err := runCLI(t, "--catalog", fixtureCatalog(), "catalog", "validate")
@@ -387,6 +407,25 @@ func TestCatalogSiteBuildRequiresInstallWhenDependenciesMissing(t *testing.T) {
 	}
 }
 
+func TestCatalogSiteBuildReportsMissingDetectedPackageManager(t *testing.T) {
+	templateDir := writeMinimalSiteTemplate(t)
+	if err := os.WriteFile(filepath.Join(templateDir, "package-lock.json"), []byte(`{"lockfileVersion":3}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+
+	stdout, err := runCLI(t,
+		"catalog", "site", "build",
+		"--catalog", fixtureCatalog(),
+		"--template", templateDir,
+		"--output", filepath.Join(t.TempDir(), "dist"),
+		"--install",
+	)
+	if err == nil || !strings.Contains(err.Error(), "npm was not found on PATH") || !strings.Contains(err.Error(), "package-lock.json") {
+		t.Fatalf("expected missing npm error tied to package-lock, got err=%v\n%s", err, stdout)
+	}
+}
+
 func TestCatalogSiteBuildRunsInstallAndCopiesStaticOutput(t *testing.T) {
 	templateDir := writeMinimalSiteTemplate(t)
 	binDir := filepath.Join(t.TempDir(), "bin")
@@ -458,6 +497,60 @@ exit 2
 	}
 	if !strings.Contains(stdout, "[site-build] generated ") || !strings.Contains(stdout, " OpenVEX document(s)") {
 		t.Fatalf("expected VEX generation output, got:\n%s", stdout)
+	}
+}
+
+func TestCatalogSiteBuildUsesPnpmLockWhenPresent(t *testing.T) {
+	templateDir := writeMinimalSiteTemplate(t)
+	if err := os.WriteFile(filepath.Join(templateDir, "pnpm-lock.yaml"), []byte("lockfileVersion: '9.0'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(t.TempDir(), "pm.log")
+	fakePNPM := filepath.Join(binDir, "pnpm")
+	if err := os.WriteFile(fakePNPM, []byte(`#!/bin/sh
+set -eu
+printf '%s\n' "$*" >> "$FAKE_PM_LOG"
+if [ "$1" = "install" ]; then
+  /bin/mkdir -p node_modules
+  exit 0
+fi
+if [ "$1" = "run" ] && [ "${2:-}" = "build" ]; then
+  /bin/mkdir -p dist
+  printf 'pnpm build\n' > dist/index.html
+  /bin/cp -R public/catalog dist/catalog
+  exit 0
+fi
+exit 2
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("FAKE_PM_LOG", logPath)
+
+	outDir := filepath.Join(t.TempDir(), "dist")
+	stdout, err := runCLI(t,
+		"catalog", "site", "build",
+		"--catalog", fixtureCatalog(),
+		"--template", templateDir,
+		"--output", outDir,
+		"--install",
+	)
+	if err != nil {
+		t.Fatalf("catalog site build with pnpm failed: %v\n%s", err, stdout)
+	}
+	logRaw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(logRaw)
+	for _, want := range []string{"install --frozen-lockfile", "run build"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("expected pnpm log to contain %q, got:\n%s", want, log)
+		}
 	}
 }
 
@@ -811,7 +904,7 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 	if manifest.Releases[0].ImmutableRef == nil || !strings.Contains(*manifest.Releases[0].ImmutableRef, "@sha256:") {
 		t.Fatalf("expected immutable ref in manifest release: %#v", manifest.Releases[0])
 	}
-	for _, schemaName := range []string{"catalog-index.v1.schema.json", "evidence-manifest.v1.schema.json", "image-record.v1.schema.json"} {
+	for _, schemaName := range []string{"catalog-index.v1.schema.json", "evidence-manifest.v1.schema.json", "evidence-manifest.v2.schema.json", "image-record.v1.schema.json"} {
 		schemaRaw, err := os.ReadFile(filepath.Join(outDir, "schemas", schemaName))
 		if err != nil {
 			t.Fatalf("expected generated schema %s: %v", schemaName, err)
@@ -866,8 +959,8 @@ func TestCatalogGenerateWritesSummaryJSONFromExistingRecords(t *testing.T) {
 }
 
 func TestEvidenceManifestHelperAndErrorBranches(t *testing.T) {
-	partial := countedChannelStatus(true, true, 1, 2, "architecture SBOMs")
-	if partial.Status != "partial" || partial.Detail != "1/2 architecture SBOMs" {
+	partial := countedChannelStatus(true, catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "test"}, 1, 2, "architecture SBOMs")
+	if partial.Status != catalog.EvidenceStatusObserved || partial.Detail != "1/2 architecture SBOMs" {
 		t.Fatalf("expected partial counted channel, got %#v", partial)
 	}
 
@@ -1062,7 +1155,7 @@ func TestCatalogGenerateIncludeServicesEmitsV2ServiceRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mixed service catalog should validate with warnings only: %v\n%s", err, validateOut)
 	}
-	for _, schemaName := range []string{"catalog-index.v2.schema.json", "evidence-manifest.v1.schema.json", "image-record.v2.schema.json"} {
+	for _, schemaName := range []string{"catalog-index.v2.schema.json", "evidence-manifest.v1.schema.json", "evidence-manifest.v2.schema.json", "image-record.v2.schema.json"} {
 		if _, err := os.Stat(filepath.Join(outDir, "schemas", schemaName)); err != nil {
 			t.Fatalf("expected generated v2 schema %s: %v", schemaName, err)
 		}
@@ -1290,6 +1383,15 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
     architectures:
       - amd64
       - arm64
+    origin:
+      kind: imported
+      createdByClearCutt: false
+      provenanceClaim: none
+    governance:
+      imported: true
+      classificationConfidence: high
+    evidencePolicy:
+      provenance: optional
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1345,6 +1447,15 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if summary.ID != "java21-distroless" || summary.LatestTag != "v1.2.3" || summary.Language != "java" || summary.Tier != "distroless" {
 		t.Fatalf("unexpected generic image summary: %#v", summary)
 	}
+	if summary.Origin == nil || summary.Origin.Kind != "imported" || summary.Origin.CreatedByClearCutt || summary.Origin.ProvenanceClaim != "none" {
+		t.Fatalf("generic summary should preserve imported origin metadata: %#v", summary.Origin)
+	}
+	if summary.Governance == nil || !summary.Governance.Imported || summary.Governance.ClassificationConfidence != "high" {
+		t.Fatalf("generic summary should preserve imported governance metadata: %#v", summary.Governance)
+	}
+	if summary.EvidencePolicy == nil || summary.EvidencePolicy.Provenance != "optional" {
+		t.Fatalf("generic summary should preserve evidence policy metadata: %#v", summary.EvidencePolicy)
+	}
 	if !contains(summary.Architectures, "amd64") || !contains(summary.Architectures, "arm64") {
 		t.Fatalf("expected amd64 and arm64 summary architectures, got %v", summary.Architectures)
 	}
@@ -1353,6 +1464,9 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	}
 	if summary.Evidence == nil || summary.Evidence.ArchCount != 2 || summary.Evidence.Signature || summary.Evidence.Provenance || summary.Evidence.SBOM {
 		t.Fatalf("unexpected generic summary evidence: %#v", summary.Evidence)
+	}
+	if summary.Evidence.Statuses == nil || summary.Evidence.Statuses.Provenance.Status != catalog.EvidenceStatusMissing || summary.Evidence.Statuses.SBOM.Status != catalog.EvidenceStatusMissing {
+		t.Fatalf("generic summary should emit missing evidence statuses: %#v", summary.Evidence.Statuses)
 	}
 
 	record, err := catalog.LoadImageRecord(outDir, "java21-distroless")
@@ -1365,6 +1479,12 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if record.Registry != "ghcr.io" || record.ImageName != "java21" || record.FullName != "ghcr.io/acme/base/java21" {
 		t.Fatalf("unexpected generic image reference fields: %#v", record)
 	}
+	if record.Origin == nil || record.Origin.Kind != "imported" || record.Origin.CreatedByClearCutt || record.Origin.ProvenanceClaim != "none" {
+		t.Fatalf("generic image record should preserve imported origin metadata: %#v", record.Origin)
+	}
+	if record.Governance == nil || !record.Governance.Imported {
+		t.Fatalf("generic image record should preserve imported governance metadata: %#v", record.Governance)
+	}
 	if len(record.Releases) != 1 {
 		t.Fatalf("expected one generic release, got %d", len(record.Releases))
 	}
@@ -1374,6 +1494,9 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	}
 	if release.Evidence == nil || release.Evidence.ArchCount != 2 || release.Evidence.Signature || release.Evidence.Provenance || release.Evidence.SBOM {
 		t.Fatalf("unexpected generic release evidence: %#v", release.Evidence)
+	}
+	if release.Evidence.Statuses == nil || release.Evidence.Statuses.Provenance.Status != catalog.EvidenceStatusMissing || release.Evidence.Statuses.SBOM.Status != catalog.EvidenceStatusMissing {
+		t.Fatalf("generic release should emit missing evidence statuses: %#v", release.Evidence.Statuses)
 	}
 	manifestRaw, err := os.ReadFile(filepath.Join(outDir, evidenceManifestFilename))
 	if err != nil {
@@ -1389,6 +1512,9 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if got := strings.Join(manifest.Releases[0].Missing, ","); !strings.Contains(got, "signature") || !strings.Contains(got, "sbom") {
 		t.Fatalf("expected generic manifest to preserve missing evidence, got %#v", manifest.Releases[0].Missing)
 	}
+	if manifest.Releases[0].Channels.Provenance.Status != catalog.EvidenceStatusMissing || manifest.Releases[0].Channels.Provenance.Source != "none" {
+		t.Fatalf("generic manifest should preserve missing provenance status/source: %#v", manifest.Releases[0].Channels.Provenance)
+	}
 	if len(release.Architectures) != 2 {
 		t.Fatalf("expected two generic architectures, got %d", len(release.Architectures))
 	}
@@ -1402,6 +1528,9 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "schemas", "evidence-manifest.v1.schema.json")); err != nil {
 		t.Fatalf("expected generated evidence manifest schema: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "schemas", "evidence-manifest.v2.schema.json")); err != nil {
+		t.Fatalf("expected generated status-aware evidence manifest schema: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "schemas", "image-record.v1.schema.json")); err != nil {
 		t.Fatalf("expected generated image record schema: %v", err)
@@ -1422,6 +1551,113 @@ func TestCatalogGenerateFromGenericOCIImagesInventory(t *testing.T) {
 	if !strings.Contains(validateOut, "missing signature evidence") || !strings.Contains(validateOut, "missing or incomplete SBOM evidence") {
 		t.Fatalf("expected generic validation warnings for unavailable evidence, got:\n%s", validateOut)
 	}
+}
+
+func TestCatalogValidateImportedObservedEvidenceWarnsButDoesNotFail(t *testing.T) {
+	outDir := generateObservedImportedCatalog(t)
+
+	validateOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate")
+	if err != nil {
+		t.Fatalf("observed imported catalog should validate with warnings: %v\n%s", err, validateOut)
+	}
+	for _, want := range []string{
+		"0 error(s)",
+		"missing provenance evidence",
+		"missing or incomplete vulnerability scans",
+	} {
+		if !strings.Contains(validateOut, want) {
+			t.Fatalf("expected validation output to contain %q, got:\n%s", want, validateOut)
+		}
+	}
+	if strings.Contains(validateOut, "missing or incomplete SBOM evidence") {
+		t.Fatalf("observed SBOM should not be reported as missing:\n%s", validateOut)
+	}
+
+	strictOut, err := runCLI(t, "--catalog", outDir, "catalog", "validate", "--warnings-as-errors")
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("warnings-as-errors should fail for imported warning catalog, got err=%v\n%s", err, strictOut)
+	}
+}
+
+func generateObservedImportedCatalog(t *testing.T) string {
+	t.Helper()
+	inventoryPath := filepath.Join(t.TempDir(), "images.yaml")
+	if err := os.WriteFile(inventoryPath, []byte(`images:
+  - id: java21-runtime
+    image: ghcr.io/acme/imported/java21@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
+    language:
+      id: java
+      displayName: Java
+      version: "21"
+    tier: slim
+    architectures:
+      - amd64
+    origin:
+      kind: imported
+      createdByClearCutt: false
+      provenanceClaim: none
+    governance:
+      imported: true
+      classificationConfidence: high
+    evidencePolicy:
+      provenance: optional
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outDir := filepath.Join(t.TempDir(), "catalog")
+	stdout, err := runCLI(t,
+		"catalog", "generate",
+		"--images", inventoryPath,
+		"--output", outDir,
+		"--owner", "acme",
+		"--repo", "imported",
+		"--registry-base", "ghcr.io/acme/imported",
+		"--generated-at", "2026-06-04T12:00:00Z",
+	)
+	if err != nil {
+		t.Fatalf("catalog generate --images failed: %v\n%s", err, stdout)
+	}
+	updateEvidence := func(e *catalog.EvidenceSummary) {
+		if e == nil {
+			t.Fatal("expected evidence summary")
+		}
+		e.Signature = false
+		e.Provenance = true
+		e.SBOM = false
+		e.Tests = false
+		e.Vulnerabilities = false
+		e.Statuses = &catalog.EvidenceStatuses{
+			Signature:       catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusVerified, Source: "test"},
+			Provenance:      catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "test"},
+			SBOM:            catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusObserved, Source: "test", Claim: "Observed SBOM is not build provenance"},
+			Tests:           catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "test"},
+			Vulnerabilities: catalog.EvidenceChannelStatus{Status: catalog.EvidenceStatusMissing, Source: "test"},
+		}
+		catalog.NormalizeEvidenceSummary(e)
+	}
+	index, err := catalog.LoadCatalogIndex(outDir)
+	if err != nil {
+		t.Fatalf("load generated index: %v", err)
+	}
+	updateEvidence(index.Images[0].Evidence)
+	index.Images[0].Signed = index.Images[0].Evidence.Signature
+	index.Images[0].Provenance = index.Images[0].Evidence.Provenance
+	index.Images[0].Passed = index.Images[0].Evidence.Tests
+	if err := writeJSONFile(filepath.Join(outDir, "index.json"), index); err != nil {
+		t.Fatalf("write updated index: %v", err)
+	}
+	record, err := catalog.LoadImageRecord(outDir, "java21-runtime")
+	if err != nil {
+		t.Fatalf("load generated record: %v", err)
+	}
+	updateEvidence(record.Releases[0].Evidence)
+	if err := writeJSONFile(filepath.Join(outDir, "images", "java21-runtime.json"), record); err != nil {
+		t.Fatalf("write updated record: %v", err)
+	}
+	if err := writeEvidenceManifestFile(outDir); err != nil {
+		t.Fatalf("write evidence manifest: %v", err)
+	}
+	return outDir
 }
 
 func TestCatalogGenerateFromGenericOCIImagesRejectsUnsupportedArchitecture(t *testing.T) {

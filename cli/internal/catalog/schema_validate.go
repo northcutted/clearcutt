@@ -26,8 +26,10 @@ func SchemaFileForVersion(version string) (string, bool) {
 		return "image-record.v1.schema.json", true
 	case ImageRecordSchemaVersionV2:
 		return "image-record.v2.schema.json", true
-	case EvidenceManifestSchemaVersion:
+	case EvidenceManifestSchemaVersionV1:
 		return "evidence-manifest.v1.schema.json", true
+	case EvidenceManifestSchemaVersion:
+		return "evidence-manifest.v2.schema.json", true
 	}
 	return "", false
 }

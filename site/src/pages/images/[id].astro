@@ -27,6 +27,7 @@ const features = loadSiteConfig().site.features;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
 const imageDataUrl = `${base}catalog/images/${image.id}.json`;
 const isService = image.kind === 'service';
+const isImported = image.governance?.imported || image.origin?.kind === 'imported' || image.origin?.createdByClearCutt === false || image.origin?.provenanceClaim === 'none';
 const metadataTabs = [
   ...(features.ociLabels ? [{ id: 'labels', label: 'OCI Labels' }] : []),
   ...(features.versionHistory ? [{ id: 'versions', label: 'Version History' }] : []),
@@ -94,7 +95,9 @@ const showDeepDive = features.sbomTable || features.layerExplorer || metadataTab
         <div>
           <h2 class="heading text-xl sm:text-2xl font-bold">{isService ? 'Evidence &amp; OCI Specifications' : 'Deep-Dive &amp; OCI Specifications'}</h2>
           <p class="text-xs sm:text-sm text-ink-300">
-            {isService
+            {isImported
+	          ? 'Inspect recorded packages, image metadata, labels, and evidence gaps without inferring a ClearCutt build or Nix closure.'
+	          : isService
               ? 'Inspect service SBOMs, image layers, OCI labels, and release history after reviewing the service contract above.'
               : 'Analyze the full Nix store dependency closure, image layer architecture, and OCI configuration labels.'}
           </p>

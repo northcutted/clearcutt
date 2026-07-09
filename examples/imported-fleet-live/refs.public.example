@@ -1,0 +1,14 @@
+# Copy this file to refs.txt and replace these commented placeholders with
+# digest-pinned public image refs that you have permission to inspect.
+#
+# Keep this file digest-only. Do not use mutable tags such as :latest for
+# repeatable live observations.
+#
+# Public images are examples for exercising registry observation only; they are
+# not endorsed by ClearCutt. Registry capabilities vary, so signatures, SBOMs,
+# referrers, labels, and provenance may be missing even for valid images.
+#
+# Placeholder refs:
+# cgr.dev/chainguard/static@sha256:<verified-digest>
+# gcr.io/distroless/static-debian12@sha256:<verified-digest>
+# ghcr.io/example/public-runtime@sha256:<verified-digest>

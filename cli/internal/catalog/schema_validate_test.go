@@ -9,11 +9,12 @@ import (
 // schema file and rejects unknown versions.
 func TestSchemaFileForVersion(t *testing.T) {
 	for version, want := range map[string]string{
-		CatalogIndexSchemaVersion:     "catalog-index.v1.schema.json",
-		CatalogIndexSchemaVersionV2:   "catalog-index.v2.schema.json",
-		ImageRecordSchemaVersion:      "image-record.v1.schema.json",
-		ImageRecordSchemaVersionV2:    "image-record.v2.schema.json",
-		EvidenceManifestSchemaVersion: "evidence-manifest.v1.schema.json",
+		CatalogIndexSchemaVersion:       "catalog-index.v1.schema.json",
+		CatalogIndexSchemaVersionV2:     "catalog-index.v2.schema.json",
+		ImageRecordSchemaVersion:        "image-record.v1.schema.json",
+		ImageRecordSchemaVersionV2:      "image-record.v2.schema.json",
+		EvidenceManifestSchemaVersionV1: "evidence-manifest.v1.schema.json",
+		EvidenceManifestSchemaVersion:   "evidence-manifest.v2.schema.json",
 	} {
 		got, ok := SchemaFileForVersion(version)
 		if !ok || got != want {

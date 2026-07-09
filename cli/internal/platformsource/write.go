@@ -2,8 +2,11 @@ package platformsource
 
 import (
 	"archive/zip"
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/northcutted/clearcutt/internal/platformsource/rules"
 )
@@ -27,6 +30,75 @@ func WriteArchive(root string) (string, error) {
 		return "", err
 	}
 	return dest, nil
+}
+
+// CheckArchiveFresh verifies that the generated archive on disk matches the
+// current source tree. It compares file payloads instead of zip bytes so file
+// mtimes and zip header details do not create false positives.
+func CheckArchiveFresh(root string) error {
+	raw, err := os.ReadFile(ArchivePath(root))
+	if err != nil {
+		return fmt.Errorf("read embedded platform source archive: %w", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return fmt.Errorf("open embedded platform source archive: %w", err)
+	}
+	embedded := map[string][]byte{}
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() || !file.FileInfo().Mode().IsRegular() {
+			continue
+		}
+		rel, err := filepath.Rel("clearcutt-source", filepath.FromSlash(file.Name))
+		if err != nil || rel == "." || rel == ".." || rel == "" || rel[0] == '.' && len(rel) >= 2 && rel[:2] == ".." {
+			return fmt.Errorf("embedded platform source archive contains unexpected path %q", file.Name)
+		}
+		src, err := file.Open()
+		if err != nil {
+			return fmt.Errorf("open embedded %s: %w", file.Name, err)
+		}
+		var buf bytes.Buffer
+		_, readErr := buf.ReadFrom(src)
+		closeErr := src.Close()
+		if readErr != nil {
+			return fmt.Errorf("read embedded %s: %w", file.Name, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close embedded %s: %w", file.Name, closeErr)
+		}
+		embedded[filepath.ToSlash(rel)] = buf.Bytes()
+	}
+
+	var stale []string
+	live := map[string]bool{}
+	if err := walkSourceTree(root, func(rel string, info os.FileInfo) error {
+		raw, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		live[rel] = true
+		got, ok := embedded[rel]
+		if !ok {
+			stale = append(stale, "missing "+rel)
+			return nil
+		}
+		if !bytes.Equal(got, raw) {
+			stale = append(stale, "stale "+rel)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for rel := range embedded {
+		if !live[rel] {
+			stale = append(stale, "extra "+rel)
+		}
+	}
+	if len(stale) > 0 {
+		return fmt.Errorf("embedded platform source is stale: %s", strings.Join(stale, ", "))
+	}
+	return nil
 }
 
 func writeArchiveFile(root, dest string) error {

@@ -13,9 +13,9 @@ sed -n '1,140p' README.md
 sed -n '1,120p' docs/README.md
 ```
 
-Expected readout: ClearCutt is a forkable platform kit/reference
-implementation, the repo is the control plane, and roles have different first
-paths.
+Expected readout: ClearCutt is a CLI for bootstrapping user-owned GitHub
+container image control planes, generated repos own the operating surface, and
+roles have different first paths. Forking remains an advanced/reference path.
 
 ## 2. Fixture-Backed Catalog Proof
 

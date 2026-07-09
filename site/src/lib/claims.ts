@@ -1,23 +1,24 @@
-// Single source of truth for product messaging. ClearCutt is a kit you fork and
-// run — not a managed service or a registry you depend on. Keep one identity and
-// one operating model; the homepage and About page both read from here.
+// Single source of truth for product messaging. ClearCutt bootstraps a
+// user-owned GitHub control-plane repo; it is not a managed service or a
+// registry you depend on. Keep one identity and one operating model; the
+// homepage and About page both read from here.
 export const claims = {
   identity: {
     name: "ClearCutt",
-    category: "the forkable platform kit and reference implementation for hardened base images",
-    slogan: "Fork the kit. Own the trust chain.",
+    category: "the CLI for GitHub-native container image control planes",
+    slogan: "Bootstrap the control plane. Own the trust chain.",
   },
   hero: {
-    title: "Hardened base images, evidence built in.",
-    slogan: "Fork the kit. Own the trust chain.",
+    title: "Container image control planes, generated into your repo.",
+    slogan: "Bootstrap the control plane. Own the trust chain.",
     description:
-      "ClearCutt is a free, forkable platform kit and reference implementation for publishing your own hardened base-image fleet, with workflows configured for signatures, SBOM attestations, SLSA provenance, catalog evidence, app-team templates, and governance gates under your own GitHub OIDC identities. You run the pipeline; there is no hosted ClearCutt control plane to trust.",
+      "ClearCutt is a free CLI for bootstrapping GitHub-native container image control planes: catalog, release, signing, attestation, policy, and app-team adoption workflows generated into your own repo. Start catalog-only from images.yaml without Nix, then graduate to the fleet profile when ClearCutt should build the image fleet.",
   },
   // The product spine: manager-readable outcomes with engineer-readable controls.
   // The first two steps are the platform loop; the last three are the repeated
   // app delivery loop.
   lifecycle: [
-    { phase: "Own the fleet", outcome: "Platform teams fork the kit and turn base images into governed source, not a vendor dependency.", detail: "fleet config · matrix add · runtime scaffold" },
+    { phase: "Own the control plane", outcome: "Platform teams generate the repository that owns catalog inputs, workflows, evidence, policies, and operating decisions.", detail: "platform bootstrap · platform plan · platform apply" },
     { phase: "Publish evidence", outcome: "Release workflows are configured to produce signed images, SBOMs, provenance, scans, and a catalog that shows each channel independently, including missing evidence.", detail: "catalog build · release evidence · SLSA + Sigstore" },
     { phase: "Onboard apps", outcome: "App teams get matching dev images, starter templates, and rebasable build paths without learning Nix.", detail: "list · inspect · dev · app template/build" },
     { phase: "Gate delivery", outcome: "CI and admission policies block images that miss your runtime, evidence, or vulnerability contract.", detail: "certify · verify · conformance · policy" },

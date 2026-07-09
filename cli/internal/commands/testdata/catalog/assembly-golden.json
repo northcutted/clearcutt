@@ -295,6 +295,28 @@
           "sbom": true,
           "tests": true,
           "vulnerabilities": true,
+          "statuses": {
+            "signature": {
+              "status": "verified",
+              "source": "sigstore"
+            },
+            "provenance": {
+              "status": "verified",
+              "source": "slsa"
+            },
+            "sbom": {
+              "status": "verified",
+              "source": "spdx-sbom"
+            },
+            "tests": {
+              "status": "verified",
+              "source": "test-results"
+            },
+            "vulnerabilities": {
+              "status": "observed",
+              "source": "vulnerability-scan"
+            }
+          },
           "archCount": 2,
           "sbomArchCount": 2,
           "testArchCount": 2,
@@ -343,6 +365,28 @@
       "sbom": true,
       "tests": true,
       "vulnerabilities": true,
+      "statuses": {
+        "signature": {
+          "status": "verified",
+          "source": "sigstore"
+        },
+        "provenance": {
+          "status": "verified",
+          "source": "slsa"
+        },
+        "sbom": {
+          "status": "verified",
+          "source": "spdx-sbom"
+        },
+        "tests": {
+          "status": "verified",
+          "source": "test-results"
+        },
+        "vulnerabilities": {
+          "status": "observed",
+          "source": "vulnerability-scan"
+        }
+      },
       "archCount": 2,
       "sbomArchCount": 2,
       "testArchCount": 2,

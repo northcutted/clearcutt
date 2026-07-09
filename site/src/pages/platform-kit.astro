@@ -1,21 +1,17 @@
 ---
 import Base from '../layouts/Base.astro';
 import CopyBlock from '../components/CopyBlock.astro';
-import { loadIndex } from '../lib/catalog';
-
-let index;
-try { index = loadIndex(); } catch { index = null; }
-const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcutt';
 ---
-<Base title="Platform Kit" description="Fork ClearCutt to publish your own signed image fleet, catalog, app templates, admission policies, and approved remediation workflow.">
+<Base title="Platform Bootstrap" description="Bootstrap a user-owned GitHub control-plane repo for catalog, evidence, workflows, policies, and app-team adoption.">
   <section class="space-y-10 pb-10">
     <header class="space-y-4 max-w-3xl">
       <span class="chip-accent">For platform engineering teams</span>
-      <h1 class="heading text-4xl sm:text-5xl">Fork the kit. Own the trust chain.</h1>
+      <h1 class="heading text-4xl sm:text-5xl">Bootstrap the control plane. Own the trust chain.</h1>
       <p class="text-base text-ink-200">
-        ClearCutt is packaged as a forkable operating kit: configure a fleet, publish signed
-        base images, deploy a catalog site, generate app-team templates, certify downstream
-        images, and draft bounded remediation PRs without adopting a hosted control plane.
+        ClearCutt renders a GitHub-native repository that owns catalog inputs,
+        workflows, evidence publication, policies, and app-team adoption paths.
+        Start catalog-only from existing OCI images without Nix, then graduate
+        to the fleet profile when ClearCutt should build the base-image fleet.
       </p>
     </header>
 
@@ -46,12 +42,44 @@ const ownerRepo = index ? `${index.owner}/${index.repo}` : 'northcutted/clearcut
     </div>
 
     <section class="space-y-4 max-w-3xl">
-      <h2 class="heading text-xl text-ink-50">Operator Commands</h2>
-      <CopyBlock language="shell" code={`git clone https://github.com/${ownerRepo}.git
-cd clearcutt
+      <h2 class="heading text-xl text-ink-50">Bootstrap Commands</h2>
+      <CopyBlock language="shell" code={`# Render and plan a Nix-free catalog control plane
+clearcutt platform bootstrap github \\
+  --profile catalog-only \\
+  --owner acme \\
+  --repo image-platform \\
+  --registry-base ghcr.io/acme/image-platform \\
+  --pages \\
+  --environment production \\
+  --dir ./image-platform \\
+  --dry-run \\
+  --force
 
-# Check that the forkable platform kit is wired together
-clearcutt platform status
+# Review the GitHub plan, then explicitly apply when ready
+clearcutt platform plan github \\
+  --dir ./image-platform \\
+  --owner acme \\
+  --repo image-platform \\
+  --profile catalog-only \\
+  --pages \\
+  --environment production \\
+  --output ./image-platform/.clearcutt/clearcutt.plan.json
+
+clearcutt platform apply github \\
+  --plan ./image-platform/.clearcutt/clearcutt.plan.json \\
+  --confirm
+
+# Fleet profile keeps the existing image-factory scaffold path
+clearcutt platform render ./golden-images \\
+  --profile fleet \\
+  --owner acme \\
+  --repo golden-images \\
+  --registry-host ghcr.io \\
+  --image-prefix golden-images \\
+  --force
+
+# Check that the fleet scaffold is wired together
+clearcutt platform status --output ./golden-images
 
 # Configure and warm the fleet Nix client from clearcutt.fleet.yaml
 clearcutt platform setup-nix --core-dir core --write-user-config
