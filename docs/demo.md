@@ -65,7 +65,34 @@ Fixture-backed portal screenshots:
 
 ![java21-distroless evidence section generated from the mixed fixture catalog](images/java21-distroless-evidence.png)
 
-## 5. Live Trust Walkthrough
+## 5. Generated Control-Plane Proof
+
+Render the repository that a released CLI can create without copying the
+ClearCutt source tree:
+
+```bash
+go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-control-plane-demo \
+  --profile catalog-only \
+  --catalog-source github-release \
+  --catalog-source-repo northcutted/clearcutt \
+  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-release-limit 1 \
+  --owner northcutted \
+  --repo clearcutt-demo \
+  --registry-base ghcr.io/northcutted/clearcutt \
+  --visibility public \
+  --pages
+
+./scripts/test-generated-release-control-plane.sh
+```
+
+Expected readout: the generated repository contains control-plane desired
+state, pinned workflows, operator docs, and Pages configuration. It contains no
+`cli/`, `core/`, `site/`, `images.yaml`, or Nix source. The deterministic smoke
+build uses committed evidence fixtures; the public demo workflow later consumes
+real GitHub release evidence.
+
+## 6. Live Trust Walkthrough
 
 Use [trust/evidence-walkthrough.md](trust/evidence-walkthrough.md) after a fork
 has published at least one release. The fixture screenshots above prove local
@@ -80,3 +107,5 @@ SBOMs, provenance, scans, tests, and exception records.
 - Can an app developer find the template/dev/certify path without learning Nix?
 - Can a security reviewer trace a release identity from config to policy?
 - Can a platform owner see what their fork must operate?
+- Can they distinguish the CLI source repository from the generated catalog
+  control-plane repository?

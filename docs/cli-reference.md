@@ -147,6 +147,17 @@ slim/distroless targets the legacy shell suite covered.
 ./clearcutt platform init --owner YOUR_ORG --repo YOUR_REPO --force
 ./clearcutt platform new ./golden-images --owner YOUR_ORG --repo golden-images
 ./clearcutt platform new ./golden-images --source ./clearcutt-source.zip --owner YOUR_ORG --repo golden-images
+./clearcutt platform render ./image-platform --profile catalog-only --owner YOUR_ORG --repo image-platform --registry-base ghcr.io/YOUR_ORG/image-platform
+./clearcutt platform render ./release-catalog \
+  --profile catalog-only \
+  --catalog-source github-release \
+  --catalog-source-repo YOUR_ORG/image-factory \
+  --catalog-targets java21-distroless,node24-slim \
+  --catalog-release-limit 1 \
+  --owner YOUR_ORG \
+  --repo release-catalog \
+  --registry-base ghcr.io/YOUR_ORG/image-factory \
+  --pages
 ./clearcutt platform status
 ./clearcutt platform release-plan
 ./clearcutt platform doctor --github
@@ -221,6 +232,15 @@ verification commands, and the honest boundary between ClearCutt CLI
 orchestration, GitHub Actions/SLSA, Nix, Sigstore tools, and remediation PR
 drafting. Use `--format json` or `--format yaml` when generating onboarding or
 first-release checklists.
+
+`platform render --profile catalog-only` defaults to `--catalog-source
+inventory` and writes `images.yaml`. `--catalog-source github-release` instead
+requires `--catalog-source-repo OWNER/REPO` and `--catalog-targets`, records the
+source and `--catalog-release-limit` in `clearcutt.lock`, and generates workflows
+that consume published release evidence without copying the source repository.
+Both modes remain Nix-free. `platform bootstrap github` accepts the same flags;
+remote repository, settings, and push operations still require both `--apply`
+and `--confirm`.
 
 `catalog workflow-params` is the Pages workflow parameter helper. It reads
 `catalog.releaseLimit` and `catalog.scanDepth` from `clearcutt.fleet.yaml`,

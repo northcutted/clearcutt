@@ -77,6 +77,27 @@ type renderedControlPlanePlanState struct {
 	environment  string
 }
 
+type renderedControlPlaneLock struct {
+	Kind string `json:"kind"`
+	Spec struct {
+		Platform struct {
+			Profile      string `json:"profile"`
+			Owner        string `json:"owner"`
+			Repo         string `json:"repo"`
+			RegistryBase string `json:"registryBase"`
+			Pages        *bool  `json:"pages"`
+			Environment  string `json:"environment"`
+		} `json:"platform"`
+		Catalog struct {
+			Source        string   `json:"source"`
+			InventoryFile string   `json:"inventoryFile"`
+			SourceRepo    string   `json:"sourceRepo"`
+			Targets       []string `json:"targets"`
+			ReleaseLimit  int      `json:"releaseLimit"`
+		} `json:"catalog"`
+	} `json:"spec"`
+}
+
 type PlatformGitHubPlan struct {
 	APIVersion                    string                  `json:"apiVersion"`
 	Kind                          string                  `json:"kind"`
@@ -302,7 +323,7 @@ func buildGitHubPlan(opts platformPlanFlags) (PlatformGitHubPlan, error) {
 func validateRenderedControlPlane(dir, profile string) error {
 	required := []string{"README.md", "clearcutt.lock", ".clearcutt/github.yaml", ".clearcutt/state.json"}
 	if profile == platformProfileCatalogOnly {
-		required = append(required, "images.yaml", ".clearcutt/site.yaml", ".github/workflows/catalog.yml", ".github/workflows/pr-gate.yml", ".github/actions/install-clearcutt/action.yml")
+		required = append(required, ".clearcutt/site.yaml", ".github/workflows/catalog.yml", ".github/workflows/pr-gate.yml", ".github/actions/install-clearcutt/action.yml")
 	}
 	for _, rel := range required {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
@@ -312,36 +333,60 @@ func validateRenderedControlPlane(dir, profile string) error {
 			return err
 		}
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "clearcutt.lock"))
+	lock, err := loadRenderedControlPlaneLock(dir)
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(raw), "kind: ClearCuttLock") || !strings.Contains(string(raw), "profile: "+profile) {
+	if lock.Kind != "ClearCuttLock" || strings.TrimSpace(lock.Spec.Platform.Profile) != profile {
 		return fmt.Errorf("%s clearcutt.lock does not match profile %q", dir, profile)
+	}
+	if profile == platformProfileCatalogOnly {
+		source := strings.TrimSpace(lock.Spec.Catalog.Source)
+		if source == "" || source == catalogSourceInventory {
+			inventoryFile := strings.TrimSpace(lock.Spec.Catalog.InventoryFile)
+			if inventoryFile == "" {
+				inventoryFile = "images.yaml"
+			}
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(inventoryFile))); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("%s is not a rendered ClearCutt %s control plane: missing %s", dir, profile, inventoryFile)
+				}
+				return err
+			}
+		} else if source == catalogSourceGitHubRelease {
+			if _, _, err := splitCatalogSourceRepo(lock.Spec.Catalog.SourceRepo); err != nil {
+				return fmt.Errorf("invalid release-backed clearcutt.lock: %w", err)
+			}
+			if len(lock.Spec.Catalog.Targets) == 0 || lock.Spec.Catalog.ReleaseLimit < 1 {
+				return fmt.Errorf("invalid release-backed clearcutt.lock: targets and releaseLimit are required")
+			}
+			if _, err := normalizeCatalogTargets(strings.Join(lock.Spec.Catalog.Targets, ",")); err != nil {
+				return fmt.Errorf("invalid release-backed clearcutt.lock: %w", err)
+			}
+		} else {
+			return fmt.Errorf("unsupported catalog source %q in clearcutt.lock", source)
+		}
 	}
 	return nil
 }
 
+func loadRenderedControlPlaneLock(dir string) (renderedControlPlaneLock, error) {
+	var lock renderedControlPlaneLock
+	raw, err := os.ReadFile(filepath.Join(dir, "clearcutt.lock"))
+	if err != nil {
+		return lock, err
+	}
+	if err := yaml.Unmarshal(raw, &lock); err != nil {
+		return lock, fmt.Errorf("parse clearcutt.lock: %w", err)
+	}
+	return lock, nil
+}
+
 func loadRenderedControlPlanePlanState(dir string) (renderedControlPlanePlanState, error) {
 	var state renderedControlPlanePlanState
-	lockRaw, err := os.ReadFile(filepath.Join(dir, "clearcutt.lock"))
+	lock, err := loadRenderedControlPlaneLock(dir)
 	if err != nil {
 		return state, err
-	}
-	var lock struct {
-		Spec struct {
-			Platform struct {
-				Profile      string `json:"profile"`
-				Owner        string `json:"owner"`
-				Repo         string `json:"repo"`
-				RegistryBase string `json:"registryBase"`
-				Pages        *bool  `json:"pages"`
-				Environment  string `json:"environment"`
-			} `json:"platform"`
-		} `json:"spec"`
-	}
-	if err := yaml.Unmarshal(lockRaw, &lock); err != nil {
-		return state, fmt.Errorf("parse clearcutt.lock: %w", err)
 	}
 	state.profile = strings.TrimSpace(lock.Spec.Platform.Profile)
 	state.owner = strings.TrimSpace(lock.Spec.Platform.Owner)
