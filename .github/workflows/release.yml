@@ -474,7 +474,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest amd64 SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -482,7 +482,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -580,7 +580,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest amd64 Service SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -588,7 +588,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 Service SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
