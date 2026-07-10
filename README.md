@@ -39,7 +39,7 @@ team can render, configure, run, inspect, and adapt:
 
 | Surface | What it does today | Owner |
 | --- | --- | --- |
-| Catalog-only control plane | Generates a lightweight Nix-free repo around `images.yaml`, catalog generation, validation, and static site publishing. | Platform team |
+| Catalog-only control plane | Generates a lightweight Nix-free repo around either `images.yaml` or selected evidence from another repository's GitHub releases, with validation and static site publishing. | Platform team |
 | Runtime base images | Publishes language runtime images in `dev`, `slim`, and `distroless` tiers. | Platform team |
 | Service images | Publishes platform-owned service images such as Postgres, Valkey, and oauth2-proxy. | Platform team |
 | Catalog and portal | Reports image metadata, evidence channels, vulnerability scans, tests, and missing data. | Platform team |
@@ -135,6 +135,31 @@ cat /tmp/clearcutt-import-demo/imported-fleet-report.md
 ClearCutt can govern imported images without trusting them by default. It
 records what can be observed, preserves missing evidence, and only treats
 provenance as verified when actual provenance evidence exists.
+
+To prove the two-repository operating model without copying this source tree,
+render a release-backed control plane that consumes selected evidence from the
+ClearCutt release repository:
+
+```bash
+go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-demo \
+  --profile catalog-only \
+  --catalog-source github-release \
+  --catalog-source-repo northcutted/clearcutt \
+  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-release-limit 1 \
+  --owner northcutted \
+  --repo clearcutt-demo \
+  --registry-base ghcr.io/northcutted/clearcutt \
+  --visibility public \
+  --pages
+
+./scripts/test-generated-release-control-plane.sh
+```
+
+The generated repository contains workflows, desired state, operator docs, and
+site configuration, but no `cli/`, `core/`, `site/`, or Nix source. Creating a
+remote repository remains an explicit `platform bootstrap github --apply
+--confirm` action.
 
 The full documentation index is [docs/README.md](docs/README.md).
 

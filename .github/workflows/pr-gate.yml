@@ -372,6 +372,9 @@ jobs:
       - name: Imported Fleet Offline Demo
         run: CLEARCUTT="$PWD/clearcutt" ./scripts/demo-imported-fleet-offline.sh
 
+      - name: Generated Release Control Plane Smoke
+        run: CLEARCUTT="$PWD/clearcutt" ./scripts/test-generated-release-control-plane.sh
+
       - name: Validate Documented Commands
         run: ./scripts/validate-doc-commands.sh ./clearcutt
 

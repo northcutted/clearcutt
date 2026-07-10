@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 )
 
 func TestPlatformRenderFleetCreatesScaffoldAndPrintsResults(t *testing.T) {
@@ -79,6 +81,66 @@ func TestNormalizePlatformRenderOptionsValidationAndDefaults(t *testing.T) {
 	}
 	if _, err := renderPlatformControlPlane(platformRenderFlags{owner: "acme", repo: "repo", profile: "unknown", dir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "unsupported profile") {
 		t.Fatalf("unsupported profile error = %v", err)
+	}
+}
+
+func TestNormalizeReleaseBackedCatalogOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts platformRenderFlags
+		want string
+	}{
+		{
+			name: "source mode",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSource: "unknown"},
+			want: "--catalog-source must be",
+		},
+		{
+			name: "source repo",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSource: catalogSourceGitHubRelease, catalogSourceRepo: "broken", catalogTargets: "java21-distroless", catalogReleaseLimit: 1},
+			want: "OWNER/REPO",
+		},
+		{
+			name: "targets required",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSource: catalogSourceGitHubRelease, catalogSourceRepo: "acme/images", catalogReleaseLimit: 1},
+			want: "--catalog-targets is required",
+		},
+		{
+			name: "target syntax",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSource: catalogSourceGitHubRelease, catalogSourceRepo: "acme/images", catalogTargets: "java21;echo", catalogReleaseLimit: 1},
+			want: "invalid --catalog-targets",
+		},
+		{
+			name: "release limit",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSource: catalogSourceGitHubRelease, catalogSourceRepo: "acme/images", catalogTargets: "java21-distroless"},
+			want: "--catalog-release-limit must be",
+		},
+		{
+			name: "inventory rejects release flags",
+			opts: platformRenderFlags{owner: "acme", repo: "demo", catalogSourceRepo: "acme/images"},
+			want: "require --catalog-source=github-release",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := normalizePlatformRenderOptions(tc.opts); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+
+	normalized, err := normalizePlatformRenderOptions(platformRenderFlags{
+		owner:               " northcutted ",
+		repo:                " clearcutt-demo ",
+		catalogSource:       catalogSourceGitHubRelease,
+		catalogSourceRepo:   " northcutted/clearcutt ",
+		catalogTargets:      "java21-distroless, node24-slim,java21-distroless",
+		catalogReleaseLimit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.catalogTargets != "java21-distroless,node24-slim" || normalized.catalogSourceRepo != "northcutted/clearcutt" || normalized.catalogReleaseLimit != 2 {
+		t.Fatalf("unexpected normalized release source: %#v", normalized)
 	}
 }
 
@@ -180,6 +242,31 @@ func renderCatalogOnlyForTest(t *testing.T) string {
 	return dir
 }
 
+func renderReleaseBackedForTest(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "clearcutt-demo")
+	_, err := renderPlatformControlPlane(platformRenderFlags{
+		dir:                 dir,
+		profile:             platformProfileCatalogOnly,
+		owner:               "northcutted",
+		repo:                "clearcutt-demo",
+		registryBase:        "ghcr.io/northcutted/clearcutt",
+		visibility:          "public",
+		pages:               true,
+		environment:         "production",
+		force:               true,
+		generatedAt:         "2026-01-01T00:00:00Z",
+		catalogSource:       catalogSourceGitHubRelease,
+		catalogSourceRepo:   "northcutted/clearcutt",
+		catalogTargets:      "java21-distroless,node24-slim,python3.14-dev",
+		catalogReleaseLimit: 1,
+	})
+	if err != nil {
+		t.Fatalf("render release-backed catalog-only: %v", err)
+	}
+	return dir
+}
+
 func TestPlatformRenderCatalogOnlyCreatesExpectedFiles(t *testing.T) {
 	dir := renderCatalogOnlyForTest(t)
 	for _, rel := range []string{
@@ -242,6 +329,104 @@ func TestPlatformRenderCatalogOnlyCreatesExpectedFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(siteConfig), "catalogMode: imported") {
 		t.Fatalf("catalog-only site must use imported profile:\n%s", siteConfig)
+	}
+	lock, err := loadRenderedControlPlaneLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock.Spec.Catalog.Source != catalogSourceInventory || lock.Spec.Catalog.InventoryFile != "images.yaml" {
+		t.Fatalf("inventory lock changed unexpectedly: %#v", lock.Spec.Catalog)
+	}
+	if !strings.Contains(string(workflow), `--registry-base "${{ vars.CLEARCUTT_REGISTRY_BASE || 'ghcr.io/acme/image-platform' }}"`) {
+		t.Fatalf("inventory workflow lost registry variable override:\n%s", workflow)
+	}
+}
+
+func TestPlatformRenderReleaseBackedCatalogCreatesStandaloneControlPlane(t *testing.T) {
+	dir := renderReleaseBackedForTest(t)
+	for _, rel := range []string{
+		"README.md",
+		"clearcutt.lock",
+		".clearcutt/github.yaml",
+		".clearcutt/site.yaml",
+		".github/workflows/catalog.yml",
+		".github/workflows/pr-gate.yml",
+		"docs/first-catalog.md",
+		"docs/operating-model.md",
+		"docs/trust-model.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("release-backed render missing %s: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{"images.yaml", "cli", "core", "site"} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Fatalf("release-backed render must not copy or create %s, stat err=%v", rel, err)
+		}
+	}
+
+	lock, err := loadRenderedControlPlaneLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lock.Spec.Catalog.Source != catalogSourceGitHubRelease || lock.Spec.Catalog.SourceRepo != "northcutted/clearcutt" || lock.Spec.Catalog.ReleaseLimit != 1 {
+		t.Fatalf("unexpected release-backed lock: %#v", lock.Spec.Catalog)
+	}
+	if strings.Join(lock.Spec.Catalog.Targets, ",") != "java21-distroless,node24-slim,python3.14-dev" {
+		t.Fatalf("unexpected release-backed targets: %#v", lock.Spec.Catalog.Targets)
+	}
+
+	workflow, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "catalog.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`clearcutt catalog generate --owner "northcutted" --repo "clearcutt"`,
+		`--registry-base "${{ vars.CLEARCUTT_REGISTRY_BASE || 'ghcr.io/northcutted/clearcutt' }}"`,
+		`--targets "java21-distroless,node24-slim,python3.14-dev"`,
+		`--limit 1 --output dist/catalog`,
+		`--base-path "/clearcutt-demo"`,
+	} {
+		if !strings.Contains(string(workflow), want) {
+			t.Fatalf("release-backed workflow missing %q:\n%s", want, workflow)
+		}
+	}
+	if strings.Contains(string(workflow), "--images") || strings.Contains(string(workflow), "- images.yaml") {
+		t.Fatalf("release-backed workflow still depends on images.yaml:\n%s", workflow)
+	}
+	if strings.Contains(string(workflow), "uses: actions/checkout@v") || strings.Contains(string(workflow), "uses: actions/deploy-pages@v") {
+		t.Fatalf("release-backed workflow contains mutable action tags:\n%s", workflow)
+	}
+	for _, rel := range []string{"catalog.yml", "pr-gate.yml"} {
+		raw, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parsed map[string]any
+		if err := yaml.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("parse generated %s: %v", rel, err)
+		}
+	}
+
+	siteConfig, err := os.ReadFile(filepath.Join(dir, ".clearcutt", "site.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"catalogMode: fleet", "https://github.com/northcutted/clearcutt", "Release Evidence Catalog"} {
+		if !strings.Contains(string(siteConfig), want) {
+			t.Fatalf("release-backed site config missing %q:\n%s", want, siteConfig)
+		}
+	}
+
+	if err := validateRenderedControlPlane(dir, platformProfileCatalogOnly); err != nil {
+		t.Fatalf("validate release-backed control plane: %v", err)
+	}
+	plan, err := buildGitHubPlan(platformPlanFlags{dir: dir, owner: "northcutted", repo: "clearcutt-demo", profile: platformProfileCatalogOnly})
+	if err != nil {
+		t.Fatalf("plan release-backed control plane: %v", err)
+	}
+	if plan.Visibility != "public" || !plan.Pages || plan.RegistryBase != "ghcr.io/northcutted/clearcutt" {
+		t.Fatalf("plan did not preserve rendered desired state: %#v", plan)
 	}
 }
 
@@ -408,6 +593,42 @@ func TestPlatformApplyGitHubConvergesOnSecondRun(t *testing.T) {
 	}
 	if !strings.Contains(joined, "gh api --method POST repos/acme/image-platform/pages") || !strings.Contains(joined, "gh api --method PUT repos/acme/image-platform/pages") {
 		t.Fatalf("Pages should create then update idempotently:\n%s", joined)
+	}
+}
+
+func TestPlatformApplyReleaseBackedGitHubConvergesOnSecondRun(t *testing.T) {
+	dir := renderReleaseBackedForTest(t)
+	for _, args := range [][]string{
+		{"-C", dir, "init", "-b", "main"},
+		{"-C", dir, "config", "user.name", "ClearCutt Test"},
+		{"-C", dir, "config", "user.email", "clearcutt@example.invalid"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	plan, err := buildGitHubPlan(platformPlanFlags{
+		dir: dir, owner: "northcutted", repo: "clearcutt-demo", profile: platformProfileCatalogOnly,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &convergentBootstrapRunner{}
+	if err := applyGitHubPlan(context.Background(), plan, runner); err != nil {
+		t.Fatalf("first release-backed apply: %v", err)
+	}
+	if err := applyGitHubPlan(context.Background(), plan, runner); err != nil {
+		t.Fatalf("second release-backed apply: %v", err)
+	}
+	joined := strings.Join(runner.calls, "\n")
+	if got := strings.Count(joined, "gh repo create northcutted/clearcutt-demo --public"); got != 1 {
+		t.Fatalf("release-backed repository should be created once, got %d:\n%s", got, joined)
+	}
+	if got := strings.Count(joined, "git -C "+dir+" commit -m Bootstrap ClearCutt control plane"); got != 1 {
+		t.Fatalf("release-backed second apply should not commit, got %d:\n%s", got, joined)
+	}
+	if !strings.Contains(joined, "gh api --method POST repos/northcutted/clearcutt-demo/pages") || !strings.Contains(joined, "gh api --method PUT repos/northcutted/clearcutt-demo/pages") {
+		t.Fatalf("release-backed Pages should create then update idempotently:\n%s", joined)
 	}
 }
 

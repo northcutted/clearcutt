@@ -8,8 +8,9 @@ and operating decisions under the platform team's registry and GitHub identity.
 
 There are two profiles:
 
-- `catalog-only`: for teams that already have OCI images and want a generated,
-  Nix-free catalog/control-plane repo around `images.yaml`.
+- `catalog-only`: a generated, Nix-free catalog/control-plane repo. Inventory
+  source mode governs OCI refs from `images.yaml`; GitHub-release source mode
+  presents selected release evidence published by another repository.
 - `fleet`: for teams that want ClearCutt to build and operate a base-image
   fleet. This profile currently delegates to the existing `platform new`
   scaffold and adds control-plane metadata.
@@ -87,6 +88,65 @@ the backend authoring path.
    next steps. Catalog-only requires no repository secrets by default.
 5. Run the generated `catalog.yml` workflow and inspect the published Pages
    site.
+
+## Release-Backed Catalog-Only Mode
+
+Use release-backed mode when one repository builds images and publishes release
+evidence while a separate generated repository owns the catalog view and Pages
+site. This is the recommended public ClearCutt demonstration because it proves
+that the released CLI can create a useful control plane without copying the
+reference source tree:
+
+```bash
+clearcutt platform bootstrap github \
+  --profile catalog-only \
+  --catalog-source github-release \
+  --catalog-source-repo northcutted/clearcutt \
+  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-release-limit 1 \
+  --owner northcutted \
+  --repo clearcutt-demo \
+  --registry-base ghcr.io/northcutted/clearcutt \
+  --visibility public \
+  --pages \
+  --environment production \
+  --dir ./clearcutt-demo \
+  --dry-run \
+  --force
+```
+
+The generated `clearcutt.lock` records the control-plane identity separately
+from the release source, target allowlist, and release limit. Release-backed
+mode omits `images.yaml`; its workflows run `clearcutt catalog generate`
+against the configured public GitHub release source. The resulting portal marks
+only matching published channels as verified and leaves absent signatures,
+scans, SBOMs, provenance, or tests visible.
+
+Review the dry-run output, then create and configure the remote repository only
+with explicit confirmation:
+
+```bash
+clearcutt platform bootstrap github \
+  --profile catalog-only \
+  --catalog-source github-release \
+  --catalog-source-repo northcutted/clearcutt \
+  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-release-limit 1 \
+  --owner northcutted \
+  --repo clearcutt-demo \
+  --registry-base ghcr.io/northcutted/clearcutt \
+  --visibility public \
+  --pages \
+  --environment production \
+  --dir ./clearcutt-demo \
+  --apply \
+  --confirm \
+  --force
+```
+
+The default generated credentials are sufficient for public release sources.
+Private cross-repository release sources need separately configured GitHub API
+credentials; ClearCutt does not write those secrets automatically.
 
 ## Fleet Profile
 
