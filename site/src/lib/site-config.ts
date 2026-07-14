@@ -11,6 +11,8 @@ const SiteConfigInput = z
         description: z.string().optional(),
         logo: z.string().optional(),
 		catalogMode: z.enum(['fleet', 'imported']).optional(),
+		portalRole: z.enum(['reference', 'generated-control-plane']).optional(),
+		selectedTargets: z.array(z.string()).optional(),
         theme: z
           .object({
             mode: z.enum(['system', 'light', 'dark']).optional(),
@@ -121,6 +123,8 @@ export type SiteConfig = {
     description: string;
     logo: string;
 	catalogMode: 'fleet' | 'imported';
+	portalRole: 'reference' | 'generated-control-plane';
+	selectedTargets: string[];
     theme: {
       mode: 'system' | 'light' | 'dark';
       accent: string;
@@ -171,6 +175,8 @@ export const defaultSiteConfig: SiteConfig = {
       'Static evidence portal for base-image signatures, SBOMs, provenance, vulnerability findings, and runtime contracts.',
     logo: '',
 	catalogMode: 'fleet',
+	portalRole: 'reference',
+	selectedTargets: [],
     theme: {
       mode: 'system',
       accent: '#7c3aed',

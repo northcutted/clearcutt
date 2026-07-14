@@ -92,6 +92,14 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
       </Tabs>
     </section>
 
+    <section class="space-y-4 max-w-3xl">
+      <h2 class="heading text-xl text-ink-50">Verified updates</h2>
+      <p class="text-sm text-ink-200">
+        After the first verified install, the CLI can check or install a release without weakening the checksum or exact workflow-identity gates. Cosign must remain available on your PATH.
+      </p>
+      <CopyBlock language="shell" code={`# Check without changing the executable\nclearcutt update --check\n\n# Download, verify, and atomically replace the running executable\nclearcutt update\n\n# Install a fork-owned release to a separate path\nclearcutt update --repo acme/clearcutt --output "$HOME/.local/bin/clearcutt"`} />
+    </section>
+
     <!-- Comprehensive Command Matrix Section -->
     <section class="space-y-6">
       <h2 class="heading text-xl text-ink-50">Command Reference</h2>

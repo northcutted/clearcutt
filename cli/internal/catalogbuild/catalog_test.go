@@ -117,6 +117,9 @@ func TestCatalogHelperBranches(t *testing.T) {
 	if got := parseCatalogTargetName("not-an-asset.txt"); got != nil {
 		t.Fatalf("unexpected asset parse: %#v", got)
 	}
+	if got := parseCatalogTargetName("python3.13-slim.release-verification.json"); got == nil || got.Kind != "release-verification" {
+		t.Fatalf("unexpected verification asset parse: %#v", got)
+	}
 	if archForSystem("aarch64-linux") != "arm64" || archForSystem("x86_64-linux") != "amd64" {
 		t.Fatal("archForSystem did not normalize expected systems")
 	}
@@ -268,6 +271,13 @@ func TestCatalogProvenanceAndSPDXEdgeBranches(t *testing.T) {
 	if nonSLSA.Builder.ID != "runner-builder" || nonSLSA.SourceRevision == nil || *nonSLSA.SourceRevision != "abc123" {
 		t.Fatalf("expected useful non-SLSA provenance summary, got %+v", nonSLSA)
 	}
+	latestSLSA := summarizeProvenance(
+		`{"predicateType":"https://slsa.dev/provenance/v1","predicate":{"builder":{"id":"old"},"materials":[{"uri":"https://github.com/acme/repo","digest":{"gitCommit":"old-commit"}}]}}` + "\n" +
+			`{"predicateType":"https://slsa.dev/provenance/v1","predicate":{"builder":{"id":"new"},"materials":[{"uri":"https://github.com/acme/repo","digest":{"gitCommit":"new-commit"}}]}}`,
+	)
+	if latestSLSA.Builder.ID != "new" || latestSLSA.SourceRevision == nil || *latestSLSA.SourceRevision != "new-commit" {
+		t.Fatalf("expected final exported SLSA statement, got %+v", latestSLSA)
+	}
 }
 
 type fakeCatalogReleaseSource struct {
@@ -294,6 +304,84 @@ func (f *fakeCatalogReleaseSource) DownloadAsset(asset Asset) ([]byte, error) {
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func TestBuildImageRecordUsesPassingReleaseVerificationAndVulnerabilityAssets(t *testing.T) {
+	const target = "python3.13-slim"
+	const tag = "v2.0.0"
+	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	spdxRaw, err := os.ReadFile(filepath.Join("..", "commands", "testdata", "catalog", "spdx-fixture.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verification := []byte(`{
+  "status":"pass",
+  "ref":"ghcr.io/acme/clearcutt-python3.13:v2.0.0-slim",
+  "digest":"` + digest + `",
+  "workflowIdentity":"https://github.com/acme/platform/.github/workflows/release.yml@refs/tags/v2.0.0",
+  "oidcIssuer":"https://token.actions.githubusercontent.com",
+  "checks":[
+    {"id":"digest.resolve","status":"pass"},
+    {"id":"signature.keyless","status":"pass"}
+  ]
+}`)
+	vulnerabilities := []byte(`{"scannedAt":"2026-07-14T12:00:00Z","scanner":"grype","countsBySeverity":{"critical":0,"high":1,"medium":0,"low":0,"negligible":0,"unknown":0},"findings":[]}`)
+	source := &fakeCatalogReleaseSource{assets: map[string][]byte{
+		target + "-amd64.sbom.json":            spdxRaw,
+		target + ".release-verification.json":  verification,
+		target + "-amd64.vulnerabilities.json": vulnerabilities,
+	}}
+	releases := []Release{{
+		Tag: tag, PublishedAt: "2026-07-14T10:00:00Z",
+		Assets: []Asset{
+			{Name: target + "-amd64.sbom.json"},
+			{Name: target + ".release-verification.json"},
+			{Name: target + "-amd64.vulnerabilities.json"},
+		},
+	}}
+	image, err := BuildImageRecord(target, releases, map[string]bool{tag: true}, BuildOptions{
+		RegistryBase: "ghcr.io/acme", Source: source, SBOMCacheDir: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image == nil || len(image.Releases) != 1 {
+		t.Fatalf("unexpected image record: %#v", image)
+	}
+	release := image.Releases[0]
+	if release.ManifestDigest == nil || *release.ManifestDigest != digest {
+		t.Fatalf("verification digest was not used: %#v", release.ManifestDigest)
+	}
+	if release.Signature == nil || !release.Signature.CosignBundlePresent || release.Signature.Certificate == nil || release.Signature.Certificate.Subject == nil {
+		t.Fatalf("passing keyless verification was not represented: %#v", release.Signature)
+	}
+	if !release.Evidence.Signature || !release.Evidence.Vulnerabilities || release.LastRebuiltAt != "2026-07-14T12:00:00Z" {
+		t.Fatalf("release evidence was not recomputed from assets: %#v", release.Evidence)
+	}
+	if release.Evidence.Statuses == nil || release.Evidence.Statuses.Signature.Source != "release-verification" {
+		t.Fatalf("signature verification source was not preserved: %#v", release.Evidence.Statuses)
+	}
+}
+
+func TestReleaseVerificationCannotVerifyADifferentManifestDigest(t *testing.T) {
+	verification := &releaseVerification{Status: "pass", Digest: "sha256:verified"}
+	verification.Checks = append(verification.Checks,
+		struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		}{ID: "digest.resolve", Status: "pass"},
+		struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		}{ID: "signature.keyless", Status: "pass"},
+	)
+	other := "sha256:other"
+	if releaseVerificationMatchesDigest(verification, &other) {
+		t.Fatal("release verification must not be applied to a different manifest digest")
+	}
+	if !releaseVerificationMatchesDigest(verification, nil) {
+		t.Fatal("verification digest should be usable when no independent digest exists")
+	}
 }
 
 type catalogAssemblyFixture struct {

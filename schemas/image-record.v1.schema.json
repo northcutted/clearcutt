@@ -283,6 +283,7 @@
           "required": ["cosignBundlePresent"],
           "properties": {
             "cosignBundlePresent": { "type": "boolean" },
+            "verificationSource": { "type": "string" },
             "rekorLogIndex": { "type": ["integer", "null"] },
             "certificate": {
               "type": ["object", "null"],

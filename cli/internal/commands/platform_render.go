@@ -396,6 +396,7 @@ func catalogOnlySiteConfigYAML(opts platformRenderFlags) ([]byte, error) {
 		{"label": "Know limits", "href": "limitations", "description": "Review what catalog-only governance does and does not prove."},
 	}
 	provenance := false
+	selectedTargets := []string{}
 	if opts.catalogSource == catalogSourceGitHubRelease {
 		sourceOwner, sourceName, err := splitCatalogSourceRepo(opts.catalogSourceRepo)
 		if err != nil {
@@ -412,12 +413,18 @@ func catalogOnlySiteConfigYAML(opts platformRenderFlags) ([]byte, error) {
 			{"label": "Know limits", "href": "limitations", "description": "Review evidence that remains missing or unverified."},
 		}
 		provenance = true
+		selectedTargets, err = normalizeCatalogTargets(opts.catalogTargets)
+		if err != nil {
+			return nil, err
+		}
 	}
 	payload := map[string]any{
 		"site": map[string]any{
-			"title":       opts.repo + " Image Catalog",
-			"description": "Evidence-oriented catalog for OCI images governed by " + opts.owner + "/" + opts.repo + ".",
-			"catalogMode": catalogMode,
+			"title":           opts.repo + " Image Catalog",
+			"description":     "Evidence-oriented catalog for OCI images governed by " + opts.owner + "/" + opts.repo + ".",
+			"catalogMode":     catalogMode,
+			"portalRole":      "generated-control-plane",
+			"selectedTargets": selectedTargets,
 			"navigation": map[string]any{
 				"showHome":           true,
 				"showGettingStarted": false,
@@ -671,12 +678,16 @@ func catalogOnlyCatalogWorkflow(opts platformRenderFlags) string {
       - run: %s
 `, bootstrapCLIVersion(), fleet.ReferenceOwner, fleet.ReferenceRepo, catalogOnlyGenerateCommand(opts), catalogOnlySiteBuildCommand(opts))
 	paths := catalogOnlyWorkflowPaths(opts, ".github/workflows/catalog.yml")
+	refreshTriggers := ""
+	if opts.catalogSource == catalogSourceGitHubRelease {
+		refreshTriggers = "  schedule:\n    - cron: '23 6 * * *'\n  repository_dispatch:\n    types: [clearcutt-release]\n"
+	}
 	if !opts.pages {
 		return fmt.Sprintf(`name: Catalog
 
 on:
   workflow_dispatch:
-  push:
+%s  push:
     paths:
 %s
 
@@ -687,13 +698,13 @@ jobs:
   catalog:
     runs-on: ubuntu-latest
     steps:
-%s`, paths, steps)
+%s`, refreshTriggers, paths, steps)
 	}
 	return fmt.Sprintf(`name: Catalog
 
 on:
   workflow_dispatch:
-  push:
+%s  push:
     paths:
 %s
 
@@ -718,7 +729,7 @@ jobs:
           path: dist/site
       - id: deploy
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
-`, paths, steps)
+`, refreshTriggers, paths, steps)
 }
 
 func catalogOnlyWorkflowPaths(opts platformRenderFlags, workflow string) string {
@@ -815,6 +826,12 @@ own builds, release assets, signatures, attestations, scans, and tests.
 This repository owns the selected target view, static catalog, Pages site,
 policy examples, and operating decisions. It does not vendor the source tree or
 require Nix.
+
+The catalog workflow refreshes daily so new source releases become visible
+without a commit. It also accepts the clearcutt-release repository_dispatch
+event for an immediate refresh when the source
+repository is configured to send one. Manual workflow dispatch remains
+available for operators.
 `, opts.owner, opts.repo, opts.catalogSourceRepo)
 	}
 	return fmt.Sprintf(`# Operating Model

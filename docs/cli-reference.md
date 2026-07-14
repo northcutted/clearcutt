@@ -68,6 +68,21 @@ The identity is exact, not a pattern: releases run only from
 `clearcutt verify release-evidence --workflow-identity`. Build from source
 (below) when contributing.
 
+After installing a verified binary, use the built-in updater to inspect or
+install another signed release:
+
+```bash
+clearcutt update --check
+clearcutt update
+clearcutt update --version v0.15.0 --output "$HOME/.local/bin/clearcutt"
+```
+
+The updater uses `GH_TOKEN` or `GITHUB_TOKEN` when present, requires `cosign`,
+and refuses replacement unless the downloaded binary matches
+`SHA256SUMS.txt` and its Sigstore bundle matches the exact release workflow
+identity and GitHub Actions OIDC issuer. `--repo` and `--workflow-identity`
+support fork-owned release publishers without broadening identity matching.
+
 ## Build
 
 ```bash

@@ -220,6 +220,26 @@ jobs:
             --tier "${{ matrix.tier }}" \
             --core-dir core
 
+      - name: Scan Release SBOM Snapshot
+        env:
+          RELEASE_TAG: v${{ needs.check-version.outputs.version }}
+          TARGET: ${{ matrix.language }}-${{ matrix.tier }}
+          ARCH: ${{ matrix.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "core/build-outputs/release-sboms/${RELEASE_TAG}"
+          cp "core/build-outputs/${TARGET}-${ARCH}.sbom.json" \
+            "core/build-outputs/release-sboms/${RELEASE_TAG}/${TARGET}-${ARCH}.sbom.json"
+          ./clearcutt scan \
+            --mode release \
+            --sbom-dir core/build-outputs/release-sboms \
+            --out-dir core/build-outputs/release-vulnerabilities \
+            --tags "${RELEASE_TAG}" \
+            --concurrency 1 \
+            --core-dir core
+          cp "core/build-outputs/release-vulnerabilities/${RELEASE_TAG}/${TARGET}-${ARCH}.json" \
+            "core/build-outputs/${TARGET}-${ARCH}.vulnerabilities.json"
+
       - name: Upload SBOM Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -232,6 +252,13 @@ jobs:
         with:
           name: release-test-results-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
           path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.test-results.json
+          retention-days: 7
+
+      - name: Upload Vulnerability Snapshot Artifact (arch-suffixed for release)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-vulnerabilities-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
+          path: core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}-*.vulnerabilities.json
           retention-days: 7
 
       - name: Upload SBOM Artifact (legacy unsuffixed for attestation)
@@ -319,6 +346,26 @@ jobs:
           CLEARCUTT_CLI: ./clearcutt
         run: core/tests/service-image-contract.sh "${{ matrix.service }}" "core/build-outputs/${{ matrix.service }}.tar.gz"
 
+      - name: Scan Service Release SBOM Snapshot
+        env:
+          RELEASE_TAG: v${{ needs.check-version.outputs.version }}
+          TARGET: ${{ matrix.service }}
+          ARCH: ${{ matrix.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "core/build-outputs/release-sboms/${RELEASE_TAG}"
+          cp "core/build-outputs/${TARGET}-${ARCH}.sbom.json" \
+            "core/build-outputs/release-sboms/${RELEASE_TAG}/${TARGET}-${ARCH}.sbom.json"
+          ./clearcutt scan \
+            --mode release \
+            --sbom-dir core/build-outputs/release-sboms \
+            --out-dir core/build-outputs/release-vulnerabilities \
+            --tags "${RELEASE_TAG}" \
+            --concurrency 1 \
+            --core-dir core
+          cp "core/build-outputs/release-vulnerabilities/${RELEASE_TAG}/${TARGET}-${ARCH}.json" \
+            "core/build-outputs/${TARGET}-${ARCH}.vulnerabilities.json"
+
       - name: Upload Service SBOM Artifact (arch-suffixed for release)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -331,6 +378,13 @@ jobs:
         with:
           name: release-test-results-${{ matrix.system }}-${{ matrix.service }}-service
           path: core/build-outputs/${{ matrix.service }}-*.test-results.json
+          retention-days: 7
+
+      - name: Upload Service Vulnerability Snapshot Artifact (arch-suffixed for release)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-vulnerabilities-${{ matrix.system }}-${{ matrix.service }}-service
+          path: core/build-outputs/${{ matrix.service }}-*.vulnerabilities.json
           retention-days: 7
 
       - name: Upload Service SBOM Artifact (legacy unsuffixed for attestation)

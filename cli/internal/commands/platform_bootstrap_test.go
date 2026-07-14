@@ -316,6 +316,9 @@ func TestPlatformRenderCatalogOnlyCreatesExpectedFiles(t *testing.T) {
 	if strings.Contains(string(workflow), "actions/configure-pages@v") || strings.Contains(string(workflow), "actions/checkout@v") {
 		t.Fatalf("generated workflow contains mutable action tags:\n%s", workflow)
 	}
+	if strings.Contains(string(workflow), "schedule:") || strings.Contains(string(workflow), "repository_dispatch:") {
+		t.Fatalf("inventory-backed workflow should remain push/manual driven:\n%s", workflow)
+	}
 	action, err := os.ReadFile(filepath.Join(dir, ".github", "actions", "install-clearcutt", "action.yml"))
 	if err != nil {
 		t.Fatal(err)
@@ -386,6 +389,9 @@ func TestPlatformRenderReleaseBackedCatalogCreatesStandaloneControlPlane(t *test
 		`--targets "java21-distroless,node24-slim,python3.14-dev"`,
 		`--limit 1 --output dist/catalog`,
 		`--base-path "/clearcutt-demo"`,
+		"schedule:",
+		"repository_dispatch:",
+		"types: [clearcutt-release]",
 	} {
 		if !strings.Contains(string(workflow), want) {
 			t.Fatalf("release-backed workflow missing %q:\n%s", want, workflow)
@@ -412,7 +418,7 @@ func TestPlatformRenderReleaseBackedCatalogCreatesStandaloneControlPlane(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"catalogMode: fleet", "https://github.com/northcutted/clearcutt", "Release Evidence Catalog"} {
+	for _, want := range []string{"catalogMode: fleet", "portalRole: generated-control-plane", "selectedTargets:", "java21-distroless", "node24-slim", "python3.14-dev", "https://github.com/northcutted/clearcutt", "Release Evidence Catalog"} {
 		if !strings.Contains(string(siteConfig), want) {
 			t.Fatalf("release-backed site config missing %q:\n%s", want, siteConfig)
 		}

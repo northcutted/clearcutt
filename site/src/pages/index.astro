@@ -28,7 +28,11 @@ const evidenceCoverage = index
   : null;
 const latestRelease = index?.releases.find((release) => release.isLatest) ?? index?.releases[0];
 const generatedAt = index ? new Date(index.generatedAt).toLocaleString() : '';
-const isReferenceSite = !index || (index.owner === 'northcutted' && index.repo === 'clearcutt');
+const isReferenceSite = siteConfig.site.portalRole === 'reference';
+const isGeneratedControlPlane = siteConfig.site.portalRole === 'generated-control-plane';
+const sourceReleaseURL = index?.repoUrl && index?.latestTag
+  ? `${index.repoUrl.replace(/\/$/, '')}/releases/tag/${index.latestTag}`
+  : '';
 
 const hrefFor = (href = '') => {
   const value = href.trim();
@@ -125,6 +129,28 @@ const catalogStats = index
         )}
       </div>
     </header>
+
+    {isGeneratedControlPlane && index && (
+      <aside class="rounded-xl border border-accent/40 bg-accent/10 px-5 py-4 text-sm text-ink-200">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="font-semibold text-ink-50">Generated control-plane proof</p>
+            <p class="mt-1 text-xs leading-relaxed text-ink-300">
+              This independent portal selected {index.images.length} target{index.images.length === 1 ? '' : 's'} from
+              {' '}<a href={index.repoUrl} class="font-mono text-link" target="_blank" rel="noreferrer">{index.owner}/{index.repo}</a>
+              {' '}release evidence. It does not build or copy the source images.
+            </p>
+          </div>
+          {sourceReleaseURL && <a href={sourceReleaseURL} class="chip-accent" target="_blank" rel="noreferrer">Open source release</a>}
+        </div>
+        <dl class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div><dt class="text-[10px] uppercase tracking-wider text-ink-300">Source release</dt><dd class="mt-1 font-mono text-xs text-ink-100">{index.latestTag}</dd></div>
+          <div><dt class="text-[10px] uppercase tracking-wider text-ink-300">ClearCutt CLI</dt><dd class="mt-1 font-mono text-xs text-ink-100">{index.generator?.version ?? 'version not recorded'}</dd></div>
+          <div><dt class="text-[10px] uppercase tracking-wider text-ink-300">Selected targets</dt><dd class="mt-1 break-words font-mono text-xs text-ink-100">{siteConfig.site.selectedTargets.length > 0 ? siteConfig.site.selectedTargets.join(', ') : String(index.images.length)}</dd></div>
+          <div><dt class="text-[10px] uppercase tracking-wider text-ink-300">Last refresh</dt><dd class="mt-1 font-mono text-xs text-ink-100">{generatedAt}</dd></div>
+        </dl>
+      </aside>
+    )}
 
     {home.showNotice && (home.noticeTitle || home.noticeBody) && (
       <aside class="rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm text-ink-200">
