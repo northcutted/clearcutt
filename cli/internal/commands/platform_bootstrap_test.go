@@ -8,11 +8,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"sigs.k8s.io/yaml"
 )
+
+func TestPlatformRenderDefaultsToRecentReleaseWindow(t *testing.T) {
+	want := strconv.Itoa(fleet.DefaultCatalogReleaseLimit)
+	if got := NewPlatformRenderCmd().Flags().Lookup("catalog-release-limit").DefValue; got != want {
+		t.Fatalf("platform render --catalog-release-limit default = %s, want %s", got, want)
+	}
+}
 
 func TestPlatformRenderFleetCreatesScaffoldAndPrintsResults(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))

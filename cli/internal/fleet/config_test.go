@@ -71,6 +71,9 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 	if loaded.Release.SLSABuilder == "" {
 		t.Fatalf("expected SLSA builder to be populated")
 	}
+	if loaded.Catalog.ReleaseLimit != DefaultCatalogReleaseLimit {
+		t.Fatalf("catalog release limit = %d, want %d", loaded.Catalog.ReleaseLimit, DefaultCatalogReleaseLimit)
+	}
 	if loaded.Release.NixCache.Bucket != "" || loaded.Release.NixCache.PublicBaseURL != "" || loaded.Release.NixCache.SigningKeyName != "" || loaded.Release.NixCache.PublicKey != "" {
 		t.Fatalf("new fork defaults should not inherit an upstream Nix cache: %#v", loaded.Release.NixCache)
 	}

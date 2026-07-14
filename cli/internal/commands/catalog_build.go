@@ -35,7 +35,7 @@ func newCatalogBuildCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&catalogBuildOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
-	cmd.Flags().IntVar(&catalogBuildOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum releases to inspect")
+	cmd.Flags().IntVar(&catalogBuildOpts.limit, "limit", envIntValue("RELEASE_LIMIT", fleet.DefaultCatalogReleaseLimit), "Maximum releases to inspect")
 	cmd.Flags().StringVar(&catalogBuildOpts.targets, "targets", os.Getenv("CATALOG_TARGETS"), "Comma-separated target allowlist")
 	cmd.Flags().StringVar(&catalogBuildOpts.imagePrefix, "image-prefix", "", "Image name prefix for catalog records and registry enrichment")
 	cmd.Flags().BoolVar(&catalogBuildOpts.forceRefreshAll, "force-refresh-all", parseScanBool(os.Getenv("FORCE_REFRESH_ALL")), "Refresh enrichment and SBOMs for every release")

@@ -52,7 +52,7 @@ release:
 rebase:
   workflowIdentity: https://github.com/northcutted/clearcutt/.github/workflows/rebase.yml@refs/heads/main
 catalog:
-  releaseLimit: 10
+  releaseLimit: 3
   scanDepth: "4"
   scanAll: false
 admission:

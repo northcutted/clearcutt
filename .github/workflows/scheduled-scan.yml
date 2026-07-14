@@ -81,7 +81,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_OWNER: ${{ github.repository_owner }}
           GH_REPO: ${{ github.event.repository.name }}
-          RELEASE_LIMIT: "10"
+          RELEASE_LIMIT: "3"
         run: ./clearcutt catalog gather --limit "$RELEASE_LIMIT"
 
       - name: Run Remediation Scan

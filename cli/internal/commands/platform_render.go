@@ -107,7 +107,7 @@ func addPlatformRenderFlags(cmd *cobra.Command, opts *platformRenderFlags) {
 	cmd.Flags().StringVar(&opts.catalogSource, "catalog-source", catalogSourceInventory, "Catalog-only source: inventory or github-release")
 	cmd.Flags().StringVar(&opts.catalogSourceRepo, "catalog-source-repo", "", "GitHub release source in OWNER/REPO form for catalog-only mode")
 	cmd.Flags().StringVar(&opts.catalogTargets, "catalog-targets", "", "Comma-separated release target allowlist for github-release catalog source")
-	cmd.Flags().IntVar(&opts.catalogReleaseLimit, "catalog-release-limit", 1, "Maximum non-draft releases to inspect for github-release catalog source")
+	cmd.Flags().IntVar(&opts.catalogReleaseLimit, "catalog-release-limit", fleet.DefaultCatalogReleaseLimit, "Maximum non-draft releases to inspect for github-release catalog source")
 }
 
 func renderPlatformControlPlane(opts platformRenderFlags) (PlatformRenderResult, error) {

@@ -341,7 +341,7 @@ clearcutt fleet verify-target --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_PREFIX-java2
 clearcutt app template java --output examples/my-java-service
 
 # Build catalog data from release evidence, registry metadata, SBOMs, and scans.
-clearcutt catalog build --limit 10 --scan-depth 4 --core-dir core --update-db --include-services
+clearcutt catalog build --limit 3 --scan-depth 4 --core-dir core --update-db --include-services
 
 # Emit catalog workflow parameters for GitHub Actions.
 clearcutt catalog workflow-params --github-output "$GITHUB_OUTPUT"

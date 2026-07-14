@@ -264,7 +264,9 @@ allows a dispatch-provided release-limit override, and writes `limit` plus
 per-image OpenVEX JSON from the active catalog before running the Astro build, so
 the workflow does not need to parse catalog internals. `catalog build --core-dir
 core --update-db` resolves Grype through the scaffolded Nix backend and refreshes
-the Grype DB inside the CLI-owned scan step.
+the Grype DB inside the CLI-owned scan step. Catalog gather, enrich, and build
+inspect the three most recent releases by default; use `--limit`,
+`RELEASE_LIMIT`, or `catalog.releaseLimit` to choose a different window.
 
 ## Scan Commands
 
