@@ -54,10 +54,15 @@ var releaseEvidenceResolveDigest = func(ref string) (string, error) {
 // VerifyEvidenceResponse is the structured payload for --format json|yaml,
 // mirroring the check-list shape of VerifyResponse from `verify image`.
 type VerifyEvidenceResponse struct {
-	Status string              `json:"status"` // pass or fail
-	Ref    string              `json:"ref"`
-	Digest string              `json:"digest,omitempty"`
-	Checks []VerifyCheckResult `json:"checks"`
+	Status           string              `json:"status"` // pass or fail
+	Ref              string              `json:"ref"`
+	Digest           string              `json:"digest,omitempty"`
+	Repo             string              `json:"repo,omitempty"`
+	WorkflowIdentity string              `json:"workflowIdentity,omitempty"`
+	OIDCIssuer       string              `json:"oidcIssuer,omitempty"`
+	SourceRef        string              `json:"sourceRef,omitempty"`
+	SourceBranch     string              `json:"sourceBranch,omitempty"`
+	Checks           []VerifyCheckResult `json:"checks"`
 }
 
 func NewVerifyReleaseEvidenceCmd() *cobra.Command {
@@ -169,10 +174,15 @@ func runVerifyReleaseEvidence() error {
 	// check-list even on the first failed gate.
 	finish := func(failErr error) error {
 		response := VerifyEvidenceResponse{
-			Status: "pass",
-			Ref:    o.ref,
-			Digest: resolvedDigest,
-			Checks: checks,
+			Status:           "pass",
+			Ref:              o.ref,
+			Digest:           resolvedDigest,
+			Repo:             o.repo,
+			WorkflowIdentity: o.workflowIdentity,
+			OIDCIssuer:       o.oidcIssuer,
+			SourceRef:        o.sourceRef,
+			SourceBranch:     sourceBranch,
+			Checks:           checks,
 		}
 		if failErr != nil {
 			response.Status = "fail"

@@ -97,7 +97,7 @@ func newCatalogGatherCmd() *cobra.Command {
 }
 
 func addCatalogGatherFlags(cmd *cobra.Command) {
-	cmd.Flags().IntVar(&catalogGatherOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum non-draft releases to inspect")
+	cmd.Flags().IntVar(&catalogGatherOpts.limit, "limit", envIntValue("RELEASE_LIMIT", fleet.DefaultCatalogReleaseLimit), "Maximum non-draft releases to inspect")
 	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
@@ -896,7 +896,7 @@ type githubReleaseSource struct {
 
 func (s *githubReleaseSource) ListReleases(limit int) ([]catalogbuild.Release, error) {
 	if limit <= 0 {
-		limit = 10
+		limit = fleet.DefaultCatalogReleaseLimit
 	}
 	perPage := limit * 2
 	if perPage < 1 {

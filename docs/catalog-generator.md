@@ -43,6 +43,12 @@ Useful flags:
   refresh behavior.
 - `--generated-at` pins timestamps for reproducible tests.
 
+Release-backed generation also consumes `<target>.release-verification.json`
+and per-architecture `<target>-<arch>.vulnerabilities.json` assets when the
+source release publishes them. A passing release-verification checklist can
+supply the immutable manifest digest and verified keyless-signature state;
+failed or incomplete checklists do not satisfy those evidence channels.
+
 ## Generic OCI Mode
 
 Generic OCI mode does not require Nix, ClearCutt release workflows, or a
@@ -73,7 +79,10 @@ clearcutt platform bootstrap github \
 ```
 
 The generated `catalog.yml` workflow runs the same data path shown below, then
-validates the catalog and builds the static site artifact.
+validates the catalog and builds the static site artifact. Release-backed
+control planes also refresh daily and accept a `clearcutt-release`
+`repository_dispatch` event for immediate refresh; inventory-backed control
+planes remain push/manual driven.
 
 ```bash
 clearcutt catalog generate \

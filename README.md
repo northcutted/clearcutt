@@ -109,6 +109,19 @@ runs the same fixture-backed first proof as above:
 Building from source stays the contributor path; see
 [CONTRIBUTING.md](CONTRIBUTING.md) and the clean-clone proof above.
 
+Once a verified release binary is installed, the CLI can check or install a
+new release through the same checksum and exact Sigstore identity gates:
+
+```bash
+clearcutt update --check
+clearcutt update
+```
+
+`clearcutt update` requires `cosign` on `PATH`, downloads the platform binary,
+its `.sig` bundle, and `SHA256SUMS.txt`, and replaces the running executable
+only after both checks pass. Use `--output` to install somewhere else or
+`--repo owner/repo` when consuming a fork that publishes compatible assets.
+
 ## Where To Start
 
 | Role | First document | First useful command |

@@ -214,11 +214,12 @@ policy examples, and metadata for the requested owner/repo/registry identity.`,
 	doctorCmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run local and optional GitHub readiness checks",
-		Long: `Run first-release readiness checks for a ClearCutt fleet repository.
-By default this runs the same local wiring checks as platform status. Pass
---github to also inspect the GitHub repository with the gh CLI for Actions,
-workflow permissions, production environment, Pages, and registry credential
-readiness.`,
+		Long: `Run readiness checks for a ClearCutt fleet or catalog-only control plane.
+When clearcutt.lock identifies a catalog-only repository, doctor validates the
+rendered source, verified CLI installer, refresh triggers, and read-only GitHub
+settings. Otherwise it runs the fleet wiring checks from platform status. Pass
+--github to inspect repository Actions, workflow permissions, environments,
+Pages, and profile-specific credential readiness with the gh CLI.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			resolveRepoRootDefault(cmd, "output", &platformOpts.outputDir)
@@ -228,7 +229,7 @@ readiness.`,
 	doctorCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
 	doctorCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root to inspect")
 	doctorCmd.Flags().BoolVar(&platformOpts.github, "github", false, "Use gh to check GitHub repository readiness")
-	doctorCmd.Flags().StringVar(&platformOpts.githubRepo, "repo", "", "GitHub owner/repo to inspect (default from fleet config)")
+	doctorCmd.Flags().StringVar(&platformOpts.githubRepo, "repo", "", "GitHub owner/repo to inspect (default from rendered state or fleet config)")
 
 	releasePlanCmd := &cobra.Command{
 		Use:   "release-plan",
@@ -762,6 +763,9 @@ func runPlatformStatus() error {
 
 func runPlatformDoctor() error {
 	root := platformOpts.outputDir
+	if lock, err := loadRenderedControlPlaneLock(root); err == nil && strings.TrimSpace(lock.Spec.Platform.Profile) == platformProfileCatalogOnly {
+		return runCatalogOnlyPlatformDoctor(root, lock)
+	}
 	checks := collectPlatformStatus(root, platformOpts.configPath).Checks
 	addPlatformDoctorWorkflowChecks(root, func(id, status, msg string) {
 		checks = append(checks, PlatformStatusCheck{ID: id, Status: status, Message: msg})
@@ -784,6 +788,112 @@ func runPlatformDoctor() error {
 		return ErrCheckFailed
 	}
 	return nil
+}
+
+func runCatalogOnlyPlatformDoctor(root string, lock renderedControlPlaneLock) error {
+	checks := []PlatformStatusCheck{}
+	add := func(id, status, message string) {
+		checks = append(checks, PlatformStatusCheck{ID: id, Status: status, Message: message})
+	}
+	if err := validateRenderedControlPlane(root, platformProfileCatalogOnly); err != nil {
+		add("controlPlane.rendered", "fail", err.Error())
+	} else {
+		add("controlPlane.rendered", "pass", "catalog-only control plane files and lock state are valid")
+	}
+	checkFileContains(root, ".github/actions/install-clearcutt/action.yml", "SHA256SUMS.txt", "cli.install.checksum", "CLI installer verifies release checksums", add)
+	checkFileContains(root, ".github/actions/install-clearcutt/action.yml", "cosign verify-blob", "cli.install.signature", "CLI installer verifies the Sigstore bundle", add)
+	if lock.Spec.Catalog.Source == catalogSourceGitHubRelease {
+		checkFileContainsAll(root, ".github/workflows/catalog.yml", []string{"schedule:", "repository_dispatch:", "clearcutt-release"}, "catalog.refresh", "release-backed catalog refreshes on schedule and repository dispatch", add)
+		checkFileNotContains(root, ".github/workflows/catalog.yml", "nix ", "catalog.nixFree", "catalog-only workflow does not require Nix", add)
+	}
+	if platformOpts.github {
+		state, err := loadRenderedControlPlanePlanState(root)
+		if err != nil {
+			add("github.config", "fail", fmt.Sprintf("rendered GitHub state missing or invalid: %v", err))
+		} else {
+			addCatalogOnlyGithubDoctorChecks(state, platformOpts.githubRepo, add)
+		}
+	}
+	result := platformStatusFromChecks(checks)
+	if err := printPlatformStatus(result); err != nil {
+		return err
+	}
+	if result.Status == "fail" {
+		return ErrCheckFailed
+	}
+	return nil
+}
+
+func addCatalogOnlyGithubDoctorChecks(state renderedControlPlanePlanState, repoOverride string, add func(string, string, string)) {
+	expectedRepo := state.owner + "/" + state.repo
+	repo := strings.TrimSpace(repoOverride)
+	if repo == "" {
+		repo = expectedRepo
+	}
+	var repoView struct {
+		NameWithOwner    string `json:"nameWithOwner"`
+		DefaultBranchRef struct {
+			Name string `json:"name"`
+		} `json:"defaultBranchRef"`
+	}
+	if err := ghJSON(&repoView, "repo", "view", repo, "--json", "nameWithOwner,defaultBranchRef"); err != nil {
+		add("github.repo", "fail", fmt.Sprintf("gh repo view %s failed: %v", repo, err))
+		return
+	}
+	if repoView.NameWithOwner == expectedRepo {
+		add("github.repo", "pass", fmt.Sprintf("GitHub repository %s is reachable", repoView.NameWithOwner))
+	} else {
+		add("github.repo", "fail", fmt.Sprintf("GitHub repository is %s, expected %s", repoView.NameWithOwner, expectedRepo))
+	}
+	if repoView.DefaultBranchRef.Name == "main" {
+		add("github.defaultBranch", "pass", "default branch is main")
+	} else {
+		add("github.defaultBranch", "fail", fmt.Sprintf("default branch is %s, expected main", repoView.DefaultBranchRef.Name))
+	}
+
+	repoAPI := "repos/" + repo
+	var actionsPerms struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := ghJSON(&actionsPerms, "api", repoAPI+"/actions/permissions"); err != nil {
+		add("github.actions", "fail", fmt.Sprintf("read Actions permissions: %v", err))
+	} else if actionsPerms.Enabled {
+		add("github.actions", "pass", "GitHub Actions is enabled")
+	} else {
+		add("github.actions", "fail", "GitHub Actions is disabled")
+	}
+	var workflowPerms struct {
+		DefaultWorkflowPermissions string `json:"default_workflow_permissions"`
+	}
+	if err := ghJSON(&workflowPerms, "api", repoAPI+"/actions/permissions/workflow"); err != nil {
+		add("github.workflowPermissions", "fail", fmt.Sprintf("read workflow permissions: %v", err))
+	} else if workflowPerms.DefaultWorkflowPermissions == "read" {
+		add("github.workflowPermissions", "pass", "default workflow token permissions are read-only")
+	} else {
+		add("github.workflowPermissions", "fail", fmt.Sprintf("workflow permissions are %q, expected read", workflowPerms.DefaultWorkflowPermissions))
+	}
+	if state.environment != "" {
+		var environment struct {
+			Name string `json:"name"`
+		}
+		if err := ghJSON(&environment, "api", repoAPI+"/environments/"+state.environment); err != nil {
+			add("github.environment."+state.environment, "fail", fmt.Sprintf("environment is missing or inaccessible: %v", err))
+		} else if environment.Name == state.environment {
+			add("github.environment."+state.environment, "pass", "requested GitHub environment exists")
+		}
+	}
+	if state.pages != nil && *state.pages {
+		var pages struct {
+			BuildType string `json:"build_type"`
+		}
+		if err := ghJSON(&pages, "api", repoAPI+"/pages"); err != nil {
+			add("github.pages", "fail", fmt.Sprintf("GitHub Pages is not configured for Actions: %v", err))
+		} else if pages.BuildType == "workflow" {
+			add("github.pages", "pass", "GitHub Pages is configured for Actions")
+		} else {
+			add("github.pages", "fail", fmt.Sprintf("GitHub Pages build_type is %q, expected workflow", pages.BuildType))
+		}
+	}
 }
 
 func runPlatformReleasePlan() error {

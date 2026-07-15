@@ -1092,6 +1092,7 @@ func isReleaseAsset(name string) bool {
 	return strings.HasSuffix(name, ".sbom.json") ||
 		strings.HasSuffix(name, ".test-results.json") ||
 		strings.HasSuffix(name, ".release-verification.json") ||
+		strings.HasSuffix(name, ".vulnerabilities.json") ||
 		strings.HasSuffix(name, ".intoto.jsonl") ||
 		strings.HasSuffix(name, ".sig") ||
 		strings.HasPrefix(name, "clearcutt-") ||

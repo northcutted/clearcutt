@@ -539,6 +539,7 @@ type InclusionInfo struct {
 // SignatureInfo maps OCI cosign bundle signatures.
 type SignatureInfo struct {
 	CosignBundlePresent bool             `json:"cosignBundlePresent"`
+	VerificationSource  string           `json:"verificationSource,omitempty"`
 	RekorLogIndex       *int64           `json:"rekorLogIndex,omitempty"`
 	Certificate         *CertificateInfo `json:"certificate,omitempty"`
 }

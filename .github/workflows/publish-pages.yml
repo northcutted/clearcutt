@@ -8,7 +8,7 @@ on:
       release_limit:
         description: "How many recent releases to ingest"
         required: false
-        default: "10"
+        default: "3"
       force_refresh_all:
         description: "Ignore the cache and re-fetch enrichment + SBOMs for every release (slow; use when schema changes or attestations are re-attached)"
         required: false

@@ -203,6 +203,9 @@ func TestFleetVerifyTargetAppliesConfiguredEvidenceDefaults(t *testing.T) {
 	if artifact.Status != "pass" || artifact.Ref == "" || artifact.Digest != "sha256:abc123" || len(artifact.Checks) == 0 {
 		t.Fatalf("unexpected verification artifact: %#v", artifact)
 	}
+	if artifact.Repo != "acme/platform" || artifact.WorkflowIdentity != releaseEvidenceOpts.workflowIdentity || artifact.OIDCIssuer != releaseEvidenceOpts.oidcIssuer || artifact.SourceRef != "refs/heads/main" || artifact.SourceBranch != "main" {
+		t.Fatalf("verification artifact did not preserve trust inputs: %#v", artifact)
+	}
 }
 
 func TestFleetReleaseHelperFailureBranches(t *testing.T) {

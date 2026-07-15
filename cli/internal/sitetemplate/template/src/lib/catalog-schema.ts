@@ -298,6 +298,7 @@ export const ReleaseEntry = z.object({
   signature: z
     .object({
       cosignBundlePresent: z.boolean(),
+      verificationSource: z.string().optional(),
       rekorLogIndex: z.number().nullable().optional(),
       certificate: z
         .object({

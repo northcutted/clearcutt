@@ -69,6 +69,7 @@ and manage hardened multi-architecture platform-owned base images.`,
 		&cobra.Group{ID: "apps", Title: "App Team Workflow:"},
 		&cobra.Group{ID: "govern", Title: "Governance Gates:"},
 		&cobra.Group{ID: "secure", Title: "Security Operations:"},
+		&cobra.Group{ID: "maintain", Title: "CLI Maintenance:"},
 	)
 
 	add := func(groupID string, cmd *cobra.Command) {
@@ -111,6 +112,9 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("secure", NewRemediationCmd())
 	add("secure", NewExceptionsCmd())
 	add("secure", NewVexCmd())
+
+	// Keep the CLI itself on a verified release.
+	add("maintain", NewUpdateCmd())
 
 	return rootCmd
 }

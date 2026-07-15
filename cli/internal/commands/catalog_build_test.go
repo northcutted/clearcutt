@@ -4,13 +4,29 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
 	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/spf13/cobra"
 )
+
+func TestCatalogCommandsDefaultToRecentReleaseWindow(t *testing.T) {
+	t.Setenv("RELEASE_LIMIT", "")
+	want := strconv.Itoa(fleet.DefaultCatalogReleaseLimit)
+	for name, cmd := range map[string]*cobra.Command{
+		"build":  newCatalogBuildCmd(),
+		"enrich": newCatalogEnrichCmd(),
+		"gather": newCatalogGatherCmd(),
+	} {
+		if got := cmd.Flags().Lookup("limit").DefValue; got != want {
+			t.Fatalf("catalog %s --limit default = %s, want %s", name, got, want)
+		}
+	}
+}
 
 func TestCatalogBuildRunsOfflinePipelineWithFleetConfig(t *testing.T) {
 	const (

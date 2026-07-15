@@ -9,7 +9,10 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const DefaultConfigPath = "clearcutt.fleet.yaml"
+const (
+	DefaultConfigPath          = "clearcutt.fleet.yaml"
+	DefaultCatalogReleaseLimit = 3
+)
 
 // ReferenceOwner and ReferenceRepo identify the upstream ClearCutt project. They
 // are the default fleet identity and the source identity that
@@ -492,7 +495,7 @@ func DefaultConfig(owner, repo string) Config {
 			WorkflowIdentity: fmt.Sprintf("https://github.com/%s/.github/workflows/rebase.yml@refs/heads/main", repoPath),
 		},
 		Catalog: Catalog{
-			ReleaseLimit: 10,
+			ReleaseLimit: DefaultCatalogReleaseLimit,
 			ScanDepth:    "4",
 			ScanAll:      false,
 		},

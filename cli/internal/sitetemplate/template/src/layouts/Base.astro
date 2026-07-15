@@ -32,7 +32,7 @@ const siteLinks = siteConfig.site.links;
 const sourceHref = siteLinks.sourceRepo || index?.repoUrl;
 const registryHref = siteLinks.registry || (index?.registryBase ? `https://${index.registryBase}` : '');
 const sourceLabel = index ? `${index.owner}/${index.repo}` : 'Source';
-const isReferenceSite = !index || (index.owner === 'northcutted' && index.repo === 'clearcutt');
+const isReferenceSite = siteConfig.site.portalRole === 'reference';
 const catalogSubtitle = index ? (isReferenceSite ? 'Reference Catalog' : `Catalog for ${sourceLabel}`) : 'Evidence Catalog';
 const footerLinks = [
   sourceHref && { label: 'Source', href: sourceHref },

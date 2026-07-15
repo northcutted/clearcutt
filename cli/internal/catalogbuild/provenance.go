@@ -198,7 +198,7 @@ func isUsefulProvenanceSummary(p Provenance) bool {
 
 func summarizeProvenance(intotoJSONL string) Provenance {
 	fallback := Provenance{PredicateType: "unknown", Builder: builderOut{ID: "unknown"}, SlsaLevel: 3}
-	var best *Provenance
+	var best, bestSLSA *Provenance
 	for _, line := range strings.Split(intotoJSONL, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
@@ -209,12 +209,20 @@ func summarizeProvenance(intotoJSONL string) Provenance {
 		}
 		summary := SummarizeIntotoStatement(*stmt)
 		if strings.Contains(summary.PredicateType, "slsa.dev/provenance") {
-			return summary
+			// gh attestation export can contain multiple successful release runs for
+			// one immutable subject. It writes them in chronological order, so retain
+			// the last SLSA statement instead of reporting the oldest source revision.
+			s := summary
+			bestSLSA = &s
+			continue
 		}
-		if best == nil && isUsefulProvenanceSummary(summary) {
+		if isUsefulProvenanceSummary(summary) {
 			s := summary
 			best = &s
 		}
+	}
+	if bestSLSA != nil {
+		return *bestSLSA
 	}
 	if best != nil {
 		return *best

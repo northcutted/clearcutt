@@ -50,7 +50,7 @@ func newCatalogEnrichCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&catalogEnrichOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
-	cmd.Flags().IntVar(&catalogEnrichOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum releases to inspect for tags")
+	cmd.Flags().IntVar(&catalogEnrichOpts.limit, "limit", envIntValue("RELEASE_LIMIT", fleet.DefaultCatalogReleaseLimit), "Maximum releases to inspect for tags")
 	cmd.Flags().StringVar(&catalogEnrichOpts.tags, "tags", os.Getenv("GATHER_TAGS"), "Comma-separated release tags to enrich")
 	cmd.Flags().StringVar(&catalogEnrichOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner")
 	cmd.Flags().StringVar(&catalogEnrichOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository")

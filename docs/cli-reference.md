@@ -68,6 +68,21 @@ The identity is exact, not a pattern: releases run only from
 `clearcutt verify release-evidence --workflow-identity`. Build from source
 (below) when contributing.
 
+After installing a verified binary, use the built-in updater to inspect or
+install another signed release:
+
+```bash
+clearcutt update --check
+clearcutt update
+clearcutt update --version v0.15.0 --output "$HOME/.local/bin/clearcutt"
+```
+
+The updater uses `GH_TOKEN` or `GITHUB_TOKEN` when present, requires `cosign`,
+and refuses replacement unless the downloaded binary matches
+`SHA256SUMS.txt` and its Sigstore bundle matches the exact release workflow
+identity and GitHub Actions OIDC issuer. `--repo` and `--workflow-identity`
+support fork-owned release publishers without broadening identity matching.
+
 ## Build
 
 ```bash
@@ -249,7 +264,9 @@ allows a dispatch-provided release-limit override, and writes `limit` plus
 per-image OpenVEX JSON from the active catalog before running the Astro build, so
 the workflow does not need to parse catalog internals. `catalog build --core-dir
 core --update-db` resolves Grype through the scaffolded Nix backend and refreshes
-the Grype DB inside the CLI-owned scan step.
+the Grype DB inside the CLI-owned scan step. Catalog gather, enrich, and build
+inspect the three most recent releases by default; use `--limit`,
+`RELEASE_LIMIT`, or `catalog.releaseLimit` to choose a different window.
 
 ## Scan Commands
 

@@ -20,7 +20,59 @@ type parsedCatalogAssetName struct {
 	Filename string
 }
 
-var catalogAssetNameRe = regexp.MustCompile(`^(.+?)\.(sbom|test-results|intoto|digest|sigstore)\.(json|jsonl)$`)
+var catalogAssetNameRe = regexp.MustCompile(`^(.+?)\.(sbom|test-results|intoto|digest|sigstore|release-verification|vulnerabilities)\.(json|jsonl)$`)
+
+type releaseVerification struct {
+	Status           string `json:"status"`
+	Ref              string `json:"ref"`
+	Digest           string `json:"digest"`
+	WorkflowIdentity string `json:"workflowIdentity,omitempty"`
+	OIDCIssuer       string `json:"oidcIssuer,omitempty"`
+	SourceRef        string `json:"sourceRef,omitempty"`
+	SourceBranch     string `json:"sourceBranch,omitempty"`
+	Checks           []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	} `json:"checks"`
+}
+
+func (v releaseVerification) checkPassed(id string) bool {
+	for _, check := range v.Checks {
+		if check.ID == id {
+			return check.Status == "pass"
+		}
+	}
+	return false
+}
+
+func parseReleaseVerification(data []byte) *releaseVerification {
+	var verification releaseVerification
+	if json.Unmarshal(data, &verification) != nil || verification.Status != "pass" || verification.Digest == "" {
+		return nil
+	}
+	if !verification.checkPassed("digest.resolve") || !verification.checkPassed("signature.keyless") {
+		return nil
+	}
+	return &verification
+}
+
+func signatureFromReleaseVerification(verification *releaseVerification) *Signature {
+	if verification == nil || !verification.checkPassed("signature.keyless") {
+		return nil
+	}
+	signature := &Signature{CosignBundlePresent: true, VerificationSource: "release-verification"}
+	if verification.WorkflowIdentity != "" || verification.OIDCIssuer != "" {
+		signature.Certificate = &Certificate{
+			Subject: PtrIfNotEmpty(verification.WorkflowIdentity),
+			Issuer:  PtrIfNotEmpty(verification.OIDCIssuer),
+		}
+	}
+	return signature
+}
+
+func releaseVerificationMatchesDigest(verification *releaseVerification, digest *string) bool {
+	return verification != nil && (digest == nil || *digest == "" || *digest == verification.Digest)
+}
 
 func parseCatalogTargetName(filename string) *parsedCatalogAssetName {
 	m := catalogAssetNameRe.FindStringSubmatch(filename)
@@ -197,8 +249,12 @@ func releaseEvidenceFromGather(rel *gatherReleaseEntry) catalog.EvidenceSummary 
 		PassedTestArchCount:    passedTestArch,
 		VulnerabilityArchCount: vulnArch,
 	}
+	signatureSource := "sigstore"
+	if rel.Signature != nil && rel.Signature.VerificationSource != "" {
+		signatureSource = rel.Signature.VerificationSource
+	}
 	evidence.Statuses = &catalog.EvidenceStatuses{
-		Signature:       clearcuttVerifiedChannel(evidence.Signature, "sigstore"),
+		Signature:       clearcuttVerifiedChannel(evidence.Signature, signatureSource),
 		Provenance:      clearcuttVerifiedChannel(evidence.Provenance, "slsa"),
 		SBOM:            clearcuttVerifiedChannel(evidence.SBOM, "spdx-sbom"),
 		Tests:           clearcuttVerifiedChannel(evidence.Tests, "test-results"),
@@ -386,7 +442,11 @@ func loadVulnerabilities(tag, target, arch, vulnDir string) (*json.RawMessage, *
 	if err != nil {
 		return nil, nil
 	}
-	raw := json.RawMessage(data)
+	return parseVulnerabilities(data)
+}
+
+func parseVulnerabilities(data []byte) (*json.RawMessage, *catalog.VulnerabilitiesInfo) {
+	raw := json.RawMessage(append([]byte(nil), data...))
 	var info catalog.VulnerabilitiesInfo
 	if err := json.Unmarshal(data, &info); err != nil {
 		return &raw, nil
@@ -443,6 +503,8 @@ func buildImageRecord(desc *recordTarget, releases []Release, refreshSet map[str
 		}
 		provAsset := catalogAssetNamed(rel.Assets, target+".intoto.jsonl")
 		digestAsset := catalogAssetNamed(rel.Assets, target+".digest.json")
+		verificationAsset := catalogAssetNamed(rel.Assets, target+".release-verification.json")
+		vulnerabilityAssets := catalogArchAssets(rel.Assets, target, ".vulnerabilities.json")
 		testAssets := catalogArchAssets(rel.Assets, target, ".test-results.json")
 		if len(testAssets) == 0 {
 			testAssets = catalogAssetsNamed(rel.Assets, target+".test-results.json")
@@ -547,11 +609,29 @@ func buildImageRecord(desc *recordTarget, releases []Release, refreshSet map[str
 			}
 		}
 
+		var verification *releaseVerification
+		if verificationAsset != nil && opts.Source != nil {
+			buf, err := opts.Source.DownloadAsset(*verificationAsset)
+			if err != nil {
+				return nil, err
+			}
+			verification = parseReleaseVerification(buf)
+			if !releaseVerificationMatchesDigest(verification, manifestDigest) {
+				verification = nil
+			} else if verification != nil && manifestDigest == nil {
+				manifestDigest = PtrIfNotEmpty(verification.Digest)
+			}
+		}
+
 		enrich := loadEnrichment(rel.Tag, target, opts.EnrichmentDir)
-		var signature *Signature
+		signature := signatureFromReleaseVerification(verification)
 		attestations := []gatherAttestation{}
 		if enrich != nil {
 			if enrich.ManifestDigest != nil {
+				if !releaseVerificationMatchesDigest(verification, enrich.ManifestDigest) {
+					verification = nil
+					signature = nil
+				}
 				manifestDigest = enrich.ManifestDigest
 			}
 			for _, archEnr := range enrich.Architectures {
@@ -598,12 +678,37 @@ func buildImageRecord(desc *recordTarget, releases []Release, refreshSet map[str
 					entry.TestResults = &tr
 				}
 			}
-			signature = enrich.Signature
+			if enrich.Signature != nil {
+				signature = enrich.Signature
+			}
 			attestations = attachReleaseAssetLinks(enrich.Attestations, assetURL(provAsset))
 		}
 
 		lastRebuiltAt := rel.PublishedAt
+		for _, asset := range vulnerabilityAssets {
+			if opts.Source == nil {
+				continue
+			}
+			buf, err := opts.Source.DownloadAsset(asset)
+			if err != nil {
+				continue
+			}
+			arch := guessArchFromAsset(asset.Name, nil)
+			entry := archMap[arch]
+			if entry == nil {
+				continue
+			}
+			raw, info := parseVulnerabilities(buf)
+			entry.Vulnerabilities = raw
+			entry.vulnInfo = info
+		}
 		for arch, entry := range archMap {
+			if entry.Vulnerabilities != nil {
+				if entry.vulnInfo != nil && entry.vulnInfo.ScannedAt != "" && entry.vulnInfo.ScannedAt > lastRebuiltAt {
+					lastRebuiltAt = entry.vulnInfo.ScannedAt
+				}
+				continue
+			}
 			raw, info := loadVulnerabilities(rel.Tag, target, arch, opts.VulnDir)
 			if raw != nil {
 				entry.Vulnerabilities = raw

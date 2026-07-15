@@ -166,6 +166,7 @@ type Assertion struct {
 
 type Signature struct {
 	CosignBundlePresent bool         `json:"cosignBundlePresent"`
+	VerificationSource  string       `json:"verificationSource,omitempty"`
 	RekorLogIndex       *int64       `json:"rekorLogIndex"`
 	Certificate         *Certificate `json:"certificate"`
 }

@@ -825,6 +825,47 @@ func TestPlatformDoctorGithubPassesForReadyRepository(t *testing.T) {
 	}
 }
 
+func TestPlatformDoctorCatalogOnlyUsesRenderedProfileAndReadOnlyPermissions(t *testing.T) {
+	root := renderReleaseBackedForTest(t)
+	oldCapture := captureExternalOutput
+	defer func() { captureExternalOutput = oldCapture }()
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		switch strings.Join(c.Args, " ") {
+		case "repo view northcutted/clearcutt-demo --json nameWithOwner,defaultBranchRef":
+			return `{"nameWithOwner":"northcutted/clearcutt-demo","defaultBranchRef":{"name":"main"}}`, nil
+		case "api repos/northcutted/clearcutt-demo/actions/permissions":
+			return `{"enabled":true}`, nil
+		case "api repos/northcutted/clearcutt-demo/actions/permissions/workflow":
+			return `{"default_workflow_permissions":"read"}`, nil
+		case "api repos/northcutted/clearcutt-demo/environments/production":
+			return `{"name":"production"}`, nil
+		case "api repos/northcutted/clearcutt-demo/pages":
+			return `{"build_type":"workflow"}`, nil
+		default:
+			t.Fatalf("unexpected gh command: %s", strings.Join(c.Args, " "))
+			return "", nil
+		}
+	}
+	stdout, err := runCLI(t, "--format", "json", "platform", "doctor", "--github", "--output", root)
+	if err != nil {
+		t.Fatalf("catalog-only doctor failed: %v\n%s", err, stdout)
+	}
+	var got PlatformStatus
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"controlPlane.rendered", "catalog.refresh", "github.repo", "github.workflowPermissions", "github.environment.production", "github.pages"} {
+		if !platformStatusHasCheck(got, id, "pass") {
+			t.Fatalf("missing passing %s check: %#v", id, got.Checks)
+		}
+	}
+	for _, check := range got.Checks {
+		if strings.Contains(check.ID, "fleet") || strings.Contains(check.Message, "fleet config") {
+			t.Fatalf("catalog-only doctor emitted fleet-specific check: %#v", check)
+		}
+	}
+}
+
 func TestPlatformDoctorGithubFailsWhenRepositorySettingsAreNotReady(t *testing.T) {
 	root := t.TempDir()
 	writeFleetConfig(t, root)
