@@ -369,15 +369,16 @@ let
     };
 
     python = let
-      # Distroless override evaluation (2026-06): python3Minimal exists in the
-      # locked nixpkgs (python3-minimal-3.13.13) but was deliberately NOT
+      # Distroless override evaluation: python3Minimal exists in the locked
+      # nixpkgs (currently python3-minimal-3.14.6) but is deliberately NOT
       # adopted as a distrolessOverride:
       #   * it is built with withMinimalDeps = true, which disables OpenSSL,
       #     sqlite, expat, mpdecimal, and readline — so the `ssl`, `sqlite3`,
       #     and `pyexpat` stdlib modules are missing and HTTPS, pip-installed
       #     wheels, and most real services break out of the box;
-      #   * it tracks the 3.13 sources only, so it could never serve the
-      #     3.14 line and would silently downgrade interpreters.
+      #   * it tracks nixpkgs' default Python line rather than the requested
+      #     per-version runtime, so it cannot serve both 3.13 and 3.14 and can
+      #     silently change interpreter lines when the pin moves.
       # Instead, distroless keeps the per-version full interpreter but severs
       # the build-shell store references that live in dev-facing helper files
       # (pythonX.Y-config, config-*/Makefile, install-sh, makesetup, ctypes
@@ -398,15 +399,15 @@ let
         "3.13" = {
           overlayName = "clearcuttPython313";
           raw = let py = getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version"; in [ py ];
-          slimOverride = [ (getPkg [ [ "clearcuttCvePython313" ] ] "Patched Python 3.13 runtime is not available") ];
-          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython313" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "clearcuttCve15308Python313" ] ] "Patched Python 3.13 runtime is not available") ];
+          distrolessOverride = let py = getPkg [ [ "clearcuttCve15308Python313" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python313" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.14" = {
           overlayName = "clearcuttPython314";
           raw = let py = getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version"; in [ py ];
-          slimOverride = [ (getPkg [ [ "clearcuttCvePython314" ] ] "Patched Python 3.14 runtime is not available") ];
-          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython314" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "clearcuttCve15308Python314" ] ] "Patched Python 3.14 runtime is not available") ];
+          distrolessOverride = let py = getPkg [ [ "clearcuttCve15308Python314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
       };
