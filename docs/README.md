@@ -24,6 +24,9 @@ document, one first command, and then deeper links.
   release workflow, image digest, SBOM, provenance, catalog record, and policy.
 - [Catalog evidence walkthrough](trust/catalog-evidence.md): understand evidence
   badges, missing data, raw evidence, and generic OCI mode.
+- [Registry scan and the base image graph](registry-graph.md): point ClearCutt at a
+  registry, discover which images are built on which, and produce an auditable
+  inventory with drift.
 - [Imported fleets](imported-fleets.md): import existing OCI refs, observe
   evidence without provenance claims, assess governance gaps, and plan rebases.
 - [CVE draft agent threat model](trust/cve-agent-threat-model.md): understand

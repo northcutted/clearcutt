@@ -101,6 +101,8 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("apps", NewPolicyCmd())
 
 	// Gate image releases and cluster admission decisions.
+	add("govern", NewRegistryCmd())
+	add("govern", NewGraphCmd())
 	add("govern", NewImportCmd())
 	add("govern", NewCertifyCmd())
 	add("govern", NewVerifyCmd())

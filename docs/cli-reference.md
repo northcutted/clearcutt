@@ -141,6 +141,46 @@ suite: it realizes missing representative archives through the Nix flake, then
 runs native-Go closure-purity and runtime-CVE gates over the same representative
 slim/distroless targets the legacy shell suite covered.
 
+## Estate Discovery Commands
+
+Discover and govern an image estate ClearCutt did not build. Every command here is
+read-only against the registry: it reads manifests, configs, and tags, and writes
+local files.
+
+```bash
+# Enumerate a registry namespace into an inventory
+./clearcutt registry scan \
+  --registry ghcr.io \
+  --namespace YOUR_ORG/YOUR_REPO \
+  --repository YOUR_BASE_IMAGE \
+  --repository YOUR_APP_IMAGE \
+  --output dist/scan/images.yaml
+
+# Read each image's manifest, config, layers, and labels
+./clearcutt import observe --images dist/scan/images.yaml --output dist/scan/observations.json
+
+# Derive which images are built on which, and how stale each one is
+./clearcutt graph build \
+  --observations dist/scan/observations.json \
+  --output dist/scan/graph.json \
+  --report dist/scan/inventory.md
+
+# Use it as a CI gate
+./clearcutt graph build --observations dist/scan/observations.json \
+  --output dist/scan/graph.json --min-confidence verified --fail-on-stale
+```
+
+`registry scan` prefers the distribution `_catalog` endpoint filtered by
+`--namespace`; registries that do not implement it (GHCR, Docker Hub) need
+`--repository`, which is repeatable. Cosign signature and attestation sidecar tags
+are skipped unless `--include-sidecar-tags` is passed.
+
+`graph build` establishes each relationship by layer-digest matching (proof),
+`org.opencontainers.image.base.digest`, buildpacks lifecycle metadata,
+`org.opencontainers.image.base.name`, or build history — in that order — and labels
+every edge with the confidence that method earns. See
+[Registry scan and the base image graph](registry-graph.md).
+
 ## Platform Owner Commands
 
 ```bash

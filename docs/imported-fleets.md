@@ -9,6 +9,10 @@ claiming ClearCutt built the images.
 
 ## What Imported-Fleet Mode Can Do
 
+- Enumerate a registry namespace directly, without a hand-written ref list
+  (`clearcutt registry scan` — see [registry-graph.md](registry-graph.md)).
+- Discover which images are built on which by comparing layer digests, without any
+  declared `expectedBase` (`clearcutt graph build`).
 - Inventory existing OCI image refs from a simple list.
 - Generate a ClearCutt-compatible `images.yaml`.
 - Generate catalog JSON and an evidence manifest.

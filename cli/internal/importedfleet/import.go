@@ -38,6 +38,19 @@ func WriteImagesFile(path string, inventory ImagesFile) error {
 }
 
 func ImportRefs(opts ImportOptions) (ImagesFile, ImportSummary, error) {
+	refs, err := readRefs(opts.RefsPath)
+	if err != nil {
+		return ImagesFile{}, ImportSummary{}, err
+	}
+	return ImportRefList(refs, opts)
+}
+
+// ImportRefList classifies an in-memory ref list into an inventory.
+//
+// It is the same path as ImportRefs without the file round-trip, so a producer that
+// already holds refs — a registry scan, for one — can feed classification directly
+// instead of writing a temporary file only to read it back.
+func ImportRefList(refs []string, opts ImportOptions) (ImagesFile, ImportSummary, error) {
 	generatedAt := opts.GeneratedAt
 	if generatedAt == "" {
 		generatedAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -45,9 +58,8 @@ func ImportRefs(opts ImportOptions) (ImagesFile, ImportSummary, error) {
 	defaultTier := firstNonEmpty(opts.DefaultTier, "slim")
 	defaultLifecycle := firstNonEmpty(opts.DefaultLifecycle, "active")
 
-	refs, err := readRefs(opts.RefsPath)
-	if err != nil {
-		return ImagesFile{}, ImportSummary{}, err
+	if len(refs) == 0 {
+		return ImagesFile{}, ImportSummary{}, fmt.Errorf("no image refs to import")
 	}
 	inventory := ImagesFile{
 		APIVersion:   APIVersion,
