@@ -523,3 +523,143 @@ func TestBuildGraphUnusedVersionOfABaseFamilyIsARoot(t *testing.T) {
 		t.Fatalf("want the unconsumed base version reported as a root, got %+v", graph.Roots)
 	}
 }
+
+func TestBuildGraphTreatsReproducibleBuilderEpochAsNoTimestamp(t *testing.T) {
+	// Nix dockerTools stamps every image 1970-01-01T00:00:01Z for reproducibility.
+	// Treating that as a real build date would rank every version equally old and
+	// report a meaningless daysBehind.
+	old := obs("reg.test/base/java21:v1", "1970-01-01T00:00:01Z", "os-v1")
+	newer := obs("reg.test/base/java21:v2", "1970-01-01T00:00:01Z", "os-v2")
+	app := obs("reg.test/apps/pay:v1", "1970-01-01T00:00:01Z", "os-v1", "app")
+
+	graph := graphOf(t, GraphOptions{}, old, newer, app)
+
+	edge := edgeFor(t, graph, "reg.test/apps/pay:v1")
+	if edge.DaysBehind != 0 {
+		t.Fatalf("DaysBehind = %d, want 0 when no image carries a usable timestamp", edge.DaysBehind)
+	}
+	if len(graph.Bases) != 1 || len(graph.Bases[0].Warnings) == 0 {
+		t.Fatalf("a family with zeroed timestamps must warn, got %+v", graph.Bases)
+	}
+	if !strings.Contains(graph.Bases[0].Warnings[0], "zeroed by a reproducible builder") {
+		t.Fatalf("warning should name the cause, got %q", graph.Bases[0].Warnings[0])
+	}
+	// Tag order is the documented fallback, so v2 still ranks as current.
+	if edge.CurrentBaseRef != "reg.test/base/java21:v2" {
+		t.Fatalf("CurrentBaseRef = %q, want the tag-order fallback to pick v2", edge.CurrentBaseRef)
+	}
+}
+
+func TestParseCreatedRejectsPlaceholderEpochs(t *testing.T) {
+	for _, value := range []string{"1970-01-01T00:00:01Z", "1970-01-01T00:00:00Z", "1980-01-01T00:00:00Z", ""} {
+		if _, ok := parseCreated(value); ok {
+			t.Fatalf("parseCreated(%q) should report no usable timestamp", value)
+		}
+	}
+	if _, ok := parseCreated("2026-01-01T00:00:00Z"); !ok {
+		t.Fatal("a real timestamp must parse")
+	}
+}
+
+func TestBuildGraphSharedLayersAnswerBlastRadiusWithoutInventingParentage(t *testing.T) {
+	// Two sibling images built from the same recipe: they share content, but neither
+	// is a prefix of the other, so neither is the other's base.
+	left := obs("reg.test/a/slim:v1", "2026-01-01T00:00:00Z", "common", "left-only")
+	right := obs("reg.test/b/dev:v1", "2026-01-01T00:00:00Z", "right-first", "common", "right-only")
+
+	graph := graphOf(t, GraphOptions{}, left, right)
+
+	if len(graph.Edges) != 0 {
+		t.Fatalf("shared content must not be reported as a base relationship: %+v", graph.Edges)
+	}
+	if len(graph.SharedLayers) != 1 {
+		t.Fatalf("want the one shared layer, got %+v", graph.SharedLayers)
+	}
+	shared := graph.SharedLayers[0]
+	if shared.ImageCount != 2 {
+		t.Fatalf("ImageCount = %d, want 2", shared.ImageCount)
+	}
+	if len(shared.Images) != 2 || shared.Images[0] != "reg.test/a/slim:v1" {
+		t.Fatalf("Images = %v, want both carriers sorted", shared.Images)
+	}
+	if graph.Summary.DistinctLayers != 4 {
+		t.Fatalf("DistinctLayers = %d, want 4", graph.Summary.DistinctLayers)
+	}
+	if graph.Summary.WidestLayerReach != 2 {
+		t.Fatalf("WidestLayerReach = %d, want 2", graph.Summary.WidestLayerReach)
+	}
+}
+
+func TestBuildGraphSharedLayersRankWidestReachFirstAndRespectTheCap(t *testing.T) {
+	a := obs("reg.test/a/one:v1", "2026-01-01T00:00:00Z", "everywhere", "pair", "solo-a")
+	b := obs("reg.test/b/two:v1", "2026-01-01T00:00:00Z", "everywhere", "pair", "solo-b")
+	c := obs("reg.test/c/three:v1", "2026-01-01T00:00:00Z", "everywhere", "solo-c")
+
+	graph := graphOf(t, GraphOptions{}, a, b, c)
+	if len(graph.SharedLayers) != 2 {
+		t.Fatalf("want two shared layers, got %+v", graph.SharedLayers)
+	}
+	if graph.SharedLayers[0].ImageCount != 3 || graph.SharedLayers[1].ImageCount != 2 {
+		t.Fatalf("shared layers must rank widest-reach first, got %+v", graph.SharedLayers)
+	}
+
+	capped := graphOf(t, GraphOptions{MaxSharedLayers: 1}, a, b, c)
+	if len(capped.SharedLayers) != 1 || capped.SharedLayers[0].ImageCount != 3 {
+		t.Fatalf("cap must keep the widest-reaching layer, got %+v", capped.SharedLayers)
+	}
+
+	uncapped := graphOf(t, GraphOptions{MaxSharedLayers: -1}, a, b, c)
+	if len(uncapped.SharedLayers) != 2 {
+		t.Fatalf("a negative cap must keep everything, got %+v", uncapped.SharedLayers)
+	}
+}
+
+func TestBuildGraphSharedLayersIgnoreSingleCarrierLayers(t *testing.T) {
+	only := obs("reg.test/a/one:v1", "2026-01-01T00:00:00Z", "solo-a", "solo-b")
+
+	graph := graphOf(t, GraphOptions{}, only)
+
+	if len(graph.SharedLayers) != 0 {
+		t.Fatalf("a layer in one image is not shared: %+v", graph.SharedLayers)
+	}
+	if graph.Summary.DistinctLayers != 2 {
+		t.Fatalf("DistinctLayers = %d, want 2", graph.Summary.DistinctLayers)
+	}
+}
+
+func TestBuildGraphExplainsSharedLayersWhenNoBaseCouldBeFound(t *testing.T) {
+	// Sibling images from a layer-distributing builder: lots of shared content, no
+	// prefix relationship. The reason must point at the analysis that does apply
+	// rather than leaving the operator at a dead end.
+	left := obs("reg.test/a/slim:v1", "2026-01-01T00:00:00Z", "common-a", "common-b", "left")
+	right := obs("reg.test/b/dev:v1", "2026-01-01T00:00:00Z", "right", "common-a", "common-b")
+
+	graph := graphOf(t, GraphOptions{}, left, right)
+
+	if len(graph.Unresolved) != 2 {
+		t.Fatalf("want both siblings unresolved, got %+v", graph.Unresolved)
+	}
+	joined := strings.Join(graph.Unresolved[0].Reasons, " ")
+	if !strings.Contains(joined, "shares 2 layer(s)") {
+		t.Fatalf("reason should count the shared layers, got %v", graph.Unresolved[0].Reasons)
+	}
+	if !strings.Contains(joined, "buildLayeredImage") {
+		t.Fatalf("reason should name the common cause, got %v", graph.Unresolved[0].Reasons)
+	}
+	if !strings.Contains(joined, "blast radius") {
+		t.Fatalf("reason should point at the applicable analysis, got %v", graph.Unresolved[0].Reasons)
+	}
+}
+
+func TestBuildGraphOmitsSharedLayerHintWhenNothingIsShared(t *testing.T) {
+	lonely := obs("reg.test/a/one:v1", "2026-01-01T00:00:00Z", "solo")
+	other := obs("reg.test/b/two:v1", "2026-01-01T00:00:00Z", "different")
+
+	graph := graphOf(t, GraphOptions{}, lonely, other)
+
+	for _, entry := range graph.Unresolved {
+		if strings.Contains(strings.Join(entry.Reasons, " "), "shares") {
+			t.Fatalf("no shared layers, so no shared-layer hint: %v", entry.Reasons)
+		}
+	}
+}

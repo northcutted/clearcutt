@@ -122,3 +122,49 @@ func TestTagOfKeepsShortDigestsWhole(t *testing.T) {
 		t.Fatalf("tagOf short digest = %q", got)
 	}
 }
+
+func TestGraphMarkdownRendersBlastRadiusAndItsCaveat(t *testing.T) {
+	left := obs("reg.test/a/slim:v1", "2026-01-01T00:00:00Z", "common", "left")
+	right := obs("reg.test/b/dev:v1", "2026-01-01T00:00:00Z", "common", "right", "more")
+
+	md := GraphMarkdown(graphOf(t, GraphOptions{}, left, right))
+
+	for _, want := range []string{
+		"## Shared layer blast radius",
+		"if a layer carries a vulnerable package, these are the images that ship it",
+		"The widest-reaching layer is in 2 of 2 observed images.",
+		"A shared layer means shared content, not a base relationship.",
+	} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("report missing %q:\n%s", want, md)
+		}
+	}
+}
+
+func TestGraphMarkdownStatesWhenNothingIsShared(t *testing.T) {
+	only := obs("reg.test/a/one:v1", "2026-01-01T00:00:00Z", "solo")
+	md := GraphMarkdown(graphOf(t, GraphOptions{}, only))
+	if !strings.Contains(md, "No layer is carried by more than one observed image.") {
+		t.Fatalf("expected the empty blast-radius line:\n%s", md)
+	}
+}
+
+func TestSummariseImagesNamesAFewThenCounts(t *testing.T) {
+	if got := summariseImages([]string{"a", "b"}); got != "`a`, `b`" {
+		t.Fatalf("two carriers should both be named, got %q", got)
+	}
+	got := summariseImages([]string{"a", "b", "c", "d"})
+	if !strings.Contains(got, "and 2 more") {
+		t.Fatalf("long lists should be summarised, got %q", got)
+	}
+}
+
+func TestShortDigestTrimsOnlyLongDigests(t *testing.T) {
+	if got := shortDigest("sha256:abc"); got != "sha256:abc" {
+		t.Fatalf("short digest should pass through, got %q", got)
+	}
+	long := "sha256:0123456789abcdef0123456789abcdef"
+	if got := shortDigest(long); len(got) != 26 {
+		t.Fatalf("long digest should trim to 26, got %q", got)
+	}
+}

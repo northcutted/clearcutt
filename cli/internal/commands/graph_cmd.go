@@ -16,6 +16,7 @@ type graphBuildFlags struct {
 	report        string
 	basePatterns  []string
 	minConfidence string
+	maxShared     int
 	generatedAt   string
 	failOnStale   bool
 	failOnUnknown bool
@@ -69,6 +70,7 @@ func newGraphBuildCmd() *cobra.Command {
 	f.StringVar(&graphBuildOpts.report, "report", "", "Also write a Markdown governance inventory to this path")
 	f.StringArrayVar(&graphBuildOpts.basePatterns, "base-repository", nil, "Only this repository glob may act as a base (repeatable; default: infer from layering)")
 	f.StringVar(&graphBuildOpts.minConfidence, "min-confidence", "", "Drop edges weaker than this: verified, declared, assisted, weak")
+	f.IntVar(&graphBuildOpts.maxShared, "max-shared-layers", 100, "Cap shared layers retained for blast-radius analysis, widest reach first (-1 keeps all)")
 	f.StringVar(&graphBuildOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
 	f.BoolVar(&graphBuildOpts.failOnStale, "fail-on-stale", false, "Exit 2 when any consumer sits on a stale base version")
 	f.BoolVar(&graphBuildOpts.failOnUnknown, "fail-on-unknown", false, "Exit 2 when any image's base could not be determined")
@@ -93,9 +95,10 @@ func runGraphBuild() error {
 		return fmt.Errorf("read observations: %w", err)
 	}
 	graph, err := importedfleet.BuildGraph(observations, importedfleet.GraphOptions{
-		GeneratedAt:   opts.generatedAt,
-		BasePatterns:  opts.basePatterns,
-		MinConfidence: opts.minConfidence,
+		GeneratedAt:     opts.generatedAt,
+		BasePatterns:    opts.basePatterns,
+		MinConfidence:   opts.minConfidence,
+		MaxSharedLayers: opts.maxShared,
 	})
 	if err != nil {
 		return err
@@ -183,6 +186,19 @@ func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
 		for _, edge := range stale {
 			fmt.Fprintf(out, "%-50s %-30s %8d %7d\n",
 				truncate(edge.ConsumerRef, 50), truncate(edge.BaseRepository, 30), edge.VersionsBehind, edge.DaysBehind)
+		}
+	}
+
+	if len(graph.SharedLayers) > 0 {
+		fmt.Fprintf(out, "\nShared layers (blast radius): %d of %d distinct layers are in more than one image; the widest is in %d\n",
+			s.SharedLayers, s.DistinctLayers, s.WidestLayerReach)
+		fmt.Fprintf(out, "%-30s %8s\n", "LAYER", "IMAGES")
+		for i, layer := range graph.SharedLayers {
+			if i >= 5 {
+				fmt.Fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.SharedLayers)-5)
+				break
+			}
+			fmt.Fprintf(out, "%-30s %8d\n", truncate(layer.Digest, 30), layer.ImageCount)
 		}
 	}
 

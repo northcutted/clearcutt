@@ -76,19 +76,23 @@ type GraphOptions struct {
 	// MinConfidence drops edges weaker than this ("verified", "declared",
 	// "assisted", "weak"). Empty keeps everything.
 	MinConfidence string
+	// MaxSharedLayers caps how many shared layers are retained, widest reach first.
+	// Zero applies a default; a negative value keeps all of them.
+	MaxSharedLayers int
 }
 
 // Graph is the discovered base/consumer relationship set for an observed estate.
 type Graph struct {
-	APIVersion  string            `json:"apiVersion"`
-	Kind        string            `json:"kind"`
-	GeneratedAt string            `json:"generatedAt"`
-	Summary     GraphSummary      `json:"summary"`
-	Bases       []GraphBase       `json:"bases"`
-	Edges       []GraphEdge       `json:"edges"`
-	Roots       []GraphRoot       `json:"roots"`
-	Unresolved  []GraphUnresolved `json:"unresolved"`
-	Warnings    []string          `json:"warnings"`
+	APIVersion   string            `json:"apiVersion"`
+	Kind         string            `json:"kind"`
+	GeneratedAt  string            `json:"generatedAt"`
+	Summary      GraphSummary      `json:"summary"`
+	Bases        []GraphBase       `json:"bases"`
+	Edges        []GraphEdge       `json:"edges"`
+	Roots        []GraphRoot       `json:"roots"`
+	SharedLayers []SharedLayer     `json:"sharedLayers"`
+	Unresolved   []GraphUnresolved `json:"unresolved"`
+	Warnings     []string          `json:"warnings"`
 }
 
 // GraphSummary is the headline count set an audit report leads with.
@@ -103,6 +107,9 @@ type GraphSummary struct {
 	CurrentConsumers    int            `json:"currentConsumers"`
 	EdgesByMethod       map[string]int `json:"edgesByMethod"`
 	EdgesByConfidence   map[string]int `json:"edgesByConfidence"`
+	DistinctLayers      int            `json:"distinctLayers"`
+	SharedLayers        int            `json:"sharedLayers"`
+	WidestLayerReach    int            `json:"widestLayerReach"`
 }
 
 // GraphBase is one base repository family and its published versions.
@@ -144,6 +151,23 @@ type GraphSignal struct {
 	Result string `json:"result"`
 	Weight string `json:"weight"`
 	Detail string `json:"detail,omitempty"`
+}
+
+// SharedLayer is one content layer that appears in more than one image.
+//
+// This is deliberately NOT a base relationship. Images can share layers without one
+// being built on the other — Nix dockerTools.buildLayeredImage distributes store
+// paths across layers by popularity, so two sibling images built from the same recipe
+// share most of their content while neither is a prefix of the other. Conflating that
+// with layering would invent parentage that does not exist.
+//
+// What it answers instead is the blast-radius question an auditor actually asks: if
+// this layer carries a vulnerable package, which images ship it?
+type SharedLayer struct {
+	Digest     string   `json:"digest"`
+	Size       int64    `json:"size,omitempty"`
+	ImageCount int      `json:"imageCount"`
+	Images     []string `json:"images"`
 }
 
 // GraphRoot is an image that legitimately has no parent: either it is the base other
@@ -188,10 +212,11 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 			EdgesByMethod:     map[string]int{},
 			EdgesByConfidence: map[string]int{},
 		},
-		Bases:      []GraphBase{},
-		Edges:      []GraphEdge{},
-		Unresolved: []GraphUnresolved{},
-		Warnings:   []string{},
+		Bases:        []GraphBase{},
+		Edges:        []GraphEdge{},
+		SharedLayers: []SharedLayer{},
+		Unresolved:   []GraphUnresolved{},
+		Warnings:     []string{},
 	}
 	if err := validateMinConfidence(opts.MinConfidence); err != nil {
 		return Graph{}, err
@@ -210,6 +235,7 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 	}
 
 	families := groupIntoFamilies(images, opts.BasePatterns)
+	carriers := indexLayerCarriers(images)
 	pending := []GraphUnresolved{}
 	for _, obs := range images {
 		ref := firstNonEmpty(obs.SourceRef, obs.DigestRef)
@@ -221,7 +247,7 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 			})
 			continue
 		}
-		edge, reasons := bestEdgeFor(obs, families)
+		edge, reasons := bestEdgeFor(obs, families, carriers)
 		if edge == nil {
 			pending = append(pending, GraphUnresolved{ConsumerID: obs.ID, ConsumerRef: ref, Reasons: reasons})
 			continue
@@ -269,7 +295,7 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 				CurrentCreated: family.currentCreated(),
 			}
 			if family.undatedVersions > 0 && len(family.versions) > 1 {
-				entry.Warnings = append(entry.Warnings, fmt.Sprintf("%d of %d versions have no creation timestamp; currency was decided by tag order", family.undatedVersions, len(family.versions)))
+				entry.Warnings = append(entry.Warnings, fmt.Sprintf("%d of %d versions carry no usable creation timestamp (absent, or zeroed by a reproducible builder); currency was decided by tag order and daysBehind is not meaningful", family.undatedVersions, len(family.versions)))
 			}
 			byRepository[edge.BaseRepository] = entry
 		}
@@ -290,11 +316,106 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 		}
 		return graph.Edges[i].ConsumerRef < graph.Edges[j].ConsumerRef
 	})
+	graph.SharedLayers, graph.Summary.DistinctLayers = computeSharedLayers(images, opts.MaxSharedLayers)
+	graph.Summary.SharedLayers = len(graph.SharedLayers)
+	if len(graph.SharedLayers) > 0 {
+		graph.Summary.WidestLayerReach = graph.SharedLayers[0].ImageCount
+	}
+
 	sort.SliceStable(graph.Roots, func(i, j int) bool { return graph.Roots[i].ImageRef < graph.Roots[j].ImageRef })
 	sort.SliceStable(graph.Unresolved, func(i, j int) bool {
 		return graph.Unresolved[i].ConsumerRef < graph.Unresolved[j].ConsumerRef
 	})
 	return graph, nil
+}
+
+// indexLayerCarriers counts how many observed images ship each layer digest.
+func indexLayerCarriers(images []Observation) map[string]int {
+	carriers := map[string]int{}
+	for _, obs := range images {
+		seen := map[string]struct{}{}
+		for _, layer := range obs.Layers {
+			if layer.Digest == "" {
+				continue
+			}
+			if _, dup := seen[layer.Digest]; dup {
+				continue
+			}
+			seen[layer.Digest] = struct{}{}
+			carriers[layer.Digest]++
+		}
+	}
+	return carriers
+}
+
+// sharedLayerCount reports how many of this image's layers also appear elsewhere.
+func sharedLayerCount(obs Observation, carriers map[string]int) int {
+	count := 0
+	seen := map[string]struct{}{}
+	for _, layer := range obs.Layers {
+		if _, dup := seen[layer.Digest]; dup {
+			continue
+		}
+		seen[layer.Digest] = struct{}{}
+		if carriers[layer.Digest] > 1 {
+			count++
+		}
+	}
+	return count
+}
+
+const defaultMaxSharedLayers = 100
+
+// computeSharedLayers indexes every observed layer by the images that ship it, and
+// returns the ones carried by more than one image plus the distinct-layer total.
+//
+// The cap keeps the widest-reaching layers, which are the ones a remediation decision
+// turns on: a layer in 14 images matters more than one in 2.
+func computeSharedLayers(images []Observation, max int) ([]SharedLayer, int) {
+	if max == 0 {
+		max = defaultMaxSharedLayers
+	}
+	type entry struct {
+		size   int64
+		images map[string]struct{}
+	}
+	index := map[string]*entry{}
+	for _, obs := range images {
+		ref := firstNonEmpty(obs.SourceRef, obs.DigestRef, obs.ID)
+		for _, layer := range obs.Layers {
+			if layer.Digest == "" {
+				continue
+			}
+			item, ok := index[layer.Digest]
+			if !ok {
+				item = &entry{size: layer.Size, images: map[string]struct{}{}}
+				index[layer.Digest] = item
+			}
+			item.images[ref] = struct{}{}
+		}
+	}
+	out := make([]SharedLayer, 0, len(index))
+	for digest, item := range index {
+		if len(item.images) < 2 {
+			continue
+		}
+		refs := make([]string, 0, len(item.images))
+		for ref := range item.images {
+			refs = append(refs, ref)
+		}
+		sort.Strings(refs)
+		out = append(out, SharedLayer{Digest: digest, Size: item.size, ImageCount: len(refs), Images: refs})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].ImageCount != out[j].ImageCount {
+			return out[i].ImageCount > out[j].ImageCount
+		}
+		return out[i].Digest < out[j].Digest
+	})
+	if max > 0 && len(out) > max {
+		out = out[:max]
+	}
+	return out, len(index)
 }
 
 // partitionRoots splits parentless images into graph roots and genuine orphans.
@@ -391,7 +512,7 @@ func groupIntoFamilies(images []Observation, basePatterns []string) map[string]*
 	}
 	for _, family := range families {
 		for _, version := range family.versions {
-			if strings.TrimSpace(version.Created) == "" {
+			if _, dated := parseCreated(version.Created); !dated {
 				family.undatedVersions++
 			}
 		}
@@ -413,7 +534,7 @@ func groupIntoFamilies(images []Observation, basePatterns []string) map[string]*
 }
 
 // bestEdgeFor finds the strongest base relationship for one consumer.
-func bestEdgeFor(consumer Observation, families map[string]*baseFamily) (*GraphEdge, []string) {
+func bestEdgeFor(consumer Observation, families map[string]*baseFamily, carriers map[string]int) (*GraphEdge, []string) {
 	consumerRepo := repositoryOf(firstNonEmpty(consumer.SourceRef, consumer.DigestRef))
 	var best *GraphEdge
 	var bestRank = len(methodRank) + 1
@@ -463,6 +584,13 @@ func bestEdgeFor(consumer Observation, families map[string]*baseFamily) (*GraphE
 		}
 		if len(consumer.Labels) == 0 {
 			reasons = append(reasons, "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available")
+		}
+		if shared := sharedLayerCount(consumer, carriers); shared > 0 {
+			// The most common way to reach here is a builder that distributes content
+			// across layers by popularity rather than stacking a base — Nix
+			// dockerTools.buildLayeredImage, notably. Saying so turns a dead end into
+			// a pointer at the analysis that does apply.
+			reasons = append(reasons, fmt.Sprintf("shares %d layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius", shared))
 		}
 		return nil, reasons
 	}
@@ -602,15 +730,28 @@ func daysBetween(from, to string) int {
 	return int(end.Sub(start).Hours() / 24)
 }
 
+// reproducibleBuildEpoch is the cutoff below which a creation timestamp is a
+// reproducibility placeholder rather than a build time. Reproducible builders zero
+// the field on purpose: Nix dockerTools stamps 1970-01-01T00:00:01Z, and the DOS/zip
+// epoch (1980-01-01) is the other common choice. Treating those as real dates would
+// silently rank every version of a Nix-built fleet as equally old.
+var reproducibleBuildEpoch = time.Date(1980, 1, 2, 0, 0, 0, 0, time.UTC)
+
+// parseCreated returns the image's build time, and whether it carries one at all.
 func parseCreated(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return time.Time{}, false
 	}
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed, true
+		parsed, err := time.Parse(layout, value)
+		if err != nil {
+			continue
 		}
+		if parsed.Before(reproducibleBuildEpoch) {
+			return time.Time{}, false
+		}
+		return parsed, true
 	}
 	return time.Time{}, false
 }

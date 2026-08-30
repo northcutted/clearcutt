@@ -26,6 +26,8 @@ func GraphMarkdown(graph Graph) string {
 	fmt.Fprintf(&b, "| Consumers on the current base | %d |\n", graph.Summary.CurrentConsumers)
 	fmt.Fprintf(&b, "| Consumers on a stale base | %d |\n", graph.Summary.StaleConsumers)
 	fmt.Fprintf(&b, "| Consumers whose base is unknown | %d |\n", graph.Summary.UnresolvedConsumers)
+	fmt.Fprintf(&b, "| Distinct layers | %d |\n", graph.Summary.DistinctLayers)
+	fmt.Fprintf(&b, "| Layers shared by more than one image | %d |\n", graph.Summary.SharedLayers)
 	fmt.Fprintf(&b, "\n")
 
 	fmt.Fprintf(&b, "## How each relationship was established\n\n")
@@ -99,6 +101,29 @@ func GraphMarkdown(graph Graph) string {
 		fmt.Fprintf(&b, "\n")
 	}
 
+	fmt.Fprintf(&b, "## Shared layer blast radius\n\n")
+	if len(graph.SharedLayers) == 0 {
+		fmt.Fprintf(&b, "No layer is carried by more than one observed image.\n\n")
+	} else {
+		fmt.Fprintf(&b, "Images can share content without one being built on the other. This table answers the remediation question directly: if a layer carries a vulnerable package, these are the images that ship it.\n\n")
+		fmt.Fprintf(&b, "The widest-reaching layer is in %d of %d observed images.\n\n", graph.Summary.WidestLayerReach, graph.Summary.ObservedImages)
+		fmt.Fprintf(&b, "| Layer | Images | Carried by |\n|---|---:|---|\n")
+		shown := graph.SharedLayers
+		const maxRows = 25
+		truncated := 0
+		if len(shown) > maxRows {
+			truncated = len(shown) - maxRows
+			shown = shown[:maxRows]
+		}
+		for _, layer := range shown {
+			fmt.Fprintf(&b, "| `%s` | %d | %s |\n", shortDigest(layer.Digest), layer.ImageCount, summariseImages(layer.Images))
+		}
+		fmt.Fprintf(&b, "\n")
+		if truncated > 0 {
+			fmt.Fprintf(&b, "%d further shared layer(s) are recorded in the graph JSON but not listed here.\n\n", truncated)
+		}
+	}
+
 	fmt.Fprintf(&b, "## Images whose base could not be determined\n\n")
 	if len(graph.Unresolved) == 0 {
 		fmt.Fprintf(&b, "Every observed image was either placed in the graph or identified as a root.\n\n")
@@ -115,6 +140,7 @@ func GraphMarkdown(graph Graph) string {
 	fmt.Fprintf(&b, "- A `layer-prefix` edge proves the consumer contains the base's layers. It does not prove the base was the one intended, nor that either image is signed, scanned, or fit for production.\n")
 	fmt.Fprintf(&b, "- A `declared`, `assisted`, or `weak` edge rests on metadata the image's author supplied. Treat it as a claim to verify, not a finding.\n")
 	fmt.Fprintf(&b, "- Currency is measured against the newest version observed **in this scan**, not against upstream. A base family that is itself out of date will still report its consumers as current.\n")
+	fmt.Fprintf(&b, "- A shared layer means shared content, not a base relationship. Two sibling images built from the same recipe share layers while neither is built on the other.\n")
 	fmt.Fprintf(&b, "- No CVE, signature, SBOM, or provenance conclusion is drawn here. Run `clearcutt import assess` for the evidence-gap view.\n\n")
 
 	if len(graph.Warnings) > 0 {
@@ -163,4 +189,27 @@ func tagOf(ref string) string {
 		return ref[i+1:]
 	}
 	return ref
+}
+
+// shortDigest trims a digest for table display while keeping enough to be unique in
+// practice across one scan.
+func shortDigest(digest string) string {
+	if len(digest) > 26 {
+		return digest[:26]
+	}
+	return digest
+}
+
+// summariseImages keeps a blast-radius row readable: name a couple of carriers, then
+// count the rest rather than pasting a wall of refs into a table cell.
+func summariseImages(images []string) string {
+	const named = 2
+	if len(images) <= named {
+		return "`" + strings.Join(images, "`, `") + "`"
+	}
+	head := make([]string, 0, named)
+	for _, ref := range images[:named] {
+		head = append(head, "`"+ref+"`")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(head, ", "), len(images)-named)
 }

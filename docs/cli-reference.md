@@ -175,6 +175,13 @@ local files.
 `--repository`, which is repeatable. Cosign signature and attestation sidecar tags
 are skipped unless `--include-sidecar-tags` is passed.
 
+`graph build` also reports shared-layer blast radius: which images carry a given
+layer, which is the remediation question for estates whose images share content
+without one being built on the other (Nix `dockerTools.buildLayeredImage` output,
+notably). Reproducible builders that zero the creation timestamp are detected, and
+currency falls back to tag order with a warning rather than ranking every version
+equally old.
+
 `graph build` establishes each relationship by layer-digest matching (proof),
 `org.opencontainers.image.base.digest`, buildpacks lifecycle metadata,
 `org.opencontainers.image.base.name`, or build history — in that order — and labels

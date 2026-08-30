@@ -126,9 +126,53 @@ Each edge carries:
 - `versionsBehind`: published versions between the matched base and the newest one
 - `daysBehind`: days between the matched base and the newest one
 
+Reproducible builders zero the creation timestamp on purpose — Nix `dockerTools`
+stamps `1970-01-01T00:00:01Z` on everything. Those are treated as *no* timestamp
+rather than as a real date, so currency falls back to tag order, `daysBehind` stays
+0, and the base family carries a warning saying exactly that. Ranking a whole
+reproducible fleet as equally old would be worse than admitting there is no signal.
+
 Scanning several tags per base repository is what makes drift measurable. A scan of
 only the newest tag can prove a consumer is current but cannot tell a stale consumer
 from an unrecognised one.
+
+## Shared Layers And Blast Radius
+
+Images can share content without one being built on the other. A builder that
+distributes store paths across layers by popularity — Nix
+`dockerTools.buildLayeredImage`, most notably — produces sibling images that share
+most of their content while neither is a prefix of the other. So does any workflow
+that rebuilds from a common recipe rather than stacking a base.
+
+`graph build` reports that separately, and never as parentage:
+
+```
+Shared layers (blast radius): 100 of 167 distinct layers are in more than one image; the widest is in 14
+```
+
+Each shared layer records every image carrying it. That answers the remediation
+question directly: if a layer ships a vulnerable package, these are the images
+affected — regardless of whether any of them is "based on" any other.
+
+`--max-shared-layers` caps how many are retained (default 100, widest reach first;
+`-1` keeps all).
+
+When an image cannot be placed in the graph but does share layers, the unresolved
+reason says so and points here rather than leaving a dead end.
+
+### Layer-Prefix Detection Assumes A Stacked Base
+
+This is the main limitation to know about. `layer-prefix` proof requires the base's
+layers to be a *leading run* of the consumer's — the shape Dockerfile/BuildKit, jib,
+ko, and buildpacks all produce. It does not fire on:
+
+- Nix `dockerTools.buildLayeredImage` output, where content is distributed by
+  popularity rather than stacked.
+- Images squashed to a single layer after the fact.
+- Any rebuild-from-recipe workflow that does not inherit a parent image.
+
+For those estates the label-based detectors still apply if the builder stamps
+`org.opencontainers.image.base.*`, and the shared-layer blast radius applies always.
 
 ## Roots Versus Orphans
 
@@ -170,6 +214,7 @@ a verdict, not a crash.
 - Currency is measured against the newest version **observed in this scan**, not
   against upstream. A base family that is itself out of date will still report its
   consumers as current.
+- A shared layer means shared content, not a base relationship.
 - No CVE, signature, SBOM, or provenance conclusion is drawn. Run
   `clearcutt import assess` for the evidence-gap view, and
   `clearcutt rebase discover` / `clearcutt rebase plan` to prepare a rebase.
