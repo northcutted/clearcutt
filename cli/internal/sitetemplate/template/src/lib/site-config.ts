@@ -20,6 +20,7 @@ const SiteConfigInput = z
         navigation: z
           .object({
             showHome: z.boolean().optional(),
+            showEstate: z.boolean().optional(),
             showMarketingHome: z.boolean().optional(),
             showGettingStarted: z.boolean().optional(),
             showOperatorDocs: z.boolean().optional(),
@@ -127,6 +128,7 @@ export type SiteConfig = {
     };
     navigation: {
       showHome: boolean;
+      showEstate: boolean;
       showGettingStarted: boolean;
       showOperatorDocs: boolean;
       showCliDocs: boolean;
@@ -177,6 +179,7 @@ export const defaultSiteConfig: SiteConfig = {
     },
     navigation: {
       showHome: true,
+      showEstate: true,
       showGettingStarted: true,
       showOperatorDocs: true,
       showCliDocs: true,
@@ -212,14 +215,19 @@ export const defaultSiteConfig: SiteConfig = {
         'The catalog is a static view of generated image metadata and evidence. Treat missing signatures, provenance, SBOMs, or scans as explicit gaps instead of inferring trust from another channel.',
       quickLinks: [
         {
+          label: 'Map your estate',
+          href: 'estate',
+          description: 'See which images are built on what, and how far each has drifted from its base.',
+        },
+        {
           label: 'Containerize your app',
           href: 'getting-started',
           description: 'Copy a multi-stage container example and local validation commands.',
         },
         {
-          label: 'Browse images',
+          label: 'Browse reference images',
           href: 'catalog',
-          description: 'Filter runtimes, tiers, services, release status, and CVE gates.',
+          description: 'The four LTS runtime lines this repo publishes as build fixtures.',
         },
         {
           label: 'Audit evidence',

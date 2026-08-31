@@ -102,6 +102,7 @@ const footerLinks = [
         </a>
         <nav class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-sans font-medium">
           {nav.showHome && <a href={base} class="text-ink-200 hover:text-ink-50 transition">Home</a>}
+          {nav.showEstate !== false && <a href={`${base}estate`} class="text-ink-200 hover:text-ink-50 transition">Estate</a>}
           <a href={`${base}catalog`} class="text-ink-200 hover:text-ink-50 transition">Catalog</a>
           {nav.showGettingStarted && <a href={`${base}getting-started`} class="text-ink-200 hover:text-ink-50 transition">Containerize your app</a>}
           {nav.showAuditGuide && <a href={`${base}about?tab=audit`} class="text-ink-200 hover:text-ink-50 transition">Verify evidence</a>}

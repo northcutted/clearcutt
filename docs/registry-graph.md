@@ -231,6 +231,33 @@ deduplication accounting are linear in total layers and stay available.
 `--max-pairs` (default 250, `-1` for all) caps reporting only. Clustering always sees
 every qualifying pair.
 
+## The Published View
+
+Both artifacts render as pages when passed to the site builder:
+
+```bash
+clearcutt catalog site build \
+  --catalog site/src/data/catalog --template site --output site/dist --install \
+  --graph dist/scan/graph.json \
+  --layers dist/scan/layers.json
+```
+
+- `/estate` — base families, stale consumers worst-first, undetermined images
+  with their reasons, and the proven-versus-claimed split stated up front.
+- `/estate/layers` — content-identical images, the fleet core and blast radius,
+  clusters, per-image unique content, and deduplication accounting.
+
+Both flags are optional. Without them the pages render an empty state naming the
+commands that populate them, so a site with no estate scan is a normal state
+rather than a build failure.
+
+This repository generates the artifacts at publish time rather than committing
+them: `publish-pages.yml` derives the registry and repository names from the
+catalog records, scans, and passes the results to the site build. A committed
+scan would go stale the moment the fleet moved and would put claims about
+deleted images on a public page. The scan step is best-effort — if it fails, the
+site still publishes with the empty state.
+
 ## Roots Versus Orphans
 
 An image with no parent is not automatically a finding.

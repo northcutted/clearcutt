@@ -170,13 +170,81 @@ jobs:
           version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
           repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
+      # The estate view renders `graph build` / `graph layers` output. It is
+      # generated here against the live registry rather than committed, because
+      # a committed scan goes stale the moment the fleet moves and would put
+      # claims about deleted images on a public page. Every step is best-effort:
+      # the pages treat a missing artifact as a first-class empty state, so a
+      # scan failure degrades the site instead of breaking the daily publish.
+      # The estate view renders `graph build` / `graph layers` output. It is
+      # generated here against the live registry rather than committed, because
+      # a committed scan goes stale the moment the fleet moves and would put
+      # claims about deleted images on a public page. Every step is best-effort:
+      # the pages treat a missing artifact as a first-class empty state, so a
+      # scan failure degrades the site instead of breaking the daily publish.
+      - name: Scan registry for the estate view
+        continue-on-error: true
+        env:
+          GHCR_TOKEN: ${{ secrets.CLEARCUTT_REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER || github.actor }}
+        run: |
+          set -euo pipefail
+          records=(site/src/data/catalog/images/*.json)
+          if [ ! -e "${records[0]}" ]; then
+            echo "no catalog image records; skipping estate view"
+            exit 0
+          fi
+          # The catalog records carry the authoritative registry and repository
+          # names, so a fork with a different imagePrefix or owner works without
+          # any extra configuration here.
+          registry_base="$(jq -r '.registry' "${records[@]}" | sort -u | head -n1)"
+          host="${registry_base%%/*}"
+          namespace="${registry_base#*/}"
+          mapfile -t repos < <(jq -r '.imageName' "${records[@]}" | sort -u)
+          echo "scanning ${#repos[@]} repositories under ${host}/${namespace}"
+
+          args=()
+          for repo in "${repos[@]}"; do args+=(--repository "$repo"); done
+          mkdir -p dist/estate
+          ./clearcutt registry scan \
+            --registry "$host" \
+            --namespace "$namespace" \
+            "${args[@]}" \
+            --username "$REGISTRY_USER" --password-env GHCR_TOKEN \
+            --max-tags 12 \
+            --output dist/estate/images.yaml --force
+          ./clearcutt import observe \
+            --images dist/estate/images.yaml --output dist/estate/observations.json
+          ./clearcutt graph build \
+            --observations dist/estate/observations.json \
+            --output dist/estate/graph.json --force
+          ./clearcutt graph layers \
+            --observations dist/estate/observations.json \
+            --output dist/estate/layers.json --force
+
       - name: Build catalog site
         env:
           # Hoisted out of the run script so the GitHub templater never
           # expands event payload fields into shell code.
           REPO_NAME: ${{ github.event.repository.name }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
-        run: ./clearcutt catalog site build --catalog site/src/data/catalog --template site --output site/dist --install --clean --base-path "/${REPO_NAME}" --site-url "https://${REPOSITORY_OWNER}.github.io" --generate-vex
+        run: |
+          set -euo pipefail
+          # Only pass the estate flags when the scan above actually produced the
+          # artifacts; `catalog site build` errors on a --graph path that does
+          # not exist, which is the right behaviour for an explicit flag.
+          estate=()
+          if [ -f dist/estate/graph.json ]; then estate+=(--graph dist/estate/graph.json); fi
+          if [ -f dist/estate/layers.json ]; then estate+=(--layers dist/estate/layers.json); fi
+          ./clearcutt catalog site build \
+            --catalog site/src/data/catalog \
+            --template site \
+            --output site/dist \
+            --install --clean \
+            --base-path "/${REPO_NAME}" \
+            --site-url "https://${REPOSITORY_OWNER}.github.io" \
+            --generate-vex \
+            "${estate[@]+"${estate[@]}"}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

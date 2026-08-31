@@ -125,6 +125,9 @@ if a layer carries a vulnerable package, which images ship it.
 Both can gate CI. `graph build --min-confidence verified --fail-on-stale` exits
 2 when anything is on a stale base, and still writes the report.
 
+Pass the results to the site builder to publish them as pages — `/estate` and
+`/estate/layers` — with `catalog site build --graph … --layers …`.
+
 See [registry scan and the base image graph](docs/registry-graph.md).
 
 ## Install
