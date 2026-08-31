@@ -1,19 +1,18 @@
 # ClearCutt Seed Nix Binary Cache
 #
 # Seeds the R2-backed Nix binary cache (release.nixCache in clearcutt.fleet.yaml)
-# with the patched RUNTIME closures so cold PR-gate legs SUBSTITUTE the custom
-# builds instead of recompiling them from source.
+# with the fleet's RUNTIME closures so cold PR-gate legs SUBSTITUTE them instead
+# of recompiling from source.
 #
-# Why this exists (and why it is leaner than the old warm-nix-cache):
-#   Runtime-scoped CVE patching (the cveRemediationOverlay + runtimeCryptoOverlay
-#   in core/flake.nix) keeps the build TOOLCHAIN, scanners, and dev shell on
-#   stock packages, so cache.nixos.org substitutes them — there is no longer a
-#   world-rebuild to prime. What still rebuilds from source on every cold leg is
-#   the small set of CUSTOM patched artifacts: openssl-3.6.3, sqlite-3.53.2, and
-#   the runtimes that link them (node, python, dotnet). Those have store hashes
-#   that miss cache.nixos.org. This workflow builds those runtime closures once
-#   and pushes them to R2; release.yml only publishes on push-to-main, so
-#   feature branches that touch core/overlays/** would otherwise never be warm.
+# Why this exists, and how much less it now matters:
+#   It was built for runtime-scoped CVE patching, when the fleet shipped custom
+#   openssl/sqlite rebuilds whose store hashes missed cache.nixos.org and so were
+#   recompiled on every cold leg. Those overlays are gone: the four reference
+#   runtime lines now build from stock nixpkgs, which cache.nixos.org already
+#   substitutes. What is left to seed is the ClearCutt-specific derivations —
+#   the jlink'd minimal JRE, the npm-severed node, and image assembly — which are
+#   real but a fraction of the old cost. Keep it for cold-leg latency, not
+#   because a world-rebuild is waiting.
 #
 # Shape of the run:
 #   * analyze  — DRY-RUN every production cell (no build) against the configured
@@ -24,17 +23,15 @@
 #   * seed     — one job PER (system, language, tier) cell that needs work. Each
 #                cell is an independent, dynamically generated phase: the matrix
 #                IS the phasing, so no single job ever has to compile the whole
-#                fleet under GitHub's hard 6h ceiling (the heaviest single cell,
-#                dotnet, is ~3h). Each cell builds its image (which runs the
-#                completeness gate, so seeding also re-validates no stock
-#                openssl/sqlite ships) and pushes its runtime closure to R2.
+#                fleet under GitHub's hard 6h ceiling. Each cell builds its image
+#                and pushes its runtime closure to R2.
 #
 # SECURITY: workflow_dispatch / push-to-main only (never fork-PR triggerable)
 # AND gated behind the `production` environment, because the seed jobs use the
 # R2 WRITE credentials and the cache signing key. The PR gate only ever CONSUMES
 # the cache via the public base URL + published public key (no secrets), so
-# seeding never widens fork-PR exposure. Run it after changing core/overlays/**
-# or the registry, on a branch or on main.
+# seeding never widens fork-PR exposure. Run it after changing the registry or
+# the flake pin, on a branch or on main.
 
 name: ClearCutt Seed Nix Cache
 
@@ -43,7 +40,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'core/overlays/**'
       - 'core/lib/registry.nix'
       - 'core/flake.nix'
       - 'core/flake.lock'

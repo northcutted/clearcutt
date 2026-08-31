@@ -166,7 +166,7 @@ jobs:
         with:
           # Fleet image derivations are shaped by flake inputs, shared lib
           # helpers, registry metadata, and CVE overlays.
-          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          primary-key: nix-${{ matrix.system }}-${{ hashFiles('core/flake.lock', 'core/lib/**') }}
           restore-prefixes-first-match: nix-${{ matrix.system }}-
 
       - name: Install Sigstore Cosign

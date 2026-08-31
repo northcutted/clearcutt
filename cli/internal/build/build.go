@@ -1,5 +1,5 @@
-// Package build is the native-Go fleet build engine: the port of
-// core/pipeline/pipeline.sh's certify_target gating path. It orchestrates the
+// Package build is the native-Go fleet build engine, originally ported from the
+// certify_target gating path of the since-removed core/pipeline/pipeline.sh. It orchestrates the
 // Nix build, SBOM, and Grype scan as explicit-argv subprocesses (zero shell)
 // behind a Runner seam, and runs the closure-purity and runtime-cve boundary
 // gates IN-PROCESS via the certify package (no python subprocess). The actual

@@ -294,14 +294,16 @@ func runScan() error {
 		scanLogf("tool resolver: using Nix dev shell at %s for Grype", scanOpts.coreDir)
 	}
 
-	// Pass the fleet suppression config explicitly: grype only auto-discovers
-	// .grype.yaml from its working directory, and this command runs from the
-	// repo root (catalog build, release gate), not from core/. Without -c the
-	// published catalog would keep reporting CVEs that the gate has already
-	// remediated-and-suppressed via core/.grype.yaml. The path MUST be absolute:
-	// with --core-dir set, grype runs through `nix develop` with cwd=core/, so a
-	// repo-root-relative "core/.grype.yaml" would resolve to core/core/.grype.yaml
-	// and grype aborts with "invalid application config: file does not exist".
+	// Pass a fleet suppression config explicitly when one exists: grype only
+	// auto-discovers .grype.yaml from its working directory, and this command
+	// runs from the repo root (catalog build, release gate), not from core/.
+	// This repo ships no suppressions any more — they went with the remediation
+	// subsystem — so the default path is usually absent and grype runs unfiltered,
+	// which is the honest default. A fork that maintains its own core/.grype.yaml
+	// still gets it. The path MUST be absolute: with --core-dir set, grype runs
+	// through `nix develop` with cwd=core/, so a repo-root-relative
+	// "core/.grype.yaml" would resolve to core/core/.grype.yaml and grype aborts
+	// with "invalid application config: file does not exist".
 	grypeConfig := strings.TrimSpace(scanOpts.grypeConfig)
 	explicitConfig := grypeConfig != ""
 	if !explicitConfig {

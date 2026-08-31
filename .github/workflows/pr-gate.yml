@@ -154,7 +154,7 @@ jobs:
           # overlays diverge from upstream binary caches.
           # Scope PR caches to the PR number or manually dispatched branch so
           # repeated pushes reuse prior local builds before broader fallbacks.
-          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**') }}
           restore-prefixes-first-match: |
             nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
             nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
@@ -260,13 +260,10 @@ jobs:
       - name: Configure ClearCutt Nix Environment
         run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
 
-      - name: Validate Remediation Overlay Governance
-        run: ./clearcutt remediation validate-overlays --overlay-dir core/overlays/cve
-
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**', 'core/overlays/**') }}
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**') }}
           restore-prefixes-first-match: |
             nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-
             nix-integration-${{ runner.os }}-
