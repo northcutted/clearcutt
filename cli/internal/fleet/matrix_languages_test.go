@@ -107,7 +107,7 @@ func TestMatrixLanguagesChannelErrors(t *testing.T) {
 		body string
 		want string
 	}{
-		{"no-lts-line", "- {language: rust, channel: lts}", "no LTS line"},
+		{"channel-selects-nothing", "- {language: go, channel: preview}", "selects no versions"},
 		{"unknown-language", "- {language: kotlin, channel: lts}", "unknown language"},
 		{"invalid-channel", "- {language: java, channel: stable}", "invalid channel"},
 	}
@@ -186,18 +186,11 @@ func TestMatrixLanguagesNewFormReproducesLegacySet(t *testing.T) {
 	cfg := loadConfigYAML(t, baseHeader+`matrix:
   systems: [x86_64-linux, aarch64-linux]
   languages:
-    - {language: core, channel: lts}
     - {language: java, channel: lts}
     - {language: node, channel: lts}
     - {language: python, channel: lts}
-    - {language: python, channel: current}
-    - {language: dotnet, channel: lts}
     - {language: go, channel: lts}
-    - {language: go, channel: experimental}
-    - {language: rust, channel: experimental}
-    - {language: cc, channel: experimental}
   tiers: [dev, slim, distroless]
-  preview: true
 `)
 	got := append([]string{}, cfg.Matrix.Languages...)
 	sort.Strings(got)

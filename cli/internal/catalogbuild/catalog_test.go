@@ -20,7 +20,7 @@ type gatherMetaFixture struct {
 }
 
 // Proves the ported runtime-metadata transforms reproduce gather-catalog.mjs
-// byte-for-byte across the full 13-language x 3-tier matrix. The golden fixture
+// byte-for-byte across the fleet's 4-line x 3-tier matrix. The golden fixture
 // (testdata/catalog/meta-golden.json) was captured from the Node functions
 // verbatim, so this guards both the values and the exact JSON shape (explicit
 // nulls, key order) that the catalog site and verify catalog depend on.
@@ -33,8 +33,8 @@ func TestGatherMetadataMatchesNodeGolden(t *testing.T) {
 	if err := json.Unmarshal(raw, &golden); err != nil {
 		t.Fatal(err)
 	}
-	if len(golden) != 39 {
-		t.Fatalf("expected 39 target fixtures, got %d", len(golden))
+	if len(golden) != 12 {
+		t.Fatalf("expected 12 target fixtures, got %d", len(golden))
 	}
 
 	for target, entry := range golden {

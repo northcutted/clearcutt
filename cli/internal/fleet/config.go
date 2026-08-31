@@ -462,20 +462,15 @@ func DefaultConfig(owner, repo string) Config {
 				"x86_64-linux",
 				"aarch64-linux",
 			},
+			// A scaffolded fleet starts with the four LTS runtime lines. A fork
+			// that wants more adds them with `clearcutt matrix add`; starting
+			// wide made every new fork inherit a build matrix it had no reason
+			// to operate.
 			Languages: []string{
-				"coreLTS",
 				"java21",
-				"java25",
 				"node22",
-				"node24",
-				"python3.13",
 				"python3.14",
-				"go1.25",
 				"go1.26",
-				"dotnet8",
-				"dotnet10",
-				"rust1.95",
-				"cc15",
 			},
 			Tiers: []string{
 				"dev",

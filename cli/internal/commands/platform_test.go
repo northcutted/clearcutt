@@ -158,7 +158,7 @@ func TestMatrixExportFromFleetEmitsGitHubImageMatrix(t *testing.T) {
 	if len(got.Include) == 0 {
 		t.Fatalf("expected non-empty matrix")
 	}
-	if got.Include[0].Language != "coreLTS" || got.Include[0].Tier != "dev" {
+	if got.Include[0].Language != "java21" || got.Include[0].Tier != "dev" {
 		t.Fatalf("unexpected first matrix cell: %#v", got.Include[0])
 	}
 }

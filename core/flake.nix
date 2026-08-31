@@ -11,7 +11,6 @@
     # pin's 10.0.8 still ships). It is substituted from cache (no VMR rebuild)
     # and grafted to the openssl/sqlite floor in registry.nix. Pinned to an exact
     # rev so the bump's churn is scoped to .NET images and stays reproducible.
-    nixpkgs-dotnet.url = "github:NixOS/nixpkgs/567a49d1913ce81ac6e9582e3553dd90a955875f";
     # UNSTABLE OPT-IN (soft, per-package): node22 is pinned to a newer nixpkgs
     # carrying nodejs 22.23.0, which fixes CVE-2026-48617 / CVE-2026-48937 that
     # the main pin's 22.22.3 still ships. Scoped to node22 only (the rest of the
@@ -21,7 +20,7 @@
     nixpkgs-node.url = "github:NixOS/nixpkgs/89570f24e97e614aa34aa9ab1c927b6578a43775";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-dotnet, nixpkgs-node }:
+  outputs = { self, nixpkgs, nixpkgs-node }:
     let
       linuxSystems = [
         "x86_64-linux"
@@ -115,16 +114,6 @@
       # 8.0.28). registry.nix grafts the patched openssl/sqlite into these, so the
       # crypto floor still holds while the CVE-patched runtime ships. The crypto
       # variant is the from-source fallback used only if the graft is ever unsafe.
-      importDotnetNixpkgs = system: import nixpkgs-dotnet {
-        inherit system;
-        config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay ];
-      };
-      importDotnetCryptoNixpkgs = system: import nixpkgs-dotnet {
-        inherit system;
-        config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
-      };
       # node22's dedicated unstable pin (UNSTABLE OPT-IN), imported with the same
       # crypto overlays as the main runtime set so node's transitively-linked
       # openssl/sqlite (via nghttp2/ngtcp2/sqlite) still resolve to the patched
@@ -176,8 +165,6 @@
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
           cryptoPkgs = cryptoRuntimePkgs;
-          dotnetPkgs = importDotnetNixpkgs system;
-          dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
           nodeCryptoPkgs = importNodeCryptoNixpkgs system;
         };
 
@@ -349,8 +336,7 @@
       # Reusable Library Helper for creating custom brokered shells
       lib = {
         # Registry introspection surface: the flat list of runtime line ids the
-        # registry can compile ("coreLTS", "java21", "python3.13", ...), with the
-        # virtual overlay-only dotnet-runtime line excluded. This is the library
+        # registry can compile ("java21", "node22", "python3.14", ...). This is the library
         # of recipes the generated fleet matrix SELECTS from; the image matrix
         # itself is now driven by lib/fleet-matrix.nix, and recipe coverage for
         # every selected cell is enforced at eval by assertRecipe above. Retained
@@ -364,8 +350,7 @@
               config.allowUnfree = true;
             };
             registry = import ./lib/registry.nix { inherit pkgs; };
-            imageLanguages = builtins.filter (lang: lang != "dotnet-runtime")
-              (builtins.attrNames registry.languages);
+            imageLanguages = builtins.attrNames registry.languages;
           in
           nixpkgs.lib.concatMap (lang:
             map (ver: "${lang}${ver}")
@@ -379,8 +364,6 @@
             registry = import ./lib/registry.nix {
               pkgs = runtimePkgs;
               inherit cryptoPkgs;
-              dotnetPkgs = importDotnetNixpkgs system;
-              dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
             };
             helpers = import ./lib/nix-native.nix { inherit self registry; pkgs = runtimePkgs; };
           in
@@ -404,22 +387,16 @@
             registry = import ./lib/registry.nix {
               inherit cryptoPkgs;
               pkgs = runtimePkgs;
-              dotnetPkgs = importDotnetNixpkgs system;
-              dotnetCryptoPkgs = importDotnetCryptoNixpkgs system;
             };
             compiler = import ./lib/build-fleet.nix { pkgs = buildPkgs; inherit runtimePkgs registry; };
             platformMetadata = import ./lib/platform-metadata.nix;
             imagePrefix = platformMetadata.imagePrefix or "clearcutt";
             parseRuntime = runtimeId:
-              if runtimeId == "coreLTS" then {
-                language = "core";
-                version = "LTS";
-              } else
                 let
                   parsed = builtins.match "([A-Za-z]+)([0-9].*)" runtimeId;
                 in
                 if parsed == null then
-                  throw "clearcutt.lib.graftOntoBase: runtime must look like java21, python3.14, go1.25, dotnet8, rust1.95, cc15, or coreLTS"
+                  throw "clearcutt.lib.graftOntoBase: runtime must look like java21, node22, python3.14, or go1.26"
                 else {
                   language = builtins.elemAt parsed 0;
                   version = builtins.elemAt parsed 1;
@@ -469,7 +446,6 @@
         let
           cryptoSets = [
             { pinName = "nixpkgs"; rev = nixpkgs.rev or "unlocked"; pkgs = importCryptoRuntimeNixpkgs system; }
-            { pinName = "nixpkgs-dotnet"; rev = nixpkgs-dotnet.rev or "unlocked"; pkgs = importDotnetCryptoNixpkgs system; }
             { pinName = "nixpkgs-node"; rev = nixpkgs-node.rev or "unlocked"; pkgs = importNodeCryptoNixpkgs system; }
           ];
           # The tracked crypto deps are exactly the packages runtimeCryptoOverlay

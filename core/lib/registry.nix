@@ -8,12 +8,6 @@
 # else stays on the plain `pkgs` (CVE handles available, stock openssl/sqlite).
 { pkgs
 , cryptoPkgs ? pkgs
-  # `.NET` is sourced from its own (newer) package set carrying the CVE-patched
-  # aspnetcore/runtime; `dotnetCryptoPkgs` is its from-source crypto-rebuild
-  # fallback. Both default to the main sets so callers that don't thread a
-  # dedicated .NET pin keep the prior behaviour.
-, dotnetPkgs ? pkgs
-, dotnetCryptoPkgs ? cryptoPkgs
   # `nodeCryptoPkgs` is node22's dedicated unstable pin (UNSTABLE OPT-IN), with
   # the same crypto rebinding as `cryptoPkgs`, carrying nodejs 22.23.0. Defaults
   # to `cryptoPkgs` so a fork without the dedicated pin keeps the prior node22.
@@ -148,33 +142,8 @@ let
       opensslGraftable = opensslGrafts != [ ];
     };
 
-  # Source a crypto-linked runtime from `base`, grafting the patched libs into the
-  # stock cached build when it is an ABI-safe drop-in, else falling back to
-  # `rebuildBase` (the from-source crypto rebuild). Same (paths, errorMsg) tail as
-  # getPkgFrom.
-  graftedOrRebuiltFrom = base: rebuildBase: paths: errorMsg:
-    let g = cryptoGraftsFor base; in
-    if g.opensslGraftable then
-      base.replaceDependencies {
-        drv = getPkgFrom base paths errorMsg;
-        replacements = g.grafts;
-      }
-    else getPkgFrom rebuildBase paths errorMsg;
-
-  # .NET resolves from the dedicated newer pin (dotnetPkgs), grafted to the floor.
-  graftedOrRebuilt = graftedOrRebuiltFrom dotnetPkgs dotnetCryptoPkgs;
-
   # Declarative specifications for every supported language runtime and version
   baseLanguages = {
-    core = {
-      versions = {
-        "LTS" = {
-          overlayName = "clearcuttCore";
-          raw = [ (pkgs.coreutils-full or pkgs.coreutils) (pkgs.bashInteractive or pkgs.bash) ];
-        };
-      };
-    };
-
     java = let
       # Production tiers build a JRE-shaped runtime from the headless OpenJDK.
       # Temurin/Semeru binary JREs in the locked nixpkgs carry shell-bearing
@@ -427,56 +396,6 @@ let
       };
     };
 
-    dotnet = {
-      versions = {
-        "8" = {
-          overlayName = "clearcuttDotnet8";
-          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "sdk_8_0" ] ] ".NET 8 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "runtime_8_0" ] ] ".NET 8 Base Runtime is not available in this nixpkgs version") ];
-        };
-        "10" = {
-          overlayName = "clearcuttDotnet10";
-          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "sdk_10_0" ] ] ".NET 10 SDK is not available in this nixpkgs version") ];
-          slimOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-          distrolessOverride = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "runtime_10_0" ] ] ".NET 10 Base Runtime is not available in this nixpkgs version") ];
-        };
-      };
-    };
-
-    dotnet-runtime = {
-      # Virtual language definition strictly for downstreams requesting the bare dotnet runtime overlay
-      versions = {
-        "8" = {
-          overlayName = "clearcuttDotnet8Runtime";
-          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_8_0" ] ] ".NET 8 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-        };
-        "10" = {
-          overlayName = "clearcuttDotnet10Runtime";
-          raw = [ (graftedOrRebuilt [ [ "dotnetCorePackages" "aspnetcore_10_0" ] ] ".NET 10 ASP.NET Core Runtime is not available in this nixpkgs version") ];
-        };
-      };
-    };
-
-    rust = {
-      versions = {
-        "1.95" = {
-          overlayName = "clearcuttRust195";
-          raw = [ pkgs.rustc pkgs.cargo pkgs.rustfmt pkgs.clippy ];
-          omitInProduction = true;
-        };
-      };
-    };
-
-    cc = {
-      versions = {
-        "15" = {
-          overlayName = "clearcuttCc15";
-          raw = [ pkgs.gcc pkgs.gnumake pkgs.cmake pkgs.ninja ];
-          omitInProduction = true;
-        };
-      };
-    };
   };
 
   runtimeExtensions = import ./runtime-extensions.nix { inherit pkgs getPkg removeNpm; };
