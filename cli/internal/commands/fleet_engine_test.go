@@ -68,7 +68,7 @@ func TestFleetCertifyTargetDefaultEngineFailsFastOnDarwin(t *testing.T) {
 
 	_, err = runCLI(t, "fleet", "certify-target",
 		"--fleet-config", cfgPath, "--core-dir", coreDir,
-		"--system", "aarch64-darwin", "--language", "coreLTS", "--tier", "slim")
+		"--system", "aarch64-darwin", "--language", "java21", "--tier", "slim")
 	if err == nil {
 		t.Fatal("expected the default go engine to fail fast on a Darwin system")
 	}

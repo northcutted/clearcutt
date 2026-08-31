@@ -133,7 +133,7 @@ func TestSupportedRuntimeLinesExposePublicRuntimeIDs(t *testing.T) {
 		t.Fatal("ruby3.4 should not be a supported runtime line")
 	}
 	ids := SupportedRuntimeLineIDs()
-	if len(ids) == 0 || ids[0] != "cc15" {
+	if len(ids) == 0 || ids[0] != "go1.25" {
 		t.Fatalf("supported runtime IDs should be sorted, got %#v", ids)
 	}
 
@@ -155,7 +155,7 @@ func TestSupportedRuntimeLinesExposePublicRuntimeIDs(t *testing.T) {
 	if !cfg.IsCustomRuntimeLine("ruby3.4") || cfg.IsCustomRuntimeLine("java21") {
 		t.Fatalf("custom runtime helper misclassified runtime lines")
 	}
-	if builtins := BuiltInRuntimeLines(); len(builtins) == 0 || builtins[0].ID != "cc15" {
+	if builtins := BuiltInRuntimeLines(); len(builtins) == 0 || builtins[0].ID != "go1.25" {
 		t.Fatalf("built-in runtime lines should be sorted, got %#v", builtins)
 	}
 	if systems := SupportedSystems(); len(systems) != 2 || systems[0] != "aarch64-linux" || systems[1] != "x86_64-linux" {

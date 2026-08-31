@@ -11,16 +11,9 @@
     # pin's 10.0.8 still ships). It is substituted from cache (no VMR rebuild)
     # and grafted to the openssl/sqlite floor in registry.nix. Pinned to an exact
     # rev so the bump's churn is scoped to .NET images and stays reproducible.
-    # UNSTABLE OPT-IN (soft, per-package): node22 is pinned to a newer nixpkgs
-    # carrying nodejs 22.23.0, which fixes CVE-2026-48617 / CVE-2026-48937 that
-    # the main pin's 22.22.3 still ships. Scoped to node22 only (the rest of the
-    # fleet stays on the stable pin), grafted to the openssl/sqlite floor in
-    # registry.nix, and governed by remediation.unstable in clearcutt.fleet.yaml.
-    # Pinned to an exact rev so the bump is reproducible.
-    nixpkgs-node.url = "github:NixOS/nixpkgs/89570f24e97e614aa34aa9ab1c927b6578a43775";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-node }:
+  outputs = { self, nixpkgs }:
     let
       linuxSystems = [
         "x86_64-linux"
@@ -85,14 +78,6 @@
       # 8.0.28). registry.nix grafts the patched openssl/sqlite into these, so the
       # crypto floor still holds while the CVE-patched runtime ships. The crypto
       # variant is the from-source fallback used only if the graft is ever unsafe.
-      # node22's dedicated unstable pin (UNSTABLE OPT-IN), imported with the same
-      # crypto overlays as the main runtime set so node's transitively-linked
-      # openssl/sqlite (via nghttp2/ngtcp2/sqlite) still resolve to the patched
-      # 3.6.3 / 3.53.2 floor. registry.nix sources ONLY node22 from this set.
-      importNodePinNixpkgs = system: import nixpkgs-node {
-        inherit system;
-        config = nixpkgsConfig;
-      };
 
       perSystem = system:
       let
@@ -133,7 +118,6 @@
         # otherwise each re-instantiate it against the same pkgs.
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
-          nodePinPkgs = importNodePinNixpkgs system;
         };
 
         # Import our custom image compiler

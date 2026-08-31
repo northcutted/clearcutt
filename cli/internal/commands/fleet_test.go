@@ -17,7 +17,7 @@ func TestFleetPublishCacheUsesAbsoluteSigningKeyPath(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
 		Registry: fleet.Registry{Host: "registry.example.com", Owner: "acme", Repository: "base-images", ImagePrefix: "acme-base"},
-		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"slim"}},
+		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"java21"}, Tiers: []string{"slim"}},
 		Release: fleet.Release{NixCache: fleet.NixCache{
 			Bucket:             "acme-nix-cache",
 			PublicBaseURL:      "https://nix-cache.acme.example",
@@ -46,7 +46,7 @@ func TestFleetPublishCacheUsesAbsoluteSigningKeyPath(t *testing.T) {
 		calls = append(calls, c)
 		switch c.Name {
 		case "nix":
-			return "/nix/store/abc123-coreLTS-slim\n", nil
+			return "/nix/store/abc123-java21-slim\n", nil
 		case "aws", "curl":
 			return "Sig: acme-cache-1:signed\n", nil
 		default:
@@ -64,7 +64,7 @@ func TestFleetPublishCacheUsesAbsoluteSigningKeyPath(t *testing.T) {
 		"--fleet-config", cfgPath,
 		"--core-dir", coreDir,
 		"--system", "x86_64-linux",
-		"--language", "coreLTS",
+		"--language", "java21",
 		"--tier", "slim",
 	); err != nil {
 		t.Fatalf("publish-cache error: %v", err)
@@ -103,14 +103,14 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
 		Registry: fleet.Registry{Host: "registry.example.com", Owner: "acme", Repository: "fleet", ImagePrefix: "base"},
-		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux", "aarch64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"distroless"}},
+		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux", "aarch64-linux"}, Languages: []string{"java21"}, Tiers: []string{"distroless"}},
 	})
 	outputDir := filepath.Join(root, "build-outputs")
 	for _, dir := range []string{"x86_64", "aarch64"} {
 		if err := os.MkdirAll(filepath.Join(outputDir, dir), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
-		for _, name := range []string{"coreLTS-distroless.sbom.json", "coreLTS-distroless.test-results.json"} {
+		for _, name := range []string{"java21-distroless.sbom.json", "java21-distroless.test-results.json"} {
 			if err := os.WriteFile(filepath.Join(outputDir, dir, name), []byte(`{}`), 0o644); err != nil {
 				t.Fatalf("write %s: %v", name, err)
 			}
@@ -144,7 +144,7 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 		"fleet", "assemble-target",
 		"--fleet-config", cfgPath,
 		"--build-outputs", outputDir,
-		"--language", "coreLTS",
+		"--language", "java21",
 		"--tier", "distroless",
 		"--version-tag", "v9.8.7",
 	); err != nil {
@@ -153,16 +153,16 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	if len(indexCalls) != 2 {
 		t.Fatalf("expected rolling and versioned index pushes, got %#v", indexCalls)
 	}
-	if indexCalls[0].ref != "registry.example.com/acme/fleet/base-corelts:distroless" ||
-		indexCalls[1].ref != "registry.example.com/acme/fleet/base-corelts:v9.8.7-distroless" {
+	if indexCalls[0].ref != "registry.example.com/acme/fleet/base-java21:distroless" ||
+		indexCalls[1].ref != "registry.example.com/acme/fleet/base-java21:v9.8.7-distroless" {
 		t.Fatalf("unexpected index refs: %#v", indexCalls)
 	}
 	if len(indexCalls[0].sources) != 2 {
 		t.Fatalf("unexpected index sources: %#v", indexCalls[0].sources)
 	}
 	for _, want := range []string{
-		"registry.example.com/acme/fleet/base-corelts:_stage-distroless-amd64",
-		"registry.example.com/acme/fleet/base-corelts:_stage-distroless-arm64",
+		"registry.example.com/acme/fleet/base-java21:_stage-distroless-amd64",
+		"registry.example.com/acme/fleet/base-java21:_stage-distroless-arm64",
 	} {
 		var found bool
 		for _, source := range indexCalls[0].sources {
@@ -176,9 +176,9 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	}
 	allArgs := flattenCalls(calls)
 	for _, want := range []string{
-		"nix develop --extra-experimental-features nix-command flakes --accept-flake-config --command cosign sign --yes registry.example.com/acme/fleet/base-corelts:v9.8.7-distroless",
-		"--command cosign attest --yes --type spdxjson --predicate " + filepath.Join(outputDir, "x86_64", "coreLTS-distroless.sbom.json"),
-		"--command cosign attest --yes --type custom --predicate " + filepath.Join(outputDir, "aarch64", "coreLTS-distroless.test-results.json"),
+		"nix develop --extra-experimental-features nix-command flakes --accept-flake-config --command cosign sign --yes registry.example.com/acme/fleet/base-java21:v9.8.7-distroless",
+		"--command cosign attest --yes --type spdxjson --predicate " + filepath.Join(outputDir, "x86_64", "java21-distroless.sbom.json"),
+		"--command cosign attest --yes --type custom --predicate " + filepath.Join(outputDir, "aarch64", "java21-distroless.test-results.json"),
 	} {
 		if !strings.Contains(allArgs, want) {
 			t.Fatalf("missing command fragment %q in:\n%s", want, allArgs)
@@ -192,7 +192,7 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	if strings.Contains(allArgs, "crane") {
 		t.Fatalf("assemble-target should not shell out to crane, got:\n%s", allArgs)
 	}
-	raw, err := os.ReadFile(filepath.Join(outputDir, "digests", "coreLTS-distroless.digest.json"))
+	raw, err := os.ReadFile(filepath.Join(outputDir, "digests", "java21-distroless.digest.json"))
 	if err != nil {
 		t.Fatalf("read digest manifest: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestFleetAssembleTargetUsesConfigAndWritesDigestManifest(t *testing.T) {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("parse digest manifest: %v", err)
 	}
-	if manifest.Image != "registry.example.com/acme/fleet/base-corelts" || manifest.Digest != "sha256:abc123" {
+	if manifest.Image != "registry.example.com/acme/fleet/base-java21" || manifest.Digest != "sha256:abc123" {
 		t.Fatalf("unexpected manifest: %#v", manifest)
 	}
 }
@@ -215,7 +215,7 @@ func TestFleetAssembleTargetPredicatePathsAreAbsolute(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
 		Registry: fleet.Registry{Host: "registry.example.com", Owner: "acme", Repository: "fleet", ImagePrefix: "base"},
-		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux", "aarch64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"distroless"}},
+		Matrix:   fleet.Matrix{Systems: []string{"x86_64-linux", "aarch64-linux"}, Languages: []string{"java21"}, Tiers: []string{"distroless"}},
 	})
 	// Resolve the relative --build-outputs under a temp cwd so the real
 	// digest-manifest write lands there and is cleaned up, not in the package.
@@ -241,7 +241,7 @@ func TestFleetAssembleTargetPredicatePathsAreAbsolute(t *testing.T) {
 		"fleet", "assemble-target",
 		"--fleet-config", cfgPath,
 		"--build-outputs", "build-outputs",
-		"--language", "coreLTS",
+		"--language", "java21",
 		"--tier", "distroless",
 		"--version-tag", "v9.8.7",
 	); err != nil {

@@ -1,12 +1,10 @@
 # ClearCutt Declarative Language & Runtime Registry
 
-# `nodePinPkgs` is node22's dedicated nixpkgs pin (see nixpkgs-node in
-# flake.nix), which carries a newer nodejs 22 than the main pin. It defaults to
-# `pkgs` so a fork without the dedicated pin still builds node22 from its main
-# nixpkgs. The CVE-patched `pkgs` set this file used to take was removed
-# with runtime-scoped CVE patching; every runtime now builds from stock nixpkgs.
+# Every runtime builds from the single pinned nixpkgs. Two extra package sets
+# this file used to take are gone: the CVE-patched `cryptoPkgs`, removed with
+# runtime-scoped CVE patching, and node22's dedicated `nodePinPkgs`, removed
+# once the main pin was fresh enough to carry the node fix it existed to supply.
 { pkgs
-, nodePinPkgs ? pkgs
 }:
 
 let
@@ -237,15 +235,15 @@ let
       # future nixpkgs decouples pkgs.icu from the icu node links against, the
       # strip becomes a no-op and the purity gate surfaces it again rather than
       # failing silently.
-      # node22 is sourced from a dedicated UNSTABLE pin (nodePinPkgs) so it
-      # ships 22.23.0 — the fix for CVE-2026-48617 / CVE-2026-48937 the main pin's
-      # 22.22.3 still carries. node24 stays on the main crypto set until its fix
-      # (24.17.0) lands in the pinned nixpkgs. The node helpers are parameterised
-      # by package set so the slim build AND its severed icu/zstd/bash references
-      # come from the SAME set as the node attr — a cross-set sever would miss the
-      # unstable pin's store paths and re-leak bash into the distroless closure.
-      node22Set = nodePinPkgs;
+      # The node helpers stay parameterised by package set so a slim build AND
+      # its severed icu/zstd/bash references always come from the SAME set as the
+      # node attr — a cross-set sever would miss the other set's store paths and
+      # re-leak bash into the distroless closure. All three lines use the main
+      # pin today; the parameter is what makes a per-line pin safe if one is ever
+      # needed again.
+      node22Set = pkgs;
       node24Set = pkgs;
+      node26Set = pkgs;
       nodeProductionRuntimeFrom = set: nodeVersion: rawPkgs:
         let
           slimPkg = (getPkgOrNullFrom set) [ [ "nodejs-slim_${nodeVersion}" ] ];
@@ -278,6 +276,7 @@ let
         if slimPkg != null then [ (severShellChain slimPkg) ] else map removeNpm rawPkgs;
       nodeRaw22 = [ ((getPkgFrom node22Set) [ [ "nodejs_22" ] [ "nodejs-22_x" ] ] "Node.js 22 is not available in this nixpkgs version") ];
       nodeRaw24 = [ ((getPkgFrom node24Set) [ [ "nodejs_24" ] [ "nodejs-24_x" ] ] "Node.js 24 is not available in this nixpkgs version") ];
+      nodeRaw26 = [ ((getPkgFrom node26Set) [ [ "nodejs_26" ] [ "nodejs-26_x" ] ] "Node.js 26 is not available in this nixpkgs version") ];
     in {
       versions = {
         "22" = {
@@ -294,6 +293,13 @@ let
           raw = nodeRaw24;
           slimOverride = nodeProductionRuntimeFrom node24Set "24" nodeRaw24;
           distrolessOverride = nodeProductionRuntimeFrom node24Set "24" nodeRaw24;
+          useRemoveNpm = true;
+        };
+        "26" = {
+          overlayName = "clearcuttNode26";
+          raw = nodeRaw26;
+          slimOverride = nodeProductionRuntimeFrom node26Set "26" nodeRaw26;
+          distrolessOverride = nodeProductionRuntimeFrom node26Set "26" nodeRaw26;
           useRemoveNpm = true;
         };
       };
@@ -353,6 +359,11 @@ let
         "1.26" = {
           overlayName = "clearcuttGo126";
           raw = [ (getPkg [ [ "go_1_26" ] ] "Go 1.26 is not available in this nixpkgs version") ];
+          omitInProduction = true;
+        };
+        "1.27" = {
+          overlayName = "clearcuttGo127";
+          raw = [ (getPkg [ [ "go_1_27" ] ] "Go 1.27 is not available in this nixpkgs version") ];
           omitInProduction = true;
         };
       };

@@ -35,13 +35,13 @@ registry:
 func TestMatrixLanguagesLegacyForm(t *testing.T) {
 	cfg := loadConfigYAML(t, baseHeader+`matrix:
   systems: [x86_64-linux]
-  languages: [coreLTS, java21, python3.13]
+  languages: [java21, java25, python3.13]
   tiers: [dev, slim, distroless]
 `)
 	if len(cfg.Matrix.LanguageSelectors) != 0 {
 		t.Fatalf("legacy form must not populate selectors, got %v", cfg.Matrix.LanguageSelectors)
 	}
-	if got := strings.Join(cfg.Matrix.Languages, ","); got != "coreLTS,java21,python3.13" {
+	if got := strings.Join(cfg.Matrix.Languages, ","); got != "java21,java25,python3.13" {
 		t.Fatalf("legacy languages = %q", got)
 	}
 	m, err := cfg.CompileMatrix(false)
@@ -66,12 +66,12 @@ func TestMatrixLanguagesLanguageLevelForm(t *testing.T) {
 	if len(cfg.Matrix.LanguageSelectors) != 2 {
 		t.Fatalf("expected 2 selectors, got %d", len(cfg.Matrix.LanguageSelectors))
 	}
-	// Persistent (preview=false) resolution.
-	if got := strings.Join(cfg.Matrix.Languages, ","); got != "java21,python3.13" {
-		t.Fatalf("resolved languages = %q, want java21,python3.13", got)
+	// Persistent (preview=false) resolution. Both java lines are LTS releases.
+	if got := strings.Join(cfg.Matrix.Languages, ","); got != "java21,java25,python3.13" {
+		t.Fatalf("resolved languages = %q, want java21,java25,python3.13", got)
 	}
 
-	// --allow-preview unions java's preview line (java25); python has no preview.
+	// --allow-preview unions preview lines; neither java nor python has one.
 	lines, err := cfg.Matrix.ResolveRuntimeLines(true)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestMatrixLanguagesRoundTrip(t *testing.T) {
 	// A legacy config marshals back as a flat string list (no selectors/preview).
 	legacy := loadConfigYAML(t, baseHeader+`matrix:
   systems: [x86_64-linux]
-  languages: [coreLTS, java21]
+  languages: [java21, java25]
   tiers: [slim]
 `)
 	lraw, err := Marshal(legacy)
@@ -180,8 +180,7 @@ func TestMatrixLanguagesRoundTrip(t *testing.T) {
 	}
 }
 
-// The language-level form can express the full reference fleet: it resolves to
-// the same set of runtime lines as the legacy flat list (order may differ).
+// The language-level form resolves channel selectors into concrete runtime lines.
 func TestMatrixLanguagesNewFormReproducesLegacySet(t *testing.T) {
 	cfg := loadConfigYAML(t, baseHeader+`matrix:
   systems: [x86_64-linux, aarch64-linux]
@@ -194,8 +193,11 @@ func TestMatrixLanguagesNewFormReproducesLegacySet(t *testing.T) {
 `)
 	got := append([]string{}, cfg.Matrix.Languages...)
 	sort.Strings(got)
-	want := append([]string{}, DefaultConfig("acme", "platform").Matrix.Languages...)
-	sort.Strings(want)
+	// channel:lts resolves every line the policy marks lts — both java LTS
+	// releases, node22, python3.14 and go1.26. It is deliberately NOT compared
+	// against DefaultConfig: the reference fleet selects the newest lines
+	// (node26, go1.27), which are "current", not "lts".
+	want := []string{"go1.26", "java21", "java25", "node22", "python3.14"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("new-form resolved set\n  got:  %v\n  want: %v", got, want)
 	}

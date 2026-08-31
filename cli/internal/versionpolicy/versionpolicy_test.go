@@ -34,7 +34,7 @@ func TestLifecycleForClassification(t *testing.T) {
 		{"python3.14", "distroless", "active", "lts", true},
 
 		// Preview lines stay preview, never production.
-		{"java25", "slim", "preview", "preview", false},
+		{"java25", "slim", "active", "lts", true},
 		{"node24", "distroless", "preview", "preview", false},
 
 		// go1.26 is now LTS, but go is omitInProduction (toolchain not shipped in
@@ -67,10 +67,12 @@ func TestResolve(t *testing.T) {
 		includePreview bool
 		want           string // comma-joined sorted versions
 	}{
-		{"java", "lts", false, "21"},
-		{"java", "lts", true, "21,25"},   // preview unions java25
-		{"java", "preview", false, "25"}, // preview as base channel
-		{"node", "lts", true, "22,24"},
+		{"java", "lts", false, "21,25"}, // both java LTS releases
+		{"java", "lts", true, "21,25"},  // java has no preview line to union
+		{"node", "lts", false, "22"},
+		{"node", "lts", true, "22,24"},   // preview unions node24
+		{"node", "preview", false, "24"}, // preview as base channel
+		{"node", "current", false, "26"},
 		{"python", "lts", false, "3.14"}, // 3.14 is the LTS line
 		{"python", "current", false, "3.13"},
 		{"python", "current", true, "3.13"}, // python has no preview bucket
@@ -101,7 +103,8 @@ func TestResolve(t *testing.T) {
 func TestChannelFor(t *testing.T) {
 	cases := map[string]Channel{
 		"java21":     ChannelLTS,
-		"java25":     ChannelPreview,
+		"java25":     ChannelLTS,
+		"node26":     ChannelCurrent,
 		"python3.14": ChannelLTS,
 		"python3.13": ChannelCurrent,
 		"go1.26":     ChannelLTS,

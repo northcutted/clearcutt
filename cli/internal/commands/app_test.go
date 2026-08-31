@@ -288,12 +288,12 @@ func TestEmitAppDiffBaseResultTableAndYAMLBranches(t *testing.T) {
 }
 
 func TestRuntimeCompatAcceptsCoreLTSLine(t *testing.T) {
-	ok, reason := runtimeCompat("coreLTS-slim", "coreLTS-distroless")
+	ok, reason := runtimeCompat("java21-slim", "java21-distroless")
 	if !ok {
-		t.Fatalf("expected coreLTS tiers to be compatible, got %q", reason)
+		t.Fatalf("expected java21 tiers to be compatible, got %q", reason)
 	}
-	if !strings.Contains(reason, "coreLTS") {
-		t.Fatalf("expected coreLTS compatibility reason, got %q", reason)
+	if !strings.Contains(reason, "java21") {
+		t.Fatalf("expected java21 compatibility reason, got %q", reason)
 	}
 }
 

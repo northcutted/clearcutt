@@ -291,19 +291,16 @@ type ServiceLifecycle struct {
 }
 
 var supportedRuntimeLines = []RuntimeLine{
-	{ID: "coreLTS", Language: "core", Version: "LTS", Description: "Core CA certificates, shell, and baseline utilities"},
 	{ID: "java21", Language: "java", Version: "21", AppTemplateRuntime: "java", Description: "Java 21 LTS runtime line"},
 	{ID: "java25", Language: "java", Version: "25", AppTemplateRuntime: "java", Description: "Java 25 runtime line"},
 	{ID: "node22", Language: "node", Version: "22", AppTemplateRuntime: "node", Description: "Node.js 22 runtime line"},
 	{ID: "node24", Language: "node", Version: "24", AppTemplateRuntime: "node", Description: "Node.js 24 runtime line"},
+	{ID: "node26", Language: "node", Version: "26", AppTemplateRuntime: "node", Description: "Node.js 26 runtime line"},
 	{ID: "python3.13", Language: "python", Version: "3.13", AppTemplateRuntime: "python", Description: "Python 3.13 runtime line"},
 	{ID: "python3.14", Language: "python", Version: "3.14", AppTemplateRuntime: "python", Description: "Python 3.14 LTS runtime line"},
 	{ID: "go1.25", Language: "go", Version: "1.25", AppTemplateRuntime: "go", Description: "Go 1.25 toolchain line"},
-	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 LTS toolchain line"},
-	{ID: "dotnet8", Language: "dotnet", Version: "8", Description: ".NET 8 runtime line"},
-	{ID: "dotnet10", Language: "dotnet", Version: "10", Description: ".NET 10 runtime line"},
-	{ID: "rust1.95", Language: "rust", Version: "1.95", Description: "Rust 1.95 toolchain line"},
-	{ID: "cc15", Language: "cc", Version: "15", Description: "C/C++ GCC 15 toolchain line"},
+	{ID: "go1.26", Language: "go", Version: "1.26", AppTemplateRuntime: "go", Description: "Go 1.26 toolchain line"},
+	{ID: "go1.27", Language: "go", Version: "1.27", AppTemplateRuntime: "go", Description: "Go 1.27 toolchain line"},
 }
 
 var supportedServiceTemplates = map[string]ServiceImage{
@@ -405,10 +402,10 @@ func DefaultConfig(owner, repo string) Config {
 			// wide made every new fork inherit a build matrix it had no reason
 			// to operate.
 			Languages: []string{
-				"java21",
-				"node22",
+				"java25",
+				"node26",
 				"python3.14",
-				"go1.26",
+				"go1.27",
 			},
 			Tiers: []string{
 				"dev",

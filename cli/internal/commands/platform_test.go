@@ -157,7 +157,7 @@ func TestMatrixExportFromFleetEmitsGitHubImageMatrix(t *testing.T) {
 	if len(got.Include) == 0 {
 		t.Fatalf("expected non-empty matrix")
 	}
-	if got.Include[0].Language != "java21" || got.Include[0].Tier != "dev" {
+	if got.Include[0].Language != "java25" || got.Include[0].Tier != "dev" {
 		t.Fatalf("unexpected first matrix cell: %#v", got.Include[0])
 	}
 }
@@ -200,7 +200,7 @@ func TestMatrixExportFleetTableYAMLAndValidation(t *testing.T) {
 
 func TestMatrixExplainRuntimeLine(t *testing.T) {
 	path := writeFleetConfig(t, t.TempDir())
-	stdout, err := runCLI(t, "--format", "json", "matrix", "explain", "java21", "--fleet-config", path)
+	stdout, err := runCLI(t, "--format", "json", "matrix", "explain", "java25", "--fleet-config", path)
 	if err != nil {
 		t.Fatalf("matrix explain failed: %v\n%s", err, stdout)
 	}
@@ -208,13 +208,13 @@ func TestMatrixExplainRuntimeLine(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("unmarshal matrix explanation: %v\n%s", err, stdout)
 	}
-	if got.ID != "java21" || got.Language != "java" || got.Version != "21" {
+	if got.ID != "java25" || got.Language != "java" || got.Version != "25" {
 		t.Fatalf("unexpected runtime explanation: %#v", got)
 	}
 	if !got.SelectedInFleet || got.AppTemplateRuntime != "java" {
-		t.Fatalf("expected java21 to be selected with a java app template: %#v", got)
+		t.Fatalf("expected java25 to be selected with a java app template: %#v", got)
 	}
-	if strings.Join(got.ImageIDs, ",") != "java21-dev,java21-slim,java21-distroless" {
+	if strings.Join(got.ImageIDs, ",") != "java25-dev,java25-slim,java25-distroless" {
 		t.Fatalf("unexpected image IDs: %#v", got.ImageIDs)
 	}
 

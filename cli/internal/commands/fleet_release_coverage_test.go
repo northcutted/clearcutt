@@ -350,7 +350,7 @@ func TestFleetDigestAndMinorHelperBranches(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
 		"node.digest.json": `{"image":"img-node","digest":"sha256:2","language":"node24","tier":"slim","rollingTag":"slim","versionedTag":"v1-slim"}`,
-		"core.digest.json": `{"image":"img-core","digest":"sha256:1","language":"coreLTS","tier":"dev","rollingTag":"dev","versionedTag":"v1-dev"}`,
+		"core.digest.json": `{"image":"img-core","digest":"sha256:1","language":"java21","tier":"dev","rollingTag":"dev","versionedTag":"v1-dev"}`,
 		"skip.txt":         "ignored",
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "nested.digest.json"), 0o755); err != nil {
@@ -365,7 +365,7 @@ func TestFleetDigestAndMinorHelperBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read digest manifests: %v", err)
 	}
-	if len(digests) != 2 || digests[0].Language != "coreLTS" || digests[1].Language != "node24" {
+	if len(digests) != 2 || digests[0].Language != "java21" || digests[1].Language != "node24" {
 		t.Fatalf("unexpected sorted digests: %#v", digests)
 	}
 	if _, err := readFleetDigestManifests(filepath.Join(dir, "missing")); err == nil {

@@ -50,7 +50,7 @@ func TestVerifyCatalogStructuredOutputOnFailure(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v2.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "lifecycle": lifecycle,
+			"id": "java21-slim", "latestTag": "v1.0.0", "lifecycle": lifecycle,
 		}},
 	}
 	writeCatalogFixture(t, dir, index, map[string]any{})

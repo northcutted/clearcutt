@@ -444,8 +444,8 @@ func TestDevHelperBranches(t *testing.T) {
 	if got := imageFullName(rec); got != "ghcr.io/acme/full" {
 		t.Fatalf("imageFullName fullName branch = %q", got)
 	}
-	if lang, version, ok := catalogRuntimeLine("coreLTS-distroless"); !ok || lang != "core" || version != "LTS" {
-		t.Fatalf("core runtime line = %q %q %v", lang, version, ok)
+	if lang, version, ok := catalogRuntimeLine("java21-distroless"); !ok || lang != "java" || version != "21" {
+		t.Fatalf("java runtime line = %q %q %v", lang, version, ok)
 	}
 	if lang, version, ok := catalogRuntimeLine("python3.14-slim"); !ok || lang != "python" || version != "3.14" {
 		t.Fatalf("python runtime line = %q %q %v", lang, version, ok)
@@ -495,12 +495,15 @@ func TestDevFallbackAndMountBranches(t *testing.T) {
 		t.Fatalf("expected fallback without tag error, got %v", err)
 	}
 	devOpts.tag = "v9.9.9"
-	target, err := fallbackDevTarget("coreLTS-distroless", os.ErrNotExist)
+	target, err := fallbackDevTarget("java21-distroless", os.ErrNotExist)
 	if err != nil {
 		t.Fatalf("core fallback target failed: %v", err)
 	}
-	if target.NativeAttr != "" || target.ImageID != "coreLTS-dev" || !strings.Contains(target.ImageRef, "corelts") {
-		t.Fatalf("unexpected core fallback target: %+v", target)
+	// The --tag fallback derives the dev sibling and its published ref without a
+	// local catalog. (The NativeAttr=="" assertion here was specific to the old
+	// coreLTS line, which shipped no native attr; language lines do.)
+	if target.ImageID != "java21-dev" || !strings.Contains(target.ImageRef, "clearcutt-java21:v9.9.9-dev") {
+		t.Fatalf("unexpected fallback target: %+v", target)
 	}
 	devOpts.mount = ""
 	mount, err := resolveDevMount()

@@ -32,11 +32,11 @@ func TestCompileMatrixCells(t *testing.T) {
 		support string
 		prod    bool
 	}{
-		{"python3.14-slim", "python", "3.14", "active", "lts", true}, // reclassified to LTS
-		{"python3.14-dev", "python", "3.14", "active", "lts", false}, // dev never production
-		{"go1.26-distroless", "go", "1.26", "active", "lts", false},  // LTS but omitInProduction
-		{"node22-distroless", "node", "22", "active", "lts", true},
-		{"java21-slim", "java", "21", "active", "lts", true},
+		{"python3.14-slim", "python", "3.14", "active", "lts", true},    // reclassified to LTS
+		{"python3.14-dev", "python", "3.14", "active", "lts", false},    // dev never production
+		{"go1.27-distroless", "go", "1.27", "active", "current", false}, // omitInProduction
+		{"node26-distroless", "node", "26", "active", "current", true},
+		{"java25-slim", "java", "25", "active", "lts", true},
 	}
 	for _, w := range want {
 		got, ok := index[w.key]

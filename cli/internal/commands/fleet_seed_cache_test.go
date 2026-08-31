@@ -88,7 +88,7 @@ func TestFleetSeedCachePlanWritesNeededMatrix(t *testing.T) {
 func TestFleetSeedCachePlanNoWork(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := writeFleetTestConfig(t, root, fleet.Config{
-		Matrix: fleet.Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"coreLTS"}, Tiers: []string{"distroless"}},
+		Matrix: fleet.Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"java21"}, Tiers: []string{"distroless"}},
 	})
 	ghOut := filepath.Join(root, "github-output")
 

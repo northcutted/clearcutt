@@ -26,10 +26,10 @@ matrix:
     # Nix build path, the three tiers, and multi-arch evidence, without operating a
     # production image fleet. ClearCutt's product is governing image estates, not
     # publishing them.
-    - java21
-    - node22
+    - java25
+    - node26
     - python3.14
-    - go1.26
+    - go1.27
   tiers:
     - dev
     - slim

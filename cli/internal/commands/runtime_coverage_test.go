@@ -110,8 +110,8 @@ func TestRuntimeHelpersAndNixEvalBranches(t *testing.T) {
 	if got := defaultRuntimeDescription("", ""); got != "Custom runtime line" {
 		t.Fatalf("defaultRuntimeDescription empty = %q", got)
 	}
-	if lang, version, ok := parseRuntimeLineVersion("coreLTS"); !ok || lang != "core" || version != "LTS" {
-		t.Fatalf("coreLTS parse = %q %q %t", lang, version, ok)
+	if lang, version, ok := parseRuntimeLineVersion("java21"); !ok || lang != "java" || version != "21" {
+		t.Fatalf("java21 parse = %q %q %t", lang, version, ok)
 	}
 	if _, _, ok := parseRuntimeLineVersion("head"); ok {
 		t.Fatal("head should not parse without language/version flags")
