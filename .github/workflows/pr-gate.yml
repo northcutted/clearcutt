@@ -391,7 +391,6 @@ jobs:
           selected = {
               "fleet-matrix": enabled("fleet") or enabled("service"),
               "validate-matrix": enabled("fleet"),
-              "validate-service-images": enabled("service"),
               "site-ci": enabled("site"),
               "integration-checks": enabled("integration"),
               "go-ci": enabled("go"),
@@ -422,7 +421,19 @@ jobs:
           if changes_result != "success":
               failures.append(f"changes={changes_result}")
 
+          # Drift guard, both directions. A contract entry with no `needs` entry
+          # means the job was deleted or renamed and the contract was not
+          # updated; a `needs` job absent from the contract runs unchecked.
+          for name in selected:
+              if name not in needs:
+                  failures.append(f"{name} is in the contract but not in `needs` (deleted or renamed job?)")
+          for name in needs:
+              if name != "changes" and name not in selected:
+                  failures.append(f"{name} is in `needs` but not in the contract (its result is unchecked)")
+
           for name, is_selected in selected.items():
+              if name not in needs:
+                  continue
               result = (needs.get(name) or {}).get("result")
               expected = "success" if is_selected else "skipped"
               lines.append(f"| `{name}` | `{expected}` | `{result}` |")
