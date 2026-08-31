@@ -5,12 +5,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    # .NET is pinned to a NEWER nixpkgs than the rest of the fleet so it carries
-    # the CVE-patched ASP.NET Core runtime (10.0.9 / 8.0.28 — fixes the High
-    # GHSA-f8h2-vmm9-qhj6 in Microsoft.AspNetCore.App.Runtime, which the main
-    # pin's 10.0.8 still ships). It is substituted from cache (no VMR rebuild)
-    # and grafted to the openssl/sqlite floor in registry.nix. Pinned to an exact
-    # rev so the bump's churn is scoped to .NET images and stays reproducible.
   };
 
   outputs = { self, nixpkgs }:
