@@ -65,29 +65,6 @@
       # and build/runtime/crypto nixpkgs split stay curated and untouched.
       fleetMatrix = import ./lib/fleet-matrix.nix;
 
-      # Runtime-scoped CVE patching uses stock build packages for image
-      # assembly, scanners, and dev tooling, then threads patched handles only
-      # into package closures that ship inside images.
-      cveRemediationOverlay = import ./overlays/cve-remediation.nix;
-      # Some runtimes link the CVE-remediated libraries TRANSITIVELY through
-      # dependencies whose openssl/sqlite inputs the runtime package never
-      # exposes as `.override` arguments:
-      #   * .NET bakes a top-level openssl path into its nixpkgs wrappers.
-      #   * Node links nghttp2/ngtcp2/nghttp3 (each carrying their own openssl)
-      #     and sqlite, none of which `nodejs.override` reaches (it only takes
-      #     openssl + python3). A bare `.override { openssl = … }` patches the
-      #     interpreter's own libssl but leaves stock openssl/sqlite in the
-      #     shipped closure — which the runtime-patch completeness gate rejects.
-      # For those runtimes we rebind openssl/sqlite at the top of a DEDICATED
-      # package set used only for their runtime contents, so every transitive
-      # linker resolves the patched build. The build toolchain, scanners, and
-      # dev shell keep using stock `buildPkgs`, so this never rebinds the
-      # cached toolchain — only the affected runtime's own subtree rebuilds.
-      runtimeCryptoOverlay = final: _prev: {
-        openssl_3_6 = final.clearcuttCveOpenssl;
-        openssl = final.openssl_3_6;
-        sqlite = final.clearcuttCveSqlite;
-      };
       nixpkgsConfig = {
         # `allowUnfree` is required for JDKs (Zulu/Oracle) and a few fonts.
         # `allowBroken` was removed: it let Nix produce binaries from
@@ -100,16 +77,10 @@
         inherit system;
         config = nixpkgsConfig;
       };
-      importRuntimeNixpkgs = system: import nixpkgs {
-        inherit system;
-        config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay ];
-      };
-      importCryptoRuntimeNixpkgs = system: import nixpkgs {
-        inherit system;
-        config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
-      };
+      # Runtime and build package sets are the same stock nixpkgs now that the
+      # CVE overlays are gone. The alias is kept so the call sites below still
+      # read as "this is the set that ships inside images".
+      importRuntimeNixpkgs = importBuildNixpkgs;
       # Dedicated .NET package set from the newer pin (carries aspnetcore 10.0.9 /
       # 8.0.28). registry.nix grafts the patched openssl/sqlite into these, so the
       # crypto floor still holds while the CVE-patched runtime ships. The crypto
@@ -118,17 +89,16 @@
       # crypto overlays as the main runtime set so node's transitively-linked
       # openssl/sqlite (via nghttp2/ngtcp2/sqlite) still resolve to the patched
       # 3.6.3 / 3.53.2 floor. registry.nix sources ONLY node22 from this set.
-      importNodeCryptoNixpkgs = system: import nixpkgs-node {
+      importNodePinNixpkgs = system: import nixpkgs-node {
         inherit system;
         config = nixpkgsConfig;
-        overlays = [ cveRemediationOverlay runtimeCryptoOverlay ];
       };
 
       perSystem = system:
       let
         buildPkgs = importBuildNixpkgs system;
         runtimePkgs = importRuntimeNixpkgs system;
-        cryptoRuntimePkgs = importCryptoRuntimeNixpkgs system;
+        cryptoRuntimePkgs = importRuntimeNixpkgs system;
         slsaVerifier =
           let
             binary = slsaVerifierBinaries.${system}
@@ -165,7 +135,7 @@
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
           cryptoPkgs = cryptoRuntimePkgs;
-          nodeCryptoPkgs = importNodeCryptoNixpkgs system;
+          nodeCryptoPkgs = importNodePinNixpkgs system;
         };
 
         # Import our custom image compiler
@@ -315,17 +285,8 @@
         // (forDarwinSystems (system: evaluated.${system}.nativePackages));
       devShells = forAllSystems (system: evaluated.${system}.devShells);
 
-      # The fleet's CVE patch set, exported standalone so downstreams can
-      # apply or audit the remediations directly. It exposes clearcuttCve*
-      # handles without rebinding top-level build-toolchain packages.
-      overlays.cveRemediation = cveRemediationOverlay;
-
-      # Raw overlay for downstream consumers. The CVE remediation overlay is
-      # composed in first so clearcuttCve* handles are available to consumers,
-      # but top-level nixpkgs attrs stay stock unless a consumer opts into a
-      # patched runtime handle explicitly.
+      # Raw overlay for downstream consumers.
       overlays.default = nixpkgs.lib.composeManyExtensions [
-        cveRemediationOverlay
         (final: prev:
           let
             helpers = import ./lib/nix-native.nix { inherit self; pkgs = prev; };
@@ -360,7 +321,7 @@
         mkHardenedShell = { system, language, version, ... }@args:
           let
             runtimePkgs = importRuntimeNixpkgs system;
-            cryptoPkgs = importCryptoRuntimeNixpkgs system;
+            cryptoPkgs = importRuntimeNixpkgs system;
             registry = import ./lib/registry.nix {
               pkgs = runtimePkgs;
               inherit cryptoPkgs;
@@ -383,7 +344,7 @@
           let
             buildPkgs = importBuildNixpkgs system;
             runtimePkgs = importRuntimeNixpkgs system;
-            cryptoPkgs = importCryptoRuntimeNixpkgs system;
+            cryptoPkgs = importRuntimeNixpkgs system;
             registry = import ./lib/registry.nix {
               inherit cryptoPkgs;
               pkgs = runtimePkgs;
@@ -431,44 +392,6 @@
           });
       };
 
-      # Known-good crypto identity surface for the runtime-patch completeness
-      # gate. The gate (tests/closure-cve-check.py and its Go port) asserts the
-      # CVE patch-state of shipped openssl/sqlite by IDENTITY — the exact store
-      # path — not by version. This output resolves, per Linux system, the store
-      # paths of the crypto-overlaid openssl/sqlite across EVERY shipped crypto
-      # set (the main runtime pin plus the .NET and node unstable pins, which
-      # build their own openssl/sqlite from their own nixpkgs revs), with full
-      # provenance (pin name + locked rev + output + version). It is pure
-      # evaluation — no build — so `clearcutt remediation generate-crypto-allowlist`
-      # can stamp the committed allowlist (tests/runtime-dep-floor.json) locally
-      # and it will match the realized closure in CI (same lock → same paths).
-      cryptoIdentities = forLinuxSystems (system:
-        let
-          cryptoSets = [
-            { pinName = "nixpkgs"; rev = nixpkgs.rev or "unlocked"; pkgs = importCryptoRuntimeNixpkgs system; }
-            { pinName = "nixpkgs-node"; rev = nixpkgs-node.rev or "unlocked"; pkgs = importNodeCryptoNixpkgs system; }
-          ];
-          # The tracked crypto deps are exactly the packages runtimeCryptoOverlay
-          # rebinds to the patched build; each carries the CVE it remediates.
-          trackedDeps = [
-            { name = "openssl"; cve = "CVE-2026-34182"; sel = p: p.openssl; }
-            { name = "sqlite"; cve = "CVE-2026-11822"; sel = p: p.sqlite; }
-          ];
-          idsFor = set: dep:
-            let drv = dep.sel set.pkgs;
-            in map (o: {
-              inherit (dep) name cve;
-              inherit system;
-              pin = set.pinName;
-              rev = set.rev;
-              output = o;
-              version = drv.version;
-              storePath = baseNameOf (builtins.getAttr o drv).outPath;
-            }) drv.outputs;
-        in
-        nixpkgs.lib.concatMap (set: nixpkgs.lib.concatMap (dep: idsFor set dep) trackedDeps) cryptoSets
-      );
-
       # Closure-purity security gate for `nix flake check`, Linux-only because
       # the OCI image matrix is only exposed for Linux systems. For each
       # representative distroless image, closureInfo materializes the full
@@ -477,39 +400,25 @@
       # interactive shells (bin/sh|bash|ash|dash), package-manager binaries
       # (npm, npx, corepack, pip*, apk, dpkg, rpm), or setuid/setgid files —
       # honoring the same explained-exception allowlist
-      # (tests/closure-purity-allowlist.txt) as the verify.sh image gate, so
-      # a residual finding is consciously accepted rather than silently
-      # weakening the gate. Add coverage by appending to closurePurityTargets.
+      # (tests/closure-purity-allowlist.txt), so a residual finding is
+      # consciously accepted rather than silently weakening the gate. Add
+      # coverage by appending to closurePurityTargets.
       #
-      # Runtime-patch completeness gate (the security keystone of
-      # runtime-scoped CVE patching). For each representative image — slim AND
-      # distroless, because the slim tier also ships the openssl-linked runtime
-      # — closureInfo materializes the SHIPPED runtime closure of the image's
-      # contents (never a .drv build closure: under runtime-scoped patching the
-      # build-time openssl is intentionally stock, so a build-graph walk would
-      # false-positive). tests/closure-cve-check.py then fails the build if any
-      # store path is an openssl/sqlite below the committed floor in
-      # tests/runtime-dep-floor.json — default-deny, so stock 3.6.2 and the
-      # unpatched older majors (openssl_3_5, openssl_3) are caught too. Add
-      # coverage by appending to runtimePatchTargets.
+      # The runtime-patch completeness gate that used to sit alongside this one
+      # was retired with runtime-scoped CVE patching: it asserted the patch
+      # state of shipped openssl/sqlite by store-path identity, and with the CVE
+      # overlays gone there is no patched identity to assert against.
       checks = forLinuxSystems (system:
         let
           checkPkgs = import nixpkgs { inherit system; };
           # Realized-closure gate targets are the GENERATED, default-INCLUDE
           # lists from lib/fleet-matrix.nix (compiled from clearcutt.fleet.yaml).
-          # closurePurityTargets covers every production distroless image;
-          # runtimePatchTargets covers every production tier (slim + distroless)
-          # of every line that ships a production runtime — toolchain lines
-          # (go/rust/cc) that ship no production runtime are excluded by the
-          # compiler. This can ONLY add coverage versus the prior hand-list: a
-          # new production tier is gated automatically instead of waiting for
-          # someone to remember to append it. dotnet especially — its openssl is
-          # a source-baked dlopen path invisible to graph/SBOM walks, so this
-          # realized-closure gate is the ONLY thing that catches a stock copy.
+          # closurePurityTargets covers every production distroless image. A new
+          # production tier is gated automatically instead of waiting for
+          # someone to remember to append it.
           # The dev tier is intentionally excluded (it ships stock runtimes so
           # the build shells stay cached).
           closurePurityTargets = fleetMatrix.closurePurityTargets;
-          runtimePatchTargets = fleetMatrix.runtimePatchTargets;
           mkClosurePurityCheck = attrName:
             let
               image = self.packages.${system}.${attrName};
@@ -524,27 +433,10 @@
                 --allowlist ${./tests/closure-purity-allowlist.txt}
               touch $out
             '';
-          mkRuntimePatchCheck = attrName:
-            let
-              image = self.packages.${system}.${attrName};
-              closure = checkPkgs.closureInfo { rootPaths = image.clearcuttContents; };
-            in
-            checkPkgs.runCommand "runtime-patch-completeness-${attrName}"
-              {
-                nativeBuildInputs = [ checkPkgs.python3 ];
-              } ''
-              python3 ${./tests/closure-cve-check.py} \
-                --store-paths ${closure}/store-paths \
-                --floor ${./tests/runtime-dep-floor.json}
-              touch $out
-            '';
         in
         (nixpkgs.lib.genAttrs
           (map (target: "closure-purity-${target}") closurePurityTargets)
           (name: mkClosurePurityCheck (nixpkgs.lib.removePrefix "closure-purity-" name)))
-        // (nixpkgs.lib.genAttrs
-          (map (target: "runtime-patch-completeness-${target}") runtimePatchTargets)
-          (name: mkRuntimePatchCheck (nixpkgs.lib.removePrefix "runtime-patch-completeness-" name)))
       );
     };
 }

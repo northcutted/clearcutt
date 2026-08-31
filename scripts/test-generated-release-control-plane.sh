@@ -41,7 +41,7 @@ run_clearcutt platform render "$REPO" \
   --profile catalog-only \
   --catalog-source github-release \
   --catalog-source-repo northcutted/clearcutt \
-  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-targets java21-distroless,node22-slim,python3.14-dev \
   --catalog-release-limit 1 \
   --owner northcutted \
   --repo clearcutt-demo \
@@ -71,7 +71,7 @@ grep -q 'source: github-release' "$REPO/clearcutt.lock"
 grep -q 'sourceRepo: northcutted/clearcutt' "$REPO/clearcutt.lock"
 grep -q 'catalogMode: fleet' "$REPO/.clearcutt/site.yaml"
 grep -q -- '--owner "northcutted" --repo "clearcutt"' "$REPO/.github/workflows/catalog.yml"
-grep -q -- '--targets "java21-distroless,node24-slim,python3.14-dev"' "$REPO/.github/workflows/catalog.yml"
+grep -q -- '--targets "java21-distroless,node22-slim,python3.14-dev"' "$REPO/.github/workflows/catalog.yml"
 if grep -q -- '--images' "$REPO/.github/workflows/catalog.yml"; then
   echo "Release-backed catalog workflow still uses inventory mode" >&2
   exit 1

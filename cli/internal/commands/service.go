@@ -576,7 +576,6 @@ func certifyServiceTargetGo(service fleet.ServiceImage) (string, error) {
 		CoreDir:                  serviceOpts.coreDir,
 		OutputDir:                outDir,
 		AllowlistPath:            filepath.Join(serviceOpts.coreDir, "tests", "closure-purity-allowlist.txt"),
-		FloorPath:                filepath.Join(serviceOpts.coreDir, "tests", "runtime-dep-floor.json"),
 		ServiceProductionAllowed: service.ProductionAllowed,
 		ServiceLifecycleStatus:   firstNonEmptyString(service.Lifecycle.Status, "preview"),
 	}

@@ -1,17 +1,12 @@
 # ClearCutt Declarative Language & Runtime Registry
 
-# `cryptoPkgs` is a package set whose openssl/sqlite are rebound to the
-# CVE-patched builds at the top level (see runtimeCryptoOverlay in flake.nix).
-# Runtimes that link the remediated libraries through dependencies they cannot
-# `.override` (node -> nghttp2/ngtcp2/sqlite; .NET's baked openssl) are sourced
-# from it so every transitive linker resolves the patched build. Everything
-# else stays on the plain `pkgs` (CVE handles available, stock openssl/sqlite).
+# `nodePinPkgs` is node22's dedicated nixpkgs pin (see nixpkgs-node in
+# flake.nix), which carries a newer nodejs 22 than the main pin. It defaults to
+# `pkgs` so a fork without the dedicated pin still builds node22 from its main
+# nixpkgs. The CVE-patched `pkgs` set this file used to take was removed
+# with runtime-scoped CVE patching; every runtime now builds from stock nixpkgs.
 { pkgs
-, cryptoPkgs ? pkgs
-  # `nodeCryptoPkgs` is node22's dedicated unstable pin (UNSTABLE OPT-IN), with
-  # the same crypto rebinding as `cryptoPkgs`, carrying nodejs 22.23.0. Defaults
-  # to `cryptoPkgs` so a fork without the dedicated pin keeps the prior node22.
-, nodeCryptoPkgs ? cryptoPkgs
+, nodePinPkgs ? pkgs
 }:
 
 let
@@ -73,7 +68,7 @@ let
 
   # Graft the CVE-patched crypto libraries into a STOCK, cache-substitutable
   # build instead of rebuilding it from source. Rebinding openssl in the package
-  # set a runtime is built from (cryptoPkgs) changes that runtime's derivation
+  # set a runtime is built from (pkgs) changes that runtime's derivation
   # hash, so it loses its cache.nixos.org substitute and rebuilds from source —
   # for .NET that is the ~3h VMR build. `replaceDependencies` instead rewrites
   # every reference to the stock crypto lib (including .NET's baked absolute
@@ -109,39 +104,6 @@ let
   # so targeting the derivation itself would miss the runtime reference (and the
   # floor gate flags every output anyway — openssl-X-dev included). Each output is
   # gated on length independently.
-  graftOutputs = old: new:
-    if old == null || new == null || !(graftAbiOk old new) then [ ]
-    else builtins.concatMap
-      (o:
-        if (builtins.hasAttr o new) && graftSameLen (old.${o}.outPath) (new.${o}.outPath)
-        then [ { oldDependency = old.${o}; newDependency = new.${o}; } ]
-        else [ ])
-      old.outputs;
-
-  # Compute the crypto replacements within ONE package set: the drv and the stock
-  # crypto it links come from the same `base`, and the patched handle is built
-  # from that same base, so the swap is self-consistent even when `base` is a
-  # different nixpkgs pin than the rest of the fleet (the .NET case).
-  cryptoGraftsFor = base:
-    let
-      opensslGrafts =
-        graftOutputs (base.openssl_3_6 or null) (base.clearcuttCveOpenssl or null)
-        ++ graftOutputs (base.openssl or null) (base.clearcuttCveOpenssl or null);
-      sqliteGrafts = graftOutputs (base.sqlite or null) (base.clearcuttCveSqlite or null);
-      # openssl and openssl_3_6 are the same derivation on most pins; de-dup by
-      # the old output path so replaceDependencies never sees a target twice.
-      key = r: builtins.unsafeDiscardStringContext r.oldDependency.outPath;
-      dedup = builtins.foldl'
-        (acc: r: if builtins.elem (key r) (map key acc) then acc else acc ++ [ r ])
-        [ ] (opensslGrafts ++ sqliteGrafts);
-    in
-    {
-      grafts = dedup;
-      # openssl is the load-bearing graft: if it can't be grafted safely we must
-      # rebuild from source rather than ship a half-grafted closure the gate rejects.
-      opensslGraftable = opensslGrafts != [ ];
-    };
-
   # Declarative specifications for every supported language runtime and version
   baseLanguages = {
     java = let
@@ -253,7 +215,7 @@ let
     };
 
     node = let
-      # Node is sourced from `cryptoPkgs` (openssl/sqlite rebound to the patched
+      # Node is sourced from `pkgs` (openssl/sqlite rebound to the patched
       # builds). `nodejs.override` only exposes `openssl` + `python3`, so it can
       # patch the interpreter's own libssl but NOT the openssl that nghttp2 /
       # ngtcp2 / nghttp3 each link, nor node's `sqlite` input — all of which
@@ -275,15 +237,15 @@ let
       # future nixpkgs decouples pkgs.icu from the icu node links against, the
       # strip becomes a no-op and the purity gate surfaces it again rather than
       # failing silently.
-      # node22 is sourced from a dedicated UNSTABLE pin (nodeCryptoPkgs) so it
+      # node22 is sourced from a dedicated UNSTABLE pin (nodePinPkgs) so it
       # ships 22.23.0 — the fix for CVE-2026-48617 / CVE-2026-48937 the main pin's
       # 22.22.3 still carries. node24 stays on the main crypto set until its fix
       # (24.17.0) lands in the pinned nixpkgs. The node helpers are parameterised
       # by package set so the slim build AND its severed icu/zstd/bash references
       # come from the SAME set as the node attr — a cross-set sever would miss the
       # unstable pin's store paths and re-leak bash into the distroless closure.
-      node22Set = nodeCryptoPkgs;
-      node24Set = cryptoPkgs;
+      node22Set = nodePinPkgs;
+      node24Set = pkgs;
       nodeProductionRuntimeFrom = set: nodeVersion: rawPkgs:
         let
           slimPkg = (getPkgOrNullFrom set) [ [ "nodejs-slim_${nodeVersion}" ] ];
@@ -367,15 +329,15 @@ let
         "3.13" = {
           overlayName = "clearcuttPython313";
           raw = let py = getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version"; in [ py ];
-          slimOverride = [ (getPkg [ [ "clearcuttCvePython313" ] ] "Patched Python 3.13 runtime is not available") ];
-          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython313" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "python313" ] ] "Python 3.13 is not available in this nixpkgs version") ];
+          distrolessOverride = let py = getPkg [ [ "python313" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python313" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
         "3.14" = {
           overlayName = "clearcuttPython314";
           raw = let py = getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version"; in [ py ];
-          slimOverride = [ (getPkg [ [ "clearcuttCvePython314" ] ] "Patched Python 3.14 runtime is not available") ];
-          distrolessOverride = let py = getPkg [ [ "clearcuttCvePython314" ] ] ""; in pythonDistrolessRuntime py;
+          slimOverride = [ (getPkg [ [ "python314" ] ] "Python 3.14 is not available in this nixpkgs version") ];
+          distrolessOverride = let py = getPkg [ [ "python314" ] ] ""; in pythonDistrolessRuntime py;
           devExtra = let py = getPkg [ [ "python314" ] ] ""; in [ py.pkgs.pip pkgs.uv pkgs.poetry ];
         };
       };

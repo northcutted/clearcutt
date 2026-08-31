@@ -13,12 +13,10 @@ import (
 
 type boundariesFlags struct {
 	allowlist      string
-	floor          string
 	storePaths     string
 	coreDir        string
 	buildOutputs   string
 	closureTargets []string
-	runtimeTargets []string
 }
 
 var boundariesOpts boundariesFlags
@@ -35,7 +33,6 @@ func newVerifyBoundariesCmd() *cobra.Command {
 (a docker-save / OCI-layout archive, or a closureInfo store-paths file):
 
   closure-purity   no shells, package managers, or setuid/setgid files
-  runtime-cve      every CVE-remediated crypto path is a known-good identity
 
 Fails if any gate fails. This is the CLI-owned umbrella that replaces the
 per-gate python invocations in core/tests/verify.sh.`,
@@ -49,9 +46,7 @@ per-gate python invocations in core/tests/verify.sh.`,
 		},
 	}
 	cmd.Flags().StringVar(&boundariesOpts.allowlist, "allowlist", "", "closure-purity explained-exception allowlist file")
-	cmd.Flags().StringVar(&boundariesOpts.floor, "floor", "", "runtime-dep-floor.json for the runtime-cve gate (required)")
 	cmd.Flags().StringVar(&boundariesOpts.storePaths, "store-paths", "", "closureInfo store-paths file to scan instead of an image archive")
-	_ = cmd.MarkFlagRequired("floor")
 	return cmd
 }
 
@@ -79,9 +74,7 @@ core/tests/verify.sh in PR gates.`,
 	cmd.Flags().StringVar(&boundariesOpts.coreDir, "core-dir", "", "ClearCutt core flake directory (auto-detected when omitted)")
 	cmd.Flags().StringVar(&boundariesOpts.buildOutputs, "build-outputs", "build-outputs", "Build output directory containing image tarballs, relative to --core-dir unless absolute")
 	cmd.Flags().StringVar(&boundariesOpts.allowlist, "allowlist", "", "closure-purity explained-exception allowlist file (defaults to core/tests/closure-purity-allowlist.txt)")
-	cmd.Flags().StringVar(&boundariesOpts.floor, "floor", "", "runtime-dep-floor.json for the runtime-cve gate (defaults to core/tests/runtime-dep-floor.json)")
-	cmd.Flags().StringSliceVar(&boundariesOpts.closureTargets, "closure-target", []string{"coreLTS-distroless"}, "Image target(s) to run closure-purity against")
-	cmd.Flags().StringSliceVar(&boundariesOpts.runtimeTargets, "runtime-target", []string{"coreLTS-slim", "coreLTS-distroless"}, "Image target(s) to run runtime-cve against")
+	cmd.Flags().StringSliceVar(&boundariesOpts.closureTargets, "closure-target", []string{"java21-distroless"}, "Image target(s) to run closure-purity against")
 	return cmd
 }
 
@@ -118,29 +111,6 @@ func runVerifyBoundaries(archive string) error {
 		failed = true
 	}
 
-	// Gate 2: runtime-patch completeness.
-	floor, err := certify.LoadRuntimeDepFloor(boundariesOpts.floor)
-	if err != nil {
-		return err
-	}
-	var runtimeCve certify.RuntimeCveResult
-	if archive != "" {
-		runtimeCve, err = certify.ScanImageArchiveForRuntimeCve(archive, floor)
-	} else {
-		runtimeCve, err = certify.ScanStorePathsForRuntimeCve(boundariesOpts.storePaths, floor)
-	}
-	if err != nil {
-		return err
-	}
-	if runtimeCve.Clean() {
-		fmt.Fprintf(out, "[runtime-cve] clean: every shipped crypto path matches a known-good identity (%s).\n", strings.Join(runtimeCve.Tracked, ", "))
-	} else {
-		for _, v := range runtimeCve.Violations {
-			fmt.Fprintf(errOut, "[runtime-cve] VIOLATION: %s\n", v.Message)
-		}
-		failed = true
-	}
-
 	if failed {
 		return ErrCheckFailed
 	}
@@ -164,20 +134,10 @@ func runVerifyBoundarySuite() error {
 	if allowlistPath == "" {
 		allowlistPath = filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt")
 	}
-	floorPath := boundariesOpts.floor
-	if floorPath == "" {
-		floorPath = filepath.Join(coreDir, "tests", "runtime-dep-floor.json")
-	}
-
 	allowlist, err := certify.LoadClosureAllowlist(allowlistPath)
 	if err != nil {
 		return err
 	}
-	floor, err := certify.LoadRuntimeDepFloor(floorPath)
-	if err != nil {
-		return err
-	}
-
 	failed := false
 	for _, target := range nonEmptyStrings(boundariesOpts.closureTargets) {
 		archive, err := ensureBoundarySuiteArchive(coreDir, buildOutputs, target)
@@ -197,26 +157,6 @@ func runVerifyBoundarySuite() error {
 		} else {
 			for _, v := range result.Violations {
 				fmt.Fprintf(errOut, "[closure-purity:%s] VIOLATION: %s\n", target, v.Message)
-			}
-			failed = true
-		}
-	}
-
-	for _, target := range nonEmptyStrings(boundariesOpts.runtimeTargets) {
-		archive, err := ensureBoundarySuiteArchive(coreDir, buildOutputs, target)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "[boundary-suite] runtime-cve %s -> %s\n", target, archive)
-		result, err := certify.ScanImageArchiveForRuntimeCve(archive, floor)
-		if err != nil {
-			return fmt.Errorf("runtime-cve scan failed for %s: %w", target, err)
-		}
-		if result.Clean() {
-			fmt.Fprintf(out, "[runtime-cve:%s] clean: every shipped crypto path matches a known-good identity (%s).\n", target, strings.Join(result.Tracked, ", "))
-		} else {
-			for _, v := range result.Violations {
-				fmt.Fprintf(errOut, "[runtime-cve:%s] VIOLATION: %s\n", target, v.Message)
 			}
 			failed = true
 		}

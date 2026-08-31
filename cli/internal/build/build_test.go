@@ -120,28 +120,6 @@ func gzippedDockerArchive(t *testing.T, layer []byte) []byte {
 	return gz.Bytes()
 }
 
-// testFloorPath writes a known-good crypto identity allowlist. The aaaa.../bbbb...
-// openssl-3.6.3 identities are the patched builds the certify tests ship; the
-// stock aaaa...-openssl-3.6.2 (a DIFFERENT store component) is absent, so it
-// default-denies.
-func testFloorPath(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "floor.json")
-	body := `{"deps":[
-  {"name":"openssl","cve":"CVE-2026-34182","knownGood":[
-    {"storePath":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3"},
-    {"storePath":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3"}
-  ]},
-  {"name":"sqlite","cve":"CVE-2026-11822","knownGood":[
-    {"storePath":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-sqlite-3.53.2"}
-  ]}
-]}`
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 func runCertify(t *testing.T, target string, layer []byte, grypeErr error) (Result, error) {
 	t.Helper()
 	r := &fakeRunner{archive: gzippedDockerArchive(t, layer), grypeErr: grypeErr}
@@ -151,7 +129,6 @@ func runCertify(t *testing.T, target string, layer []byte, grypeErr error) (Resu
 		Kind:      "runtime",
 		CoreDir:   t.TempDir(),
 		OutputDir: t.TempDir(),
-		FloorPath: testFloorPath(t),
 	}
 	return CertifyTarget(r, opts, time.Unix(0, 0), nil)
 }
@@ -171,8 +148,10 @@ func TestCertifyTargetCleanDistrolessPasses(t *testing.T) {
 	if res.ClosurePurity == nil || !*res.ClosurePurity {
 		t.Errorf("closurePurity = %v, want true", res.ClosurePurity)
 	}
-	if res.RuntimePatchComplete == nil || !*res.RuntimePatchComplete {
-		t.Errorf("runtimePatchComplete = %v, want true", res.RuntimePatchComplete)
+	// The runtime-patch gate was retired with runtime-scoped CVE patching; the
+	// predicate keeps the field but leaves it unset.
+	if res.RuntimePatchComplete != nil {
+		t.Errorf("runtimePatchComplete = %v, want nil now the gate is retired", *res.RuntimePatchComplete)
 	}
 	if !res.Policy.Blocking {
 		t.Errorf("distroless runtime should be blocking")
@@ -193,30 +172,13 @@ func TestCertifyTargetImpureDistrolessFailsClosurePurity(t *testing.T) {
 	}
 }
 
-func TestCertifyTargetStockOpensslFailsRuntimeCve(t *testing.T) {
-	layer := layerTar(t, map[string]int64{
-		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.2/lib/libssl.so": 0o644,
-	})
-	res, err := runCertify(t, "coreLTS-slim", layer, nil)
-	if err == nil {
-		t.Fatal("expected runtime-cve gate failure for stock openssl-3.6.2")
-	}
-	if res.RuntimePatchComplete == nil || *res.RuntimePatchComplete {
-		t.Errorf("expected runtimePatchComplete=false, got %v", res.RuntimePatchComplete)
-	}
-	// slim tier runs no closure-purity gate.
-	if res.ClosurePurity != nil {
-		t.Errorf("slim should skip closure-purity, got %v", res.ClosurePurity)
-	}
-}
-
 func TestCertifyTargetWritesPredicateFile(t *testing.T) {
 	layer := layerTar(t, map[string]int64{
 		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
 	})
 	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
 	outDir := t.TempDir()
-	opts := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: outDir, FloorPath: testFloorPath(t)}
+	opts := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: outDir}
 	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
 		t.Fatalf("certify: %v", err)
 	}
@@ -235,7 +197,7 @@ func TestCertifyTargetCryptoVexBridge(t *testing.T) {
 
 	// Without the VEX file: no --vex.
 	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
-	opts := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
+	opts := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir()}
 	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
 		t.Fatalf("certify: %v", err)
 	}
@@ -287,7 +249,6 @@ func TestCertifyTargetRelativePathsResolveAcrossCwds(t *testing.T) {
 	opts := Options{
 		Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime",
 		CoreDir: "core", OutputDir: filepath.Join("core", "build-outputs"),
-		FloorPath: testFloorPath(t),
 	}
 	if _, err := CertifyTarget(r, opts, time.Unix(0, 0), nil); err != nil {
 		t.Fatalf("certify with relative CoreDir/OutputDir: %v", err)
@@ -339,7 +300,7 @@ func (s *scriptedRunner) Capture(dir, outPath, name string, args ...string) erro
 }
 
 func TestCertifyTargetBuildErrors(t *testing.T) {
-	base := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
+	base := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir()}
 
 	// nix build fails.
 	if _, err := CertifyTarget(&scriptedRunner{nixErr: errors.New("build boom")}, base, time.Unix(0, 0), nil); err == nil {
@@ -366,7 +327,7 @@ func TestCertifyTargetServiceKind(t *testing.T) {
 	r := &fakeRunner{archive: gzippedDockerArchive(t, layer)}
 	opts := Options{
 		Target: "postgres16", System: "x86_64-linux", Kind: "service",
-		CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t),
+		CoreDir: t.TempDir(), OutputDir: t.TempDir(),
 		ServiceLifecycleStatus: "", // defaults to preview -> non-blocking
 	}
 	res, err := CertifyTarget(r, opts, time.Unix(0, 0), nil)
@@ -384,23 +345,6 @@ func TestCertifyTargetServiceKind(t *testing.T) {
 	}
 	if res.Policy.LifecycleStatus != "preview" {
 		t.Errorf("service lifecycle default = %q, want preview", res.Policy.LifecycleStatus)
-	}
-}
-
-func TestCertifyTargetGateScanErrors(t *testing.T) {
-	// Distroless target fed a corrupt archive -> closure-purity scan errors.
-	bad := &scriptedRunner{writeArchive: []byte("not a gzip or tar")}
-	opts := Options{Target: "node24-distroless", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: testFloorPath(t)}
-	if _, err := CertifyTarget(bad, opts, time.Unix(0, 0), nil); err == nil {
-		t.Fatal("expected closure-purity scan error on a corrupt archive")
-	}
-
-	// Slim target with a missing floor file -> runtime-cve floor load errors.
-	layer := layerTar(t, map[string]int64{"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/x.so": 0o644})
-	r := &scriptedRunner{writeArchive: gzippedDockerArchive(t, layer)}
-	slim := Options{Target: "coreLTS-slim", System: "x86_64-linux", Kind: "runtime", CoreDir: t.TempDir(), OutputDir: t.TempDir(), FloorPath: filepath.Join(t.TempDir(), "missing-floor.json")}
-	if _, err := CertifyTarget(r, slim, time.Unix(0, 0), nil); err == nil {
-		t.Fatal("expected runtime-cve floor load error")
 	}
 }
 

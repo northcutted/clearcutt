@@ -377,7 +377,6 @@ func runFleetCertifyTargetGo(target, coreDir string) error {
 		CoreDir:       coreDir,
 		OutputDir:     outDir,
 		AllowlistPath: filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"),
-		FloorPath:     filepath.Join(coreDir, "tests", "runtime-dep-floor.json"),
 	}
 	runner := fleetBuildRunner()
 	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {
@@ -395,7 +394,6 @@ func runFleetPublishTargetGo(cfg fleet.Config, target, coreDir string) error {
 		CoreDir:       coreDir,
 		OutputDir:     outDir,
 		AllowlistPath: filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"),
-		FloorPath:     filepath.Join(coreDir, "tests", "runtime-dep-floor.json"),
 	}
 	runner := fleetBuildRunner()
 	if _, err := build.CertifyTarget(runner, opts, time.Now(), out); err != nil {

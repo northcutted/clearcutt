@@ -80,7 +80,6 @@ func NewVerifyCmd() *cobra.Command {
 	cmd.AddCommand(NewVerifyRebuildCmd())
 	cmd.AddCommand(NewVerifyReleaseEvidenceCmd())
 	cmd.AddCommand(newVerifyClosurePurityCmd())
-	cmd.AddCommand(newVerifyRuntimeCveCmd())
 	cmd.AddCommand(newVerifyBoundariesCmd())
 	cmd.AddCommand(newVerifyBoundarySuiteCmd())
 	return cmd

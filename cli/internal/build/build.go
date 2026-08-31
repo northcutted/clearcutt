@@ -36,7 +36,6 @@ type Options struct {
 	CoreDir                  string // working dir for the build (holds flake.nix)
 	OutputDir                string // build-outputs directory (absolute or core-relative)
 	AllowlistPath            string // closure-purity explained-exception allowlist
-	FloorPath                string // runtime-dep-floor.json
 	ServiceProductionAllowed bool
 	ServiceLifecycleStatus   string
 }
@@ -273,28 +272,13 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 		}
 	}
 
-	// C2. Runtime-patch completeness (slim + distroless runtime) — IN-PROCESS.
+	// The runtime-patch completeness gate that ran here was retired with
+	// runtime-scoped CVE patching: it asserted the patch state of shipped
+	// openssl/sqlite by store-path identity, and with the CVE overlays gone there
+	// is no patched identity to assert against. The predicate keeps the field so
+	// existing consumers of test-results JSON do not have to change shape.
 	runtimeStatus := "skipped"
 	var runtimePtr *bool
-	if opts.Kind == "runtime" && (tier == "slim" || tier == "distroless") {
-		logf(w, "Runtime-cve gate (in-process) on %s target...", tier)
-		floor, err := certify.LoadRuntimeDepFloor(opts.FloorPath)
-		if err != nil {
-			return Result{}, fmt.Errorf("loading runtime-dep floor: %w", err)
-		}
-		res, err := certify.ScanImageArchiveForRuntimeCve(tarPath, floor)
-		if err != nil {
-			return Result{}, fmt.Errorf("runtime-cve scan failed for %s: %w", opts.Target, err)
-		}
-		if res.Clean() {
-			runtimeStatus, runtimePtr = "passed", boolPtr(true)
-		} else {
-			runtimeStatus, runtimePtr = "failed", boolPtr(false)
-			for _, v := range res.Violations {
-				logf(w, "[runtime-cve] VIOLATION: %s", v.Message)
-			}
-		}
-	}
 
 	// D. Assemble the test-results predicate.
 	statuses := []string{"passed", "passed", grype}
