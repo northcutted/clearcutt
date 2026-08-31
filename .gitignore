@@ -17,6 +17,9 @@ result
 build-outputs/*
 core/build-outputs/*
 .claude/*
+# ...except skills, which are part of the repo's tooling and must travel with it.
+!.claude/skills/
+!.claude/skills/**
 
 # Harness-generated AI rule files. Source lives under .agents/context/.
 .claudeprompt
