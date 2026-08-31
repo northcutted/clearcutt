@@ -58,7 +58,6 @@ func writePlatformStatusFixture(t *testing.T, root, policyImageRef string) {
 		".github/workflows/release.yml":                 "permissions:\n  contents: write\n  packages: write\n  id-token: write\nif: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nclearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet build-cli-assets\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "clearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet certify-target\nclearcutt verify boundary-suite\n",
 		".github/workflows/publish-pages.yml":           "permissions:\n  packages: read\n  pages: write\n  id-token: write\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nclearcutt catalog workflow-params\nclearcutt catalog build\n--core-dir core\n--update-db\nclearcutt catalog site build\n--generate-vex\nclearcutt platform registry-env\n",
-		".github/workflows/scheduled-scan.yml":          "permissions:\n  contents: write\n  pull-requests: write\nOPENROUTER_API_KEY\nCLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS\nREMEDIATION_LLM_MODE\nclearcutt remediation workflow-params\nclearcutt scan refresh-kev\nclearcutt scan --update-db\nclearcutt --format json remediation plan --out core/build-outputs/remediation-plan.json\nclearcutt remediation report --allow-missing\nclearcutt remediation run --plan-out build-outputs/remediation-plan.json --require-llm-key\n",
 		".github/workflows/seed-nix-cache.yml":          "clearcutt fleet seed-cache-plan\nclearcutt fleet publish-cache\n",
 		".github/actions/install-clearcutt/action.yml":  "cosign verify-blob\nSHA256SUMS.txt\n",
 		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",
@@ -726,7 +725,6 @@ func TestPlatformStatusPassesForWiredRoot(t *testing.T) {
 		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nclearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet build-cli-assets\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "clearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet certify-target\nclearcutt verify boundary-suite\n",
 		".github/workflows/publish-pages.yml":           "uses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nclearcutt catalog workflow-params\nclearcutt catalog build\n--core-dir core\n--update-db\nclearcutt catalog site build\n--generate-vex\nclearcutt platform registry-env\n",
-		".github/workflows/scheduled-scan.yml":          "permissions:\n  contents: write\n  pull-requests: write\nOPENROUTER_API_KEY\nCLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS\nREMEDIATION_LLM_MODE\nclearcutt remediation workflow-params\nclearcutt scan refresh-kev\nclearcutt scan --update-db\nclearcutt --format json remediation plan --out core/build-outputs/remediation-plan.json\nclearcutt remediation report --allow-missing\nclearcutt remediation run --plan-out build-outputs/remediation-plan.json --require-llm-key\n",
 		".github/workflows/seed-nix-cache.yml":          "clearcutt fleet seed-cache-plan\nclearcutt fleet publish-cache\n",
 		".github/actions/install-clearcutt/action.yml":  "cosign verify-blob\nSHA256SUMS.txt\n",
 		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",
@@ -861,9 +859,6 @@ func TestPlatformDoctorFailsWhenWorkflowPermissionsDrift(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".github/workflows/release.yml"), []byte("clearcutt fleet workflow-matrices\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n"), 0o644); err != nil {
 		t.Fatalf("rewrite release workflow: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".github/workflows/scheduled-scan.yml"), []byte("permissions:\n  contents: read\nclearcutt remediation plan\n"), 0o644); err != nil {
-		t.Fatalf("rewrite scheduled scan workflow: %v", err)
-	}
 
 	stdout, err := runCLI(t, "--format", "json", "platform", "doctor", "--output", root)
 	if !errors.Is(err, ErrCheckFailed) {
@@ -873,7 +868,7 @@ func TestPlatformDoctorFailsWhenWorkflowPermissionsDrift(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("unmarshal doctor status: %v\n%s", err, stdout)
 	}
-	for _, id := range []string{"release.permissions", "remediation.permissions"} {
+	for _, id := range []string{"release.permissions"} {
 		if !platformStatusHasCheck(got, id, "fail") {
 			t.Fatalf("missing failing %s check: %#v", id, got.Checks)
 		}
@@ -927,7 +922,7 @@ func TestPlatformDoctorGithubWarnsForOptionalReadinessGaps(t *testing.T) {
 	if got.Status != "warn" {
 		t.Fatalf("doctor status = %q, checks = %#v", got.Status, got.Checks)
 	}
-	for _, id := range []string{"github.actionsPolicy", "github.environment.protection", "github.remediationPrs", "github.remediationAiSecret", "github.nixCacheSecrets"} {
+	for _, id := range []string{"github.actionsPolicy", "github.environment.protection", "github.nixCacheSecrets"} {
 		if !platformStatusHasCheck(got, id, "warn") {
 			t.Fatalf("missing warning %s check: %#v", id, got.Checks)
 		}
@@ -943,7 +938,6 @@ func TestPlatformStatusWarnsForNonGHCRRegistry(t *testing.T) {
 		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nclearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet build-cli-assets\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "clearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet certify-target\nclearcutt verify boundary-suite\n",
 		".github/workflows/publish-pages.yml":           "uses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nclearcutt catalog workflow-params\nclearcutt catalog build\n--core-dir core\n--update-db\nclearcutt catalog site build\n--generate-vex\nclearcutt platform registry-env\n",
-		".github/workflows/scheduled-scan.yml":          "permissions:\n  contents: write\n  pull-requests: write\nOPENROUTER_API_KEY\nCLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS\nREMEDIATION_LLM_MODE\nclearcutt remediation workflow-params\nclearcutt scan refresh-kev\nclearcutt scan --update-db\nclearcutt --format json remediation plan --out core/build-outputs/remediation-plan.json\nclearcutt remediation report --allow-missing\nclearcutt remediation run --plan-out build-outputs/remediation-plan.json --require-llm-key\n",
 		".github/workflows/seed-nix-cache.yml":          "clearcutt fleet seed-cache-plan\nclearcutt fleet publish-cache\n",
 		".github/actions/install-clearcutt/action.yml":  "cosign verify-blob\nSHA256SUMS.txt\n",
 		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",
@@ -1158,7 +1152,6 @@ func TestPlatformStatusFailsWhenReleaseBranchGuardDrifts(t *testing.T) {
 		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nclearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "clearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet certify-target\nclearcutt verify boundary-suite\n",
 		".github/workflows/publish-pages.yml":           "uses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nclearcutt catalog workflow-params\nclearcutt catalog build\n--core-dir core\n--update-db\nclearcutt catalog site build\n--generate-vex\nclearcutt platform registry-env\n",
-		".github/workflows/scheduled-scan.yml":          "permissions:\n  contents: write\n  pull-requests: write\nOPENROUTER_API_KEY\nCLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS\nREMEDIATION_LLM_MODE\nclearcutt remediation workflow-params\nclearcutt scan refresh-kev\nclearcutt scan --update-db\nclearcutt --format json remediation plan --out core/build-outputs/remediation-plan.json\nclearcutt remediation report --allow-missing\nclearcutt remediation run --plan-out build-outputs/remediation-plan.json --require-llm-key\n",
 		".github/workflows/seed-nix-cache.yml":          "clearcutt fleet seed-cache-plan\nclearcutt fleet publish-cache\n",
 		".github/actions/install-clearcutt/action.yml":  "cosign verify-blob\nSHA256SUMS.txt\n",
 		".github/actions/setup-nix/action.yml":          "clearcutt platform setup-nix applies fork-specific fleet cache config\n",

@@ -126,54 +126,11 @@ type Admission struct {
 	RequireDigest bool   `json:"requireDigest"`
 }
 
+// Remediation carries the vulnerability policy that scan and verify gate on.
+// The drafting-pipeline knobs it used to hold (mode, scan depth, per-run caps,
+// nixpkgs probe refs, unstable opt-ins) went with the pipeline itself.
 type Remediation struct {
-	Mode                   string              `json:"mode"`
-	ScanDepth              string              `json:"scanDepth"`
-	MaxFindingsPerRun      int                 `json:"maxFindingsPerRun"`
-	MaxPatchFailuresPerRun int                 `json:"maxPatchFailuresPerRun"`
-	IncludeDevOnly         bool                `json:"includeDevOnly"`
-	Probe                  RemediationProbe    `json:"probe,omitempty"`
-	Policy                 RemediationPolicy   `json:"policy,omitempty"`
-	Unstable               RemediationUnstable `json:"unstable,omitempty"`
-}
-
-// RemediationProbe configures the live fix-availability probe of CVE triage:
-// whether triage may fetch nixpkgs refs at scan time and which refs it sweeps
-// for the scanner's fixed version. The probe is best-effort by contract — a
-// fetch failure degrades triage to the static route classifier, never blocks
-// planning — so Enabled is a policy statement, not a liveness requirement.
-// See docs/analysis/cve-triage-design.md.
-type RemediationProbe struct {
-	// Enabled: default true. Unset means enabled; --no-probe or offline
-	// operation degrades gracefully either way.
-	Enabled *bool `json:"enabled,omitempty"`
-	// Refs are the nixpkgs refs the probe sweeps, in order. Default
-	// nixos-unstable, master, staging-next; the pin rev itself is always
-	// probed first regardless.
-	Refs []string `json:"refs,omitempty"`
-}
-
-// ProbeEnabled reports whether the fix-availability probe may run; unset
-// defaults to enabled because the probe can only add information (it degrades
-// to the static classifier on any failure).
-func (r Remediation) ProbeEnabled() bool {
-	return r.Probe.Enabled == nil || *r.Probe.Enabled
-}
-
-// EffectiveProbeRefs returns the configured probe ref sweep, falling back to
-// DefaultProbeRefs, so consumers never reimplement the defaulting.
-func (r Remediation) EffectiveProbeRefs() []string {
-	if len(r.Probe.Refs) > 0 {
-		return append([]string(nil), r.Probe.Refs...)
-	}
-	return DefaultProbeRefs()
-}
-
-// DefaultProbeRefs is the default nixpkgs ref sweep for the fix-availability
-// probe: the Hydra-cached channel first, then the branches a fix reaches
-// before it lands on a channel.
-func DefaultProbeRefs() []string {
-	return []string{"nixos-unstable", "master", "staging-next"}
+	Policy RemediationPolicy `json:"policy,omitempty"`
 }
 
 // RemediationUnstable is the opt-in policy for sourcing a CVE fix from a newer
@@ -181,15 +138,6 @@ func DefaultProbeRefs() []string {
 // SUGGESTS an unstable fix unless an explicit soft opt-in scopes a single
 // package to a pinned ref (the .NET/node22 dedicated-pin pattern), or `hard`
 // moves the whole fleet. See docs/analysis/cli-pivot-plan.md.
-type RemediationUnstable struct {
-	// Mode: off | suggest | soft | hard. Default suggest.
-	Mode string `json:"mode,omitempty"`
-	// Ref is the default unstable nixpkgs flake ref the scan probes for fixes.
-	Ref string `json:"ref,omitempty"`
-	// SoftOptIns scope individual packages to a pinned unstable ref for a CVE.
-	SoftOptIns []RemediationUnstableOptIn `json:"softOptIns,omitempty"`
-}
-
 // RemediationUnstableOptIn pins one package to a newer nixpkgs ref to clear
 // specific CVEs, scoped so the rest of the fleet stays on the stable pin.
 type RemediationUnstableOptIn struct {
@@ -498,14 +446,7 @@ func DefaultConfig(owner, repo string) Config {
 			RequireSig:    true,
 			RequireDigest: true,
 		},
-		Remediation: Remediation{
-			Mode:                   "approved-pr",
-			ScanDepth:              "1",
-			MaxFindingsPerRun:      1,
-			MaxPatchFailuresPerRun: 1,
-			IncludeDevOnly:         false,
-			Policy:                 DefaultRemediationPolicy(),
-		},
+		Remediation: Remediation{Policy: DefaultRemediationPolicy()},
 		Templates: Templates{
 			Runtimes: []string{"java", "node", "python", "go"},
 		},
@@ -574,14 +515,6 @@ func (c *Config) applyDefaults() {
 	c.Admission.Engine = firstNonEmpty(c.Admission.Engine, def.Admission.Engine)
 	c.Admission.Environment = firstNonEmpty(c.Admission.Environment, def.Admission.Environment)
 	c.Admission.Namespace = firstNonEmpty(c.Admission.Namespace, def.Admission.Namespace)
-	c.Remediation.Mode = firstNonEmpty(c.Remediation.Mode, def.Remediation.Mode)
-	c.Remediation.ScanDepth = firstNonEmpty(c.Remediation.ScanDepth, def.Remediation.ScanDepth)
-	if c.Remediation.MaxFindingsPerRun == 0 {
-		c.Remediation.MaxFindingsPerRun = def.Remediation.MaxFindingsPerRun
-	}
-	if c.Remediation.MaxPatchFailuresPerRun == 0 {
-		c.Remediation.MaxPatchFailuresPerRun = def.Remediation.MaxPatchFailuresPerRun
-	}
 	c.Remediation.Policy = EffectiveRemediationPolicy(c.Remediation.Policy)
 	if len(c.Templates.Runtimes) == 0 {
 		c.Templates.Runtimes = def.Templates.Runtimes
@@ -692,16 +625,8 @@ func (c Config) Validate() error {
 	if c.Catalog.ReleaseLimit < 1 {
 		return fmt.Errorf("catalog.releaseLimit must be greater than 0")
 	}
-	if c.Remediation.Mode != "approved-pr" {
-		return fmt.Errorf("remediation.mode currently supports only approved-pr")
-	}
 	if err := validateRemediationPolicy(c.Remediation.Policy); err != nil {
 		return err
-	}
-	for _, ref := range c.Remediation.Probe.Refs {
-		if strings.TrimSpace(ref) == "" {
-			return fmt.Errorf("remediation.probe.refs must not contain empty values")
-		}
 	}
 	if _, err := c.serviceMap(); err != nil {
 		return err

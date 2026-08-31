@@ -274,9 +274,6 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 		Registry: Registry{Host: "ghcr.io/", Owner: "acme", Repository: "platform", ImagePrefix: "cc"},
 		Matrix:   Matrix{Systems: []string{"x86_64-linux"}, Languages: []string{"java21"}, Tiers: []string{"slim"}},
 		Catalog:  Catalog{ReleaseLimit: 1},
-		Remediation: Remediation{
-			Mode: "approved-pr",
-		},
 	}
 	cfg.applyDefaults()
 	if cfg.RepoPath() != "acme/platform" || cfg.RegistryBase() != "ghcr.io/acme/platform" {
@@ -298,13 +295,11 @@ func TestFleetDefaultsMatricesAndValidationErrors(t *testing.T) {
 		"registry":                      func(c *Config) { c.Registry.Owner = "" },
 		"matrix":                        func(c *Config) { c.Matrix.Languages = nil },
 		"releaseLimit":                  func(c *Config) { c.Catalog.ReleaseLimit = 0 },
-		"remediation":                   func(c *Config) { c.Remediation.Mode = "autonomous" },
 		"remediationPolicyTier":         func(c *Config) { c.Remediation.Policy.ProductionTiers = []string{"dev"} },
 		"remediationPolicySeverity":     func(c *Config) { c.Remediation.Policy.MinimumSeverity = "urgent" },
 		"remediationPolicyEPSSBoundary": func(c *Config) { c.Remediation.Policy.EPSSPercentileBoostAt = 1.1 },
 		"remediationPolicyWaitSeverity": func(c *Config) { c.Remediation.Policy.WaitMaxSeverity = "urgent" },
 		"remediationPolicyWaitDays":     func(c *Config) { c.Remediation.Policy.WaitMaxDays = intPtr(-1) },
-		"remediationProbeEmptyRef":      func(c *Config) { c.Remediation.Probe.Refs = []string{" "} },
 	} {
 		bad := cfg
 		mutate(&bad)
@@ -346,37 +341,5 @@ func TestRemediationTriagePolicyDefaultsAndOverrides(t *testing.T) {
 	})
 	if set.PreferSubstitutable == nil || *set.PreferSubstitutable || set.WaitMaxSeverity != "low" || set.WaitMaxDays == nil || *set.WaitMaxDays != 7 {
 		t.Errorf("explicit triage policy values not preserved: %#v", set)
-	}
-}
-
-func TestRemediationProbeDefaultsAndAccessors(t *testing.T) {
-	var rem Remediation
-	if !rem.ProbeEnabled() {
-		t.Error("probe should default to enabled")
-	}
-	if got := rem.EffectiveProbeRefs(); len(got) != 3 || got[0] != "nixos-unstable" || got[1] != "master" || got[2] != "staging-next" {
-		t.Errorf("unexpected default probe refs: %#v", got)
-	}
-
-	rem.Probe = RemediationProbe{
-		Enabled: boolPtr(false),
-		Refs:    []string{"nixos-25.11"},
-	}
-	if rem.ProbeEnabled() {
-		t.Error("explicit enabled:false should disable the probe")
-	}
-	if got := rem.EffectiveProbeRefs(); len(got) != 1 || got[0] != "nixos-25.11" {
-		t.Errorf("configured probe refs not honored: %#v", got)
-	}
-
-	// A config that never mentions probe/triage keys must load with the
-	// defaults resolvable — omitempty absence is the published contract.
-	cfg := DefaultConfig("acme", "platform")
-	cfg.applyDefaults()
-	if !cfg.Remediation.ProbeEnabled() || len(cfg.Remediation.EffectiveProbeRefs()) != 3 {
-		t.Fatalf("default config should resolve probe defaults: %#v", cfg.Remediation.Probe)
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("default config with unset probe should validate: %v", err)
 	}
 }

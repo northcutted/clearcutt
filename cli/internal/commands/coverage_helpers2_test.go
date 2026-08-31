@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,88 +51,6 @@ func TestRemediationPolicyFromJSON(t *testing.T) {
 	}
 }
 
-func TestOpenPossiblyGzipped(t *testing.T) {
-	dir := t.TempDir()
-
-	plain := filepath.Join(dir, "layer.tar")
-	if err := os.WriteFile(plain, []byte("plain-tar-bytes"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r, err := openPossiblyGzipped(plain)
-	if err != nil {
-		t.Fatalf("open plain: %v", err)
-	}
-	buf := make([]byte, 5)
-	if _, err := r.Read(buf); err != nil || string(buf) != "plain" {
-		t.Fatalf("plain read = %q, %v", buf, err)
-	}
-	_ = r.Close()
-
-	gzPath := filepath.Join(dir, "layer.tar.gz")
-	f, err := os.Create(gzPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := gzip.NewWriter(f)
-	if _, err := zw.Write([]byte("gzipped-bytes")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	r, err = openPossiblyGzipped(gzPath)
-	if err != nil {
-		t.Fatalf("open gzipped: %v", err)
-	}
-	buf = make([]byte, 7)
-	if _, err := r.Read(buf); err != nil || string(buf) != "gzipped" {
-		t.Fatalf("gzip read = %q, %v", buf, err)
-	}
-	_ = r.Close()
-
-	if _, err := openPossiblyGzipped(filepath.Join(dir, "absent.tar")); err == nil {
-		t.Fatal("missing file should error")
-	}
-}
-
-func TestApplyWhiteout(t *testing.T) {
-	entries := map[string]overlayStoreEntry{
-		"nix/store/pkg":          {},
-		"nix/store/pkg/bin/tool": {},
-		"nix/store/other":        {},
-	}
-	if !applyWhiteout("nix/store/.wh.pkg", entries) {
-		t.Fatal("expected whiteout to apply")
-	}
-	if _, ok := entries["nix/store/pkg"]; ok {
-		t.Fatal("whiteout target should be deleted")
-	}
-	if _, ok := entries["nix/store/pkg/bin/tool"]; ok {
-		t.Fatal("whiteout children should be deleted")
-	}
-	if _, ok := entries["nix/store/other"]; !ok {
-		t.Fatal("unrelated entries must survive")
-	}
-	if applyWhiteout("nix/store/regular-file", entries) {
-		t.Fatal("non-whiteout path should not apply")
-	}
-	// Opaque whiteout clears the whole directory subtree.
-	opaque := map[string]overlayStoreEntry{
-		"nix/store/dir":       {},
-		"nix/store/dir/child": {},
-		"nix/store/keep":      {},
-	}
-	if !applyWhiteout("nix/store/dir/.wh..wh..opq", opaque) {
-		t.Fatal("expected opaque whiteout to apply")
-	}
-	if len(opaque) != 1 {
-		t.Fatalf("opaque whiteout should leave only unrelated entries, got %#v", opaque)
-	}
-}
-
 func TestPlatformRegistryEnvCommand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fleet.DefaultConfig("acme", "fleet")
@@ -169,48 +86,6 @@ func TestPlatformRegistryEnvCommand(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"authMode"`) {
 		t.Fatalf("json output missing authMode:\n%s", stdout)
-	}
-}
-
-func TestRemediationWorkflowParamsCommand(t *testing.T) {
-	dir := t.TempDir()
-	configPath := writeFleetConfig(t, dir)
-
-	oldOpts := remediationWorkflowOpts
-	t.Cleanup(func() { remediationWorkflowOpts = oldOpts })
-
-	githubOutput := filepath.Join(dir, "github-output.txt")
-	stdout, err := runCLI(t,
-		"remediation", "workflow-params",
-		"--fleet-config", configPath,
-		"--github-output", githubOutput,
-	)
-	if err != nil {
-		t.Fatalf("remediation workflow-params failed: %v\n%s", err, stdout)
-	}
-	if !strings.Contains(stdout, "scanDepth") {
-		t.Fatalf("table output missing scanDepth:\n%s", stdout)
-	}
-	raw, err := os.ReadFile(githubOutput)
-	if err != nil {
-		t.Fatalf("read github output: %v", err)
-	}
-	for _, want := range []string{"scan_depth=", "max_findings=", "policy="} {
-		if !strings.Contains(string(raw), want) {
-			t.Fatalf("github output missing %q:\n%s", want, raw)
-		}
-	}
-
-	stdout, err = runCLI(t, "--format", "json", "remediation", "workflow-params", "--fleet-config", configPath)
-	if err != nil {
-		t.Fatalf("workflow-params json failed: %v\n%s", err, stdout)
-	}
-	if !strings.Contains(stdout, `"policyJson"`) {
-		t.Fatalf("json output missing policyJson:\n%s", stdout)
-	}
-
-	if _, err := runCLI(t, "remediation", "workflow-params", "--fleet-config", filepath.Join(dir, "absent.yaml")); err == nil {
-		t.Fatal("missing fleet config should error")
 	}
 }
 
@@ -283,16 +158,6 @@ func TestCatalogVexAllCommand(t *testing.T) {
 
 	if _, err := runCLI(t, "--catalog", fixtureCatalog(), "catalog", "vex-all", "--output-dir", ""); err == nil {
 		t.Fatal("empty --output-dir should error")
-	}
-}
-
-func TestBuildRemediationPlanDefaultPolicy(t *testing.T) {
-	plan, err := buildRemediationPlan(t.TempDir(), 5, false)
-	if err != nil {
-		t.Fatalf("empty vulnerability dir should produce an empty plan: %v", err)
-	}
-	if plan == nil || len(plan.Campaigns) != 0 {
-		t.Fatalf("expected empty plan, got %#v", plan)
 	}
 }
 

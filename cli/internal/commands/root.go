@@ -86,7 +86,6 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("catalog", NewCatalogCmd())
 	add("catalog", NewReleaseCmd())
 	add("catalog", NewMatrixCmd())
-	add("catalog", NewOverlayCmd())
 
 	// Browse published catalog contents.
 	add("browse", NewListCmd())
@@ -110,7 +109,6 @@ and manage hardened multi-architecture platform-owned base images.`,
 
 	// Operate security remediation, exceptions, and VEX flows.
 	add("secure", NewScanCmd())
-	add("secure", NewRemediationCmd())
 	add("secure", NewExceptionsCmd())
 	add("secure", NewVexCmd())
 

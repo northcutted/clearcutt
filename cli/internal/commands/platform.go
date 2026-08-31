@@ -980,14 +980,6 @@ func addPlatformDoctorWorkflowChecks(root string, add func(string, string, strin
 		"catalog workflow can read package evidence and deploy Pages with OIDC",
 		add,
 	)
-	checkFileContainsAll(
-		root,
-		".github/workflows/scheduled-scan.yml",
-		[]string{"contents: write", "pull-requests: write", "OPENROUTER_API_KEY", "remediation workflow-params", "clearcutt scan refresh-kev", "clearcutt scan", "--update-db", "remediation plan --out", "remediation report --allow-missing", "clearcutt remediation run", "--require-llm-key", "CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS", "REMEDIATION_LLM_MODE"},
-		"remediation.permissions",
-		"scheduled remediation can draft the single gated PR when explicitly enabled and can run deterministic-only without an LLM",
-		add,
-	)
 }
 
 func collectPlatformStatus(root, configPath string) PlatformStatus {
@@ -1006,11 +998,6 @@ func collectPlatformStatus(root, configPath string) PlatformStatus {
 			add("fleet.matrix.runtime-lines", "pass", "selected runtime lines are supported by the ClearCutt fleet config contract")
 		} else {
 			add("fleet.matrix", "fail", "matrix languages, tiers, and systems are required")
-		}
-		if cfg.Remediation.Mode == "approved-pr" {
-			add("remediation.mode", "pass", "approved automated remediation is configured as gated PR drafting")
-		} else {
-			add("remediation.mode", "fail", "remediation mode must be approved-pr")
 		}
 		checkRegistrySupportContract(cfg, add)
 		checkFileContains(root, "core/lib/platform-metadata.nix", cfg.RepoURL(), "fleet.metadata", "Nix image labels use the fork-local GitHub source URL", add)
@@ -1058,18 +1045,6 @@ func collectPlatformStatus(root, configPath string) PlatformStatus {
 	checkFileNotContains(root, ".github/workflows/publish-pages.yml", "if [[ \"${FORCE_REFRESH_ALL}\"", "catalog.no-force-branch-shell", "catalog workflow no longer branches around force-refresh in shell", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "clearcutt platform registry-env", "catalog.registry", "catalog workflow resolves registry login host from the fleet config", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "./.github/actions/install-clearcutt", "catalog.cli-install", "catalog workflow installs the configured ClearCutt CLI", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "clearcutt scan", "scheduled-scan.workflow", "scheduled scan delegates vulnerability scanning to the CLI", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "--update-db", "scheduled-scan.update-db", "scheduled scan asks the CLI to refresh the Grype database", add)
-	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "core/scripts/scheduled-scan.sh", "scheduled-scan.no-wrapper", "scheduled scan no longer delegates orchestration to the shell wrapper", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "clearcutt scan refresh-kev", "scheduled-scan.kev-refresh", "scheduled scan delegates CISA KEV refresh to the CLI", add)
-	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "curl -fsSL \"https://www.cisa.gov", "scheduled-scan.no-kev-curl", "scheduled scan no longer owns KEV refresh with inline curl", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "remediation workflow-params", "scheduled-scan.params", "scheduled scan delegates fleet remediation parameter output to the CLI", add)
-	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "jq -r '.remediation.", "scheduled-scan.no-param-jq", "scheduled scan no longer parses fleet remediation settings with inline jq", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "remediation plan --out", "scheduled-scan.plan", "scheduled scan delegates remediation planning defaults to the CLI", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "remediation report --allow-missing", "scheduled-scan.report", "scheduled scan lets the CLI skip missing remediation plans in always-run report steps", add)
-	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "--require-llm-key", "scheduled-scan.llm-key", "scheduled draft run delegates LLM key gating to remediation run", add)
-	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "INCLUDE_ARGS=()", "scheduled-scan.no-include-shell", "scheduled scan no longer assembles include-dev flags in shell", add)
-	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "RUN_LIMIT=", "scheduled-scan.no-run-limit-shell", "scheduled draft run no longer computes campaign limits in shell", add)
 	checkPath(root, ".github/actions/certify-app/action.yml", "certify.action", "composite certify action is available for app teams", add)
 	for _, runtime := range []string{"java", "node", "python", "go"} {
 		checkPath(root, filepath.Join("examples", "clearcutt-template-"+runtime, "Dockerfile"), "template."+runtime, "app template exists for "+runtime, add)
@@ -1174,13 +1149,6 @@ func addGithubDoctorChecks(cfg fleet.Config, repoOverride string, add func(strin
 	} else {
 		add("github.workflowPermissions", "fail", fmt.Sprintf("workflow permissions are %q, expected write", workflowPerms.DefaultWorkflowPermissions))
 	}
-	if cfg.Remediation.Mode == "approved-pr" {
-		if workflowPerms.CanApprovePRReviews {
-			add("github.remediationPrs", "pass", "Actions can create and approve pull requests for approved remediation drafting")
-		} else {
-			add("github.remediationPrs", "warn", "approved remediation PR drafting may need repository settings that allow GitHub Actions pull request creation/approval")
-		}
-	}
 
 	var environment struct {
 		Name            string `json:"name"`
@@ -1235,15 +1203,6 @@ func addGithubActionsPolicyCheck(repoAPI, allowedActions string, add func(string
 }
 
 func checkGithubOptionalSecretReadiness(cfg fleet.Config, secrets []githubName, secretErr error, add func(string, string, string)) {
-	if cfg.Remediation.Mode == "approved-pr" {
-		if secretErr != nil {
-			add("github.remediationAiSecret", "warn", fmt.Sprintf("could not inspect optional OPENROUTER_API_KEY secret for LLM fallback remediation drafting: %v", secretErr))
-		} else if githubNameListContains(secrets, "OPENROUTER_API_KEY") {
-			add("github.remediationAiSecret", "pass", "OPENROUTER_API_KEY is configured for optional LLM fallback remediation dispatches")
-		} else {
-			add("github.remediationAiSecret", "warn", "OPENROUTER_API_KEY is not configured; deterministic scheduled drafting does not need it, but optional manual or LLM fallback dispatches will fail until added")
-		}
-	}
 
 	cache := cfg.Release.NixCache
 	if cache.Bucket == "" && cache.PublicBaseURL == "" && cache.SigningKeyName == "" {
@@ -1549,10 +1508,6 @@ backend authoring path.
 - SLSA Build L3 provenance is produced by %[6]s.
 - Release identity is pinned to %[7]s.
 - Rebase identity is pinned to %[8]s.
-- Remediation mode is %[9]s: the CLI drafts bounded PRs for review, not silent production mutation; the retained backend may assist only when LLM fallback is enabled.
-- Direct deterministic remediation recipes and source/patch URL plus hash
-  evidence run through the Go CLI with LLM escalation off. Recipes that still
-  need hash iteration or build probing can fall back to the retained drafting
-  backend.
-`, fleet.DefaultConfigPath, cfg.RegistryBase(), cfg.Catalog.ReleaseLimit, cfg.Catalog.ScanDepth, "examples/clearcutt-template-*", cfg.Release.SLSABuilder, cfg.Release.WorkflowIdentity, cfg.Rebase.WorkflowIdentity, cfg.Remediation.Mode)
+- Vulnerability findings are gated by remediation.policy in %[1]s; ClearCutt reports and gates, it does not mutate published images.
+`, fleet.DefaultConfigPath, cfg.RegistryBase(), cfg.Catalog.ReleaseLimit, cfg.Catalog.ScanDepth, "examples/clearcutt-template-*", cfg.Release.SLSABuilder, cfg.Release.WorkflowIdentity, cfg.Rebase.WorkflowIdentity)
 }
