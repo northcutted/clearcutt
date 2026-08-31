@@ -35,7 +35,7 @@ func TestLifecycleForClassification(t *testing.T) {
 
 		// Preview lines stay preview, never production.
 		{"java25", "slim", "active", "lts", true},
-		{"node24", "distroless", "preview", "preview", false},
+		{"node24", "distroless", "active", "lts", true},
 
 		// go1.26 is now LTS, but go is omitInProduction (toolchain not shipped in
 		// production tiers), so it is active/lts yet never productionAllowed.
@@ -69,10 +69,10 @@ func TestResolve(t *testing.T) {
 	}{
 		{"java", "lts", false, "21,25"}, // both java LTS releases
 		{"java", "lts", true, "21,25"},  // java has no preview line to union
-		{"node", "lts", false, "22"},
-		{"node", "lts", true, "22,24"},   // preview unions node24
-		{"node", "preview", false, "24"}, // preview as base channel
-		{"node", "current", false, "26"},
+		{"node", "lts", false, "22,24"},
+		{"node", "lts", true, "22,24,26"}, // preview unions node26   // preview unions node24
+		{"node", "preview", false, "26"},  // preview as base channel
+
 		{"python", "lts", false, "3.14"}, // 3.14 is the LTS line
 		{"python", "current", false, "3.13"},
 		{"python", "current", true, "3.13"}, // python has no preview bucket
@@ -104,7 +104,8 @@ func TestChannelFor(t *testing.T) {
 	cases := map[string]Channel{
 		"java21":     ChannelLTS,
 		"java25":     ChannelLTS,
-		"node26":     ChannelCurrent,
+		"node26":     ChannelPreview,
+		"node24":     ChannelLTS,
 		"python3.14": ChannelLTS,
 		"python3.13": ChannelCurrent,
 		"go1.26":     ChannelLTS,

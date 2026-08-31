@@ -35,7 +35,7 @@ func TestCompileMatrixCells(t *testing.T) {
 		{"python3.14-slim", "python", "3.14", "active", "lts", true},    // reclassified to LTS
 		{"python3.14-dev", "python", "3.14", "active", "lts", false},    // dev never production
 		{"go1.27-distroless", "go", "1.27", "active", "current", false}, // omitInProduction
-		{"node26-distroless", "node", "26", "active", "current", true},
+		{"node24-distroless", "node", "24", "active", "lts", true},
 		{"java25-slim", "java", "25", "active", "lts", true},
 	}
 	for _, w := range want {

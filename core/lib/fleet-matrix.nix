@@ -13,9 +13,9 @@
     { line = "java25"; language = "java"; version = "25"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
     { line = "java25"; language = "java"; version = "25"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
     { line = "java25"; language = "java"; version = "25"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "node26"; language = "node"; version = "26"; tier = "dev"; lifecycle = { status = "active"; support = "current"; productionAllowed = false; }; }
-    { line = "node26"; language = "node"; version = "26"; tier = "slim"; lifecycle = { status = "active"; support = "current"; productionAllowed = true; }; }
-    { line = "node26"; language = "node"; version = "26"; tier = "distroless"; lifecycle = { status = "active"; support = "current"; productionAllowed = true; }; }
+    { line = "node24"; language = "node"; version = "24"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
+    { line = "node24"; language = "node"; version = "24"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
+    { line = "node24"; language = "node"; version = "24"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
     { line = "python3.14"; language = "python"; version = "3.14"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
     { line = "python3.14"; language = "python"; version = "3.14"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
     { line = "python3.14"; language = "python"; version = "3.14"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
@@ -26,7 +26,7 @@
 
   closurePurityTargets = [
     "java25-distroless"
-    "node26-distroless"
+    "node24-distroless"
     "python3.14-distroless"
   ];
 }

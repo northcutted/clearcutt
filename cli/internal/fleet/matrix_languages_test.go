@@ -96,8 +96,9 @@ func TestMatrixLanguagesPersistentPreview(t *testing.T) {
 	}
 	lines := append([]string{}, cfg.Matrix.Languages...)
 	sort.Strings(lines)
-	if got := strings.Join(lines, ","); got != "node22,node24" {
-		t.Fatalf("persistent preview resolved = %q, want node22,node24", got)
+	// preview: true unions node's preview line (node26) onto its LTS lines.
+	if got := strings.Join(lines, ","); got != "node22,node24,node26" {
+		t.Fatalf("persistent preview resolved = %q, want node22,node24,node26", got)
 	}
 }
 
@@ -194,10 +195,10 @@ func TestMatrixLanguagesNewFormReproducesLegacySet(t *testing.T) {
 	got := append([]string{}, cfg.Matrix.Languages...)
 	sort.Strings(got)
 	// channel:lts resolves every line the policy marks lts — both java LTS
-	// releases, node22, python3.14 and go1.26. It is deliberately NOT compared
-	// against DefaultConfig: the reference fleet selects the newest lines
-	// (node26, go1.27), which are "current", not "lts".
-	want := []string{"go1.26", "java21", "java25", "node22", "python3.14"}
+	// releases, both node LTS releases, python3.14 and go1.26. It is deliberately
+	// NOT compared against DefaultConfig: the reference fleet also runs go1.27,
+	// which is "current", not "lts".
+	want := []string{"go1.26", "java21", "java25", "node22", "node24", "python3.14"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("new-form resolved set\n  got:  %v\n  want: %v", got, want)
 	}

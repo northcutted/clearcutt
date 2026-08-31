@@ -403,7 +403,7 @@ func DefaultConfig(owner, repo string) Config {
 			// to operate.
 			Languages: []string{
 				"java25",
-				"node26",
+				"node24",
 				"python3.14",
 				"go1.27",
 			},

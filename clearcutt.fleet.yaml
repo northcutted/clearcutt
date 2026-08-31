@@ -27,7 +27,7 @@ matrix:
     # production image fleet. ClearCutt's product is governing image estates, not
     # publishing them.
     - java25
-    - node26
+    - node24
     - python3.14
     - go1.27
   tiers:

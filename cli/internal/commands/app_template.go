@@ -135,8 +135,8 @@ public final class App {
 }
 `
 	case "node":
-		spec.RuntimeLine = "node26"
-		spec.BaseID = "node26-distroless"
+		spec.RuntimeLine = "node24"
+		spec.BaseID = "node24-distroless"
 		spec.Entrypoint = `["node","/workspace/server.js"]`
 		spec.Files["package.json"] = fmt.Sprintf(`{"name":"%s","version":"1.0.0","private":true,"type":"module","scripts":{"test":"node --check src/server.js","build":"mkdir -p dist && cp src/server.js dist/server.js"}}
 `, appName)
