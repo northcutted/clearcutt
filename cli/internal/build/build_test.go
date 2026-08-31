@@ -437,6 +437,46 @@ acceptances:
 `
 }
 
+// TestVulnGateDistinguishesGrypeFailureFromBlockingFindings reproduces the CI
+// failure in run 33450116162: grype could not download its vulnerability
+// database, exited non-zero, and wrote nothing. Because any non-zero exit was
+// read as "blocked", the build then tried to parse the empty file and reported
+//
+//	reading grype findings from ...: unexpected end of JSON input
+//
+// which names neither grype nor the real cause. The build must still fail — an
+// unusable scan is never a pass — but it must say what actually happened.
+func TestVulnGateDistinguishesGrypeFailureFromBlockingFindings(t *testing.T) {
+	layer := layerTar(t, map[string]int64{"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644})
+	core := t.TempDir()
+	writeAcceptances(t, core, acceptanceDoc("2099-01-01"))
+
+	// grypeOutput "" would fall back to the fake's valid empty report, so write
+	// a deliberately truncated one: the shape a killed grype leaves behind.
+	r := &fakeRunner{
+		archive:     gzippedDockerArchive(t, layer),
+		grypeErr:    errors.New("1 error occurred: failed to load vulnerability db: database does not exist"),
+		grypeOutput: " ",
+	}
+	var log bytes.Buffer
+	_, err := CertifyTarget(r, Options{
+		Target: "python3.14-slim", System: "x86_64-linux", Kind: "runtime",
+		CoreDir: core, OutputDir: t.TempDir(),
+	}, time.Unix(0, 0), &log)
+	if err == nil {
+		t.Fatalf("an unusable grype report must fail the build, not pass it\n%s", log.String())
+	}
+	if !strings.Contains(err.Error(), "failed to run rather than blocking on findings") {
+		t.Fatalf("error should say grype failed to run, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "database does not exist") {
+		t.Fatalf("error should carry grype's own failure, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("the JSON parse error should no longer be the reported cause, got: %v", err)
+	}
+}
+
 // TestVulnGateClearsBlockingFindingsWithAnUnexpiredAcceptance is the behaviour
 // change: Grype still exits non-zero, the findings still appear in the scan
 // output, but the gate does not fail because each one is attributed.

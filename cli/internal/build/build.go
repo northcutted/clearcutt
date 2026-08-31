@@ -95,6 +95,33 @@ func parseTarget(target, kind string) (lang, tier string) {
 	return lang, tier
 }
 
+// grypeReportUsable reports whether the scan output is a report Grype actually
+// produced. Grype exits non-zero both when --fail-on matches and when it never
+// gets to scan at all — in CI the usual cause is a vulnerability-database
+// download failure — and those mean opposite things: a real gate decision
+// versus no scan having happened. Without this check the two are conflated, and
+// a failed download surfaces several frames later as
+// "reading grype findings from ...: unexpected end of JSON input", which names
+// neither grype nor the network. The report is the discriminator: a run that
+// died before scanning leaves the captured stdout empty or truncated.
+//
+// This changes no gate semantics. Both paths fail the build; only the reported
+// cause differs, and an unusable report can never be read as a pass.
+func grypeReportUsable(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("scan output unreadable: %w", err)
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return fmt.Errorf("scan output is empty")
+	}
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return fmt.Errorf("scan output is not valid JSON: %w", err)
+	}
+	return nil
+}
+
 // clearedByAcceptances reports whether every finding Grype blocked on is covered
 // by an unexpired, attributed acceptance. It logs each verdict so the build log
 // shows exactly what was accepted, by whom, and until when — an acceptance that
@@ -298,6 +325,11 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 	// the findings stay in the scan output and in the predicate, and an expired
 	// acceptance blocks exactly as hard as an unaccepted finding.
 	if grypeBlocked {
+		if usableErr := grypeReportUsable(scanPath); usableErr != nil {
+			return Result{}, fmt.Errorf(
+				"grype exited non-zero without producing a usable report at %s (%v): it failed to run rather than blocking on findings; grype error: %w",
+				scanPath, usableErr, grypeErr)
+		}
 		cleared, accErr := clearedByAcceptances(w, opts, scanPath)
 		if accErr != nil {
 			return Result{}, accErr
