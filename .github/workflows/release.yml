@@ -39,13 +39,13 @@ jobs:
           exit 1
 
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
       - name: Calculate Next Version
         id: versioning
-        uses: paulhatch/semantic-version@8da30f99b5b2e7a26ced60b1dad2e41756d6edf4 # v6.0.2
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: "v"
           major_pattern: "BREAKING CHANGE"
@@ -80,7 +80,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -116,7 +116,7 @@ jobs:
       image_matrix: ${{ steps.matrix.outputs.image_matrix }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -144,7 +144,7 @@ jobs:
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -253,7 +253,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -299,7 +299,7 @@ jobs:
       matrix: ${{ fromJSON(needs.fleet-matrix.outputs.image_matrix) }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -364,14 +364,14 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
           push-to-registry: true
 
       - name: Attest amd64 SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -379,7 +379,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ steps.resolve-digest.outputs.image }}
           subject-digest: ${{ steps.resolve-digest.outputs.digest }}
@@ -402,7 +402,7 @@ jobs:
       fleet_matrix: ${{ steps.compile.outputs.fleet_matrix }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -461,7 +461,7 @@ jobs:
         target: ${{ fromJSON(needs.aggregate-digests.outputs.matrix) }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
@@ -525,7 +525,7 @@ jobs:
         target: ${{ fromJSON(needs.aggregate-digests.outputs.fleet_matrix) }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 
@@ -583,7 +583,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: v${{ needs.check-version.outputs.version }}
 

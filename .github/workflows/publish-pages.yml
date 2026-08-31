@@ -39,7 +39,7 @@ jobs:
       release-limit: ${{ steps.params.outputs.limit }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Full history so `git describe --tags` resolves the release tag the
           # generator version is stamped from.
@@ -144,7 +144,7 @@ jobs:
     needs: gather
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           # Full history so `git describe --tags` resolves the release tag the
           # generator version is stamped from.
@@ -179,7 +179,7 @@ jobs:
         run: ./clearcutt catalog site build --catalog site/src/data/catalog --template site --output site/dist --install --clean --base-path "/${REPO_NAME}" --site-url "https://${REPOSITORY_OWNER}.github.io" --generate-vex
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site/dist
 
