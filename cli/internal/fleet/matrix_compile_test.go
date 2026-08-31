@@ -59,7 +59,7 @@ func TestCompileMatrixCells(t *testing.T) {
 // production, so there is nothing to gate.
 func TestCompileMatrixOmitsToolchainGateTargets(t *testing.T) {
 	m := compiledForTest(t)
-	all := append(append([]string{}, m.RuntimePatchTargets...), m.ClosurePurityTargets...)
+	all := append([]string{}, m.ClosurePurityTargets...)
 	for _, target := range all {
 		for _, omit := range []string{"go1.25", "go1.26"} {
 			if hasPrefixLine(target, omit) {

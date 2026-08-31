@@ -98,7 +98,6 @@
       let
         buildPkgs = importBuildNixpkgs system;
         runtimePkgs = importRuntimeNixpkgs system;
-        cryptoRuntimePkgs = importRuntimeNixpkgs system;
         slsaVerifier =
           let
             binary = slsaVerifierBinaries.${system}
@@ -134,8 +133,7 @@
         # otherwise each re-instantiate it against the same pkgs.
         registry = import ./lib/registry.nix {
           pkgs = runtimePkgs;
-          cryptoPkgs = cryptoRuntimePkgs;
-          nodeCryptoPkgs = importNodePinNixpkgs system;
+          nodePinPkgs = importNodePinNixpkgs system;
         };
 
         # Import our custom image compiler
@@ -321,11 +319,7 @@
         mkHardenedShell = { system, language, version, ... }@args:
           let
             runtimePkgs = importRuntimeNixpkgs system;
-            cryptoPkgs = importRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix {
-              pkgs = runtimePkgs;
-              inherit cryptoPkgs;
-            };
+            registry = import ./lib/registry.nix { pkgs = runtimePkgs; };
             helpers = import ./lib/nix-native.nix { inherit self registry; pkgs = runtimePkgs; };
           in
           helpers.mkHardenedShell (runtimePkgs.lib.filterAttrs (n: v: n != "system") args);
@@ -344,11 +338,7 @@
           let
             buildPkgs = importBuildNixpkgs system;
             runtimePkgs = importRuntimeNixpkgs system;
-            cryptoPkgs = importRuntimeNixpkgs system;
-            registry = import ./lib/registry.nix {
-              inherit cryptoPkgs;
-              pkgs = runtimePkgs;
-            };
+            registry = import ./lib/registry.nix { pkgs = runtimePkgs; };
             compiler = import ./lib/build-fleet.nix { pkgs = buildPkgs; inherit runtimePkgs registry; };
             platformMetadata = import ./lib/platform-metadata.nix;
             imagePrefix = platformMetadata.imagePrefix or "clearcutt";

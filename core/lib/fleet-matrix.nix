@@ -29,13 +29,4 @@
     "node22-distroless"
     "python3.14-distroless"
   ];
-
-  runtimePatchTargets = [
-    "java21-slim"
-    "java21-distroless"
-    "node22-slim"
-    "node22-distroless"
-    "python3.14-slim"
-    "python3.14-distroless"
-  ];
 }

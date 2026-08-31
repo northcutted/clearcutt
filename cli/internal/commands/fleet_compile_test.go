@@ -43,7 +43,6 @@ func TestFleetCompileWritesGeneratedMatrix(t *testing.T) {
 		`{ line = "python3.14"; language = "python"; version = "3.14"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }`,
 		`{ line = "go1.26"; language = "go"; version = "1.26"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }`,
 		"closurePurityTargets = [",
-		"runtimePatchTargets = [",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("generated matrix missing %q", want)

@@ -26,7 +26,6 @@ type CompiledMatrix struct {
 	Tiers                []string
 	Cells                []CompiledCell
 	ClosurePurityTargets []string
-	RuntimePatchTargets  []string
 }
 
 // CompileMatrix resolves matrix.languages × matrix.tiers into concrete image
@@ -64,14 +63,13 @@ func (c Config) CompileMatrix(includePreview bool) (CompiledMatrix, error) {
 		}
 	}
 
-	closurePurity, runtimePatch := deriveGateTargets(lines, c.Matrix.Tiers)
+	closurePurity := deriveGateTargets(lines, c.Matrix.Tiers)
 
 	return CompiledMatrix{
 		Systems:              append([]string(nil), c.Matrix.Systems...),
 		Tiers:                append([]string(nil), c.Matrix.Tiers...),
 		Cells:                cells,
 		ClosurePurityTargets: closurePurity,
-		RuntimePatchTargets:  runtimePatch,
 	}, nil
 }
 
@@ -79,22 +77,21 @@ func (c Config) CompileMatrix(includePreview bool) (CompiledMatrix, error) {
 // line order. closurePurity covers production distroless images (no shells /
 // package managers / setuid); runtimePatch covers every production tier (slim +
 // distroless) that ships an openssl/sqlite-linked runtime.
-func deriveGateTargets(lines, tiers []string) (closurePurity, runtimePatch []string) {
-	hasSlim := containsTier(tiers, "slim")
-	hasDistroless := containsTier(tiers, "distroless")
+// deriveGateTargets returns the realized-closure gate targets: every production
+// distroless image. The slim tier was also gated when runtime-patch completeness
+// existed; that gate retired with runtime-scoped CVE patching, and closure-purity
+// only applies to distroless (the slim tier ships a shell by contract).
+func deriveGateTargets(lines, tiers []string) (closurePurity []string) {
+	if !containsTier(tiers, "distroless") {
+		return nil
+	}
 	for _, line := range lines {
 		if !versionpolicy.ShipsProductionRuntime(line) {
 			continue
 		}
-		if hasSlim {
-			runtimePatch = append(runtimePatch, line+"-slim")
-		}
-		if hasDistroless {
-			runtimePatch = append(runtimePatch, line+"-distroless")
-			closurePurity = append(closurePurity, line+"-distroless")
-		}
+		closurePurity = append(closurePurity, line+"-distroless")
 	}
-	return closurePurity, runtimePatch
+	return closurePurity
 }
 
 func containsTier(tiers []string, want string) bool {
@@ -133,12 +130,6 @@ func RenderMatrixNix(m CompiledMatrix) string {
 
 	b.WriteString("  closurePurityTargets = [\n")
 	for _, target := range m.ClosurePurityTargets {
-		fmt.Fprintf(&b, "    %q\n", target)
-	}
-	b.WriteString("  ];\n\n")
-
-	b.WriteString("  runtimePatchTargets = [\n")
-	for _, target := range m.RuntimePatchTargets {
 		fmt.Fprintf(&b, "    %q\n", target)
 	}
 	b.WriteString("  ];\n")
