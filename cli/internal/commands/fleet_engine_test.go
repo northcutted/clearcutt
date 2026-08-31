@@ -141,20 +141,3 @@ func TestFleetPublishTargetGoEnginePublishesAndStagesEvidence(t *testing.T) {
 		t.Fatalf("expected pushed digest in publish message, got:\n%s", stdout)
 	}
 }
-
-func TestFleetTargetRejectsUnknownBuildEngine(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := writeFleetTestConfig(t, dir, fleet.DefaultConfig("acme", "fleet"))
-	_, err := runCLI(t,
-		"fleet", "certify-target",
-		"--engine", "legacy",
-		"--fleet-config", cfgPath,
-		"--core-dir", filepath.Join(dir, "core"),
-		"--system", "x86_64-linux",
-		"--language", "coreLTS",
-		"--tier", "slim",
-	)
-	if err == nil || !strings.Contains(err.Error(), "--engine must be go or shell") {
-		t.Fatalf("expected invalid engine error, got %v", err)
-	}
-}

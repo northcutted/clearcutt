@@ -195,10 +195,8 @@ jobs:
       - name: Publish Single-Arch Fleet Target
         env:
           GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
-          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
         run: |
           ./clearcutt fleet publish-target \
-            --engine "${CLEARCUTT_BUILD_ENGINE}" \
             --system "${{ matrix.system }}" \
             --language "${{ matrix.language }}" \
             --tier "${{ matrix.tier }}" \
@@ -306,10 +304,8 @@ jobs:
       - name: Publish Single-Arch Service Target
         env:
           GITHUB_REF_NAME: v${{ needs.check-version.outputs.version }}
-          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
         run: |
           ./clearcutt service publish "${{ matrix.service }}" \
-            --engine "${CLEARCUTT_BUILD_ENGINE}" \
             --system "${{ matrix.system }}" \
             --version-tag "v${{ needs.check-version.outputs.version }}" \
             --core-dir core

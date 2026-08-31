@@ -825,7 +825,6 @@ func buildPlatformReleasePlan(root, configPath string, cfg fleet.Config) Platfor
 		{Name: "CLEARCUTT_CLI_MODE=release", Required: true, Reason: "Fleet workflows should install the verified released CLI. Use local only for deliberate dogfooding."},
 		{Name: "CLEARCUTT_CLI_VERSION=" + defaultCLIVersion, Required: true, Reason: "Pin the ClearCutt CLI release that owns workflow orchestration."},
 		{Name: "CLEARCUTT_CLI_REPO=" + defaultCLIRepo, Required: false, Reason: "Set when the fleet consumes a forked CLI publisher instead of upstream ClearCutt."},
-		{Name: "CLEARCUTT_BUILD_ENGINE=go", Required: true, Reason: "Use the Go-owned build/publish engine by default; set to shell only as a temporary parity fallback."},
 		{Name: "CLEARCUTT_REGISTRY_USER", Required: registryEnv.Host != "ghcr.io", Reason: "Registry login username; GHCR can fall back to github.actor."},
 		{Name: "CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS", Required: false, Reason: "Set true only after accepting deterministic scheduled PR drafting."},
 	}
@@ -983,26 +982,10 @@ func addPlatformDoctorWorkflowChecks(root string, add func(string, string, strin
 	)
 	checkFileContainsAll(
 		root,
-		".github/workflows/rebase.yml",
-		[]string{"packages: write", "id-token: write", "environment: production"},
-		"rebase.permissions",
-		"rebase workflow can publish, sign, attest, and run behind the production gate",
-		add,
-	)
-	checkFileContainsAll(
-		root,
 		".github/workflows/scheduled-scan.yml",
 		[]string{"contents: write", "pull-requests: write", "OPENROUTER_API_KEY", "remediation workflow-params", "clearcutt scan refresh-kev", "clearcutt scan", "--update-db", "remediation plan --out", "remediation report --allow-missing", "clearcutt remediation run", "--require-llm-key", "CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS", "REMEDIATION_LLM_MODE"},
 		"remediation.permissions",
 		"scheduled remediation can draft the single gated PR when explicitly enabled and can run deterministic-only without an LLM",
-		add,
-	)
-	checkFileContainsAll(
-		root,
-		".github/workflows/cve-patch-agent.yml",
-		[]string{"contents: write", "pull-requests: write", "OPENROUTER_API_KEY", "clearcutt remediation run"},
-		"manual-remediation.permissions",
-		"manual remediation dispatch runs through the CLI and can open a gated draft PR",
 		add,
 	)
 }
@@ -1041,8 +1024,6 @@ func collectPlatformStatus(root, configPath string) PlatformStatus {
 	checkFileNotContains(root, ".github/workflows/release.yml", "matrix export --source fleet", "release.no-inline-matrix-jq", "release workflow no longer shapes matrix outputs with inline jq", add)
 	checkFileContains(root, ".github/workflows/release.yml", "clearcutt platform setup-nix", "release.nix", "release workflow delegates fork-specific Nix setup to the CLI", add)
 	checkFileContains(root, ".github/workflows/release.yml", "clearcutt fleet publish-target", "release.publish", "release workflow delegates single-arch fleet publication to the CLI", add)
-	checkFileContains(root, ".github/workflows/release.yml", "CLEARCUTT_BUILD_ENGINE", "release.engine.variable", "release workflow exposes the Go-owned build/publish engine default with a shell fallback variable", add)
-	checkFileContains(root, ".github/workflows/release.yml", `--engine "${CLEARCUTT_BUILD_ENGINE}"`, "release.engine.flag", "release workflow passes the configured build engine into CLI publish commands", add)
 	checkFileContains(root, ".github/workflows/release.yml", "clearcutt fleet assemble-target", "release.assemble", "release workflow delegates multi-arch assembly, signing, and OCI attestations to the CLI", add)
 	checkFileContains(root, ".github/workflows/release.yml", "fleet build-cli-assets", "release.cli-assets", "release workflow delegates CLI binary matrix, signing, and checksums to the CLI", add)
 	checkFileNotContains(root, ".github/workflows/release.yml", "platforms=(", "release.no-inline-cli-matrix", "release workflow no longer owns the CLI binary platform matrix in inline shell", add)
@@ -1059,17 +1040,11 @@ func collectPlatformStatus(root, configPath string) PlatformStatus {
 	checkFileContains(root, ".github/actions/setup-nix/action.yml", "clearcutt platform setup-nix applies fork-specific fleet cache config", "nix.install", "Nix installer action is generic and leaves fork-specific setup to the CLI", add)
 	checkFileNotContains(root, "core/flake.nix", "nix-cache.clearcutt.dev", "nix.flake", "core flake does not hardcode the upstream Nix cache", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt fleet certify-target", "pr.certify", "PR gate delegates fleet target certification to the CLI", add)
-	checkFileContains(root, ".github/workflows/pr-gate.yml", "CLEARCUTT_BUILD_ENGINE", "pr.engine.variable", "PR gate exposes the same configurable Go-owned build engine default as release", add)
-	checkFileContains(root, ".github/workflows/pr-gate.yml", `--engine "${CLEARCUTT_BUILD_ENGINE}"`, "pr.engine.flag", "PR gate passes the configured build engine into CLI certify/build commands", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt platform setup-nix", "pr.nix", "PR gate delegates fork-specific Nix setup to the CLI", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt fleet workflow-matrices", "pr.matrix", "PR gate derives its matrices from clearcutt.fleet.yaml through the CLI", add)
 	checkFileNotContains(root, ".github/workflows/pr-gate.yml", "matrix export --source fleet", "pr.no-inline-matrix-jq", "PR gate no longer shapes matrix outputs with inline jq", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "./.github/actions/install-clearcutt", "pr.cli-install", "PR fleet and integration jobs install the configured ClearCutt CLI", add)
 	checkFileContains(root, ".github/workflows/pr-gate.yml", "clearcutt verify boundary-suite", "pr.boundary-suite", "PR gate delegates representative image-security boundary gates to the CLI", add)
-	checkFileNotContains(root, ".github/workflows/pr-gate.yml", "./tests/verify.sh", "pr.no-verify-sh", "PR gate no longer invokes the legacy shell verification suite directly", add)
-	checkFileContains(root, ".github/workflows/rebase.yml", "app rebase", "rebase.workflow", "rebase workflow exists for the configured platform OIDC identity", add)
-	checkFileContains(root, ".github/workflows/rebase.yml", "clearcutt platform registry-env", "rebase.registry", "rebase workflow defaults registry login host from the fleet config", add)
-	checkFileContains(root, ".github/workflows/rebase.yml", "./.github/actions/install-clearcutt", "rebase.cli-install", "rebase workflow installs the configured ClearCutt CLI", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "clearcutt catalog build", "catalog.workflow", "catalog workflow uses the canonical catalog build command", add)
 	checkFileContains(root, ".github/workflows/publish-pages.yml", "clearcutt catalog workflow-params", "catalog.workflow-params", "catalog workflow derives release limit and scan depth through the CLI", add)
 	checkFileNotContains(root, ".github/workflows/publish-pages.yml", "matrix export --source fleet", "catalog.no-inline-param-jq", "catalog workflow no longer parses fleet catalog settings with inline jq", add)
@@ -1095,8 +1070,6 @@ func collectPlatformStatus(root, configPath string) PlatformStatus {
 	checkFileContains(root, ".github/workflows/scheduled-scan.yml", "--require-llm-key", "scheduled-scan.llm-key", "scheduled draft run delegates LLM key gating to remediation run", add)
 	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "INCLUDE_ARGS=()", "scheduled-scan.no-include-shell", "scheduled scan no longer assembles include-dev flags in shell", add)
 	checkFileNotContains(root, ".github/workflows/scheduled-scan.yml", "RUN_LIMIT=", "scheduled-scan.no-run-limit-shell", "scheduled draft run no longer computes campaign limits in shell", add)
-	checkFileContains(root, ".github/workflows/cve-patch-agent.yml", "clearcutt remediation run", "manual-remediation.workflow", "manual remediation dispatch delegates patch orchestration to the CLI", add)
-	checkFileNotContains(root, ".github/workflows/cve-patch-agent.yml", "./scripts/cve-draft-agent.py", "manual-remediation.no-direct-python", "manual remediation workflow does not invoke the retained Python agent directly", add)
 	checkPath(root, ".github/actions/certify-app/action.yml", "certify.action", "composite certify action is available for app teams", add)
 	for _, runtime := range []string{"java", "node", "python", "go"} {
 		checkPath(root, filepath.Join("examples", "clearcutt-template-"+runtime, "Dockerfile"), "template."+runtime, "app template exists for "+runtime, add)
@@ -1420,14 +1393,18 @@ func checkReleaseIdentityContract(root string, cfg fleet.Config, add func(string
 	checkFileContains(root, ".github/workflows/release.yml", fmt.Sprintf("github.ref != '%s'", releaseRef), "release.sourceBranch.guard", "release workflow guard matches release.sourceBranch", add)
 	checkFileContains(root, ".github/workflows/release.yml", "@${{ github.ref }}", "release.identity.dynamic", "release verifier derives workflow identity from the actual GitHub ref", add)
 
-	rebasePath, rebaseRef, ok := workflowIdentityPathAndRef(cfg.Rebase.WorkflowIdentity)
-	if !ok || !strings.HasPrefix(cfg.Rebase.WorkflowIdentity, "https://github.com/"+cfg.RepoPath()+"/.github/workflows/") {
-		add("rebase.workflowIdentity", "fail", "rebase.workflowIdentity must be an exact workflow identity in this repo")
-	} else if rebaseRef != releaseRef {
-		add("rebase.workflowIdentity", "fail", fmt.Sprintf("rebase.workflowIdentity uses %s, expected %s", rebaseRef, releaseRef))
-	} else {
-		add("rebase.workflowIdentity", "pass", "rebase workflow identity matches fleet repo and source branch")
-		checkPath(root, rebasePath, "rebase.workflowIdentity.path", "configured rebase workflow file exists", add)
+	// A rebase workflow is optional: `clearcutt app rebase` runs from any CI or a
+	// developer machine, and a fleet that does not publish one has nothing to check.
+	if strings.TrimSpace(cfg.Rebase.WorkflowIdentity) != "" {
+		rebasePath, rebaseRef, ok := workflowIdentityPathAndRef(cfg.Rebase.WorkflowIdentity)
+		if !ok {
+			add("rebase.workflowIdentity", "fail", "rebase.workflowIdentity must be an exact workflow identity in this repo")
+		} else if rebaseRef != releaseRef {
+			add("rebase.workflowIdentity", "fail", fmt.Sprintf("rebase.workflowIdentity uses %s, expected %s", rebaseRef, releaseRef))
+		} else {
+			add("rebase.workflowIdentity", "pass", "rebase workflow identity matches fleet repo and source branch")
+			checkPath(root, rebasePath, "rebase.workflowIdentity.path", "configured rebase workflow file exists", add)
+		}
 	}
 }
 
@@ -1547,23 +1524,20 @@ backend authoring path.
    with .github/actions/install-clearcutt. Set CLEARCUTT_CLI_VERSION to pin a
    newer release, CLEARCUTT_CLI_REPO for a forked CLI publisher, or
    CLEARCUTT_CLI_MODE=local only when intentionally dogfooding local source.
-4. Keep CLEARCUTT_BUILD_ENGINE=go for release, PR-gate, and cache-seeding
-   workflows; set it to shell only as a temporary fallback while investigating
-   Go-engine parity.
-5. Keep the weekly remediation scan in plan/report mode by default. Set
+4. Keep the weekly remediation scan in plan/report mode by default. Set
    CLEARCUTT_SCHEDULED_REMEDIATION_DRAFTS=true only when deterministic,
    evidence-backed fixes should draft the single rolling remediation PR on
    schedule; scheduled drafting runs with LLM escalation off and still requires
    PR review before merge.
-6. Run clearcutt platform registry-env to confirm the registry host and login
+5. Run clearcutt platform registry-env to confirm the registry host and login
    username resolve from %[1]s and the runner environment.
-7. Run clearcutt platform status before the first release.
-8. Run clearcutt platform release-plan to print the generated first-release
+6. Run clearcutt platform status before the first release.
+7. Run clearcutt platform release-plan to print the generated first-release
    runbook, including registry support tier, required GitHub variables/secrets,
    local checks, release steps, verification commands, and the boundary between
    CLI-owned orchestration, GitHub Actions/SLSA, Nix, Sigstore tooling, and
    remediation PR drafting.
-9. Run clearcutt platform doctor --github after pushing the repo to verify GitHub Actions, workflow token permissions, the production environment, Pages, default branch, registry credential readiness, local workflow permissions, and optional remediation/cache prerequisites.
+8. Run clearcutt platform doctor --github after pushing the repo to verify GitHub Actions, workflow token permissions, the production environment, Pages, default branch, registry credential readiness, local workflow permissions, and optional remediation/cache prerequisites.
 10. Run clearcutt platform setup-nix only on machines or runners that will build the fleet. It reads %[1]s, writes optional nix.conf/GitHub NIX_CONFIG state, and warms or runs the core dev shell.
 11. Run the release workflow to publish the configured fleet to %[2]s. The workflow is a GitHub identity runner; clearcutt platform setup-nix owns fork-specific Nix client setup, and clearcutt fleet certify-target, publish-target, assemble-target, verify-target, export-provenance, and finalize-release own the reusable release mechanics.
 12. Let the catalog workflow run %[3]d-release ingestion with vulnerability scan depth %[4]s.

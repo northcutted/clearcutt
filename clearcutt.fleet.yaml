@@ -49,8 +49,6 @@ release:
     signingKeyName: clearcutt-cache-1
     publicKey: clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
     cloudflareZoneName: clearcutt.dev
-rebase:
-  workflowIdentity: https://github.com/northcutted/clearcutt/.github/workflows/rebase.yml@refs/heads/main
 catalog:
   releaseLimit: 10
   scanDepth: "4"

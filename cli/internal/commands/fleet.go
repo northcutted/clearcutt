@@ -37,7 +37,6 @@ type fleetFlags struct {
 	checkOnly           bool
 	allowPreview        bool
 	signCLIAssets       bool
-	engine              string
 }
 
 type externalCommand struct {
@@ -77,7 +76,6 @@ GitHub Release finalization.`,
 		},
 	}
 	addFleetTargetFlags(certifyTargetCmd)
-	certifyTargetCmd.Flags().StringVar(&fleetOpts.engine, "engine", "go", "Build engine: 'go' (native in-process gates) or 'shell' (legacy pipeline.sh fallback)")
 
 	publishTargetCmd := &cobra.Command{
 		Use:   "publish-target",
@@ -88,7 +86,6 @@ GitHub Release finalization.`,
 		},
 	}
 	addFleetTargetFlags(publishTargetCmd)
-	publishTargetCmd.Flags().StringVar(&fleetOpts.engine, "engine", "go", "Build engine: 'go' (native in-process gates plus go-containerregistry publish) or 'shell' (legacy pipeline.sh fallback)")
 	publishTargetCmd.Flags().StringVar(&fleetOpts.versionTag, "version-tag", "", "Release version tag, for example v1.2.3")
 
 	publishCacheCmd := &cobra.Command{
@@ -329,19 +326,6 @@ func runFleetPublishTarget() error {
 	return stageArchReleaseAssets(resolveBuildOutputsDir(fleetOpts.coreDir, fleetOpts.buildOutputsDir), target, archSuffixForSystem(fleetOpts.system))
 }
 
-func normalizeBuildEngine(engine string) (string, error) {
-	normalized := strings.ToLower(strings.TrimSpace(engine))
-	if normalized == "" {
-		normalized = "go"
-	}
-	switch normalized {
-	case "go", "shell":
-		return normalized, nil
-	default:
-		return "", fmt.Errorf("--engine must be go or shell")
-	}
-}
-
 func runFleetTarget(publish bool) error {
 	cfg, err := fleet.Load(fleetOpts.configPath)
 	if err != nil {
@@ -350,52 +334,13 @@ func runFleetTarget(publish bool) error {
 	target := fleetTarget(fleetOpts.language, fleetOpts.tier)
 	coreDir := fleetOpts.coreDir
 
-	engine, err := normalizeBuildEngine(fleetOpts.engine)
-	if err != nil {
-		return err
-	}
-	// Native-Go build engine: runs the build + in-process boundary gates instead
-	// of shelling into pipeline.sh. The publish path pushes the staging image
-	// through the in-process OCI client, so no shell script owns the target mechanics.
-	if engine == "go" {
-		if publish {
-			return runFleetPublishTargetGo(cfg, target, coreDir)
-		}
-		return runFleetCertifyTargetGo(target, coreDir)
-	}
-	args := []string{
-		"develop",
-		"--extra-experimental-features", "nix-command flakes",
-		"--accept-flake-config",
-	}
-	args = append(args, nixClientOptionArgs(cfg)...)
-	args = append(args,
-		"--command", "./pipeline/pipeline.sh",
-		"--system", fleetOpts.system,
-		"--registry", cfg.Registry.Host,
-		"--repo", strings.ToLower(cfg.RepoPath()),
-	)
+	// The build engine is native Go: nix build plus in-process boundary gates,
+	// with the publish path pushing through the in-process OCI client. No shell
+	// script owns target mechanics any more.
 	if publish {
-		args = append(args, "--publish")
-	} else {
-		args = append(args, "--skip-local-signing")
+		return runFleetPublishTargetGo(cfg, target, coreDir)
 	}
-	if strings.TrimSpace(fleetOpts.versionTag) != "" {
-		args = append(args, "--version-tag", fleetOpts.versionTag)
-	}
-	args = append(args, target)
-	if err := runExternalCommand(externalCommand{
-		Name: "nix",
-		Args: args,
-		Dir:  coreDir,
-		Env: []string{
-			"CLEARCUTT_IMAGE_PREFIX=" + cfg.Registry.ImagePrefix,
-			"GITHUB_REF_NAME=" + strings.TrimSpace(fleetOpts.versionTag),
-		},
-	}); err != nil {
-		return err
-	}
-	return nil
+	return runFleetCertifyTargetGo(target, coreDir)
 }
 
 var fleetBuildRunner = func() build.Runner {

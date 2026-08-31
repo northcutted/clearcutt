@@ -39,7 +39,6 @@ type serviceFlags struct {
 	system            string
 	versionTag        string
 	githubOutputPath  string
-	buildEngine       string
 	containerEngine   string
 	image             string
 	commandOnly       bool
@@ -216,7 +215,6 @@ func addServiceCommonFlags(cmd *cobra.Command) {
 func addServiceTargetFlags(cmd *cobra.Command) {
 	addServiceCommonFlags(cmd)
 	cmd.Flags().StringVar(&serviceOpts.buildOutputsDir, "build-outputs-dir", "build-outputs", "Optional path to core build outputs directory")
-	cmd.Flags().StringVar(&serviceOpts.buildEngine, "engine", "go", "Build engine: 'go' (native in-process gates; publish uses go-containerregistry) or 'shell' (legacy pipeline.sh fallback)")
 	cmd.Flags().StringVar(&serviceOpts.system, "system", "", "Nix system to build, for example x86_64-linux (required)")
 	_ = cmd.MarkFlagRequired("system")
 }
@@ -539,55 +537,11 @@ func runServiceTarget(id string, publish bool) error {
 	if !ok {
 		return fmt.Errorf("service %q is not configured", strings.TrimSpace(id))
 	}
-	engine, err := normalizeBuildEngine(serviceOpts.buildEngine)
-	if err != nil {
-		return err
-	}
-	if engine == "go" {
-		if publish {
-			return runServicePublishTargetGo(cfg, service)
-		}
-		return runServiceCertifyTargetGo(service)
-	}
-	args := []string{
-		"develop",
-		"--extra-experimental-features", "nix-command flakes",
-		"--accept-flake-config",
-	}
-	args = append(args, nixClientOptionArgs(cfg)...)
-	args = append(args,
-		"--command", "./pipeline/pipeline.sh",
-		"--kind", "service",
-		"--system", serviceOpts.system,
-		"--registry", cfg.Registry.Host,
-		"--repo", strings.ToLower(cfg.RepoPath()),
-	)
+	// The build engine is native Go; no shell script owns service target mechanics.
 	if publish {
-		args = append(args, "--publish")
-	} else {
-		args = append(args, "--skip-local-signing")
+		return runServicePublishTargetGo(cfg, service)
 	}
-	if strings.TrimSpace(serviceOpts.versionTag) != "" {
-		args = append(args, "--version-tag", serviceOpts.versionTag)
-	}
-	args = append(args, service.ID)
-	if err := runExternalCommand(externalCommand{
-		Name: "nix",
-		Args: args,
-		Dir:  serviceOpts.coreDir,
-		Env: []string{
-			"CLEARCUTT_IMAGE_PREFIX=" + cfg.Registry.ImagePrefix,
-			"CLEARCUTT_SERVICE_LIFECYCLE_STATUS=" + firstNonEmptyString(service.Lifecycle.Status, "preview"),
-			"CLEARCUTT_SERVICE_PRODUCTION_ALLOWED=" + strconv.FormatBool(service.ProductionAllowed),
-			"GITHUB_REF_NAME=" + strings.TrimSpace(serviceOpts.versionTag),
-		},
-	}); err != nil {
-		return err
-	}
-	if publish {
-		return stageArchReleaseAssets(resolveBuildOutputsDir(serviceOpts.coreDir, serviceOpts.buildOutputsDir), service.ID, archSuffixForSystem(serviceOpts.system))
-	}
-	return nil
+	return runServiceCertifyTargetGo(service)
 }
 
 func runServiceCertifyTargetGo(service fleet.ServiceImage) error {

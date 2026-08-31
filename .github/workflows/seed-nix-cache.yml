@@ -139,11 +139,8 @@ jobs:
         # Builds the image and runs the full security gate, so a seed build also
         # re-proves the runtime-patch completeness gate (no stock openssl/sqlite
         # ships) before the closure is published.
-        env:
-          CLEARCUTT_BUILD_ENGINE: ${{ vars.CLEARCUTT_BUILD_ENGINE || 'go' }}
         run: |
           ./clearcutt fleet certify-target \
-            --engine "${CLEARCUTT_BUILD_ENGINE}" \
             --system "${{ matrix.system }}" \
             --language "${{ matrix.language }}" \
             --tier "${{ matrix.tier }}" \

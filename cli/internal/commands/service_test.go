@@ -105,103 +105,6 @@ func flattenServiceCalls(calls []externalCommand) string {
 	return strings.Join(lines, "\n")
 }
 
-func TestServiceBuildUsesServicePipelineKind(t *testing.T) {
-	oldServiceOpts := serviceOpts
-	oldRun := runExternalCommand
-	defer func() {
-		serviceOpts = oldServiceOpts
-		runExternalCommand = oldRun
-	}()
-
-	root := t.TempDir()
-	configPath := writeFleetConfig(t, root)
-	coreDir := filepath.Join(root, "core")
-	if _, err := runCLI(t,
-		"service", "scaffold", "postgres16",
-		"--template", "postgres",
-		"--version", "16",
-		"--fleet-config", configPath,
-		"--core-dir", coreDir,
-	); err != nil {
-		t.Fatalf("service scaffold failed: %v", err)
-	}
-
-	var calls []externalCommand
-	runExternalCommand = func(c externalCommand) error {
-		calls = append(calls, c)
-		return nil
-	}
-
-	stdout, err := runCLI(t,
-		"service", "build", "postgres16",
-		"--engine", "shell",
-		"--system", "x86_64-linux",
-		"--fleet-config", configPath,
-		"--core-dir", coreDir,
-	)
-	if err != nil {
-		t.Fatalf("service build failed: %v\n%s", err, stdout)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("expected one external command, got %#v", calls)
-	}
-	call := calls[0]
-	if call.Name != "nix" || call.Dir != coreDir {
-		t.Fatalf("unexpected command: %#v", call)
-	}
-	joined := strings.Join(call.Args, " ")
-	for _, want := range []string{
-		"develop --extra-experimental-features nix-command flakes --accept-flake-config",
-		"--command ./pipeline/pipeline.sh",
-		"--kind service",
-		"--system x86_64-linux",
-		"postgres16",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("service build args missing %q in %q", want, joined)
-		}
-	}
-	joinedEnv := strings.Join(call.Env, "\n")
-	for _, want := range []string{
-		"CLEARCUTT_SERVICE_LIFECYCLE_STATUS=preview",
-		"CLEARCUTT_SERVICE_PRODUCTION_ALLOWED=false",
-	} {
-		if !strings.Contains(joinedEnv, want) {
-			t.Fatalf("service build env missing %q in %q", want, joinedEnv)
-		}
-	}
-
-	outputDir := filepath.Join(coreDir, "build-outputs")
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		t.Fatalf("create build outputs: %v", err)
-	}
-	for _, name := range []string{"postgres16.sbom.json", "postgres16.test-results.json"} {
-		if err := os.WriteFile(filepath.Join(outputDir, name), []byte("{}\n"), 0o644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
-	calls = nil
-	stdout, err = runCLI(t,
-		"service", "publish", "postgres16",
-		"--engine", "shell",
-		"--system", "x86_64-linux",
-		"--version-tag", "v1.2.3",
-		"--fleet-config", configPath,
-		"--core-dir", coreDir,
-	)
-	if err != nil {
-		t.Fatalf("service publish failed: %v\n%s", err, stdout)
-	}
-	if len(calls) != 1 || !strings.Contains(strings.Join(calls[0].Args, " "), "--publish") || !strings.Contains(strings.Join(calls[0].Args, " "), "--version-tag v1.2.3") {
-		t.Fatalf("unexpected publish command: %#v", calls)
-	}
-	for _, name := range []string{"postgres16-amd64.sbom.json", "postgres16-amd64.test-results.json"} {
-		if _, err := os.Stat(filepath.Join(outputDir, name)); err != nil {
-			t.Fatalf("expected staged service release asset %s: %v", name, err)
-		}
-	}
-}
-
 func TestServicePublishGoEnginePublishesAndStagesEvidence(t *testing.T) {
 	oldServiceOpts := serviceOpts
 	oldRunner := fleetBuildRunner
@@ -269,34 +172,6 @@ func TestServicePublishGoEnginePublishesAndStagesEvidence(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Go engine") || !strings.Contains(stdout, "sha256:service-stage") {
 		t.Fatalf("expected Go engine digest output, got:\n%s", stdout)
-	}
-}
-
-func TestServiceTargetRejectsUnknownBuildEngine(t *testing.T) {
-	oldServiceOpts := serviceOpts
-	defer func() { serviceOpts = oldServiceOpts }()
-
-	root := t.TempDir()
-	configPath := writeFleetConfig(t, root)
-	coreDir := filepath.Join(root, "core")
-	if _, err := runCLI(t,
-		"service", "scaffold", "postgres16",
-		"--template", "postgres",
-		"--version", "16",
-		"--fleet-config", configPath,
-		"--core-dir", coreDir,
-	); err != nil {
-		t.Fatalf("service scaffold failed: %v", err)
-	}
-	_, err := runCLI(t,
-		"service", "build", "postgres16",
-		"--engine", "legacy",
-		"--system", "x86_64-linux",
-		"--fleet-config", configPath,
-		"--core-dir", coreDir,
-	)
-	if err == nil || !strings.Contains(err.Error(), "--engine must be go or shell") {
-		t.Fatalf("expected invalid engine error, got %v", err)
 	}
 }
 
