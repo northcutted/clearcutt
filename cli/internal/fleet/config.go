@@ -183,16 +183,6 @@ type RemediationPolicy struct {
 	RequireFixedVersion *bool `json:"requireFixedVersion,omitempty"`
 	// AcceptedExpiryDays backstops auto-recorded acceptances (re-evaluated each scan).
 	AcceptedExpiryDays int `json:"acceptedExpiryDays,omitempty"`
-	// CryptoTrust selects how the known-good crypto build (openssl/sqlite) is
-	// trusted by the runtime-patch completeness gate and the substitute-first
-	// sourcing. "nixpkgs" (default): trust the pin's patched build, substitute it
-	// from cache, and VEX the scanner version gap. "reproduce": everything nixpkgs
-	// does, plus an independent rebuild of the crypto closure byte-compared against
-	// the substituted build (trust AND verify); a divergence fails the release
-	// evidence. Both ship only provenance-allowlisted crypto identities, so the
-	// gate is identical — only whether a reproducibility compare is also required
-	// differs.
-	CryptoTrust string `json:"cryptoTrust,omitempty"`
 	// PreferSubstitutable breaks route-recommendation ties in triage in favor of
 	// a substitutable (cache-served) fix over a rebuild when both carry the fix.
 	PreferSubstitutable *bool `json:"preferSubstitutable,omitempty"`
@@ -654,18 +644,11 @@ func DefaultRemediationPolicy() RemediationPolicy {
 		RequireRuntimeLayer:   boolPtr(true),
 		EPSSPercentileBoostAt: 0.90,
 		KEVBoost:              boolPtr(true),
-		CryptoTrust:           "nixpkgs",
 		PreferSubstitutable:   boolPtr(true),
 		WaitMaxSeverity:       "medium",
 		WaitMaxDays:           intPtr(30),
 	}
 }
-
-// CryptoTrust modes for RemediationPolicy.CryptoTrust.
-const (
-	CryptoTrustNixpkgs   = "nixpkgs"
-	CryptoTrustReproduce = "reproduce"
-)
 
 func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 	def := DefaultRemediationPolicy()
@@ -716,9 +699,6 @@ func EffectiveRemediationPolicy(policy RemediationPolicy) RemediationPolicy {
 
 	if policy.AcceptedExpiryDays == 0 {
 		policy.AcceptedExpiryDays = def.AcceptedExpiryDays
-	}
-	if policy.CryptoTrust == "" {
-		policy.CryptoTrust = def.CryptoTrust
 	}
 	if policy.PreferSubstitutable == nil {
 		policy.PreferSubstitutable = def.PreferSubstitutable
@@ -773,11 +753,6 @@ func validateRemediationPolicy(policy RemediationPolicy) error {
 	}
 	if policy.WaitMaxDays != nil && *policy.WaitMaxDays < 0 {
 		return fmt.Errorf("remediation.policy.waitMaxDays must not be negative")
-	}
-	switch strings.ToLower(policy.CryptoTrust) {
-	case CryptoTrustNixpkgs, CryptoTrustReproduce:
-	default:
-		return fmt.Errorf("unsupported remediation.policy.cryptoTrust %q (use nixpkgs or reproduce)", policy.CryptoTrust)
 	}
 	return nil
 }
