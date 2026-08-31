@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"os"
 	"path/filepath"
 	"strings"
@@ -193,7 +195,7 @@ func TestVerifyBoundarySuiteUsesExistingArchives(t *testing.T) {
 	}
 	t.Cleanup(func() { runExternalCommand = oldRun })
 
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--closure-target", "java21-distroless")
 	if err != nil {
 		t.Fatalf("boundary suite should pass existing archives: %v\n%s", err, stdout)
 	}
@@ -246,7 +248,7 @@ func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
 	}
 	t.Cleanup(func() { runExternalCommand = oldRun })
 
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--closure-target", "java21-distroless")
 	if err != nil {
 		t.Fatalf("boundary suite should build and pass missing archives: %v\n%s", err, stdout)
 	}
@@ -317,7 +319,7 @@ func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
 	}
 	t.Cleanup(func() { runExternalCommand = oldRun })
 
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", "core")
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", "core", "--closure-target", "java21-distroless")
 	if err != nil {
 		t.Fatalf("boundary suite with a relative --core-dir failed: %v\n%s", err, stdout)
 	}
@@ -325,5 +327,53 @@ func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {
 			t.Fatalf("expected built archive for %s: %v", target, err)
 		}
+	}
+}
+
+// TestVerifyBoundarySuiteDerivesTargetsFromTheFleet covers the default path: with
+// no --closure-target, the gate walks the fleet's own production distroless
+// targets. This is what stops the default drifting off a renamed runtime line —
+// it did exactly that twice (coreLTS-distroless, then java21-distroless), each
+// time failing CI with "flake does not provide attribute".
+func TestVerifyBoundarySuiteDerivesTargetsFromTheFleet(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeFleetConfig(t, root)
+
+	var calls []externalCommand
+	oldRun := runExternalCommand
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		return fmt.Errorf("stop after the first realize attempt")
+	}
+	t.Cleanup(func() { runExternalCommand = oldRun })
+
+	coreDir := filepath.Join(root, "core")
+	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"), []byte("\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--fleet-config", cfgPath)
+
+	if len(calls) == 0 {
+		t.Fatal("expected the suite to try realizing a derived target")
+	}
+	joined := strings.Join(calls[0].Args, " ")
+	cfg, err := fleet.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := cfg.CompileMatrix(cfg.Matrix.Preview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.ClosurePurityTargets) == 0 {
+		t.Skip("fixture fleet declares no production distroless target")
+	}
+	want := ".#" + compiled.ClosurePurityTargets[0]
+	if !strings.Contains(joined, want) {
+		t.Fatalf("suite built %q, want the fleet-derived target %q", joined, want)
 	}
 }

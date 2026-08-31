@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/certify"
+	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +18,7 @@ type boundariesFlags struct {
 	coreDir        string
 	buildOutputs   string
 	closureTargets []string
+	fleetConfig    string
 }
 
 var boundariesOpts boundariesFlags
@@ -74,7 +76,8 @@ core/tests/verify.sh in PR gates.`,
 	cmd.Flags().StringVar(&boundariesOpts.coreDir, "core-dir", "", "ClearCutt core flake directory (auto-detected when omitted)")
 	cmd.Flags().StringVar(&boundariesOpts.buildOutputs, "build-outputs", "build-outputs", "Build output directory containing image tarballs, relative to --core-dir unless absolute")
 	cmd.Flags().StringVar(&boundariesOpts.allowlist, "allowlist", "", "closure-purity explained-exception allowlist file (defaults to core/tests/closure-purity-allowlist.txt)")
-	cmd.Flags().StringSliceVar(&boundariesOpts.closureTargets, "closure-target", []string{"java21-distroless"}, "Image target(s) to run closure-purity against")
+	cmd.Flags().StringSliceVar(&boundariesOpts.closureTargets, "closure-target", nil, "Image target(s) to run closure-purity against (default: the fleet's production distroless targets)")
+	cmd.Flags().StringVar(&boundariesOpts.fleetConfig, "fleet-config", "", "Fleet config used to derive default closure targets")
 	return cmd
 }
 
@@ -139,7 +142,11 @@ func runVerifyBoundarySuite() error {
 		return err
 	}
 	failed := false
-	for _, target := range nonEmptyStrings(boundariesOpts.closureTargets) {
+	targets, err := resolveClosureTargets()
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
 		archive, err := ensureBoundarySuiteArchive(coreDir, buildOutputs, target)
 		if err != nil {
 			return err
@@ -167,6 +174,34 @@ func runVerifyBoundarySuite() error {
 	}
 	fmt.Fprintln(out, "[boundary-suite] representative image-security boundary suite passed.")
 	return nil
+}
+
+// resolveClosureTargets returns the images to gate. An explicit --closure-target
+// wins; otherwise the list is DERIVED from the compiled fleet matrix rather than
+// hardcoded.
+//
+// This default used to be a literal runtime line, and it drifted every time the
+// matrix moved — coreLTS-distroless survived the matrix cut that deleted the
+// core line, then java21-distroless survived the move to java25, and each one
+// failed CI with "flake does not provide attribute". Deriving it means the gate
+// covers whatever the fleet actually builds, and a line rename cannot silently
+// point it at an image that no longer exists.
+func resolveClosureTargets() ([]string, error) {
+	if explicit := nonEmptyStrings(boundariesOpts.closureTargets); len(explicit) > 0 {
+		return explicit, nil
+	}
+	cfg, err := fleet.Load(boundariesOpts.fleetConfig)
+	if err != nil {
+		return nil, fmt.Errorf("deriving default closure targets: %w\n\nPass --closure-target explicitly, or --fleet-config to point at the fleet config", err)
+	}
+	compiled, err := cfg.CompileMatrix(cfg.Matrix.Preview)
+	if err != nil {
+		return nil, fmt.Errorf("compiling fleet matrix for default closure targets: %w", err)
+	}
+	if len(compiled.ClosurePurityTargets) == 0 {
+		return nil, fmt.Errorf("fleet matrix declares no production distroless target to gate; pass --closure-target explicitly")
+	}
+	return compiled.ClosurePurityTargets, nil
 }
 
 func ensureBoundarySuiteArchive(coreDir, buildOutputs, target string) (string, error) {

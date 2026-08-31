@@ -120,8 +120,8 @@ func buildAppTemplateSpec(cfg fleet.Config, runtime, appName string) (appTemplat
 	}
 	switch runtime {
 	case "java":
-		spec.RuntimeLine = "java21"
-		spec.BaseID = "java21-distroless"
+		spec.RuntimeLine = "java25"
+		spec.BaseID = "java25-distroless"
 		spec.Entrypoint = `["java","-jar","/workspace/app.jar"]`
 		spec.Files["pom.xml"] = javaPom(appName)
 		spec.Files["src/main/java/dev/clearcutt/template/App.java"] = `package dev.clearcutt.template;
@@ -135,8 +135,8 @@ public final class App {
 }
 `
 	case "node":
-		spec.RuntimeLine = "node22"
-		spec.BaseID = "node22-distroless"
+		spec.RuntimeLine = "node26"
+		spec.BaseID = "node26-distroless"
 		spec.Entrypoint = `["node","/workspace/server.js"]`
 		spec.Files["package.json"] = fmt.Sprintf(`{"name":"%s","version":"1.0.0","private":true,"type":"module","scripts":{"test":"node --check src/server.js","build":"mkdir -p dist && cp src/server.js dist/server.js"}}
 `, appName)
@@ -150,10 +150,10 @@ public final class App {
 		spec.Files["app/main.py"] = `print("ClearCutt Python template ready")
 `
 	case "go":
-		spec.RuntimeLine = "go1.25"
-		spec.BaseID = "go1.25-distroless"
+		spec.RuntimeLine = "go1.27"
+		spec.BaseID = "go1.27-distroless"
 		spec.Entrypoint = `["/workspace/app"]`
-		spec.Files["go.mod"] = fmt.Sprintf("module example.com/%s\n\ngo 1.25\n", strings.ReplaceAll(appName, "-", ""))
+		spec.Files["go.mod"] = fmt.Sprintf("module example.com/%s\n\ngo 1.27\n", strings.ReplaceAll(appName, "-", ""))
 		spec.Files["cmd/app/main.go"] = `package main
 
 import "fmt"
