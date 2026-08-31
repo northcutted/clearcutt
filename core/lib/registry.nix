@@ -39,13 +39,50 @@ let
   # build shell) come right back into the closure — plus the image then
   # ships two copies of the package. Appending to postFixup rewrites the
   # files before Nix scans the single, real output for references.
+  # Strip store references from a package's output WITHOUT rebuilding it.
+  #
+  # This used to be `pkg.overrideAttrs` + postFixup, which is the obvious way to
+  # do it and was quietly the most expensive thing in the fleet: overrideAttrs
+  # changes the derivation hash, so the package is no longer the one
+  # cache.nixos.org has, and every cold runner compiled it from source. For node
+  # that is 70-110 minutes per cell — measured, not estimated — while the dev
+  # tier (which does not sever) finished in two.
+  #
+  # Copying the already-substituted output and rewriting the copy costs one file
+  # copy. The reference-severing is identical: remove-references-to zeroes the
+  # store hashes in the files either way, and Nix rescans the copy to compute its
+  # runtime closure, so the leaked paths drop out exactly as before. The
+  # closure-purity gate is what proves that per build.
+  #
+  # Only the default output is carried across. Every caller feeds the result
+  # straight into image `contents`, which is a path list, so the other outputs
+  # were never shipped.
   severRuntimeReferences = { pkg, references }:
-    pkg.overrideAttrs (old: {
-      nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.removeReferencesTo ];
-      postFixup = (old.postFixup or "") + ''
-        find "$out" -type f -exec remove-references-to ${lib.concatMapStringsSep " " (ref: "-t ${ref}") references} '{}' +
-      '';
-    });
+    pkgs.runCommand "${pkg.name}-severed"
+      {
+        nativeBuildInputs = [ pkgs.removeReferencesTo ];
+        meta = pkg.meta or { };
+        passthru = (pkg.passthru or { }) // { severedFrom = pkg; };
+      } ''
+      mkdir -p "$out"
+      cp -a ${pkg}/. "$out/"
+      chmod -R u+w "$out"
+      find "$out" -type f -exec remove-references-to ${lib.concatMapStringsSep " " (ref: "-t ${ref}") references} '{}' +
+
+      # A copy keeps self-references pointing at the ORIGINAL store path, which
+      # would pull both copies into the image closure and silently double its
+      # size. overrideAttrs never had this problem because Nix rewrites
+      # self-references to the new output during a real build. Fail loudly here
+      # rather than ship a doubled image: if this ever fires, the package
+      # genuinely embeds its own prefix (python's _sysconfigdata does, for one)
+      # and needs the rebuild path instead of the copy.
+      if grep -rlF "${pkg}" "$out" >/dev/null 2>&1; then
+        echo "severRuntimeReferences: ${pkg.name} embeds its own store path;" >&2
+        echo "  the copied output still references ${pkg}, which would ship both." >&2
+        grep -rlF "${pkg}" "$out" | head -20 >&2
+        exit 1
+      fi
+    '';
 
   # A helper to remove npm/npx/corepack from Node.js for slim/distroless runtimes.
   # symlinkJoin materializes a new store path whose bin/ and lib/ entries are
