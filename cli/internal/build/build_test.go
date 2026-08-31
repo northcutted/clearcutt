@@ -15,9 +15,10 @@ import (
 // fakeRunner stands in for nix/syft/grype: "nix build" writes a prepared
 // gzipped image archive to the --out-link path; syft/grype write canned output.
 type fakeRunner struct {
-	archive   []byte
-	grypeErr  error
-	grypeArgs []string
+	archive     []byte
+	grypeErr    error
+	grypeArgs   []string
+	grypeOutput string // scan JSON the fake grype writes; empty means no matches
 }
 
 func (f *fakeRunner) Run(dir, name string, args ...string) error {
@@ -56,7 +57,11 @@ func (f *fakeRunner) Capture(dir, outPath, name string, args ...string) error {
 		return os.WriteFile(outPath, []byte(`{"spdxVersion":"SPDX-2.3","packages":[]}`), 0o644)
 	case "grype":
 		f.grypeArgs = append([]string{}, args...)
-		_ = os.WriteFile(outPath, []byte(`{"matches":[]}`), 0o644)
+		body := f.grypeOutput
+		if body == "" {
+			body = `{"matches":[]}`
+		}
+		_ = os.WriteFile(outPath, []byte(body), 0o644)
 		return f.grypeErr
 	}
 	return nil
@@ -399,4 +404,118 @@ func TestCertifyTargetDevTierGrypeIsWarning(t *testing.T) {
 	if res.Status != "warning" {
 		t.Errorf("status = %q, want warning", res.Status)
 	}
+}
+
+// writeAcceptances puts an acceptance document in a temp core dir.
+func writeAcceptances(t *testing.T, coreDir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(coreDir, "vulnerability-acceptances.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// blockingScan is a Grype report shaped like the real python3.14-slim failure:
+// one fixable High in openssl that `--fail-on high` exits non-zero on.
+const blockingScan = `{"matches":[{"vulnerability":{"id":"CVE-2026-18798","severity":"High","fix":{"state":"fixed","versions":["3.6.4"]}},"artifact":{"name":"openssl","version":"3.6.3"}}]}`
+
+func acceptanceDoc(expiry string) string {
+	accepted := "2026-01-01"
+	if expiry < accepted {
+		accepted = "2019-01-01"
+	}
+	return `apiVersion: clearcutt.dev/v1
+kind: VulnerabilityAcceptances
+acceptances:
+  - id: openssl-awaiting-3.6.4
+    package: openssl
+    versions: ["3.6.3"]
+    vulnerabilities: [CVE-2026-18798]
+    reason: Fixed in 3.6.4; the pinned nixpkgs ships 3.6.3.
+    acceptedBy: platform-team
+    acceptedAt: "` + accepted + `"
+    expiresAt: "` + expiry + `"
+`
+}
+
+// TestVulnGateClearsBlockingFindingsWithAnUnexpiredAcceptance is the behaviour
+// change: Grype still exits non-zero, the findings still appear in the scan
+// output, but the gate does not fail because each one is attributed.
+func TestVulnGateClearsBlockingFindingsWithAnUnexpiredAcceptance(t *testing.T) {
+	layer := layerTar(t, map[string]int64{"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644})
+	core := t.TempDir()
+	writeAcceptances(t, core, acceptanceDoc("2099-01-01"))
+
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer), grypeErr: errors.New("grype: discovered vulnerabilities at or above the severity threshold"), grypeOutput: blockingScan}
+	outDir := t.TempDir()
+	var log bytes.Buffer
+	res, err := CertifyTarget(r, Options{
+		Target: "python3.14-slim", System: "x86_64-linux", Kind: "runtime",
+		CoreDir: core, OutputDir: outDir,
+	}, time.Unix(0, 0), &log)
+	if err != nil {
+		t.Fatalf("certify: %v\n%s", err, log.String())
+	}
+	if got := assertionStatus(res, "Grype Vulnerability Gating"); got != "passed" {
+		t.Fatalf("Grype assertion = %q, want passed once every finding is accepted\n%s", got, log.String())
+	}
+	if !strings.Contains(log.String(), "ACCEPTED CVE-2026-18798") {
+		t.Fatalf("the acceptance must be visible in the build log, got:\n%s", log.String())
+	}
+	if !strings.Contains(log.String(), "platform-team") {
+		t.Fatalf("the log must name who accepted it:\n%s", log.String())
+	}
+}
+
+// TestVulnGateStillBlocksOnAnExpiredAcceptance is the property that separates
+// this from a suppression: letting an acceptance lapse fails the build.
+func TestVulnGateStillBlocksOnAnExpiredAcceptance(t *testing.T) {
+	layer := layerTar(t, map[string]int64{"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644})
+	core := t.TempDir()
+	writeAcceptances(t, core, acceptanceDoc("2020-01-01"))
+
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer), grypeErr: errors.New("grype: discovered vulnerabilities at or above the severity threshold"), grypeOutput: blockingScan}
+	var log bytes.Buffer
+	res, err := CertifyTarget(r, Options{
+		Target: "python3.14-slim", System: "x86_64-linux", Kind: "runtime",
+		CoreDir: core, OutputDir: t.TempDir(),
+	}, time.Unix(0, 0), &log)
+	if err == nil {
+		t.Fatal("a lapsed acceptance must fail the gate closed")
+	}
+	if got := assertionStatus(res, "Grype Vulnerability Gating"); got != "failed" {
+		t.Fatalf("Grype assertion = %q, want failed for a lapsed acceptance\n%s", got, log.String())
+	}
+	if !strings.Contains(log.String(), "EXPIRED") {
+		t.Fatalf("the log must say the acceptance lapsed:\n%s", log.String())
+	}
+}
+
+// TestVulnGateBlocksWhenNoAcceptanceCoversTheFinding keeps the default strict.
+func TestVulnGateBlocksWhenNoAcceptanceCoversTheFinding(t *testing.T) {
+	layer := layerTar(t, map[string]int64{"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3/lib/libssl.so": 0o644})
+	r := &fakeRunner{archive: gzippedDockerArchive(t, layer), grypeErr: errors.New("grype: discovered vulnerabilities at or above the severity threshold"), grypeOutput: blockingScan}
+	var log bytes.Buffer
+	res, err := CertifyTarget(r, Options{
+		Target: "python3.14-slim", System: "x86_64-linux", Kind: "runtime",
+		CoreDir: t.TempDir(), OutputDir: t.TempDir(), // no acceptance file at all
+	}, time.Unix(0, 0), &log)
+	if err == nil {
+		t.Fatal("an unaccepted fixable High must fail the gate closed")
+	}
+	if got := assertionStatus(res, "Grype Vulnerability Gating"); got != "failed" {
+		t.Fatalf("Grype assertion = %q, want failed with no acceptances\n%s", got, log.String())
+	}
+	if !strings.Contains(log.String(), "BLOCKING CVE-2026-18798") {
+		t.Fatalf("the log must name the unaccepted finding:\n%s", log.String())
+	}
+}
+
+// assertionStatus pulls one named assertion out of the test-results predicate.
+func assertionStatus(res Result, name string) string {
+	for _, a := range res.Assertions {
+		if a.Name == name {
+			return a.Status
+		}
+	}
+	return ""
 }

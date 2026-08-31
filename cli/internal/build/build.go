@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/northcutted/clearcutt/internal/acceptance"
 	"github.com/northcutted/clearcutt/internal/certify"
 )
 
@@ -35,7 +36,8 @@ type Options struct {
 	Kind                     string // "runtime" or "service"
 	CoreDir                  string // working dir for the build (holds flake.nix)
 	OutputDir                string // build-outputs directory (absolute or core-relative)
-	AllowlistPath            string // closure-purity explained-exception allowlist
+	AllowlistPath            string
+	AcceptancesPath          string // vulnerability-acceptances.yaml // closure-purity explained-exception allowlist
 	ServiceProductionAllowed bool
 	ServiceLifecycleStatus   string
 }
@@ -91,6 +93,48 @@ func parseTarget(target, kind string) (lang, tier string) {
 		tier = parts[1]
 	}
 	return lang, tier
+}
+
+// clearedByAcceptances reports whether every finding Grype blocked on is covered
+// by an unexpired, attributed acceptance. It logs each verdict so the build log
+// shows exactly what was accepted, by whom, and until when — an acceptance that
+// is not visible in the log is indistinguishable from a silent ignore.
+func clearedByAcceptances(w io.Writer, opts Options, scanPath string) (bool, error) {
+	path := opts.AcceptancesPath
+	if strings.TrimSpace(path) == "" {
+		path = filepath.Join(opts.CoreDir, "vulnerability-acceptances.yaml")
+	}
+	doc, err := acceptance.Load(path)
+	if err != nil {
+		return false, fmt.Errorf("loading vulnerability acceptances: %w", err)
+	}
+	findings, err := acceptance.ReadGrypeFindings(scanPath)
+	if err != nil {
+		return false, fmt.Errorf("reading grype findings from %s: %w", scanPath, err)
+	}
+	if len(findings) == 0 {
+		// Grype failed on something outside the fixable high/critical set the
+		// acceptance model covers; do not paper over it.
+		return false, nil
+	}
+	res := acceptance.Classify(doc, findings, time.Now())
+	for _, v := range res.Accepted {
+		logf(w, "[vuln-gate] ACCEPTED %s (%s %s) until %s by %q via acceptance %q [%s]",
+			v.Finding.ID, v.Finding.Package, v.Finding.Version, v.ExpiresAt, v.AcceptedBy, v.AcceptanceID, v.Reason)
+	}
+	for _, v := range res.Expired {
+		logf(w, "[vuln-gate] EXPIRED  %s (%s %s) — acceptance %q lapsed on %s and must be renewed or the finding fixed",
+			v.Finding.ID, v.Finding.Package, v.Finding.Version, v.AcceptanceID, v.ExpiresAt)
+	}
+	for _, f := range res.Unaccepted {
+		logf(w, "[vuln-gate] BLOCKING %s (%s %s, fixed in %s) — no acceptance recorded",
+			f.ID, f.Package, f.Version, f.FixedIn)
+	}
+	if res.Blocking() {
+		return false, nil
+	}
+	logf(w, "[vuln-gate] all %d blocking finding(s) covered by unexpired acceptances", len(res.Accepted))
+	return true, nil
 }
 
 // grypeStatus maps a Grype gate outcome to passed/warning/failed, mirroring the
@@ -247,7 +291,20 @@ func CertifyTarget(r Runner, opts Options, now time.Time, w io.Writer) (Result, 
 	grypeArgs = append(grypeArgs, "-o", "json")
 	logf(w, "Scanning SBOM via Grype (fail-on high, only-fixed)...")
 	grypeErr := r.Capture(opts.CoreDir, scanPath, "grype", grypeArgs...)
-	grype := grypeStatus(grypeErr != nil, opts.Kind, tier, opts.ServiceProductionAllowed, opts.ServiceLifecycleStatus)
+	grypeBlocked := grypeErr != nil
+
+	// When Grype blocks, every blocking finding gets checked against the fleet's
+	// time-boxed acceptances before the gate fails. This is not a suppression:
+	// the findings stay in the scan output and in the predicate, and an expired
+	// acceptance blocks exactly as hard as an unaccepted finding.
+	if grypeBlocked {
+		cleared, accErr := clearedByAcceptances(w, opts, scanPath)
+		if accErr != nil {
+			return Result{}, accErr
+		}
+		grypeBlocked = !cleared
+	}
+	grype := grypeStatus(grypeBlocked, opts.Kind, tier, opts.ServiceProductionAllowed, opts.ServiceLifecycleStatus)
 
 	// C1. Closure purity (distroless runtime) — IN-PROCESS, no python.
 	closureStatus := "skipped"

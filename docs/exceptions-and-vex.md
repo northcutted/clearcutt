@@ -1,5 +1,13 @@
 # Vulnerability Exceptions & OpenVEX Compliance
 
+> **Two different mechanisms, two different claims.** `exceptions.yaml` is the
+> consumer-side waiver against `verify image` thresholds for *your application
+> image*. `core/vulnerability-acceptances.yaml` is the platform-side, expiring
+> acceptance the *build gate* consults when a base image ships a real finding
+> with no reachable fix. Neither is a VEX `not_affected` claim, which asserts the
+> vulnerability does not apply at all — see [security-model.md](security-model.md).
+
+
 This document explains how the ClearCutt platform manages vulnerability exceptions and dynamically exports standard-compliant OpenVEX documents.
 
 ---
