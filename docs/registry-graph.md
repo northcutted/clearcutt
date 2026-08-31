@@ -174,6 +174,63 @@ ko, and buildpacks all produce. It does not fire on:
 For those estates the label-based detectors still apply if the builder stamps
 `org.opencontainers.image.base.*`, and the shared-layer blast radius applies always.
 
+## Layer-Level Commonality
+
+`clearcutt graph layers` answers the other half of the question. Where `graph build`
+asks what an image is built **on** — parentage, answered by layer *order* —
+`graph layers` asks what the fleet has **in common** — content, answered by layer
+*membership*. The two are independent, and neither implies the other.
+
+```bash
+clearcutt graph layers \
+  --observations dist/scan/observations.json \
+  --output dist/scan/layers.json \
+  --report dist/scan/commonality.md \
+  --mermaid dist/scan/graph.mmd
+```
+
+It reports:
+
+| Section | Answers |
+| --- | --- |
+| Fleet core | Which layers are in **every** image. A vulnerability here hits everything at once. |
+| Common layers | Which layers reach `--coverage` (default 0.75). The highest-leverage remediation targets. |
+| Content-identical images | Which references carry byte-identical layer sets. |
+| Clusters | Which images move together when shared content changes. |
+| Similar pairs | Jaccard and containment for every pair above `--min-similarity` (default 0.5). |
+| Per-image profile | How much of each image is content nothing else carries. |
+| Deduplication | What the registry stores versus what the fleet would cost with no reuse. |
+
+### Content-Identical Images
+
+This one is worth calling out. Images published under different references with
+identical layer sets usually mean a release republished something that did not
+change. On this repository's own fleet, all 16 scanned images fall into 6 identical
+groups — `v0.12.2`, `v0.13.0`, and `v0.14.0` are content-identical for every tier.
+Three releases, no new content.
+
+Note that identical layers mean identical *content*, not identical *configuration*:
+two images can share every layer and still differ in entrypoint, user, or labels.
+
+### The Diagram
+
+`--mermaid` writes the clustered commonality graph, with edges labelled by shared
+layer count. It renders on GitHub, in an Artifact, and anywhere else Mermaid is
+supported. The report embeds the same diagram inline.
+
+Both are capped for readability (24 images, 40 edges) and say what was elided.
+
+### Scale
+
+Pair generation walks the layer index rather than the image list, so images with
+nothing in common are never compared — on a sparse estate that turns a quadratic scan
+into work proportional to the sharing that actually exists. Above 500 images the
+pairwise and clustering legs are skipped entirely with a warning; core, coverage, and
+deduplication accounting are linear in total layers and stay available.
+
+`--max-pairs` (default 250, `-1` for all) caps reporting only. Clustering always sees
+every qualifying pair.
+
 ## Roots Versus Orphans
 
 An image with no parent is not automatically a finding.

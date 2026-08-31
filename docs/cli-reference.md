@@ -165,6 +165,13 @@ local files.
   --output dist/scan/graph.json \
   --report dist/scan/inventory.md
 
+# What the fleet has in common at the layer level
+./clearcutt graph layers \
+  --observations dist/scan/observations.json \
+  --output dist/scan/layers.json \
+  --report dist/scan/commonality.md \
+  --mermaid dist/scan/graph.mmd
+
 # Use it as a CI gate
 ./clearcutt graph build --observations dist/scan/observations.json \
   --output dist/scan/graph.json --min-confidence verified --fail-on-stale
@@ -174,6 +181,10 @@ local files.
 `--namespace`; registries that do not implement it (GHCR, Docker Hub) need
 `--repository`, which is repeatable. Cosign signature and attestation sidecar tags
 are skipped unless `--include-sidecar-tags` is passed.
+
+`graph layers` is the content view: fleet core, common layers, content-identical
+images, similarity clusters, per-image unique content, deduplication accounting, and
+a Mermaid diagram. It never implies parentage.
 
 `graph build` also reports shared-layer blast radius: which images carry a given
 layer, which is the remediation question for estates whose images share content

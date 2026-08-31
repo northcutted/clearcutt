@@ -405,3 +405,140 @@ func TestGraphBuildFailOnUnknownGatesUndeterminedBases(t *testing.T) {
 		t.Fatalf("expected the gate to name the finding, got:\n%s", stdout)
 	}
 }
+
+// TestGraphLayersEndToEnd drives the commonality analysis through the real CLI
+// against images pushed to an in-process registry, including the two republished
+// tags that should be reported as content-identical.
+func TestGraphLayersEndToEnd(t *testing.T) {
+	client, host := commandTestRegistry(t)
+
+	base := stampCreated(t, commandTestImage(t, 961), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	// Same content published under two tags: the "release that changed nothing" case.
+	for _, tag := range []string{"v1.0.0", "v1.1.0"} {
+		if _, err := client.PushImage(host+"/bases/java:"+tag, base); err != nil {
+			t.Fatalf("push base %s: %v", tag, err)
+		}
+	}
+	layer, err := random.Layer(256, "application/vnd.oci.image.layer.v1.tar+gzip")
+	if err != nil {
+		t.Fatalf("random layer: %v", err)
+	}
+	app, err := mutate.AppendLayers(base, layer)
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if _, err := client.PushImage(host+"/apps/pay:v1", stampCreated(t, app, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))); err != nil {
+		t.Fatalf("push app: %v", err)
+	}
+
+	dir := t.TempDir()
+	images := filepath.Join(dir, "images.yaml")
+	observations := filepath.Join(dir, "observations.json")
+	layersPath := filepath.Join(dir, "layers.json")
+	report := filepath.Join(dir, "commonality.md")
+	diagram := filepath.Join(dir, "graph.mmd")
+
+	if stdout, err := runCLI(t, "registry", "scan", "--registry", host,
+		"--repository", "bases/java", "--repository", "apps/pay", "--output", images); err != nil {
+		t.Fatalf("registry scan: %v\n%s", err, stdout)
+	}
+	if stdout, err := runCLI(t, "import", "observe", "--images", images, "--output", observations, "--strict"); err != nil {
+		t.Fatalf("import observe: %v\n%s", err, stdout)
+	}
+	stdout, err := runCLI(t, "graph", "layers", "--observations", observations,
+		"--output", layersPath, "--report", report, "--mermaid", diagram,
+		"--generated-at", "2026-06-01T00:00:00Z")
+	if err != nil {
+		t.Fatalf("graph layers: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "carry byte-identical content") {
+		t.Fatalf("expected the republished tags to be reported:\n%s", stdout)
+	}
+
+	raw, err := os.ReadFile(layersPath)
+	if err != nil {
+		t.Fatalf("read layers: %v", err)
+	}
+	var graph importedfleet.LayerGraph
+	if err := json.Unmarshal(raw, &graph); err != nil {
+		t.Fatalf("decode layer graph: %v", err)
+	}
+	if graph.Summary.Images != 3 {
+		t.Fatalf("Images = %d, want 3", graph.Summary.Images)
+	}
+	if len(graph.Identical) != 1 || len(graph.Identical[0].Images) != 2 {
+		t.Fatalf("want the two identical base tags grouped, got %+v", graph.Identical)
+	}
+	// The base's layers are in all three images; the app layer is in one.
+	if graph.Summary.CoreLayers == 0 {
+		t.Fatalf("expected a fleet core, got %+v", graph.Summary)
+	}
+	if graph.Summary.UniqueLayers != 1 {
+		t.Fatalf("UniqueLayers = %d, want 1 (the app layer)", graph.Summary.UniqueLayers)
+	}
+	if graph.Summary.SharingRatio <= 0 {
+		t.Fatalf("SharingRatio = %.2f, want a positive saving", graph.Summary.SharingRatio)
+	}
+
+	for path, want := range map[string]string{
+		report:  "# Fleet Layer Commonality",
+		diagram: "```mermaid",
+	} {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("%s missing %q:\n%s", path, want, content)
+		}
+	}
+}
+
+// TestGraphLayersRejectsOutOfRangeCoverage keeps the engine validation reachable
+// through the flag surface.
+func TestGraphLayersRejectsOutOfRangeCoverage(t *testing.T) {
+	dir := t.TempDir()
+	observations := filepath.Join(dir, "observations.json")
+	if err := os.WriteFile(observations, []byte(`{"images":[]}`), 0o644); err != nil {
+		t.Fatalf("seed observations: %v", err)
+	}
+	_, err := runCLI(t, "graph", "layers", "--observations", observations,
+		"--output", filepath.Join(dir, "layers.json"), "--coverage", "1.5")
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("expected the coverage range error, got %v", err)
+	}
+}
+
+// TestGraphLayersReportsWhenThereIsNoDiagramToDraw keeps --mermaid honest instead of
+// writing an empty file.
+func TestGraphLayersReportsWhenThereIsNoDiagramToDraw(t *testing.T) {
+	client, host := commandTestRegistry(t)
+	for i, ref := range []string{"solo/one:v1", "solo/two:v1"} {
+		if _, err := client.PushImage(host+"/"+ref, commandTestImage(t, int64(971+i))); err != nil {
+			t.Fatalf("push %s: %v", ref, err)
+		}
+	}
+	dir := t.TempDir()
+	images := filepath.Join(dir, "images.yaml")
+	observations := filepath.Join(dir, "observations.json")
+	diagram := filepath.Join(dir, "graph.mmd")
+
+	if stdout, err := runCLI(t, "registry", "scan", "--registry", host,
+		"--repository", "solo/one", "--repository", "solo/two", "--output", images); err != nil {
+		t.Fatalf("registry scan: %v\n%s", err, stdout)
+	}
+	if stdout, err := runCLI(t, "import", "observe", "--images", images, "--output", observations, "--strict"); err != nil {
+		t.Fatalf("import observe: %v\n%s", err, stdout)
+	}
+	stdout, err := runCLI(t, "graph", "layers", "--observations", observations,
+		"--output", filepath.Join(dir, "layers.json"), "--mermaid", diagram)
+	if err != nil {
+		t.Fatalf("graph layers: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "no diagram written") {
+		t.Fatalf("expected an explanation instead of an empty diagram:\n%s", stdout)
+	}
+	if _, statErr := os.Stat(diagram); statErr == nil {
+		t.Fatal("an empty diagram file should not be written")
+	}
+}

@@ -41,7 +41,186 @@ Only layer-digest matching is proof. Label- and history-based matches are report
 claims made by whoever built the image, and labelled as such.`,
 	}
 	cmd.AddCommand(newGraphBuildCmd())
+	cmd.AddCommand(newGraphLayersCmd())
 	return cmd
+}
+
+type graphLayersFlags struct {
+	observations  string
+	output        string
+	report        string
+	mermaid       string
+	coverage      float64
+	minSimilarity float64
+	maxPairs      int
+	generatedAt   string
+	force         bool
+}
+
+var graphLayersOpts graphLayersFlags
+
+func newGraphLayersCmd() *cobra.Command {
+	graphLayersOpts = graphLayersFlags{}
+	cmd := &cobra.Command{
+		Use:   "layers",
+		Short: "Show what the fleet has in common at the layer level",
+		Long: `Analyse content commonality across observed images.
+
+Where 'graph build' asks what an image is built ON — a parentage question answered by
+layer order — this asks what the fleet has IN COMMON, a content question answered by
+layer membership. The two are independent: images can share nearly all their content
+with no parentage between them, and a parent and child can share very little.
+
+Reports the fleet core, the most widely carried layers, content-identical images,
+similarity clusters, per-image unique content, and how much storage layer reuse
+saves. Shared content means shared exposure, never a base relationship.`,
+		Args: cobra.NoArgs,
+		Example: `  clearcutt graph layers --observations observations.json \
+    --output layers.json --report commonality.md
+
+  # Only layers present in every image, and only near-identical pairs
+  clearcutt graph layers --observations observations.json --output layers.json \
+    --coverage 1.0 --min-similarity 0.9`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGraphLayers()
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&graphLayersOpts.observations, "observations", "", "Observations JSON from `clearcutt import observe`")
+	f.StringVar(&graphLayersOpts.output, "output", "", "Output layer graph JSON path")
+	f.StringVar(&graphLayersOpts.report, "report", "", "Also write a Markdown commonality report to this path")
+	f.StringVar(&graphLayersOpts.mermaid, "mermaid", "", "Also write the clustered commonality diagram to this path")
+	f.Float64Var(&graphLayersOpts.coverage, "coverage", 0.75, "Fleet share a layer must reach to count as common (0-1)")
+	f.Float64Var(&graphLayersOpts.minSimilarity, "min-similarity", 0.5, "Jaccard floor for reporting a pair and drawing a cluster edge (0-1)")
+	f.IntVar(&graphLayersOpts.maxPairs, "max-pairs", 250, "Cap reported image pairs, most similar first (-1 keeps all)")
+	f.StringVar(&graphLayersOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
+	f.BoolVar(&graphLayersOpts.force, "force", false, "Overwrite existing output files")
+	_ = cmd.MarkFlagRequired("observations")
+	_ = cmd.MarkFlagRequired("output")
+	return cmd
+}
+
+func runGraphLayers() error {
+	opts := graphLayersOpts
+	for _, path := range []string{opts.output, opts.report, opts.mermaid} {
+		if path == "" || opts.force {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("%s already exists; pass --force to overwrite", path)
+		}
+	}
+	observations, err := importedfleet.ReadObservations(opts.observations)
+	if err != nil {
+		return fmt.Errorf("read observations: %w", err)
+	}
+	graph, err := importedfleet.BuildLayerGraph(observations, importedfleet.LayerGraphOptions{
+		GeneratedAt:       opts.generatedAt,
+		CoverageThreshold: opts.coverage,
+		MinSimilarity:     opts.minSimilarity,
+		MaxPairs:          opts.maxPairs,
+	})
+	if err != nil {
+		return err
+	}
+	if err := writeAlongside(opts.output, func(path string) error {
+		return importedfleet.WriteLayerGraph(path, graph)
+	}); err != nil {
+		return err
+	}
+	if opts.report != "" {
+		if err := writeAlongside(opts.report, func(path string) error {
+			return os.WriteFile(path, []byte(importedfleet.LayerGraphMarkdown(graph)), 0o644)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.mermaid != "" {
+		diagram := importedfleet.LayerGraphMermaid(graph)
+		if diagram == "" {
+			fmt.Fprintf(errOut, "[graph-layers] no diagram written: nothing reached the similarity threshold\n")
+		} else if err := writeAlongside(opts.mermaid, func(path string) error {
+			return os.WriteFile(path, []byte(diagram), 0o644)
+		}); err != nil {
+			return err
+		}
+	}
+
+	if structuredFormat() {
+		return printStructured(graph)
+	}
+	printLayerGraphSummary(graph, opts)
+	return nil
+}
+
+// printLayerGraphSummary renders the terminal view of fleet commonality: what is
+// shared, what is redundant, and what a fix to shared content would reach.
+func printLayerGraphSummary(graph importedfleet.LayerGraph, opts graphLayersFlags) {
+	s := graph.Summary
+	fmt.Fprintf(out, "[graph-layers] %d image(s), %d distinct layer(s): %d shared, %d unique to one image\n",
+		s.Images, s.DistinctLayers, s.SharedLayers, s.UniqueLayers)
+	fmt.Fprintf(out, "[graph-layers] fleet core: %d layer(s) in every image; %d layer(s) in at least %.0f%%\n",
+		s.CoreLayers, s.CommonLayers, s.CoverageThreshold*100)
+	fmt.Fprintf(out, "[graph-layers] stored once %s vs %s without reuse — sharing avoids %.0f%%\n",
+		humanSize(s.StoredBytes), humanSize(s.NaiveBytes), s.SharingRatio*100)
+
+	if len(graph.Identical) > 0 {
+		total := 0
+		for _, group := range graph.Identical {
+			total += len(group.Images)
+		}
+		fmt.Fprintf(out, "\n%d image(s) in %d group(s) carry byte-identical content:\n", total, len(graph.Identical))
+		for _, group := range graph.Identical {
+			fmt.Fprintf(out, "  %d layers, %s\n", group.LayerCount, humanSize(group.Bytes))
+			for _, ref := range group.Images {
+				fmt.Fprintf(out, "    %s\n", ref)
+			}
+		}
+	}
+
+	if len(graph.Common) > 0 {
+		fmt.Fprintf(out, "\nMost widely carried layers:\n")
+		fmt.Fprintf(out, "%-30s %8s %10s %9s\n", "LAYER", "IMAGES", "COVERAGE", "SIZE")
+		for i, layer := range graph.Common {
+			if i >= 5 {
+				fmt.Fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.Common)-5)
+				break
+			}
+			fmt.Fprintf(out, "%-30s %8d %8.0f%% %9s\n", truncate(layer.Digest, 30), layer.ImageCount, layer.Coverage*100, humanSize(layer.Size))
+		}
+	}
+
+	if len(graph.Clusters) > 0 {
+		fmt.Fprintf(out, "\n%d cluster(s):\n", len(graph.Clusters))
+		fmt.Fprintf(out, "%-9s %8s %26s %9s\n", "CLUSTER", "IMAGES", "LAYERS COMMON TO ALL", "SIZE")
+		for _, cluster := range graph.Clusters {
+			fmt.Fprintf(out, "%-9d %8d %26d %9s\n", cluster.ID, len(cluster.Images), cluster.SharedLayers, humanSize(cluster.SharedBytes))
+		}
+	}
+
+	for _, warning := range graph.Warnings {
+		fmt.Fprintf(errOut, "[graph-layers] %s\n", warning)
+	}
+	fmt.Fprintf(out, "\n[graph-layers] wrote %s\n", opts.output)
+	for _, path := range []string{opts.report, opts.mermaid} {
+		if path != "" {
+			fmt.Fprintf(out, "[graph-layers] wrote %s\n", path)
+		}
+	}
+}
+
+// humanSize formats a compressed byte count for terminal output.
+func humanSize(size int64) string {
+	switch {
+	case size <= 0:
+		return "0"
+	case size < 1024*1024:
+		return fmt.Sprintf("%.0fKB", float64(size)/1024)
+	case size < 1024*1024*1024:
+		return fmt.Sprintf("%.0fMB", float64(size)/(1024*1024))
+	default:
+		return fmt.Sprintf("%.1fGB", float64(size)/(1024*1024*1024))
+	}
 }
 
 func newGraphBuildCmd() *cobra.Command {
