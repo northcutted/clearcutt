@@ -29,8 +29,6 @@ document, one first command, and then deeper links.
   inventory with drift.
 - [Imported fleets](imported-fleets.md): import existing OCI refs, observe
   evidence without provenance claims, assess governance gaps, and plan rebases.
-- [CVE draft agent threat model](trust/cve-agent-threat-model.md): understand
-  the untrusted advisory/model-output boundary for remediation drafts.
 - [Catalog generator](catalog-generator.md): generate and validate catalog data.
 - [Catalog schema](catalog-schema.md): inspect the JSON contract.
 

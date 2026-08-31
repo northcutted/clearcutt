@@ -75,7 +75,7 @@ go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-control-plane-demo 
   --profile catalog-only \
   --catalog-source github-release \
   --catalog-source-repo northcutted/clearcutt \
-  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
+  --catalog-targets java21-distroless,node22-slim,python3.14-dev \
   --catalog-release-limit 1 \
   --owner northcutted \
   --repo clearcutt-demo \

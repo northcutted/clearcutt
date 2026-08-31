@@ -1,5 +1,13 @@
 # First-Class Service Images
 
+> **Status note.** The reference fleet configures **no** service images. The
+> capability described here is intact — `clearcutt service scaffold/validate/
+> build/smoke/publish` all work, and the committed catalog fixture still
+> exercises the service rendering path — but `postgres16`, `valkey8` and
+> `oauth2-proxy7` are no longer built or published by this repository. Scaffold
+> your own if your platform publishes services alongside runtimes.
+
+
 Service images are the second platform-owned image lane in ClearCutt. Runtime
 base images give app teams language foundations; service images give the
 platform team repeatable backing services such as Postgres, Valkey, and

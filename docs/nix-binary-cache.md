@@ -78,7 +78,7 @@ For an already-built target, the equivalent local command is:
 ```bash
 clearcutt fleet publish-cache \
   --system x86_64-linux \
-  --language coreLTS \
+  --language java21 \
   --tier slim \
   --core-dir core
 ```

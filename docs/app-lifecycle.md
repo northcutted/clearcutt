@@ -45,19 +45,20 @@ Supported base families:
 
 | Stack | Base ids |
 | --- | --- |
-| Core/static | `coreLTS-dev`, `coreLTS-slim`, `coreLTS-distroless` |
-| Java | `java21-*`, `java25-*` |
-| Node.js | `node22-*`, `node24-*` |
-| Python | `python3.13-*`, `python3.14-*` |
-| Go | `go1.25-*`, `go1.26-*` |
-| .NET | `dotnet8-*`, `dotnet10-*` |
-| Rust | `rust1.95-*` |
-| C/C++ | `cc15-*` |
+| Java | `java21-dev`, `java21-slim`, `java21-distroless` |
+| Node.js | `node22-dev`, `node22-slim`, `node22-distroless` |
+| Python | `python3.14-dev`, `python3.14-slim`, `python3.14-distroless` |
+| Go | `go1.26-dev`, `go1.26-slim`, `go1.26-distroless` |
+
+These four LTS lines are the reference fixtures the project publishes. The
+registry also carries recipes for `java25`, `node24`, `python3.13` and `go1.25`;
+add one to your fleet with `clearcutt matrix add`, or scaffold a new runtime
+family with `clearcutt runtime scaffold`.
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
 
-Preview lifecycle lines such as `java25-*` are suitable for validation and
+Preview lifecycle lines added via `clearcutt matrix add` are suitable for validation and
 early adoption. Production policies with `allowPreview: false` should use active
 runtime lines until the catalog lifecycle for that line moves to active.
 
@@ -76,7 +77,7 @@ These variables are used by the stack-specific examples below:
 export APP_IMAGE="ghcr.io/acme/payments-api:1.0.0"
 export REBASED_IMAGE="ghcr.io/acme/payments-api:1.0.0-rebased"
 export DEV_SIGNER="https://github.com/acme/payments/.github/workflows/release.yml@refs/heads/main"
-export ENGINE_SIGNER="https://github.com/acme/platform/.github/workflows/rebase.yml@refs/heads/main"
+export ENGINE_SIGNER="https://github.com/acme/platform/.github/workflows/YOUR_REBASE_WORKFLOW.yml@refs/heads/main"
 ```
 
 Each stack section builds a source image. After that, the signed rebase loop is
@@ -122,7 +123,7 @@ compatibility gate can enforce the runtime family and major/minor line.
 
 ## Stack Examples
 
-### Java 21 or Java 25
+### Java 21
 
 Use a fat JAR or another single executable JAR as the artifact.
 
@@ -144,7 +145,7 @@ clearcutt app build \
 For Java 25, use `java25-distroless` and the matching
 `clearcutt-java25:distroless-<tag>` patched base.
 
-### Node.js 22 or Node.js 24
+### Node.js 22
 
 Bundle the service into one server file. This works best for API services that
 can be bundled with esbuild, ncc, or Rollup.
@@ -194,7 +195,7 @@ clearcutt app build \
   --image "$APP_IMAGE"
 ```
 
-### Go 1.25 or Go 1.26
+### Go 1.26
 
 Produce a Linux executable and mark it executable in the image layer.
 
@@ -203,8 +204,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags="-s -w" \
   -o dist/payments-api ./cmd/payments-api
 
-export BASE_ID="go1.25-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.25:vX.Y.Z-distroless"
+export BASE_ID="go1.26-distroless"
+export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-go1.26:vX.Y.Z-distroless"
 
 clearcutt app build \
   --base "$BASE_ID" \
@@ -216,103 +217,6 @@ clearcutt app build \
 ```
 
 For Go 1.26, use `go1.26-distroless` and `clearcutt-go1.26`.
-
-### .NET 8 or .NET 10
-
-For .NET, use a framework-dependent publish directory and enter through the
-runtime in the ClearCutt base. The publish directory is still packaged as one
-deterministic app layer, so rebase preserves it byte-for-byte.
-
-```bash
-dotnet publish src/Payments.Api/Payments.Api.csproj \
-  -c Release \
-  -f net8.0 \
-  --self-contained false \
-  -o out
-
-export BASE_ID="dotnet8-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-dotnet8:vX.Y.Z-distroless"
-
-clearcutt app build \
-  --base "$BASE_ID" \
-  --artifact out \
-  --dest /workspace \
-  --entrypoint '["dotnet","/workspace/Payments.Api.dll"]' \
-  --image "$APP_IMAGE"
-```
-
-For .NET 10, use `-f net10.0`, `dotnet10-distroless`, and `clearcutt-dotnet10`.
-
-### Rust 1.95
-
-Build a Linux binary. A musl target is the most portable option.
-
-```bash
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
-mkdir -p dist
-cp target/x86_64-unknown-linux-musl/release/payments-api dist/payments-api
-
-export BASE_ID="rust1.95-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-rust1.95:vX.Y.Z-distroless"
-
-clearcutt app build \
-  --base "$BASE_ID" \
-  --artifact dist/payments-api \
-  --dest /workspace/payments-api \
-  --entrypoint '["/workspace/payments-api"]' \
-  --executable \
-  --image "$APP_IMAGE"
-```
-
-### C/C++ 15
-
-Build a Linux executable. Prefer a static or fully self-contained binary when
-targeting `distroless`.
-
-```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_EXE_LINKER_FLAGS="-static"
-cmake --build build --target payments-api
-
-export BASE_ID="cc15-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-cc15:vX.Y.Z-distroless"
-
-clearcutt app build \
-  --base "$BASE_ID" \
-  --artifact build/payments-api \
-  --dest /workspace/payments-api \
-  --entrypoint '["/workspace/payments-api"]' \
-  --executable \
-  --image "$APP_IMAGE"
-```
-
-Use `cc15-dev` as the builder image when you want the GCC/CMake/Ninja toolchain
-inside a containerized build stage.
-
-### Core LTS Static Utility
-
-Use the Core line when the application artifact is already a static Linux binary
-or tiny utility and only needs CA certificates in the runtime image.
-
-```bash
-zig cc -target x86_64-linux-musl -O2 -static \
-  -o dist/worker src/worker.c
-
-export BASE_ID="coreLTS-distroless"
-export PATCHED_BASE="ghcr.io/northcutted/clearcutt/clearcutt-corelts:vX.Y.Z-distroless"
-
-clearcutt app build \
-  --base "$BASE_ID" \
-  --artifact dist/worker \
-  --dest /workspace/worker \
-  --entrypoint '["/workspace/worker"]' \
-  --executable \
-  --image "$APP_IMAGE"
-```
-
----
 
 ## Rebuild Predicate Verification
 

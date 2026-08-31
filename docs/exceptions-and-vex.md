@@ -19,7 +19,7 @@ ClearCutt implements an explicit, schema-validated exception model:
   - An owner and detailed remediation reasoning (`reason`).
   - Cryptographic references if status is `accepted_risk`.
 
-`exceptions.yaml` is the **consumer-side** control, distinct from the platform's own CVE route decisions, which live as evidence under `core/overlays/cve/` — overlay and ignore evidence sidecars plus their optional `triage` blocks, produced by `clearcutt remediation triage` ([design](analysis/cve-triage-design.md)). Use a platform-side triage decision when you own the fleet and are choosing how a finding in a shipped base image gets fixed, carried, or waited out; use `exceptions.yaml` when you consume a ClearCutt base and need a scoped, expiring waiver against `verify image` thresholds for your own application image.
+`exceptions.yaml` is the **consumer-side** control: a scoped, expiring waiver against `verify image` thresholds for your own application image. It is now the only exception mechanism ClearCutt ships. The platform-side CVE route decisions that used to sit alongside it — overlay and ignore evidence under `core/overlays/cve/`, produced by `clearcutt remediation triage` — were removed with the remediation subsystem ([decision 6](decisions.md)).
 
 ---
 

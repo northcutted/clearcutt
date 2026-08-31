@@ -30,12 +30,12 @@ but they do not need to edit the file by hand for common matrix changes:
 ```bash
 clearcutt matrix explain java25
 clearcutt matrix add java25
-clearcutt matrix remove python3.13
+clearcutt matrix remove java25
 clearcutt --format json matrix export --source fleet --github-actions --matrix release
 clearcutt platform status
 ```
 
-- `matrix.languages` selects runtime lines such as `java21`, `node24`, or
+- `matrix.languages` selects runtime lines such as `java21`, `node22`, or
   `python3.14`.
 - `matrix.tiers` selects `dev`, `slim`, and `distroless`.
 - `matrix.systems` selects Linux release architectures.
@@ -119,7 +119,7 @@ images inherit the parent image's shell, package manager, and CVE footprint, so
 they do not carry the same zero-utility guarantee as native ClearCutt
 `distroless` images.
 
-Use `clearcutt overlay verify` with the source runtime archive, grafted archive,
+Verify a graft by comparing the source runtime archive against the grafted archive,
 and digest-pinned runtime/grafted refs to emit an offline in-toto
 closure-equivalence predicate before promotion.
 

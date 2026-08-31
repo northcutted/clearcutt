@@ -1,6 +1,14 @@
 # Hardening & Trade-Offs of BYO Base Image Overlays
 
-The `clearcutt overlay generate` command provides an adoption bridge for
+> **Status note.** The `clearcutt overlay generate` and `clearcutt overlay
+> verify` CLI commands were removed along with the CVE remediation subsystem.
+> The Nix mechanism this page describes is unchanged and still exported as
+> `clearcutt.lib.graftOntoBase` from `core/flake.nix`, so the grafting pattern
+> works. What no longer ships is the CLI wrapper and the generated
+> closure-equivalence in-toto predicate; comparing the two `/nix/store` closures
+> is now something you script yourself.
+
+Grafting a ClearCutt runtime onto a mandated base is the adoption bridge for
 platform teams constrained by enterprise base-image mandates such as RHEL,
 Amazon Linux, or SLES.
 
@@ -38,6 +46,7 @@ After building the overlay image, compare the native ClearCutt runtime archive
 with the grafted overlay archive:
 
 ```bash
+# REMOVED COMMAND - kept to document the closure-equivalence check it performed.
 clearcutt overlay verify \
   --runtime-archive clearcutt-java21.tar \
   --grafted-archive acme-java21-ubi.tar \

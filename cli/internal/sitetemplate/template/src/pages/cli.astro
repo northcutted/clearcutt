@@ -164,16 +164,16 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '') + '/';
           <CopyBlock language="shell" code={`# Diff previous release vs latest\nclearcutt diff java25-distroless --from latest-1 --to latest`} />
         </div>
 
-        <!-- overlay -->
+        <!-- discovery -->
         <div class="surface-soft border border-ink-800/40 rounded-2xl p-6 space-y-4">
           <div class="space-y-1">
-            <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">overlay generate / verify</span>
-            <h3 class="font-bold text-base text-ink-50">Nix Overlay Scaffolder</h3>
+            <span class="inline-flex rounded bg-accent/15 px-2 py-0.5 text-[10px] font-mono font-bold text-accent-soft uppercase tracking-wider">registry scan / graph build</span>
+            <h3 class="font-bold text-base text-ink-50">Estate Discovery</h3>
           </div>
           <p class="text-xs text-ink-300 leading-relaxed font-sans">
-            Generates flake-backed grafting workspaces to overlay ClearCutt runtimes onto enterprise-mandated base images. The verifier emits an offline in-toto predicate proving the grafted image preserves the runtime <code>/nix/store</code> closure bytes.
+            Enumerates a registry namespace, then works out which images are built on which by comparing layer digests. Layer proof outranks any <code>org.opencontainers.image.base.*</code> label, and every edge records how it was established. Read-only: it lists tags and reads manifests, and never pulls, mutates, or publishes.
           </p>
-          <CopyBlock language="shell" code={`# Scaffold Java 21 UBI9 graft workspace\nclearcutt overlay generate \\\n  --runtime java21 \\\n  --tier slim \\\n  --base registry.access.redhat.com/ubi9/ubi-minimal@sha256:... \\\n  --runtime-ref ${registryBase}/${java21ImageName}:${imageReleaseTag}-slim@sha256:... \\\n  --image ghcr.io/acme/java21-ubi:${imageReleaseTag} \\\n  --output my-java21-overlay/\n\n# Emit an offline closure-equivalence predicate\nclearcutt overlay verify \\\n  --runtime-archive clearcutt-java21.tar \\\n  --grafted-archive my-java21-overlay/result \\\n  --runtime-ref ${registryBase}/${java21ImageName}:${imageReleaseTag}-slim@sha256:... \\\n  --grafted-ref ghcr.io/acme/java21-ubi:${imageReleaseTag}@sha256:... \\\n  --target java21-slim \\\n  --output-predicate`} />
+          <CopyBlock language="shell" code={`# Ask the registry what it holds\nclearcutt registry scan \\\n  --registry ghcr.io --namespace acme/platform \\\n  --repository base-java21 --repository payments-api \\\n  --output dist/scan/images.yaml\n\n# Read manifests, configs, layers, labels\nclearcutt import observe \\\n  --images dist/scan/images.yaml \\\n  --output dist/scan/observations.json\n\n# Map the estate and measure drift\nclearcutt graph build \\\n  --observations dist/scan/observations.json \\\n  --output dist/scan/graph.json \\\n  --report dist/scan/inventory.md`} />
         </div>
 
         <!-- conformance -->

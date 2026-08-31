@@ -5,9 +5,7 @@ This document defines the supply-chain security model, trust boundaries, and evi
 For a command-level path through one image digest, use
 [`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md). For catalog
 badge semantics and missing-evidence states, use
-[`trust/catalog-evidence.md`](trust/catalog-evidence.md). For the remediation
-drafting agent boundary, use
-[`trust/cve-agent-threat-model.md`](trust/cve-agent-threat-model.md).
+[`trust/catalog-evidence.md`](trust/catalog-evidence.md).
 
 ---
 
@@ -40,7 +38,7 @@ graph TD
 - The Nix store compilation pipeline compiles and layers all runtime interpreters inside a completely hermetic closure.
 - Distroless runtime images omit FHS linker/library fallback paths and rely on RPATH/RUNPATH entries bound directly to `/nix/store`.
 - Slim, dev, and service images retain `/lib`/`/lib64` compatibility symlinks for teams that need to run FHS-oriented binaries inside a ClearCutt-managed runtime. Treat those tiers as compatibility tiers, not as the strictest dynamic-linkage boundary.
-- Only the dev tier additionally sets `LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64` as a foreign-binary convenience. Production tiers (slim, distroless) and service images never set it: glibc resolves libraries in the order `DT_RPATH` > `LD_LIBRARY_PATH` > `DT_RUNPATH`, and Nix-built binaries record their store-bound dependencies in `DT_RUNPATH`, so a global FHS `LD_LIBRARY_PATH` would outrank hermetic store resolution on every binary in the image — the same drift class the RPATH/interpreter gate exists to prevent. The `/lib`/`/lib64` symlinks alone cover FHS foreign binaries through the dynamic loader's default search paths without overriding `DT_RUNPATH`. The absence of `LD_LIBRARY_PATH` in production OCI configs is machine-checked by `core/tests/verify.sh` (runtime images) and `core/tests/service-image-contract.sh` (service images).
+- Only the dev tier additionally sets `LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64` as a foreign-binary convenience. Production tiers (slim, distroless) and service images never set it: glibc resolves libraries in the order `DT_RPATH` > `LD_LIBRARY_PATH` > `DT_RUNPATH`, and Nix-built binaries record their store-bound dependencies in `DT_RUNPATH`, so a global FHS `LD_LIBRARY_PATH` would outrank hermetic store resolution on every binary in the image — the same drift class the RPATH/interpreter gate exists to prevent. The `/lib`/`/lib64` symlinks alone cover FHS foreign binaries through the dynamic loader's default search paths without overriding `DT_RUNPATH`. The absence of `LD_LIBRARY_PATH` in production OCI configs is machine-checked by `clearcutt verify boundary-suite` (runtime images) and `core/tests/service-image-contract.sh` (service images).
 - The RPATH/interpreter gate verifies the binaries in the Nix closure; it does not claim that a downstream application cannot add new dynamic-linkage paths after the image is extended.
 
 ### 2.1.1 License Metadata Boundary
@@ -52,7 +50,7 @@ graph TD
 - The G2 remediation gate compares the current image's extracted `/nix/store`
   roots with a registry-derived known-good image, not with the image being
   tested.
-- The default baseline is the upstream `coreLTS-slim` rolling image
+- The default baseline is the upstream `java21-slim` rolling image
   (`ghcr.io/northcutted/clearcutt/clearcutt-corelts:slim`) and the default
   package boundary is `bash-interactive`.
 - Forks and offline test fixtures can set `CLEARCUTT_G2_KNOWN_GOOD_REF`,

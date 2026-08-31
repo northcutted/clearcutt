@@ -1,10 +1,30 @@
 # ClearCutt Mental Model
 
-ClearCutt has two connected loops.
+ClearCutt has three loops. The first is the product; the other two exist because
+they were needed to prove the first one works.
 
-## 1. Platform Loop
+## 1. Governance Loop
 
-The platform team owns the fork and publishes the image fleet:
+This is the main path, and it does not require ClearCutt to have built anything:
+
+1. Enumerate a registry namespace into an inventory (`registry scan`).
+2. Read each image's manifest, config, layers, and labels (`import observe`).
+3. Derive which images are built on which and how stale each is (`graph build`),
+   and what the estate has in common (`graph layers`).
+4. Assess what evidence each image carries and what is missing
+   (`import assess`), without inferring provenance that was never there.
+5. Gate on the result at CI (`verify`, `certify`, `graph build --fail-on-stale`)
+   and at admission (`policy`).
+6. Publish the catalog and evidence portal (`catalog build`,
+   `catalog site build`).
+
+Nothing in this loop needs Nix, a particular Dockerfile, or cooperation from
+whoever built the images.
+
+## 2. Platform Loop
+
+A platform team that wants to build its own base images can. This is how the
+project's four LTS reference fixtures are produced:
 
 1. Configure runtime and service lanes in `clearcutt.fleet.yaml`.
 2. Build platform-owned images with the Nix backend.
@@ -12,12 +32,13 @@ The platform team owns the fork and publishes the image fleet:
 4. Attach release evidence when configured: signatures, SBOMs, provenance, test
    results, scans, and release metadata.
 5. Generate catalog data and publish the evidence portal.
-6. Maintain admission policy examples, remediation defaults, and exceptions.
+6. Maintain admission policy examples and exceptions.
 
 This loop is where Nix belongs. It is platform-owner machinery, not an
-app-team prerequisite.
+app-team prerequisite — and it is optional. ClearCutt governs estates it did
+not build; this loop only matters if you want to be the builder too.
 
-## 2. App-Delivery Loop
+## 3. App-Delivery Loop
 
 Application teams consume the fleet with normal container tooling:
 
@@ -27,7 +48,9 @@ Application teams consume the fleet with normal container tooling:
 4. Certify the app image locally or in CI.
 5. Admit only images that satisfy the platform's evidence and vulnerability
    policy.
-6. Rebase compatible app images onto patched bases under review when needed.
+6. Rebase compatible app images onto newer bases under review when needed.
+   `app rebase` verifies by layer diff_id that the app sits on the old base, so
+   it works on any image, not only ones built by ClearCutt or buildpacks.
 
 ## Lanes
 

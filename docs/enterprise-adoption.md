@@ -41,8 +41,9 @@ If your organization mandates Red Hat UBI, Ubuntu Pro, Amazon Linux, or another
 approved base, use overlays as a migration bridge rather than pretending they
 are equivalent to ClearCutt from-scratch distroless images.
 
-- Use `clearcutt overlay generate` to graft the reproducible `/nix` runtime
-  closure onto the mandated base.
+- Use `clearcutt.lib.graftOntoBase` from `core/flake.nix` to graft the
+  reproducible `/nix` runtime closure onto the mandated base. (The
+  `clearcutt overlay generate` CLI wrapper was removed; the Nix helper remains.)
 - Preserve required agents and OS policy while standardizing language runtimes.
 - Be explicit about the trade-off: overlays inherit the parent image's shell,
   package manager, and CVE footprint.

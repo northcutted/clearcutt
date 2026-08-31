@@ -46,9 +46,20 @@ This document traces the design logic and rationale behind the key security cons
 
 ---
 
-## 6. Priced CVE Triage Routes with Self-Retiring Decisions
+## 6. Priced CVE Triage Routes with Self-Retiring Decisions (SUPERSEDED)
 
-* **Decision**: When a CVE fix exists upstream but not in the pinned nixpkgs, `clearcutt remediation triage` computes and prices the full option space: a live fix-availability probe across nixpkgs refs plus six routes (`version_bump`, `substitute_vex`, `unstable_optin`, `fetchpatch_rebuild`, `scanner_ignore`, `wait`), each carrying a cost-now / risk-carried / retirement triple. Policy thresholds pick the default route, a human decides the escalations, and every decision is recorded as a durable, self-retiring evidence artifact whose retirement condition (`pin_carries_fix`, `ref_carries_fix`, or `expiry`) is evaluated mechanically by `remediation status --check-retirements`.
-* **Rationale**: Route decisions previously cost an hour of manual archaeology (nixpkgs branch sweeps, hand-diffing derivations) even though every input was mechanically derivable. Pricing the routes turns that into a sixty-second judgment call, and recording the retirement condition at decision time makes carried risk expire by data rather than by memory — overlays and pin opt-ins get dropped when the pin catches up, not when someone remembers them.
-* **Agentic Seam**: `decidedBy` (`human` | `policy` | `agent:<id>`) is the single field that changes if an agent later makes below-threshold calls; the `clearcutt.triage/v1` contract, validation, and retirement machinery are identical for all three. Triage itself contains no LLM call, no auto-merge, and no fleet-config mutation, consistent with decisions D4/D5 in `docs/analysis/decisions-needed.md`: the deterministic core is the product, and agents get a contract, not a lever.
-* **Escalation Boundary**: `--strict` exit code `2` ("no route available under policy") is the machine-visible line between autonomous handling and human-required review, and probe failures degrade to the static route classifier so triage is never less available than planning. Full design: `docs/analysis/cve-triage-design.md`.
+* **Status**: Removed. `clearcutt remediation triage` priced six CVE routes
+  (`version_bump`, `substitute_vex`, `unstable_optin`, `fetchpatch_rebuild`,
+  `scanner_ignore`, `wait`), each with a cost-now / risk-carried / retirement
+  triple, and recorded self-retiring decision records with a `decidedBy`
+  attribution seam. It was deleted with the rest of the remediation subsystem.
+* **Why it went**: every route it priced was a way to patch a Nix image
+  ClearCutt builds, and the probe that made pricing possible swept nixpkgs refs.
+  With the fleet reduced to four reference fixtures, there was nothing for it to
+  decide about, and none of it transferred to governing an estate ClearCutt did
+  not build.
+* **What is worth rebuilding**: the *idea* — an honest, expiring ledger of
+  findings nobody can fix yet, with an attribution field that distinguishes a
+  human decision from a policy default from an agent's call. That belongs on top
+  of `graph` and `import assess`, where it would be registry-agnostic. Nothing
+  in the current tree implements it.

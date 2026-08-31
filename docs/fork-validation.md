@@ -62,9 +62,8 @@ workflows use `.github/actions/install-clearcutt`. The default mode installs a
 verified ClearCutt release binary; use repository variables
 `CLEARCUTT_CLI_VERSION` and `CLEARCUTT_CLI_REPO` to pin a release or CLI fork.
 Set `CLEARCUTT_CLI_MODE=local` only for source dogfooding, not as the normal
-operator path for a scaffolded fleet repo. The build and publish workflows
-default `CLEARCUTT_BUILD_ENGINE=go`; set `CLEARCUTT_BUILD_ENGINE=shell` only as
-a temporary fallback while investigating Go-engine parity. Cache-seed analysis
+operator path for a scaffolded fleet repo. Build and publish workflows run
+through the Go-owned build engine; there is no shell fallback. Cache-seed analysis
 uses `clearcutt fleet seed-cache-plan` so matrix export, Nix dry-run parsing,
 and GitHub output shaping stay in the released CLI. Release and PR-gate matrix
 fan-out uses `clearcutt fleet workflow-matrices` so runtime/service matrix

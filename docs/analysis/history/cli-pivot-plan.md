@@ -174,7 +174,7 @@ guard against the live source tree.
      metadata, app templates, example localization — already implemented in
      `platform.go`).
    - Emit `registry.host` plus `CLEARCUTT_REGISTRY_USER/TOKEN` setup guidance (see
-     [registry-swap.md](../registry-swap.md)).
+     [registry-swap.md](../../registry-swap.md)).
 2. Optional bootstrap `--push`: `git init` + `gh repo create O/R` + initial
    commit + push (guarded; no-op without `gh`/auth, with a clear message).
 3. Single-source the registry host: have the scaffolded `fleet-matrix` job emit
@@ -360,4 +360,4 @@ build → verify) works end to end and matches the README.
   not own app tests; it runs a user-provided probe and gates on exit code.
 - **Honest SLSA level + reproducibility evidence** — derive the level from the
   predicate; wire the already-implemented `verify rebuild --require-layer-match`
-  into CI as differentiated evidence. See [security-model.md](../security-model.md).
+  into CI as differentiated evidence. See [security-model.md](../../security-model.md).

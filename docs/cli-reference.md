@@ -210,7 +210,7 @@ every edge with the confidence that method earns. See
   --profile catalog-only \
   --catalog-source github-release \
   --catalog-source-repo YOUR_ORG/image-factory \
-  --catalog-targets java21-distroless,node24-slim \
+  --catalog-targets java21-distroless,node22-slim \
   --catalog-release-limit 1 \
   --owner YOUR_ORG \
   --repo release-catalog \
@@ -223,12 +223,12 @@ every edge with the confidence that method earns. See
 
 ./clearcutt fleet certify-target \
   --system x86_64-linux \
-  --language java25 \
+  --language java21 \
   --tier slim
 
 ./clearcutt fleet publish-target \
   --system x86_64-linux \
-  --language java25 \
+  --language java21 \
   --tier slim \
   --version-tag v1.2.3
 
@@ -237,7 +237,7 @@ every edge with the confidence that method earns. See
 ./clearcutt fleet build-cli-assets --version-tag v1.2.3 --build-outputs build-outputs --sign
 
 ./clearcutt matrix explain java21
-./clearcutt matrix add java25
+./clearcutt matrix add java25   # adds a line the registry has a recipe for
 ./clearcutt runtime scaffold ruby3.4
 ./clearcutt runtime validate ruby3.4
 
@@ -247,32 +247,20 @@ every edge with the confidence that method earns. See
 ./clearcutt service smoke postgres16 --engine docker
 ./clearcutt service publish postgres16 --system x86_64-linux --version-tag v1.2.3
 
-./clearcutt overlay generate \
-  --runtime java21 \
-  --tier slim \
-  --base registry.access.redhat.com/ubi9/ubi-minimal@sha256:... \
-  --runtime-ref ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java21:TAG-slim@sha256:... \
-  --image ghcr.io/YOUR_ORG/java21-ubi:TAG \
-  --output overlays/java21-ubi
-
-./clearcutt overlay verify \
-  --runtime-archive clearcutt-java21.tar \
-  --grafted-archive overlays/java21-ubi/result \
-  --runtime-ref ghcr.io/YOUR_ORG/YOUR_REPO/clearcutt-java21:TAG-slim@sha256:... \
-  --grafted-ref ghcr.io/YOUR_ORG/java21-ubi:TAG@sha256:... \
-  --target java21-slim \
-  --output-predicate
 ```
 
-Fleet and service build/publish commands default to the Go-owned engine
-(`nix build` backend, native boundary gates, Go OCI publish). Use
-`--engine shell` only as a temporary legacy `core/pipeline/pipeline.sh`
-fallback while investigating parity.
-`fleet workflow-matrices` is the release/PR-gate planner used by GitHub
-Actions: it reads `clearcutt.fleet.yaml`, emits the runtime release/image
-matrices and service release/image matrices, and writes `release_matrix`,
-`image_matrix`, `service_release_matrix`, and `service_image_matrix` when
-`--github-output` is set.
+Fleet and service build/publish run through the Go-owned engine: a `nix build`
+backend, native in-process boundary gates, and a Go OCI publish path. There is
+no shell fallback.
+
+The reference fleet builds four LTS runtime lines — java21, node22, python3.14
+and go1.26 — in three tiers on two architectures. `clearcutt.fleet.yaml`
+configures no service images; `service scaffold` still works if you want them.
+
+`fleet workflow-matrices` is the release/PR-gate planner used by GitHub Actions:
+it reads `clearcutt.fleet.yaml` and emits the runtime release and image
+matrices, writing `release_matrix` and `image_matrix` when `--github-output` is
+set.
 `fleet seed-cache-plan` is the no-build cache-warming planner used by the
 seed-cache workflow: it dry-runs each release matrix cell against the Nix
 backend, refuses partial output on eval failures, and writes `seed_matrix` plus
@@ -332,130 +320,22 @@ refresh fails, the CLI warns and continues with the active local database, which
 matches the scheduled remediation behavior without requiring a separate shell
 wrapper.
 
-## Policy And Remediation Commands
+## Policy And Exception Commands
 
 ```bash
 ./clearcutt --catalog cli/internal/testdata/catalog policy java21-distroless --engine kyverno --environment production --namespace apps
 ./clearcutt exceptions validate exceptions.yaml --fail-on-expired-exceptions
 ./clearcutt vex --help
-./clearcutt remediation plan --help
-./clearcutt remediation workflow-params --github-output "$GITHUB_OUTPUT"
-./clearcutt remediation run --llm off --skip-pr --help
-./clearcutt remediation run \
-  --package zlib \
-  --cve CVE-2026-77777 \
-  --installed-version 1.3.1 \
-  --fixed-version 1.3.2 \
-  --download-url https://example.test/zlib-1.3.2.tar.gz \
-  --sha256 sha256-deadbeef \
-  --rolling-branch cve-remediation/manual
-./clearcutt remediation report --help
 ```
 
-`remediation run` drafts deterministic evidence-backed campaigns natively before
-any retained backend is considered. When the evidence includes a direct `route`
-plus `overlay_expression` recipe or explicit source/patch URL plus hash
-evidence, the Go CLI writes the overlay, evidence sidecar, and remediation
-branch itself. `--llm off` is the deterministic scheduled path: it filters to
-evidence-backed campaigns only and skips campaigns that still need hash
-iteration or build probing. `--llm auto` may route only those unresolved
-campaigns to the retained drafting backend behind the CLI. Core workspace
-autodetection uses the Nix backend markers, so deterministic runs do not require
-the retained Python backend file. `remediation workflow-params` reads
-`clearcutt.fleet.yaml` and emits the scan depth, campaign limits,
-dev-tier inclusion, and compact policy JSON used by the scheduled workflow,
-so Actions does not parse remediation config with `jq`. `remediation plan` and
-`remediation run` also read the same CI env defaults (`VULN_ROOT`,
-`MAX_FINDINGS_PER_RUN`, `MAX_PATCH_FAILURES_PER_RUN`,
-`INCLUDE_DEV_ONLY_REMEDIATION`, and `REMEDIATION_POLICY_JSON`) used by the
-scheduled workflow. `remediation report --allow-missing` preserves always-run
-report steps without shell file checks. Manual `workflow_dispatch` remediation
-also uses `remediation run` with explicit package/CVE/version/source inputs, so
-GitHub Actions no longer invokes `cve-draft-agent.py` directly. The output
-remains an aggregated draft PR path, not an auto-merge or production mutation
-path.
+`policy` generates Kubernetes admission policy examples. `exceptions` governs
+time-boxed vulnerability exceptions. `vex` emits OpenVEX documents.
 
-## Triage And Decision Commands
-
-```bash
-./clearcutt remediation triage --plan core/build-outputs/remediation-plan.json --core-dir core
-./clearcutt --format json remediation triage > triage-report.json
-./clearcutt remediation triage --cve CVE-2026-88888 \
-  --decide scanner_ignore \
-  --decided-by human \
-  --owner platform-team \
-  --reason "vulnerable path not reachable from shipped entrypoints" \
-  --expires 2026-09-30
-./clearcutt remediation status
-./clearcutt remediation status --check-retirements --strict
-```
-
-`remediation triage` composes materiality, the static route context, and a live
-fix-availability probe into one priced decision record per finding. Scope the
-run with `--cve` or `--package`, feed it an existing plan (`--plan plan.json`)
-or scan output (`--scan-dir`), and point `--core-dir` at the core workspace so
-the probe can resolve nixpkgs source paths against the local pin. `--no-probe`
-— or any probe failure — degrades to the static route classifier, so triage is
-never less available than `remediation plan`. The default table output prints
-one block per finding: a CVE header line (severity, exposure tiers, upstream
-state) followed by the route table. `--format json` emits the versioned
-`clearcutt.triage/v1` report (`schemas/triage.v1.schema.json`) that the
-scheduled scan uploads and future agents consume.
-
-Every finding is priced across six routes. Cost is what applying the route
-costs today; retirement is the condition recorded at decision time under which
-the decision stops being carried:
-
-| Route | Available when | Cost now | Retires |
-| --- | --- | --- | --- |
-| `version_bump` | the pinned nixpkgs already carries the fix | none (substitutable) | immediately — the fix ships and the evidence closes |
-| `substitute_vex` | crypto CVE already provenance-allowlisted | none (substitutable) | pin carries the fix |
-| `unstable_optin` | a Hydra-cached ref carries the fix | scoped rebuild of the hopped runtime subtree (conservatively priced — the crypto rebind rebuilds it even when the hop itself substitutes) | pin carries the fix — drop the opt-in |
-| `fetchpatch_rebuild` | upstream fix exists but no cached ref carries it | cold from-source build | pin carries the fix — drop the overlay |
-| `scanner_ignore` | policy permits per materiality (never KEV) | none | expiry (policy accepted-expiry default) |
-| `wait` | fix visible on an uncached ref and severity at or below the policy wait ceiling | none | a cached ref carries the fix, with an expiry backstop |
-
-`--decide ROUTE` applies a route non-interactively and stamps a `triage` block
-(`decidedBy`, retirement condition, probe snapshot at decision time) onto the
-decision artifact. `scanner_ignore` delegates to the existing ignore writer
-(grype rule plus expiring ignore evidence); `unstable_optin` writes the decision
-record and prints the exact `remediation.unstable.softOptIns` snippet rather
-than rewriting `clearcutt.fleet.yaml`; `wait` writes a standalone
-`.decision.evidence.json`; `version_bump`, `fetchpatch_rebuild`, and
-`substitute_vex` write the record and hand the mechanical part to
-`remediation run`. `--decided-by` accepts `human` (the default), `policy`, or
-`agent:<id>`.
-
-`remediation status` is the ledger. It aggregates every carried decision — CVE
-overlays and evidence, ignore evidence, fleet soft opt-ins, crypto allowlist
-entries, wait records — into one table of what is carried, its route, and when
-it retires. `--check-retirements` (probe required) evaluates each
-recorded retirement condition now: `pin_carries_fix` and `ref_carries_fix`
-probe the watched ref for the fix version, `expiry` is a date compare using the
-same rule `validate-overlays` enforces.
-
-Both commands follow the standard exit-code contract above: `0` decided or
-informational, `1` operational error. With `--strict`, `remediation triage`
-exits `2` when any in-scope finding has no available route under policy — the
-escalation signal a pipeline turns into a PR comment or issue — and
-`remediation status --check-retirements` exits `2` when any retirement
-condition fired, the scheduled hook for opening retirement PRs.
-
-Example table output for a critical production finding whose fix has reached
-staging-next but no cached ref:
-
-```text
-CVE-2026-88888 openssl 3.6.2 -> 3.6.3  severity=critical  exposure=production(distroless)  disposition=must_fix(severity)
-probe: pin ✗ · nixos-unstable ✗ · master ✗ · staging-next ✓ uncached
-
-    ROUTE               AVAILABLE  COST NOW           RISK CARRIED  RETIRES         WHY
-    substitute_vex      no         none_substitutable none          -               not a provenance-allowlisted crypto finding; the substitute+VEX bridge does not apply
-    version_bump        no         none_substitutable none          -               the pin still builds 3.6.2, below the scanner fix 3.6.3
-    unstable_optin      no         scoped_rebuild     none          -               no Hydra-cached ref carries the fix yet
-  ▸ fetchpatch_rebuild  yes        cold_source_build  none          pin >= 3.6.3    upstream fix 3.6.3 exists but the pin lacks it; rebuild from source via an in-place override
-    wait                no         none               cve_ships_until_ref_lands  -  severity critical is above the wait ceiling (medium)
-    scanner_ignore      no         none               cve_ships_until_expiry     -  policy blocks: reachable, materially risky, and fixable in a production tier
-```
+ClearCutt reports and gates on vulnerabilities; it does not patch images. The
+`remediation` and `overlay` command groups, which drafted Nix overlay patches
+for the images ClearCutt built, were removed along with the fleet they served.
+`remediation.policy` in `clearcutt.fleet.yaml` still drives the severity
+thresholds `scan` and `verify` gate on.
 
 ## Drift Check Scope
 
