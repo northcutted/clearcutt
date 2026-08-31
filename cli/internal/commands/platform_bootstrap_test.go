@@ -562,17 +562,39 @@ func TestPlatformApplyGitHubUsesFakeRunner(t *testing.T) {
 	}
 }
 
-func TestPlatformApplyGitHubConvergesOnSecondRun(t *testing.T) {
-	dir := renderCatalogOnlyForTest(t)
+// initBootstrapTestRepo prepares a real git repo for the convergence tests,
+// which run actual `git add`/`git commit` through convergentBootstrapRunner.
+//
+// Disabling auto-maintenance is load-bearing, not hygiene. `git commit` ends by
+// spawning `git maintenance run --auto --no-quiet --detach`, and --detach means
+// that child outlives the `git commit` the runner waited on. The test body then
+// returns and t.TempDir()'s cleanup calls RemoveAll on the tree while the
+// detached process is still walking .git/objects, so the delete intermittently
+// loses the race and the test fails with an error that names no assertion:
+//
+//	TempDir RemoveAll cleanup: unlinkat .../.git/objects: directory not empty
+//
+// That reproduced at roughly 1-2% (4/250 runs, and 3/60 under GIT_TRACE, which
+// also confirmed one maintenance spawn per commit). Turning the spawn off at
+// the repo level removes the race rather than widening the window.
+func initBootstrapTestRepo(t *testing.T, dir string) {
+	t.Helper()
 	for _, args := range [][]string{
 		{"-C", dir, "init", "-b", "main"},
 		{"-C", dir, "config", "user.name", "ClearCutt Test"},
 		{"-C", dir, "config", "user.email", "clearcutt@example.invalid"},
+		{"-C", dir, "config", "maintenance.auto", "false"},
+		{"-C", dir, "config", "gc.auto", "0"},
 	} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}
+}
+
+func TestPlatformApplyGitHubConvergesOnSecondRun(t *testing.T) {
+	dir := renderCatalogOnlyForTest(t)
+	initBootstrapTestRepo(t, dir)
 	plan, err := buildGitHubPlan(platformPlanFlags{dir: dir, owner: "acme", repo: "image-platform", profile: platformProfileCatalogOnly, registryBase: "ghcr.io/acme/image-platform", pages: true})
 	if err != nil {
 		t.Fatal(err)
@@ -598,15 +620,7 @@ func TestPlatformApplyGitHubConvergesOnSecondRun(t *testing.T) {
 
 func TestPlatformApplyReleaseBackedGitHubConvergesOnSecondRun(t *testing.T) {
 	dir := renderReleaseBackedForTest(t)
-	for _, args := range [][]string{
-		{"-C", dir, "init", "-b", "main"},
-		{"-C", dir, "config", "user.name", "ClearCutt Test"},
-		{"-C", dir, "config", "user.email", "clearcutt@example.invalid"},
-	} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	initBootstrapTestRepo(t, dir)
 	plan, err := buildGitHubPlan(platformPlanFlags{
 		dir: dir, owner: "northcutted", repo: "clearcutt-demo", profile: platformProfileCatalogOnly,
 	})
