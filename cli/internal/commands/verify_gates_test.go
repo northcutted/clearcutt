@@ -259,7 +259,7 @@ func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
 		t.Fatalf("expected one nix build for the default distroless archive, got %#v", calls)
 	}
 	joined := strings.Join(calls[0].Args, " ")
-	for _, want := range []string{".#java21-distroless", "--accept-flake-config"} {
+	for _, want := range []string{`.#"java21-distroless"`, "--accept-flake-config"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing build arg %q in calls %#v", want, calls)
 		}
@@ -372,8 +372,44 @@ func TestVerifyBoundarySuiteDerivesTargetsFromTheFleet(t *testing.T) {
 	if len(compiled.ClosurePurityTargets) == 0 {
 		t.Skip("fixture fleet declares no production distroless target")
 	}
-	want := ".#" + compiled.ClosurePurityTargets[0]
+	want := fmt.Sprintf(".#%q", compiled.ClosurePurityTargets[0])
 	if !strings.Contains(joined, want) {
 		t.Fatalf("suite built %q, want the fleet-derived target %q", joined, want)
+	}
+}
+
+// TestVerifyBoundarySuiteQuotesDottedFlakeAttributes guards a bug that only
+// appears for runtime lines with a dotted version. A nix flake installable
+// splits its attribute path on ".", so `.#python3.14-distroless` resolves as
+// packages...python3 -> "14-distroless" and fails with "does not provide
+// attribute". It stayed latent while the default targets were coreLTS- and
+// java21-distroless, and surfaced the moment the defaults were derived from a
+// fleet containing python3.14.
+func TestVerifyBoundarySuiteQuotesDottedFlakeAttributes(t *testing.T) {
+	root := t.TempDir()
+	coreDir := filepath.Join(root, "core")
+	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"), []byte("\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []externalCommand
+	oldRun := runExternalCommand
+	runExternalCommand = func(c externalCommand) error {
+		calls = append(calls, c)
+		return fmt.Errorf("stop before the real build")
+	}
+	t.Cleanup(func() { runExternalCommand = oldRun })
+
+	_, _ = runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--closure-target", "python3.14-distroless")
+
+	if len(calls) == 0 {
+		t.Fatal("expected a nix build attempt")
+	}
+	joined := strings.Join(calls[0].Args, " ")
+	if !strings.Contains(joined, `.#"python3.14-distroless"`) {
+		t.Fatalf("dotted attribute must be quoted, got: %s", joined)
 	}
 }

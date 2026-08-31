@@ -228,7 +228,13 @@ func ensureBoundarySuiteArchive(coreDir, buildOutputs, target string) (string, e
 		Dir:  coreDir,
 		Args: []string{
 			"build",
-			".#" + target,
+			// The attribute name MUST be quoted. A nix flake installable splits
+			// its attribute path on ".", so a bare .#python3.14-distroless is
+			// parsed as packages...python3 -> "14-distroless" and fails with
+			// "does not provide attribute". Every runtime line with a dotted
+			// version hits this; internal/build already quotes for the same
+			// reason.
+			fmt.Sprintf(".#%q", target),
 			"--out-link",
 			linkPath,
 			"--extra-experimental-features",
