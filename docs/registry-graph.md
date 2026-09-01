@@ -266,6 +266,18 @@ question.
 SBOMs are read from OCI referrers first, then the cosign `sha256-<digest>.sbom`
 sidecar convention. SPDX and CycloneDX are both parsed.
 
+**`--fetch-sboms` only helps when someone attached one.** This is not a switch
+that produces packages for every image; it retrieves documents that already
+exist. Checked against real public images: `docker.io/library/python:3.12-slim`
+has no attachment, and `cgr.dev/chainguard/static:latest` returns an empty
+referrers list and a 404 on the sidecar tag — Chainguard publishes SBOMs through
+their own API rather than as registry attachments. Both correctly come back as
+**unknown**.
+
+That is the argument for the free path in one line: reading Nix store paths out
+of a config depends on nobody, while fetching an SBOM depends on the publisher
+having attached one.
+
 ### Lineage: the relation composed estates actually have
 
 For a composed estate the meaningful relation is not ancestry but shared build
