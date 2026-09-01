@@ -405,8 +405,12 @@ func TestRuntimeScaffoldRejectsUnsupportedAppTemplateRuntime(t *testing.T) {
 func TestAppTemplateWritesBuildCertifyAndRebaseFiles(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFleetConfig(t, dir)
-	outDir := filepath.Join(dir, "node-template")
-	stdout, err := runCLI(t, "app", "template", "node", "--fleet-config", path, "--output", outDir, "--name", "node-template")
+	// Scaffold whichever runtime the fleet actually enables. Naming one here
+	// made the test fail when the fleet narrowed, for a reason that had nothing
+	// to do with what it verifies: that `app template` emits the full file set.
+	runtime := fleet.DefaultConfig("acme", "platform").Templates.Runtimes[0]
+	outDir := filepath.Join(dir, runtime+"-template")
+	stdout, err := runCLI(t, "app", "template", runtime, "--fleet-config", path, "--output", outDir, "--name", runtime+"-template")
 	if err != nil {
 		t.Fatalf("app template failed: %v\n%s", err, stdout)
 	}
@@ -451,15 +455,17 @@ func TestPlatformInitWritesStarterKitAndHonorsForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("platform init failed: %v\n%s", err, stdout)
 	}
-	for _, rel := range []string{
+	expected := []string{
 		"clearcutt.fleet.yaml",
 		"core/lib/platform-metadata.nix",
 		"docs/platform-kit.md",
-		"examples/clearcutt-template-java/Dockerfile",
-		"examples/clearcutt-template-node/Dockerfile",
-		"examples/clearcutt-template-python/Dockerfile",
-		"examples/clearcutt-template-go/Dockerfile",
-	} {
+	}
+	// One app template per runtime the scaffolded fleet enables — derived, so
+	// narrowing or widening the fleet does not strand this list behind it.
+	for _, runtime := range fleet.DefaultConfig("acme", "platform").Templates.Runtimes {
+		expected = append(expected, "examples/clearcutt-template-"+runtime+"/Dockerfile")
+	}
+	for _, rel := range expected {
 		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
 			t.Fatalf("expected generated %s: %v", rel, err)
 		}

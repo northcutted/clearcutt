@@ -207,12 +207,37 @@
             value = nativeHelpers.mkHardenedShell { language = line.language; version = line.version; };
           }) fleetLines
         );
+        # Every recipe in lib/registry.nix, resolved for every tier, whether or
+        # not the fleet builds it. The shipped fleet builds one runtime line;
+        # the rest of the registry is a library a fork enables by editing
+        # clearcutt.fleet.yaml. An unselected recipe that stopped evaluating —
+        # because nixpkgs renamed an attr, or dropped a version — is rot nobody
+        # would notice until the day someone enabled it, which is the worst
+        # possible time to find out.
+        #
+        # Forcing drvPath resolves getPkg and every override/transformer without
+        # building anything, so `nix eval .#recipeProbe.<system>` is a cheap
+        # staleness check over recipes CI never builds. It is deliberately NOT a
+        # package or a check: it must never trigger a build.
+        recipeProbe = pkgs.lib.listToAttrs (
+          builtins.concatMap (language:
+            builtins.concatMap (version:
+              builtins.map (tier: {
+                name = "${language}${version}-${tier}";
+                value = builtins.map (drv: drv.drvPath)
+                  (registry.resolveForTier { inherit language version tier; });
+              }) fleetMatrix.tiers
+            ) (builtins.attrNames registry.languages.${language}.versions)
+          ) (builtins.attrNames registry.languages)
+        );
+
         # clearcutt:matrix:end
 
       in
       {
         imagePackages = matrixPackages // servicePackages;
         nativePackages = rawPackages;
+        inherit recipeProbe;
 
         # Default dev shell (build/gating tooling) plus per-target dev shells
         # (devTargetShells) for the local inner loop.
@@ -260,6 +285,10 @@
         ))
         // (forDarwinSystems (system: evaluated.${system}.nativePackages));
       devShells = forAllSystems (system: evaluated.${system}.devShells);
+
+      # Eval-only staleness probe over the recipe library. Not a package and not
+      # a check, so `nix build .#` and `nix flake check` never realize it.
+      recipeProbe = forLinuxSystems (system: evaluated.${system}.recipeProbe);
 
       # Raw overlay for downstream consumers.
       overlays.default = nixpkgs.lib.composeManyExtensions [

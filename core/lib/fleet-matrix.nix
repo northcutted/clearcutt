@@ -13,20 +13,9 @@
     { line = "java25"; language = "java"; version = "25"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
     { line = "java25"; language = "java"; version = "25"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
     { line = "java25"; language = "java"; version = "25"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "node24"; language = "node"; version = "24"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
-    { line = "node24"; language = "node"; version = "24"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "node24"; language = "node"; version = "24"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "python3.14"; language = "python"; version = "3.14"; tier = "dev"; lifecycle = { status = "active"; support = "lts"; productionAllowed = false; }; }
-    { line = "python3.14"; language = "python"; version = "3.14"; tier = "slim"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "python3.14"; language = "python"; version = "3.14"; tier = "distroless"; lifecycle = { status = "active"; support = "lts"; productionAllowed = true; }; }
-    { line = "go1.27"; language = "go"; version = "1.27"; tier = "dev"; lifecycle = { status = "active"; support = "current"; productionAllowed = false; }; }
-    { line = "go1.27"; language = "go"; version = "1.27"; tier = "slim"; lifecycle = { status = "active"; support = "current"; productionAllowed = false; }; }
-    { line = "go1.27"; language = "go"; version = "1.27"; tier = "distroless"; lifecycle = { status = "active"; support = "current"; productionAllowed = false; }; }
   ];
 
   closurePurityTargets = [
     "java25-distroless"
-    "node24-distroless"
-    "python3.14-distroless"
   ];
 }

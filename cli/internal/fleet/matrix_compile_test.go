@@ -2,21 +2,53 @@ package fleet
 
 import "testing"
 
+// compilerLines is a test fixture, deliberately NOT the shipped default. The
+// shipped fleet builds one runtime line, because ClearCutt governs estates
+// rather than publishing images — but the matrix compiler still has to classify
+// every line the recipe library offers, including ones no fleet currently
+// builds. Pinning these tests to DefaultConfig would silently delete coverage
+// of the LTS reclassification and omitInProduction paths the moment the shipped
+// fleet narrowed. What we ship and what the compiler must handle are different
+// questions, and this fixture keeps them separate.
+var compilerLines = []string{"java25", "node24", "python3.14", "go1.27"}
+
 func compiledForTest(t *testing.T) CompiledMatrix {
 	t.Helper()
-	m, err := DefaultConfig("acme", "platform").CompileMatrix(false)
+	cfg := DefaultConfig("acme", "platform")
+	cfg.Matrix.Languages = append([]string(nil), compilerLines...)
+	m, err := cfg.CompileMatrix(false)
 	if err != nil {
 		t.Fatalf("CompileMatrix: %v", err)
 	}
 	return m
 }
 
+// TestDefaultConfigShipsANarrowMatrix pins the product decision itself: a
+// scaffolded fleet starts with one runtime line, so a fork does not inherit a
+// build matrix — or a vulnerability surface — it never asked to operate.
+func TestDefaultConfigShipsANarrowMatrix(t *testing.T) {
+	cfg := DefaultConfig("acme", "platform")
+	if got := len(cfg.Matrix.Languages); got != 1 {
+		t.Fatalf("scaffolded fleet should start with 1 runtime line, got %d: %v", got, cfg.Matrix.Languages)
+	}
+	for _, runtime := range cfg.Templates.Runtimes {
+		var found bool
+		for _, line := range cfg.Matrix.Languages {
+			if len(line) >= len(runtime) && line[:len(runtime)] == runtime {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("app template runtime %q has no runtime line in the scaffolded fleet %v", runtime, cfg.Matrix.Languages)
+		}
+	}
+}
+
 func TestCompileMatrixCells(t *testing.T) {
 	m := compiledForTest(t)
 
-	// 4 LTS runtime lines × 3 tiers.
-	if len(m.Cells) != 12 {
-		t.Fatalf("expected 12 cells, got %d", len(m.Cells))
+	if want := len(compilerLines) * 3; len(m.Cells) != want {
+		t.Fatalf("expected %d cells (%d lines x 3 tiers), got %d", want, len(compilerLines), len(m.Cells))
 	}
 
 	index := map[string]CompiledCell{}
@@ -71,6 +103,7 @@ func TestCompileMatrixOmitsToolchainGateTargets(t *testing.T) {
 
 func TestRenderMatrixNixDeterministic(t *testing.T) {
 	cfg := DefaultConfig("acme", "platform")
+	cfg.Matrix.Languages = append([]string(nil), compilerLines...)
 	m1, err := cfg.CompileMatrix(false)
 	if err != nil {
 		t.Fatal(err)

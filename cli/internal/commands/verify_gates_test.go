@@ -169,7 +169,96 @@ func writeBoundarySuiteCore(t *testing.T, coreDir string) string {
 	return filepath.Join(coreDir, "build-outputs")
 }
 
+// stubRecipeProbe stands in for `nix eval .#recipeProbe.<system>`, which the
+// boundary suite runs so a recipe the fleet does not build cannot rot unnoticed.
+// These tests have no nix and no real flake, so the eval is stubbed here; the
+// real eval runs in CI, where nix exists and the flake is the actual one.
+func stubRecipeProbe(t *testing.T) {
+	t.Helper()
+	old := captureExternalOutput
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		if c.Name != "nix" || len(c.Args) == 0 || c.Args[0] != "eval" {
+			t.Fatalf("unexpected capture command: %#v", c)
+		}
+		return `{"java25-distroless":["/nix/store/aaa.drv"],"node24-slim":["/nix/store/bbb.drv"]}`, nil
+	}
+	t.Cleanup(func() { captureExternalOutput = old })
+}
+
+// TestVerifyBoundarySuiteFailsWhenARecipeStopsEvaluating is the reason the probe
+// exists. The shipped fleet builds one runtime line; node, python and go stay in
+// lib/registry.nix as a library a fork enables with one line of YAML. Nothing
+// builds them, so nothing would notice if nixpkgs renamed an attribute out from
+// under one — until the day a fork enabled it. The probe turns that into a
+// failure now, on the commit that broke it.
+func TestVerifyBoundarySuiteFailsWhenARecipeStopsEvaluating(t *testing.T) {
+	oldCapture := captureExternalOutput
+	captureExternalOutput = func(c externalCommand) (string, error) {
+		return "", fmt.Errorf("nix failed: error: Go 1.25 is not available in this nixpkgs version")
+	}
+	t.Cleanup(func() { captureExternalOutput = oldCapture })
+
+	coreDir := t.TempDir()
+	outDir := writeBoundarySuiteCore(t, coreDir)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
+	}))
+	raw, err := os.ReadFile(cleanArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "java21-distroless.tar.gz"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--closure-target", "java21-distroless")
+	if err == nil {
+		t.Fatalf("a recipe that no longer evaluates must fail the suite, even though the built image is clean:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "no longer evaluates") {
+		t.Fatalf("failure should name the recipe library as the cause, got:\n%s", stdout)
+	}
+	// The closure-purity gate itself passed; the suite still failed. That
+	// separation is the point — a clean image does not make a rotted recipe fine.
+	if !strings.Contains(stdout, "[closure-purity:java21-distroless] clean") {
+		t.Fatalf("expected the image gate to have passed independently:\n%s", stdout)
+	}
+}
+
+// TestVerifyBoundarySuiteReportsRecipeCoverage proves the probe reports how many
+// recipe cells it actually evaluated, so a probe that silently covered nothing
+// is visible in the log rather than indistinguishable from a passing one.
+func TestVerifyBoundarySuiteReportsRecipeCoverage(t *testing.T) {
+	stubRecipeProbe(t)
+	coreDir := t.TempDir()
+	outDir := writeBoundarySuiteCore(t, coreDir)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
+		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
+	}))
+	raw, err := os.ReadFile(cleanArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "java21-distroless.tar.gz"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir, "--closure-target", "java21-distroless")
+	if err != nil {
+		t.Fatalf("boundary suite: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "[recipe-probe] 2 recipe cells evaluate") {
+		t.Fatalf("expected the probe to report its coverage:\n%s", stdout)
+	}
+}
+
 func TestVerifyBoundarySuiteUsesExistingArchives(t *testing.T) {
+	stubRecipeProbe(t)
 	coreDir := t.TempDir()
 	outDir := writeBoundarySuiteCore(t, coreDir)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
@@ -210,6 +299,7 @@ func TestVerifyBoundarySuiteUsesExistingArchives(t *testing.T) {
 }
 
 func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
+	stubRecipeProbe(t)
 	coreDir := t.TempDir()
 	outDir := writeBoundarySuiteCore(t, coreDir)
 	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
@@ -275,6 +365,7 @@ func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
 // runs nix with cwd=core, so a relative --out-link must still land where the
 // suite reads it from the repo root.
 func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
+	stubRecipeProbe(t)
 	repoRoot := t.TempDir()
 	oldWD, err := os.Getwd()
 	if err != nil {
@@ -336,6 +427,7 @@ func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
 // it did exactly that twice (coreLTS-distroless, then java21-distroless), each
 // time failing CI with "flake does not provide attribute".
 func TestVerifyBoundarySuiteDerivesTargetsFromTheFleet(t *testing.T) {
+	stubRecipeProbe(t)
 	root := t.TempDir()
 	cfgPath := writeFleetConfig(t, root)
 
@@ -386,6 +478,7 @@ func TestVerifyBoundarySuiteDerivesTargetsFromTheFleet(t *testing.T) {
 // java21-distroless, and surfaced the moment the defaults were derived from a
 // fleet containing python3.14.
 func TestVerifyBoundarySuiteQuotesDottedFlakeAttributes(t *testing.T) {
+	stubRecipeProbe(t)
 	root := t.TempDir()
 	coreDir := filepath.Join(root, "core")
 	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {

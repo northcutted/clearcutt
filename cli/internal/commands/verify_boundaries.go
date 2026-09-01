@@ -1,10 +1,13 @@
 package commands
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/certify"
@@ -169,10 +172,61 @@ func runVerifyBoundarySuite() error {
 		}
 	}
 
+	if err := probeRecipeLibrary(coreDir); err != nil {
+		if errors.Is(err, ErrCheckFailed) {
+			failed = true
+		} else {
+			return err
+		}
+	}
+
 	if failed {
 		return ErrCheckFailed
 	}
 	fmt.Fprintln(out, "[boundary-suite] representative image-security boundary suite passed.")
+	return nil
+}
+
+// probeRecipeLibrary evaluates every recipe in lib/registry.nix, including the
+// ones the fleet does not build.
+//
+// The shipped fleet builds a single runtime line; node, python and go remain in
+// the registry as a library a fork enables with one line of YAML. Nothing else
+// would notice if one of those stopped evaluating — nixpkgs renames an attr or
+// drops a version, getPkg throws, and the failure surfaces the day someone
+// enables the line rather than the day it broke.
+//
+// This is eval-only: `nix eval` forces each recipe's drvPath, which resolves
+// getPkg and every override without realizing a single derivation. It costs
+// seconds and builds nothing, which is the whole reason it can cover recipes CI
+// has no intention of building.
+func probeRecipeLibrary(coreDir string) error {
+	system := runtime.GOARCH
+	switch system {
+	case "amd64":
+		system = "x86_64-linux"
+	case "arm64":
+		system = "aarch64-linux"
+	default:
+		fmt.Fprintf(out, "[recipe-probe] skipped: no Linux recipe probe for GOARCH %q\n", runtime.GOARCH)
+		return nil
+	}
+	attr := fmt.Sprintf(".#recipeProbe.%s", system)
+	// Same seam the archive builds use, so tests drive this without a real nix.
+	stdout, err := captureExternalOutput(externalCommand{
+		Name: "nix",
+		Args: []string{"eval", "--json", "--no-warn-dirty", attr},
+		Dir:  coreDir,
+	})
+	if err != nil {
+		fmt.Fprintf(errOut, "[recipe-probe] a recipe in lib/registry.nix no longer evaluates: %v\n", err)
+		return ErrCheckFailed
+	}
+	var probed map[string][]string
+	if err := json.Unmarshal([]byte(stdout), &probed); err != nil {
+		return fmt.Errorf("recipe probe returned unreadable JSON: %w", err)
+	}
+	fmt.Fprintf(out, "[recipe-probe] %d recipe cells evaluate on %s (including lines the fleet does not build)\n", len(probed), system)
 	return nil
 }
 

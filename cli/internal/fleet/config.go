@@ -397,15 +397,15 @@ func DefaultConfig(owner, repo string) Config {
 				"x86_64-linux",
 				"aarch64-linux",
 			},
-			// A scaffolded fleet starts with the four LTS runtime lines. A fork
-			// that wants more adds them with `clearcutt matrix add`; starting
-			// wide made every new fork inherit a build matrix it had no reason
-			// to operate.
+			// A scaffolded fleet starts with ONE runtime line. The recipes for
+			// node, python and go ship in core/lib/registry.nix; a fork enables
+			// one by adding it here (or with `clearcutt matrix add`), which
+			// costs a line of YAML. Starting wide made every new fork inherit a
+			// build matrix — and a vulnerability surface — it had no reason to
+			// operate, and ClearCutt's product is governing image estates rather
+			// than publishing them.
 			Languages: []string{
 				"java25",
-				"node24",
-				"python3.14",
-				"go1.27",
 			},
 			Tiers: []string{
 				"dev",
@@ -435,7 +435,7 @@ func DefaultConfig(owner, repo string) Config {
 		},
 		Remediation: Remediation{Policy: DefaultRemediationPolicy()},
 		Templates: Templates{
-			Runtimes: []string{"java", "node", "python", "go"},
+			Runtimes: []string{"java"},
 		},
 	}
 }
