@@ -132,7 +132,17 @@ func (c *Client) appendToHistory(historyRef string, img v1.Image, snapshot Snaps
 	})
 	updated = mutate.IndexMediaType(updated, types.OCIImageIndex)
 	if err := remote.WriteIndex(target, updated, c.remoteOpts...); err != nil {
-		return "", fmt.Errorf("writing history index %s: %w", historyRef, err)
+		// A history index is rewritten on every append, so its tag must be
+		// mutable. Registries enforcing tag immutability reject the write with
+		// a generic error that gives an operator nothing to act on, so say what
+		// the constraint is and how to satisfy it.
+		return "", fmt.Errorf("writing history index %s: %w\n\n"+
+			"If the registry enforces tag immutability, this is expected: the history index is a single "+
+			"moving pointer to a growing series, so its tag must be mutable. Every snapshot it names is "+
+			"immutable and digest-addressed; only the pointer moves.\n"+
+			"Either exempt this tag from the immutability rule, or keep the history in a separate "+
+			"repository from the images, e.g. --history %s",
+			historyRef, err, suggestSeparateHistoryRepo(historyRef))
 	}
 	indexDigest, err := updated.Digest()
 	if err != nil {
@@ -186,4 +196,19 @@ func (h History) Delta() (first, last HistoryEntry, ok bool) {
 		return HistoryEntry{}, HistoryEntry{}, false
 	}
 	return h.Entries[0], h.Entries[len(h.Entries)-1], true
+}
+
+// suggestSeparateHistoryRepo proposes a history reference in a sibling
+// repository, for registries whose immutability policy cannot be scoped to
+// exclude one tag.
+func suggestSeparateHistoryRepo(historyRef string) string {
+	ref := historyRef
+	if at := strings.LastIndex(ref, "@"); at >= 0 {
+		ref = ref[:at]
+	}
+	repo := ref
+	if colon := strings.LastIndex(ref, ":"); colon > strings.LastIndex(ref, "/") {
+		repo = ref[:colon]
+	}
+	return repo + "-history:history"
 }

@@ -275,6 +275,10 @@ identical manifest digest. A nightly job that re-pushes an unchanged estate does
 mint a new version, and "has anything changed?" is answerable by comparing digests
 rather than diffing content.
 
+See [registry-native-evidence.md](registry-native-evidence.md) for the full
+picture, including release evidence, the garbage-collection risk and how to hedge
+it with `evidence export`, and which tags must stay mutable.
+
 Two things worth knowing:
 
 - **Sign it.** When the registry is the thing being audited, storing the audit inside

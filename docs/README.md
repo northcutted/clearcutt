@@ -27,6 +27,10 @@ document, one first command, and then deeper links.
 - [Registry scan and the base image graph](registry-graph.md): point ClearCutt at a
   registry, discover which images are built on which, and produce an auditable
   inventory with drift.
+- [Registry-native evidence](registry-native-evidence.md): store evidence,
+  estate snapshots and history in the registry instead of GitHub releases — plus
+  the two operational constraints that come with it (garbage collection, and
+  which tags must stay mutable) and what to do about them.
 - [Imported fleets](imported-fleets.md): import existing OCI refs, observe
   evidence without provenance claims, assess governance gaps, and plan rebases.
 - [Catalog generator](catalog-generator.md): generate and validate catalog data.

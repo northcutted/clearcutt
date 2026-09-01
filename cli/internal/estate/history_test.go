@@ -30,7 +30,7 @@ func TestHistoryAccumulatesSnapshotsInTimeOrder(t *testing.T) {
 	// Pushed out of order on purpose: a backfilled run must land in the right
 	// place on the trend line, not at the end of the push log.
 	for _, day := range []struct {
-		at                            string
+		at                              string
 		images, resolved, proven, stale int
 	}{
 		{"2026-09-02T00:00:00Z", 21, 9, 7, 1},
@@ -190,6 +190,20 @@ func TestCommittedHistoryFixtureIsReadable(t *testing.T) {
 		if history.Entries[i-1].GeneratedAt > history.Entries[i].GeneratedAt {
 			t.Errorf("entries are not time-ordered at index %d: %s then %s",
 				i, history.Entries[i-1].GeneratedAt, history.Entries[i].GeneratedAt)
+		}
+	}
+}
+
+// TestSeparateHistoryRepoSuggestion checks the escape hatch offered when a
+// registry's immutability policy cannot be scoped to one tag.
+func TestSeparateHistoryRepoSuggestion(t *testing.T) {
+	for ref, want := range map[string]string{
+		"ghcr.io/acme/app:history":        "ghcr.io/acme/app-history:history",
+		"registry.io:5000/team/x:history": "registry.io:5000/team/x-history:history",
+		"ghcr.io/acme/app":                "ghcr.io/acme/app-history:history",
+	} {
+		if got := suggestSeparateHistoryRepo(ref); got != want {
+			t.Errorf("suggestSeparateHistoryRepo(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }
