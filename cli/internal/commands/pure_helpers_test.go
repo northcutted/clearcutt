@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 // These cover small pure functions that shape what an operator reads. They are
@@ -83,8 +83,8 @@ func TestProductionTierUsesTheEffectivePolicy(t *testing.T) {
 	// An empty policy must resolve through EffectiveRemediationPolicy rather
 	// than matching nothing — otherwise an unconfigured fork would treat every
 	// tier as non-production and skip the gates that matter.
-	var empty fleet.RemediationPolicy
-	effective := fleet.EffectiveRemediationPolicy(empty)
+	var empty config.RemediationPolicy
+	effective := config.EffectiveRemediationPolicy(empty)
 	if len(effective.ProductionTiers) == 0 {
 		t.Fatal("test assumption broken: the default policy names production tiers")
 	}
@@ -101,7 +101,7 @@ func TestProductionTierUsesTheEffectivePolicy(t *testing.T) {
 	}
 
 	// An explicit policy overrides the default.
-	custom := fleet.RemediationPolicy{ProductionTiers: []string{"hardened"}}
+	custom := config.RemediationPolicy{ProductionTiers: []string{"hardened"}}
 	if !productionTier(custom, "hardened") {
 		t.Error("an explicitly configured tier should match")
 	}

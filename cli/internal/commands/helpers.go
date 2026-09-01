@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 // Small shared helpers that outlived the remediation subsystem they were written
@@ -62,8 +62,8 @@ func findingHasFix(fixedIn *string) bool {
 }
 
 // productionTier reports whether a tier is production-facing under the policy.
-func productionTier(policy fleet.RemediationPolicy, tier string) bool {
-	policy = fleet.EffectiveRemediationPolicy(policy)
+func productionTier(policy config.RemediationPolicy, tier string) bool {
+	policy = config.EffectiveRemediationPolicy(policy)
 	for _, item := range policy.ProductionTiers {
 		if item == tier {
 			return item == tier
@@ -75,13 +75,13 @@ func productionTier(policy fleet.RemediationPolicy, tier string) bool {
 // remediationPolicyFromJSON parses a policy blob, falling back to the default on
 // anything malformed. Callers use it to interpret scanner thresholds, so a bad blob
 // should degrade to the documented defaults rather than fail the gate open.
-func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
+func remediationPolicyFromJSON(raw string) config.RemediationPolicy {
 	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" {
-		return fleet.DefaultRemediationPolicy()
+		return config.DefaultRemediationPolicy()
 	}
-	var policy fleet.RemediationPolicy
+	var policy config.RemediationPolicy
 	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
-		return fleet.DefaultRemediationPolicy()
+		return config.DefaultRemediationPolicy()
 	}
-	return fleet.EffectiveRemediationPolicy(policy)
+	return config.EffectiveRemediationPolicy(policy)
 }

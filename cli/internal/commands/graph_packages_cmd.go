@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"github.com/spf13/cobra"
 )
 
@@ -64,12 +64,12 @@ requests it will make before making them.`,
 	f.IntVar(&graphPackagesOpts.maxPairs, "max-pairs", 0, "Cap reported lineage pairs, closest first")
 	f.StringVar(&graphPackagesOpts.packageFilter, "package", "", "Report only packages whose name contains this substring")
 	f.BoolVar(&graphPackagesOpts.fetchSBOMs, "fetch-sboms", false, "Fetch attached SBOMs for images whose config records no package set. Costs network; the command reports how many requests first")
-	f.IntVar(&graphPackagesOpts.concurrency, "concurrency", importedfleet.DefaultObserveConcurrency, "SBOM fetches to run at once")
+	f.IntVar(&graphPackagesOpts.concurrency, "concurrency", estategraph.DefaultObserveConcurrency, "SBOM fetches to run at once")
 	return cmd
 }
 
 func runGraphPackages() error {
-	observations, err := importedfleet.ReadObservations(graphPackagesOpts.observations)
+	observations, err := estategraph.ReadObservations(graphPackagesOpts.observations)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func runGraphPackages() error {
 		if err != nil {
 			return err
 		}
-	} else if plan := importedfleet.PlanSBOMFetch(observations); plan.Unresolved > 0 {
+	} else if plan := estategraph.PlanSBOMFetch(observations); plan.Unresolved > 0 {
 		// Say what is missing and what recovering it would cost, without doing
 		// it. An operator should choose the network spend, not discover it.
 		fmt.Fprintf(out, "[graph-packages] %d image(s) record no package set in their config.\n", plan.Unresolved)
@@ -88,7 +88,7 @@ func runGraphPackages() error {
 			plan.Fetches, plan.Saved)
 	}
 
-	graph, err := importedfleet.BuildPackageGraph(observations, importedfleet.PackageGraphOptions{
+	graph, err := estategraph.BuildPackageGraph(observations, estategraph.PackageGraphOptions{
 		GeneratedAt:   graphPackagesOpts.generatedAt,
 		MinSimilarity: graphPackagesOpts.minSimilarity,
 		MaxReach:      graphPackagesOpts.maxReach,
@@ -102,7 +102,7 @@ func runGraphPackages() error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
-		if err := importedfleet.WritePackageGraph(path, graph); err != nil {
+		if err := estategraph.WritePackageGraph(path, graph); err != nil {
 			return err
 		}
 	}
@@ -114,7 +114,7 @@ func runGraphPackages() error {
 	return nil
 }
 
-func printPackageGraph(graph importedfleet.PackageGraph) {
+func printPackageGraph(graph estategraph.PackageGraph) {
 	s := graph.Summary
 	fmt.Fprintf(out, "[graph-packages] %d image(s): %d with a readable package set, %d unknown\n",
 		s.Images, s.Resolved, s.Unresolved)
@@ -183,8 +183,8 @@ func printPackageGraph(graph importedfleet.PackageGraph) {
 // deduplication saves. An estate re-tags the same content on every release, so
 // the number of distinct images is usually far below the number of tags — the
 // difference between those two numbers is the reason this is affordable at all.
-func fetchSBOMsWithWarning(observations importedfleet.Observations) (importedfleet.Observations, []string, error) {
-	plan := importedfleet.PlanSBOMFetch(observations)
+func fetchSBOMsWithWarning(observations estategraph.Observations) (estategraph.Observations, []string, error) {
+	plan := estategraph.PlanSBOMFetch(observations)
 	if plan.Fetches == 0 {
 		fmt.Fprintln(out, "[graph-packages] every image already records a package set; no SBOM fetch needed")
 		return observations, nil, nil
@@ -194,12 +194,12 @@ func fetchSBOMsWithWarning(observations importedfleet.Observations) (importedfle
 		plan.Fetches, graphPackagesOpts.concurrency, plan.Saved)
 	fmt.Fprintf(errOut, "[graph-packages] WARNING: large estates can hit registry rate limits. Nix images need none of this — their package set is already in the config.\n")
 
-	fetcher := importedfleet.SBOMFetcher(importedfleet.NewRegistrySBOMFetcher())
+	fetcher := estategraph.SBOMFetcher(estategraph.NewRegistrySBOMFetcher())
 	if sbomFetcherOverride != nil {
 		fetcher = sbomFetcherOverride
 	}
-	return importedfleet.EnrichWithSBOMs(context.Background(), observations, fetcher, graphPackagesOpts.concurrency)
+	return estategraph.EnrichWithSBOMs(context.Background(), observations, fetcher, graphPackagesOpts.concurrency)
 }
 
 // sbomFetcherOverride lets tests exercise the expensive path without a registry.
-var sbomFetcherOverride importedfleet.SBOMFetcher
+var sbomFetcherOverride estategraph.SBOMFetcher

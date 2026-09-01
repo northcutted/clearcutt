@@ -11,7 +11,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 )
 
 // stampCreated fixes an image's creation time so base currency is decided by the
@@ -106,7 +106,7 @@ func TestRegistryScanToGraphEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read graph: %v", err)
 	}
-	var graph importedfleet.Graph
+	var graph estategraph.Graph
 	if err := json.Unmarshal(raw, &graph); err != nil {
 		t.Fatalf("decode graph: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestRegistryScanToGraphEndToEnd(t *testing.T) {
 		t.Fatalf("want exactly one discovered edge, got %+v", graph.Edges)
 	}
 	edge := graph.Edges[0]
-	if edge.Method != importedfleet.MethodLayerPrefix {
+	if edge.Method != estategraph.MethodLayerPrefix {
 		t.Fatalf("Method = %q, want the relationship found by layer digests", edge.Method)
 	}
 	if edge.Confidence != "verified" {
@@ -127,7 +127,7 @@ func TestRegistryScanToGraphEndToEnd(t *testing.T) {
 	if !strings.HasSuffix(edge.BaseRef, "/bases/java:v1.0.0") {
 		t.Fatalf("BaseRef = %q, want the v1 base the app was actually built on", edge.BaseRef)
 	}
-	if edge.Drift != importedfleet.DriftStale {
+	if edge.Drift != estategraph.DriftStale {
 		t.Fatalf("Drift = %q, want stale (v2.0.0 is newer)", edge.Drift)
 	}
 	if edge.VersionsBehind != 1 {
@@ -351,7 +351,7 @@ func TestGraphBuildBaseRepositoryAndMinConfidenceFlagsReachTheEngine(t *testing.
 	if err != nil {
 		t.Fatalf("graph build: %v\n%s", err, stdout)
 	}
-	var graph importedfleet.Graph
+	var graph estategraph.Graph
 	if err := json.Unmarshal([]byte(stdout), &graph); err != nil {
 		t.Fatalf("decode graph: %v\n%s", err, stdout)
 	}
@@ -459,7 +459,7 @@ func TestGraphLayersEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read layers: %v", err)
 	}
-	var graph importedfleet.LayerGraph
+	var graph estategraph.LayerGraph
 	if err := json.Unmarshal(raw, &graph); err != nil {
 		t.Fatalf("decode layer graph: %v", err)
 	}

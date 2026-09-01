@@ -10,53 +10,53 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 func TestFindingMateriality(t *testing.T) {
-	pol := fleet.DefaultRemediationPolicy() // runtime, sev>=high, epss>=0.90, kev=always
+	pol := config.DefaultRemediationPolicy() // runtime, sev>=high, epss>=0.90, kev=always
 
 	cases := []struct {
 		name    string
 		finding catalog.FindingInfo
 		prod    bool
-		want    fleet.RiskDisposition
+		want    config.RiskDisposition
 	}{
 		{
 			name:    "runtime high fixable -> must_fix",
 			finding: catalog.FindingInfo{ID: "CVE-1", Severity: "High", Layer: "runtime", FixedIn: strPtr("1.2.3")},
 			prod:    true,
-			want:    fleet.DispositionMustFix,
+			want:    config.DispositionMustFix,
 		},
 		{
 			name:    "runtime high unfixable -> must_acknowledge",
 			finding: catalog.FindingInfo{ID: "CVE-2", Severity: "High", Layer: "runtime", FixedIn: nil},
 			prod:    true,
-			want:    fleet.DispositionMustAcknowledge,
+			want:    config.DispositionMustAcknowledge,
 		},
 		{
 			name:    "base layer -> auto_accept (not reachable)",
 			finding: catalog.FindingInfo{ID: "CVE-3", Severity: "Critical", Layer: "base", FixedIn: strPtr("2.0")},
 			prod:    true,
-			want:    fleet.DispositionAutoAccept,
+			want:    config.DispositionAutoAccept,
 		},
 		{
 			name:    "non-production tier -> auto_accept",
 			finding: catalog.FindingInfo{ID: "CVE-4", Severity: "Critical", Layer: "runtime", FixedIn: strPtr("2.0")},
 			prod:    false,
-			want:    fleet.DispositionAutoAccept,
+			want:    config.DispositionAutoAccept,
 		},
 		{
 			name:    "runtime medium low-epss -> auto_accept (below bar)",
 			finding: catalog.FindingInfo{ID: "CVE-5", Severity: "Medium", Layer: "runtime", FixedIn: strPtr("1.1")},
 			prod:    true,
-			want:    fleet.DispositionAutoAccept,
+			want:    config.DispositionAutoAccept,
 		},
 		{
 			name:    "empty FixedIn string counts as unfixable",
 			finding: catalog.FindingInfo{ID: "CVE-6", Severity: "High", Layer: "runtime", FixedIn: strPtr("  ")},
 			prod:    true,
-			want:    fleet.DispositionMustAcknowledge,
+			want:    config.DispositionMustAcknowledge,
 		},
 	}
 	for _, c := range cases {

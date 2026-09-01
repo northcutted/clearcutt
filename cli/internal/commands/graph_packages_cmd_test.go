@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 )
 
-func writeObservationsFile(t *testing.T, obs importedfleet.Observations) string {
+func writeObservationsFile(t *testing.T, obs estategraph.Observations) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "observations.json")
 	raw, err := json.Marshal(obs)
@@ -24,10 +24,10 @@ func writeObservationsFile(t *testing.T, obs importedfleet.Observations) string 
 	return path
 }
 
-func nixObs(ref string, paths ...string) importedfleet.Observation {
-	obs := importedfleet.Observation{SourceRef: ref, ManifestDigest: "sha256:" + ref}
+func nixObs(ref string, paths ...string) estategraph.Observation {
+	obs := estategraph.Observation{SourceRef: ref, ManifestDigest: "sha256:" + ref}
 	for _, p := range paths {
-		obs.History = append(obs.History, importedfleet.HistoryObservation{Comment: "store paths: ['" + p + "']"})
+		obs.History = append(obs.History, estategraph.HistoryObservation{Comment: "store paths: ['" + p + "']"})
 	}
 	return obs
 }
@@ -35,7 +35,7 @@ func nixObs(ref string, paths ...string) importedfleet.Observation {
 // TestGraphPackagesIsFreeForNix pins the property that makes first-class Nix
 // support affordable: no registry access at all.
 func TestGraphPackagesIsFreeForNix(t *testing.T) {
-	path := writeObservationsFile(t, importedfleet.Observations{Images: []importedfleet.Observation{
+	path := writeObservationsFile(t, estategraph.Observations{Images: []estategraph.Observation{
 		nixObs("reg/a:v1", "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.2"),
 		nixObs("reg/b:v1", "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.2"),
 	}})
@@ -60,15 +60,15 @@ func TestGraphPackagesIsFreeForNix(t *testing.T) {
 // number of registry requests before they happen, not in a rate-limit graph
 // afterwards.
 func TestGraphPackagesReportsTheCostBeforeSpendingIt(t *testing.T) {
-	images := []importedfleet.Observation{nixObs("reg/nix:v1", "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-glibc-2.42")}
+	images := []estategraph.Observation{nixObs("reg/nix:v1", "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-glibc-2.42")}
 	for i := 0; i < 5; i++ {
-		images = append(images, importedfleet.Observation{
+		images = append(images, estategraph.Observation{
 			SourceRef:      "reg/opaque:v" + string(rune('1'+i)),
 			DigestRef:      "reg/opaque@sha256:same",
 			ManifestDigest: "sha256:same",
 		})
 	}
-	path := writeObservationsFile(t, importedfleet.Observations{Images: images})
+	path := writeObservationsFile(t, estategraph.Observations{Images: images})
 
 	stdout, err := runCLI(t, "graph", "packages", "--observations", path)
 	if err != nil {
@@ -93,15 +93,15 @@ func (s *stubFetcher) FetchSBOM(context.Context, string) ([]byte, error) {
 // TestGraphPackagesFetchSBOMsWarnsThenFetches: the expensive path must warn
 // before it runs, and must deduplicate.
 func TestGraphPackagesFetchSBOMsWarnsThenFetches(t *testing.T) {
-	images := []importedfleet.Observation{}
+	images := []estategraph.Observation{}
 	for i := 0; i < 4; i++ {
-		images = append(images, importedfleet.Observation{
+		images = append(images, estategraph.Observation{
 			SourceRef:      "reg/opaque:v" + string(rune('1'+i)),
 			DigestRef:      "reg/opaque@sha256:same",
 			ManifestDigest: "sha256:same",
 		})
 	}
-	path := writeObservationsFile(t, importedfleet.Observations{Images: images})
+	path := writeObservationsFile(t, estategraph.Observations{Images: images})
 
 	stub := &stubFetcher{}
 	restore := sbomFetcherOverride

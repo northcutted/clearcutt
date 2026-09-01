@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ import (
 // which is a lot of noise to impose for a rename we chose. It keeps working
 // silently; the help text advertises --config.
 func addConfigFlag(cmd *cobra.Command, target *string, usage string) {
-	cmd.Flags().StringVar(target, "config", fleet.DefaultConfigPath, usage)
-	cmd.Flags().StringVar(target, "fleet-config", fleet.DefaultConfigPath, usage)
+	cmd.Flags().StringVar(target, "config", config.DefaultConfigPath, usage)
+	cmd.Flags().StringVar(target, "fleet-config", config.DefaultConfigPath, usage)
 	_ = cmd.Flags().MarkHidden("fleet-config")
 }

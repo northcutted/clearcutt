@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"github.com/northcutted/clearcutt/internal/registryscan"
 	"github.com/spf13/cobra"
 )
@@ -134,7 +134,7 @@ func runRegistryScan(ctx context.Context) error {
 		return fmt.Errorf("scan of %s/%s matched no images; %s", opts.registry, opts.namespace, strings.Join(result.Warnings, "; "))
 	}
 
-	inventory, summary, err := importedfleet.ImportRefList(result.Refs, importedfleet.ImportOptions{
+	inventory, summary, err := estategraph.ImportRefList(result.Refs, estategraph.ImportOptions{
 		Owner:        opts.owner,
 		Repo:         opts.repo,
 		RegistryBase: strings.TrimSuffix(opts.registry+"/"+opts.namespace, "/"),
@@ -145,7 +145,7 @@ func runRegistryScan(ctx context.Context) error {
 		return err
 	}
 	if err := writeAlongside(opts.output, func(path string) error {
-		return importedfleet.WriteImagesFile(path, inventory)
+		return estategraph.WriteImagesFile(path, inventory)
 	}); err != nil {
 		return err
 	}

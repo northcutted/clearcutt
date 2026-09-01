@@ -9,19 +9,19 @@ import (
 
 	"github.com/northcutted/clearcutt/internal/evidence"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 func TestCatalogWorkflowParamsWritesGitHubOutputs(t *testing.T) {
 	root := t.TempDir()
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	cfg.Catalog.ReleaseLimit = 12
 	cfg.Catalog.ScanDepth = "5"
-	raw, err := fleet.Marshal(cfg)
+	raw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	cfgPath := filepath.Join(root, fleet.DefaultConfigPath)
+	cfgPath := filepath.Join(root, config.DefaultConfigPath)
 	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}

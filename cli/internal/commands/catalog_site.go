@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/sitetemplate"
 	"github.com/northcutted/clearcutt/internal/sitetemplate/rules"
 	"github.com/spf13/cobra"
@@ -770,7 +770,7 @@ func writeSiteConfig(outputDir, source string) error {
 func deriveSiteConfigYAML() string {
 	var title, description, sourceRepo, registry string
 	if catalogSiteOpts.config != "" {
-		if cfg, err := fleet.Load(catalogSiteOpts.config); err == nil {
+		if cfg, err := config.Load(catalogSiteOpts.config); err == nil {
 			title = cfg.Branding.ProductName + " Catalog"
 			description = cfg.Site.Description
 			sourceRepo = cfg.RepoURL()
@@ -779,7 +779,7 @@ func deriveSiteConfigYAML() string {
 	}
 	if title == "" {
 		if repo, repoURL, registryBase, ok := catalogIndexIdentity(catalogSiteOpts.catalogPath); ok {
-			title = fleet.DeriveProductName(repo) + " Catalog"
+			title = config.DeriveProductName(repo) + " Catalog"
 			sourceRepo = repoURL
 			if registryBase != "" {
 				registry = "https://" + registryBase

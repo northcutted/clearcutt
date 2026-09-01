@@ -2,7 +2,7 @@ package commands
 
 import (
 	"bytes"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,14 +46,14 @@ func writeExecutable(t *testing.T, path, content string) {
 	}
 }
 
-// writeFleetConfig writes the default config into dir and returns its path.
-func writeFleetConfig(t *testing.T, dir string) string {
+// writeConfig writes the default config into dir and returns its path.
+func writeConfig(t *testing.T, dir string) string {
 	t.Helper()
-	raw, err := fleet.Marshal(fleet.DefaultConfig("acme", "platform"))
+	raw, err := config.Marshal(config.DefaultConfig("acme", "platform"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, fleet.DefaultConfigPath)
+	path := filepath.Join(dir, config.DefaultConfigPath)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}

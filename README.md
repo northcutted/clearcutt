@@ -5,15 +5,13 @@ they are, and what you can actually prove about them.**
 
 [![Live Catalog Site](https://img.shields.io/badge/Live%20Catalog-Site-blueviolet.svg?logo=astro&logoColor=white)](https://northcutted.github.io/clearcutt)
 [![ClearCutt PR Gating](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml)
-[![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
-[![SLSA Provenance](https://img.shields.io/badge/SLSA-Provenance-green.svg)](https://slsa.dev)
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ClearCutt is a free, open-source CLI for governing container image estates —
 including estates it did not build. It enumerates a registry, works out which
 images are layered on which, measures how far each consumer has drifted from its
-base, reports what the fleet has in common, and produces an auditable inventory
+base, reports what the estate has in common, and produces an auditable inventory
 that is honest about what it cannot prove.
 
 There is no hosted control plane and no image feed to subscribe to. ClearCutt
@@ -44,25 +42,21 @@ made**, and a self-reported label never outranks layer evidence. Imported images
 never gain provenance they did not come with. Images whose base cannot be
 determined are listed as findings, with the reason.
 
-## The Reference Fleet
+## ClearCutt Builds No Images
 
-ClearCutt also builds ONE hardened base-image line with Nix — java25, in
-`dev`/`slim`/`distroless` tiers, on amd64 and arm64.
+ClearCutt governs estates; it does not produce them. There is no image feed to
+subscribe to, no base images to adopt, and nothing to migrate onto.
 
-The node, python and go recipes ship in `core/lib/registry.nix` as a library a
-fork enables by adding a line to `clearcutt.yaml`. They are evaluated on
-every run so an unbuilt recipe cannot rot unnoticed, but they are not built and
-not published.
+That is deliberate. Hardened base images are a solved and competitive market —
+Docker Hardened Images went free and Apache-2.0 in December 2025, and Chainguard
+publishes thousands. What none of them tells you is what is actually in *your*
+registry, what it is built on, and what you can prove about it. That is the layer
+ClearCutt works at. If you want a hardened image feed, use one of the
+[alternatives](docs/alternatives.md).
 
-**These are reference fixtures, not a product.** They exist so the build,
-signing, attestation and verification paths are demonstrable end to end, and so
-the governance commands have real ClearCutt-built images to point at. They are
-not a maintained image feed, and you should not depend on them. If you want a
-hardened image feed, use one of the [alternatives](docs/alternatives.md) — that
-is a market with several serious vendors and one free Apache-2.0 catalog.
-
-What ClearCutt is for is the layer above: knowing what you are running, proving
-where it came from, and noticing when it drifts.
+Because ClearCutt builds nothing, it works the same on images from anywhere:
+Debian- or Alpine-based, Wolfi, Nix, buildpacks, or something you assembled
+yourself. It reports how each was built and picks the analysis that fits.
 
 ## First Proof From A Clean Clone
 
@@ -115,7 +109,7 @@ export GHCR_TOKEN=$(gh auth token)
   --observations dist/scan/observations.json \
   --output dist/scan/graph.json --report dist/scan/inventory.md
 
-# 4. Report what the fleet has in common, with a diagram.
+# 4. Report what the estate has in common, with a diagram.
 ./clearcutt graph layers \
   --observations dist/scan/observations.json \
   --output dist/scan/layers.json --report dist/scan/commonality.md
@@ -133,6 +127,47 @@ Pass the results to the site builder to publish them as pages — `/estate` and
 `/estate/layers` — with `catalog site build --graph … --layers …`.
 
 See [registry scan and the base image graph](docs/registry-graph.md).
+
+### Which images ship a vulnerable package
+
+`graph packages` answers the question an advisory actually raises. For estates
+built by Nix `dockerTools` it costs **no extra requests at all**: the package set
+with exact versions is already in the image config that step 2 fetched.
+
+```bash
+./clearcutt graph packages --observations dist/scan/observations.json --package openssl
+```
+
+```
+openssl  3.6.2      259 images
+openssl  3.6.2-bin   66 images
+  → then names every one of them
+```
+
+Builders that record no package set need an SBOM, which has to be fetched.
+That is opt-in via `--fetch-sboms`, and the command prints how many requests it
+will make — and what deduplication saves — before making them.
+
+### Keep the answers, and show they improved
+
+Snapshots persist as OCI artifacts in the registry the images already live in,
+so there is no database to run and evidence travels with a mirror.
+
+```bash
+./clearcutt estate push ghcr.io/acme/estate:$(date +%F) \
+  --dir dist/scan --history ghcr.io/acme/estate:history
+
+./clearcutt estate history ghcr.io/acme/estate:history
+```
+
+The history is an OCI index whose entries carry each run's metrics as
+annotations, so reading a trend costs one request no matter how long the series
+gets. `evidence attach` stores SBOMs, scans and provenance against the image
+digest they describe, and `evidence export` copies them somewhere with its own
+retention guarantees — registry lifecycle rules can delete attachments.
+
+See [registry-native evidence](docs/registry-native-evidence.md) for the
+garbage-collection and tag-mutability constraints that come with this.
 
 ## Install
 
@@ -174,7 +209,7 @@ Building from source stays the contributor path; see
 | Estate owner | [Registry scan and the base image graph](docs/registry-graph.md) | `go -C cli run ./cmd/clearcutt registry scan --registry ghcr.io --namespace YOUR_ORG/YOUR_REPO --repository YOUR_IMAGE --output /tmp/images.yaml` |
 | App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
 | Imported fleet owner | [Imported fleets](docs/imported-fleets.md) | `go -C cli run ./cmd/clearcutt import images --refs ../examples/imported-fleet/refs.txt --output /tmp/clearcutt-import/images.yaml --force` |
-| Platform owner | [Platform bootstrap](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform bootstrap github --profile catalog-only --owner YOUR_ORG --repo image-platform --registry-base ghcr.io/YOUR_ORG/image-platform --dir ./image-platform --dry-run --force` |
+| Estate owner | [Registry scan and the base image graph](docs/registry-graph.md) | `go -C cli run ./cmd/clearcutt registry scan --registry ghcr.io --namespace YOUR_ORG/YOUR_REPO --repository YOUR_IMAGE --output /tmp/images.yaml` |
 | Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
 | Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,120p' docs/alternatives.md` |
 | Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |
@@ -253,19 +288,16 @@ from ignored local site data.
   non-claims.
 - [Policy bundles](docs/policy-bundles.md) covers Kyverno and Gatekeeper policy
   generation.
-- [Fork validation](docs/fork-validation.md) lists checks to run before an advanced fork's
-  first release.
 
 ## Repo Layout
 
 | Workspace | Purpose |
 | --- | --- |
-| `core/` | Nix build recipes for the four reference-fixture runtime lines. |
 | `cli/` | Go governance CLI and tests. |
 | `site/` | Astro catalog portal and generated-site template source. |
 | `docs/` | Role-routed documentation, trust walkthroughs, and operating guides. |
-| `examples/` | App templates, deployment manifests, policy examples, and overlays. |
-| `.github/` | Release, catalog/Pages, PR gate, flake update, and cache workflows. |
+| `examples/` | A real public-estate snapshot, deployment manifests, and policy examples. |
+| `.github/` | CLI release, catalog/Pages, and PR gate workflows. |
 
 ## Boundaries
 

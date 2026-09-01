@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 )
 
 func TestImportedFleetCommandWorkflowOffline(t *testing.T) {
@@ -89,7 +89,7 @@ func TestImportedFleetCommandWorkflowOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var candidates importedfleet.RebaseCandidateSet
+	var candidates estategraph.RebaseCandidateSet
 	if err := json.Unmarshal(candidateRaw, &candidates); err != nil {
 		t.Fatal(err)
 	}

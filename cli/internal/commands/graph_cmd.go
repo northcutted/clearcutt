@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"github.com/spf13/cobra"
 )
 
@@ -72,7 +72,7 @@ layer order — this asks what the fleet has IN COMMON, a content question answe
 layer membership. The two are independent: images can share nearly all their content
 with no parentage between them, and a parent and child can share very little.
 
-Reports the fleet core, the most widely carried layers, content-identical images,
+Reports the estate core, the most widely carried layers, content-identical images,
 similarity clusters, per-image unique content, and how much storage layer reuse
 saves. Shared content means shared exposure, never a base relationship.`,
 		Args: cobra.NoArgs,
@@ -111,11 +111,11 @@ func runGraphLayers() error {
 			return fmt.Errorf("%s already exists; pass --force to overwrite", path)
 		}
 	}
-	observations, err := importedfleet.ReadObservations(opts.observations)
+	observations, err := estategraph.ReadObservations(opts.observations)
 	if err != nil {
 		return fmt.Errorf("read observations: %w", err)
 	}
-	graph, err := importedfleet.BuildLayerGraph(observations, importedfleet.LayerGraphOptions{
+	graph, err := estategraph.BuildLayerGraph(observations, estategraph.LayerGraphOptions{
 		GeneratedAt:       opts.generatedAt,
 		CoverageThreshold: opts.coverage,
 		MinSimilarity:     opts.minSimilarity,
@@ -125,19 +125,19 @@ func runGraphLayers() error {
 		return err
 	}
 	if err := writeAlongside(opts.output, func(path string) error {
-		return importedfleet.WriteLayerGraph(path, graph)
+		return estategraph.WriteLayerGraph(path, graph)
 	}); err != nil {
 		return err
 	}
 	if opts.report != "" {
 		if err := writeAlongside(opts.report, func(path string) error {
-			return os.WriteFile(path, []byte(importedfleet.LayerGraphMarkdown(graph)), 0o644)
+			return os.WriteFile(path, []byte(estategraph.LayerGraphMarkdown(graph)), 0o644)
 		}); err != nil {
 			return err
 		}
 	}
 	if opts.mermaid != "" {
-		diagram := importedfleet.LayerGraphMermaid(graph)
+		diagram := estategraph.LayerGraphMermaid(graph)
 		if diagram == "" {
 			fmt.Fprintf(errOut, "[graph-layers] no diagram written: nothing reached the similarity threshold\n")
 		} else if err := writeAlongside(opts.mermaid, func(path string) error {
@@ -156,11 +156,11 @@ func runGraphLayers() error {
 
 // printLayerGraphSummary renders the terminal view of fleet commonality: what is
 // shared, what is redundant, and what a fix to shared content would reach.
-func printLayerGraphSummary(graph importedfleet.LayerGraph, opts graphLayersFlags) {
+func printLayerGraphSummary(graph estategraph.LayerGraph, opts graphLayersFlags) {
 	s := graph.Summary
 	fmt.Fprintf(out, "[graph-layers] %d image(s), %d distinct layer(s): %d shared, %d unique to one image\n",
 		s.Images, s.DistinctLayers, s.SharedLayers, s.UniqueLayers)
-	fmt.Fprintf(out, "[graph-layers] fleet core: %d layer(s) in every image; %d layer(s) in at least %.0f%%\n",
+	fmt.Fprintf(out, "[graph-layers] estate core: %d layer(s) in every image; %d layer(s) in at least %.0f%%\n",
 		s.CoreLayers, s.CommonLayers, s.CoverageThreshold*100)
 	fmt.Fprintf(out, "[graph-layers] stored once %s vs %s without reuse — sharing avoids %.0f%%\n",
 		humanSize(s.StoredBytes), humanSize(s.NaiveBytes), s.SharingRatio*100)
@@ -270,11 +270,11 @@ func runGraphBuild() error {
 			return fmt.Errorf("%s already exists; pass --force to overwrite", path)
 		}
 	}
-	observations, err := importedfleet.ReadObservations(opts.observations)
+	observations, err := estategraph.ReadObservations(opts.observations)
 	if err != nil {
 		return fmt.Errorf("read observations: %w", err)
 	}
-	graph, err := importedfleet.BuildGraph(observations, importedfleet.GraphOptions{
+	graph, err := estategraph.BuildGraph(observations, estategraph.GraphOptions{
 		GeneratedAt:     opts.generatedAt,
 		BasePatterns:    opts.basePatterns,
 		MinConfidence:   opts.minConfidence,
@@ -284,13 +284,13 @@ func runGraphBuild() error {
 		return err
 	}
 	if err := writeAlongside(opts.output, func(path string) error {
-		return importedfleet.WriteGraph(path, graph)
+		return estategraph.WriteGraph(path, graph)
 	}); err != nil {
 		return err
 	}
 	if opts.report != "" {
 		if err := writeAlongside(opts.report, func(path string) error {
-			return os.WriteFile(path, []byte(importedfleet.GraphMarkdown(graph)), 0o644)
+			return os.WriteFile(path, []byte(estategraph.GraphMarkdown(graph)), 0o644)
 		}); err != nil {
 			return err
 		}
@@ -309,7 +309,7 @@ func runGraphBuild() error {
 // graphGateResult turns the requested gates into the shared check-failure sentinel so
 // `graph build` can be used as a CI gate with the same exit-code contract as the
 // other ClearCutt gates.
-func graphGateResult(graph importedfleet.Graph, opts graphBuildFlags) error {
+func graphGateResult(graph estategraph.Graph, opts graphBuildFlags) error {
 	failures := []string{}
 	if opts.failOnStale && graph.Summary.StaleConsumers > 0 {
 		failures = append(failures, fmt.Sprintf("%d consumer(s) sit on a stale base version", graph.Summary.StaleConsumers))
@@ -328,7 +328,7 @@ func graphGateResult(graph importedfleet.Graph, opts graphBuildFlags) error {
 
 // describeBuilders renders the builder mix most-common first, so an operator
 // reads what actually produced their estate rather than an alphabetical list.
-func describeBuilders(profile importedfleet.BuilderProfile) string {
+func describeBuilders(profile estategraph.BuilderProfile) string {
 	type row struct {
 		name  string
 		count int
@@ -352,7 +352,7 @@ func describeBuilders(profile importedfleet.BuilderProfile) string {
 
 // printGraphSummary renders the terminal pane of glass: what is stale, what is
 // unknown, and how much of the graph rests on proof rather than on a label.
-func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
+func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 	s := graph.Summary
 	fmt.Fprintf(out, "[graph] %d image(s) observed: %d base famil(ies), %d consumer(s), %d root(s)\n",
 		s.ObservedImages, s.BaseFamilies, s.Consumers, s.RootImages)
@@ -367,7 +367,7 @@ func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
 		fmt.Fprintf(out, "[graph] built by: %s (%d stacking, %d composed)\n",
 			describeBuilders(b), b.Stacking, b.Composed)
 	}
-	if note := importedfleet.ComposedEstateNote(s.Builders, s.ResolvedConsumers); note != "" {
+	if note := estategraph.ComposedEstateNote(s.Builders, s.ResolvedConsumers); note != "" {
 		fmt.Fprintf(out, "\n[graph] %s\n\n", note)
 	}
 
@@ -384,7 +384,7 @@ func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
 		}
 	}
 
-	stale := []importedfleet.GraphEdge{}
+	stale := []estategraph.GraphEdge{}
 	for _, edge := range graph.Edges {
 		if edge.Drift == "stale" {
 			stale = append(stale, edge)

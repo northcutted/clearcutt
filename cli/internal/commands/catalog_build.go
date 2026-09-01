@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -34,7 +34,7 @@ func newCatalogBuildCmd() *cobra.Command {
 			return runCatalogBuildWithConfig(cmd.Flags().Changed("config"), cmd.Flags().Changed("limit"))
 		},
 	}
-	cmd.Flags().StringVar(&catalogBuildOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
+	cmd.Flags().StringVar(&catalogBuildOpts.config, "config", config.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
 	cmd.Flags().IntVar(&catalogBuildOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum releases to inspect")
 	cmd.Flags().StringVar(&catalogBuildOpts.targets, "targets", os.Getenv("CATALOG_TARGETS"), "Comma-separated target allowlist")
 	cmd.Flags().StringVar(&catalogBuildOpts.imagePrefix, "image-prefix", "", "Image name prefix for catalog records and registry enrichment")
@@ -60,7 +60,7 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 	catalogGatherOpts.forceRefreshAll = catalogBuildOpts.forceRefreshAll
 	catalogGatherOpts.forceRefreshTags = os.Getenv("FORCE_REFRESH_TAGS")
 	catalogGatherOpts.includeServices = catalogBuildOpts.includeServices
-	if err := applyCatalogGatherFleetConfig(catalogBuildOpts.config, explicitConfig, limitChanged); err != nil {
+	if err := applyCatalogGatherConfig(catalogBuildOpts.config, explicitConfig, limitChanged); err != nil {
 		return err
 	}
 	if err := runCatalogGather(); err != nil {
@@ -104,7 +104,7 @@ func runCatalogBuildWithConfig(explicitConfig, limitChanged bool) error {
 		return err
 	}
 	if catalogBuildOpts.includeServices {
-		cfg, err := fleet.Load(catalogBuildOpts.config)
+		cfg, err := config.Load(catalogBuildOpts.config)
 		if err != nil {
 			return err
 		}

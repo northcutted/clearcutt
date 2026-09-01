@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -14,12 +14,12 @@ import (
 // the tests stay valid regardless of which lines DefaultConfig selects.
 const reporootSentinel = "python3.14"
 
-// writeFleetConfigWithoutSentinel writes a fleet config whose matrix is the
+// writeConfigWithoutSentinel writes a fleet config whose matrix is the
 // default minus reporootSentinel, so adding the sentinel is always a real
 // mutation of that file.
-func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
+func writeConfigWithoutSentinel(t *testing.T, dir string) string {
 	t.Helper()
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	languages := make([]string, 0, len(cfg.Matrix.Languages))
 	for _, lang := range cfg.Matrix.Languages {
 		if lang != reporootSentinel {
@@ -27,8 +27,8 @@ func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
 		}
 	}
 	cfg.Matrix.Languages = languages
-	path := filepath.Join(dir, fleet.DefaultConfigPath)
-	writeFleetConfigStruct(t, path, cfg)
+	path := filepath.Join(dir, config.DefaultConfigPath)
+	writeConfigStruct(t, path, cfg)
 	return path
 }
 
@@ -37,7 +37,7 @@ func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
 func fakeRepo(t *testing.T) (root, subdir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFleetConfigWithoutSentinel(t, root)
+	writeConfigWithoutSentinel(t, root)
 	subdir = filepath.Join(root, "cli", "internal")
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatalf("create subdir: %v", err)
@@ -79,7 +79,7 @@ func TestResolveRepoRootDefaultGuards(t *testing.T) {
 
 	abs := filepath.Join(root, "pinned.yaml")
 	empty := ""
-	rel := fleet.DefaultConfigPath
+	rel := config.DefaultConfigPath
 	cmd := &cobra.Command{Use: "guard"}
 	cmd.Flags().StringVar(&abs, "abs", abs, "")
 	cmd.Flags().StringVar(&empty, "empty", empty, "")
@@ -108,11 +108,11 @@ func TestResolveRepoRootDefaultGuards(t *testing.T) {
 	}
 }
 
-// writeFleetConfigStruct writes a config to an exact PATH (not a directory),
+// writeConfigStruct writes a config to an exact PATH (not a directory),
 // which is what repo-root detection uses as its marker.
-func writeFleetConfigStruct(t *testing.T, path string, cfg fleet.Config) {
+func writeConfigStruct(t *testing.T, path string, cfg config.Config) {
 	t.Helper()
-	raw, err := fleet.Marshal(cfg)
+	raw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

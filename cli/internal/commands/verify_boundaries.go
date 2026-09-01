@@ -14,7 +14,7 @@ type boundariesFlags struct {
 	coreDir        string
 	buildOutputs   string
 	closureTargets []string
-	fleetConfig    string
+	configPath     string
 }
 
 var boundariesOpts boundariesFlags

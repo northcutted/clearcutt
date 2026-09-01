@@ -15,8 +15,8 @@ import (
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/evidence"
-	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/spf13/cobra"
 )
 
@@ -77,7 +77,7 @@ evidence channels are preserved as explicit missing-evidence states.`,
 		},
 	}
 	addCatalogGatherFlags(cmd)
-	cmd.Flags().StringVar(&catalogGatherOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
+	cmd.Flags().StringVar(&catalogGatherOpts.config, "config", config.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
 	cmd.Flags().StringVar(&catalogGatherOpts.imagesFile, "images", "", "Generic OCI images.yaml inventory to convert into catalog data")
 	cmd.Flags().StringVar(&catalogGatherOpts.outDir, "output", "", "Catalog output directory")
 	cmd.Flags().BoolVar(&catalogGatherOpts.pretty, "pretty", true, "Write indented JSON output")
@@ -123,7 +123,7 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 	if catalogGatherOpts.imagesFile != "" {
 		return runCatalogGenerateFromImages()
 	}
-	if err := applyCatalogGatherFleetConfig(catalogGatherOpts.config, explicitConfig, limitChanged); err != nil {
+	if err := applyCatalogGatherConfig(catalogGatherOpts.config, explicitConfig, limitChanged); err != nil {
 		return err
 	}
 	if catalogGatherOpts.outDir != "" {
@@ -134,7 +134,7 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 	}
 	outDir := catalogbuild.FirstNonEmptyStr(catalogGatherOpts.outDir, GlobalOpts.CatalogPath, filepath.Join("site", "src", "data", "catalog"))
 	if catalogGatherOpts.includeServices {
-		cfg, err := fleet.Load(catalogGatherOpts.config)
+		cfg, err := config.Load(catalogGatherOpts.config)
 		if err != nil {
 			return fmt.Errorf("failed to load service fleet config: %w", err)
 		}
@@ -145,11 +145,11 @@ func runCatalogGenerateWithConfig(explicitConfig, limitChanged bool) error {
 	return finalizeGeneratedCatalog(outDir)
 }
 
-func applyCatalogGatherFleetConfig(configPath string, explicitConfig, limitChanged bool) error {
+func applyCatalogGatherConfig(configPath string, explicitConfig, limitChanged bool) error {
 	if configPath == "" {
 		return nil
 	}
-	cfg, err := fleet.Load(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		if explicitConfig || !os.IsNotExist(err) {
 			return err
@@ -169,7 +169,7 @@ func applyCatalogGatherFleetConfig(configPath string, explicitConfig, limitChang
 		catalogGatherOpts.imagePrefix = cfg.Registry.ImagePrefix
 	}
 	if catalogGatherOpts.targets == "" {
-		catalogGatherOpts.targets = fleetTargets(cfg)
+		catalogGatherOpts.targets = catalogTargets(cfg)
 	}
 	if !limitChanged && cfg.Catalog.ReleaseLimit > 0 {
 		catalogGatherOpts.limit = cfg.Catalog.ReleaseLimit
@@ -332,7 +332,7 @@ func catalogIndexSummary(index *catalog.CatalogIndex) *catalog.CatalogSummary {
 	return summary
 }
 
-func fleetTargets(cfg fleet.Config) string {
+func catalogTargets(cfg config.Config) string {
 	targets := []string{}
 	for _, language := range cfg.Matrix.Languages {
 		for _, tier := range cfg.Matrix.Tiers {
@@ -342,7 +342,7 @@ func fleetTargets(cfg fleet.Config) string {
 	return strings.Join(targets, ",")
 }
 
-func appendFleetServiceTargets(targets string, cfg fleet.Config) string {
+func appendFleetServiceTargets(targets string, cfg config.Config) string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, target := range strings.Split(targets, ",") {
@@ -364,7 +364,7 @@ func appendFleetServiceTargets(targets string, cfg fleet.Config) string {
 	return strings.Join(out, ",")
 }
 
-func appendServiceCatalogRecords(outDir string, cfg fleet.Config) error {
+func appendServiceCatalogRecords(outDir string, cfg config.Config) error {
 	if len(cfg.Services) == 0 {
 		return nil
 	}
@@ -429,7 +429,7 @@ func ensureServiceTierEntry(index *catalog.CatalogIndex) {
 	index.Tiers = append(index.Tiers, catalog.TierInfo{ID: "service", Name: "Service", Blurb: "Platform-owned service image"})
 }
 
-func serviceCatalogRecordFromExisting(cfg fleet.Config, service fleet.ServiceImage, existing catalog.ImageRecord) catalog.ImageRecord {
+func serviceCatalogRecordFromExisting(cfg config.Config, service config.ServiceImage, existing catalog.ImageRecord) catalog.ImageRecord {
 	fallback := serviceCatalogRecord(cfg, service, "", "")
 	existing.SchemaVersion = catalog.ImageRecordSchemaVersionV2
 	existing.ID = service.ID
@@ -454,7 +454,7 @@ func serviceCatalogRecordFromExisting(cfg fleet.Config, service fleet.ServiceIma
 	return existing
 }
 
-func serviceCatalogRecord(cfg fleet.Config, service fleet.ServiceImage, latestTag, generatedAt string) catalog.ImageRecord {
+func serviceCatalogRecord(cfg config.Config, service config.ServiceImage, latestTag, generatedAt string) catalog.ImageRecord {
 	lifecycle := serviceCatalogLifecycle(service)
 	runtimeContract := serviceCatalogRuntimeContract(service)
 	serviceInfo := serviceCatalogInfo(service)
@@ -655,7 +655,7 @@ func serviceEvidenceSummary(release catalog.ReleaseEntry) catalog.EvidenceSummar
 	return evidence
 }
 
-func serviceCatalogLifecycle(service fleet.ServiceImage) catalog.Lifecycle {
+func serviceCatalogLifecycle(service config.ServiceImage) catalog.Lifecycle {
 	return catalog.Lifecycle{
 		Status:            catalogbuild.FirstNonEmptyStr(service.Lifecycle.Status, "preview"),
 		Support:           catalogbuild.FirstNonEmptyStr(service.Lifecycle.Support, "current"),
@@ -663,7 +663,7 @@ func serviceCatalogLifecycle(service fleet.ServiceImage) catalog.Lifecycle {
 	}
 }
 
-func serviceCatalogBuildLifecycle(service fleet.ServiceImage) catalogbuild.Lifecycle {
+func serviceCatalogBuildLifecycle(service config.ServiceImage) catalogbuild.Lifecycle {
 	lifecycle := serviceCatalogLifecycle(service)
 	return catalogbuild.Lifecycle{
 		Status:            lifecycle.Status,
@@ -675,7 +675,7 @@ func serviceCatalogBuildLifecycle(service fleet.ServiceImage) catalogbuild.Lifec
 	}
 }
 
-func serviceCatalogRuntimeContract(service fleet.ServiceImage) catalog.RuntimeContract {
+func serviceCatalogRuntimeContract(service config.ServiceImage) catalog.RuntimeContract {
 	user := "10001:10001"
 	workingDir := "/app"
 	shellPresent := service.Template == "postgres"
@@ -696,7 +696,7 @@ func serviceCatalogRuntimeContract(service fleet.ServiceImage) catalog.RuntimeCo
 	}
 }
 
-func serviceCatalogBuildRuntimeContract(service fleet.ServiceImage) catalogbuild.RuntimeContract {
+func serviceCatalogBuildRuntimeContract(service config.ServiceImage) catalogbuild.RuntimeContract {
 	runtimeContract := serviceCatalogRuntimeContract(service)
 	out := catalogbuild.RuntimeContract{
 		ProductionTier: runtimeContract.ProductionTier,
@@ -723,7 +723,7 @@ func serviceCatalogBuildRuntimeContract(service fleet.ServiceImage) catalogbuild
 	return out
 }
 
-func serviceDefaultEntrypoint(service fleet.ServiceImage) string {
+func serviceDefaultEntrypoint(service config.ServiceImage) string {
 	if len(service.Entrypoint) == 0 {
 		return ""
 	}
@@ -738,7 +738,7 @@ func serviceDefaultEntrypoint(service fleet.ServiceImage) string {
 	return strings.Join(parts, " ")
 }
 
-func serviceCatalogInfo(service fleet.ServiceImage) catalog.ServiceInfo {
+func serviceCatalogInfo(service config.ServiceImage) catalog.ServiceInfo {
 	return catalog.ServiceInfo{
 		Template:    service.Template,
 		Version:     service.Version,
@@ -750,7 +750,7 @@ func serviceCatalogInfo(service fleet.ServiceImage) catalog.ServiceInfo {
 	}
 }
 
-func serviceCatalogPorts(ports []fleet.ServicePort) []catalog.ServicePortInfo {
+func serviceCatalogPorts(ports []config.ServicePort) []catalog.ServicePortInfo {
 	out := make([]catalog.ServicePortInfo, 0, len(ports))
 	for _, port := range ports {
 		out = append(out, catalog.ServicePortInfo{
@@ -762,7 +762,7 @@ func serviceCatalogPorts(ports []fleet.ServicePort) []catalog.ServicePortInfo {
 	return out
 }
 
-func serviceSmokeStatus(service fleet.ServiceImage) string {
+func serviceSmokeStatus(service config.ServiceImage) string {
 	if len(service.Smoke) == 0 {
 		return "missing"
 	}
@@ -841,7 +841,7 @@ func runCatalogGather() error {
 		fmt.Fprintf(out, "[gather] wrote %s (%d releases)\n", target, len(rec.Releases))
 	}
 	if catalogGatherOpts.includeServices {
-		cfg, err := fleet.Load(catalogGatherOpts.config)
+		cfg, err := config.Load(catalogGatherOpts.config)
 		if err != nil {
 			return fmt.Errorf("failed to load service fleet config: %w", err)
 		}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 func TestCurrentDocsAndSiteAvoidStaleReleaseAndPrimaryForkTagline(t *testing.T) {
@@ -84,7 +84,7 @@ func TestDocsDoNotClaimRuntimeLinesTheFleetDoesNotBuild(t *testing.T) {
 	if !ok {
 		t.Skip("repo root not found")
 	}
-	cfg, err := loadFleetConfigForDrift(root)
+	cfg, err := loadConfigForDrift(root)
 	if err != nil {
 		t.Skipf("fleet config unreadable: %v", err)
 	}
@@ -143,9 +143,9 @@ var knownRuntimeLineTokens = []string{
 	"go1.25", "go1.26", "go1.27",
 }
 
-// loadFleetConfigForDrift reads the repo's own fleet config.
-func loadFleetConfigForDrift(root string) (fleet.Config, error) {
-	return fleet.Load(filepath.Join(root, fleet.DefaultConfigPath))
+// loadConfigForDrift reads the repo's own fleet config.
+func loadConfigForDrift(root string) (config.Config, error) {
+	return config.Load(filepath.Join(root, config.DefaultConfigPath))
 }
 
 // TestDocumentedCommandsExist guards prose that shows a command line. Docs are

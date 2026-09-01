@@ -211,7 +211,7 @@ func TestSeparateHistoryRepoSuggestion(t *testing.T) {
 
 // TestMetricRatiosAreHonest pins the two derived numbers the estate page leads
 // with. Coverage is easy to move; proof share is not, and conflating them would
-// let a fleet look governed by labelling its own images.
+// let an estate look governed by labelling its own images.
 func TestMetricRatiosAreHonest(t *testing.T) {
 	m := Metrics{Resolved: 8, Unresolved: 12, Proven: 2}
 	if got := m.Coverage(); got < 0.39 || got > 0.41 {

@@ -15,7 +15,7 @@ import (
 //
 //   - Resolved rises as provenance stops being unknown.
 //   - Proven rises as that provenance stops resting on self-reported labels.
-//     It is the honest metric: a fleet can raise Resolved by adding labels to
+//     It is the honest metric: an estate can raise Resolved by adding labels to
 //     its own images, but only real layer evidence raises this.
 //   - Stale falls as consumers get rebased onto current bases.
 //

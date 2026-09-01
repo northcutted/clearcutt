@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 // policyAcceptance is one finding the risk policy auto-accepted, carrying the
@@ -23,10 +23,10 @@ type policyAcceptance struct {
 // findingMateriality classifies one catalog finding under the risk policy. The
 // release gate (verify) and the evidence emitter (vex) share it so a finding can
 // never be blocked by one consumer and waved through by the other — the single
-// fleet.Materiality decision the remediation planner and the crypto floor also
+// config.Materiality decision the remediation planner and the crypto floor also
 // run.
-func findingMateriality(finding catalog.FindingInfo, productionTier bool, policy fleet.RemediationPolicy) fleet.RiskDecision {
-	return fleet.Materiality(fleet.MaterialityInput{
+func findingMateriality(finding catalog.FindingInfo, productionTier bool, policy config.RemediationPolicy) config.RiskDecision {
+	return config.Materiality(config.MaterialityInput{
 		Severity:       finding.Severity,
 		EPSSPercentile: finding.EpssPercentile,
 		KEV:            finding.KEV != nil && finding.KEV.KnownExploited,

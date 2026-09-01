@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -107,7 +107,7 @@ func runImportImages() error {
 			return fmt.Errorf("%s already exists; pass --force to overwrite", importImagesOpts.output)
 		}
 	}
-	inventory, summary, err := importedfleet.ImportRefs(importedfleet.ImportOptions{
+	inventory, summary, err := estategraph.ImportRefs(estategraph.ImportOptions{
 		RefsPath:         importImagesOpts.refs,
 		Owner:            importImagesOpts.owner,
 		Repo:             importImagesOpts.repo,
@@ -122,7 +122,7 @@ func runImportImages() error {
 	if err := os.MkdirAll(filepath.Dir(importImagesOpts.output), 0o755); err != nil {
 		return err
 	}
-	if err := importedfleet.WriteImagesFile(importImagesOpts.output, inventory); err != nil {
+	if err := estategraph.WriteImagesFile(importImagesOpts.output, inventory); err != nil {
 		return err
 	}
 	summary.Output = importImagesOpts.output
@@ -150,7 +150,7 @@ func newImportObserveCmd() *cobra.Command {
 	f.StringVar(&importObserveOpts.images, "images", "", "Estate images.yaml inventory")
 	f.StringVar(&importObserveOpts.output, "output", "", "Output observations.json path")
 	f.StringVar(&importObserveOpts.offlineFixtures, "offline-fixtures", "", "Offline observations fixture JSON")
-	f.IntVar(&importObserveOpts.concurrency, "concurrency", importedfleet.DefaultObserveConcurrency, "Images to observe at once; 1 forces serial")
+	f.IntVar(&importObserveOpts.concurrency, "concurrency", estategraph.DefaultObserveConcurrency, "Images to observe at once; 1 forces serial")
 	f.StringVar(&importObserveOpts.since, "since", "", "Previous observations.json; images whose manifest digest is unchanged are carried forward after one HEAD instead of being re-read")
 	f.StringVar(&importObserveOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
 	f.BoolVar(&importObserveOpts.strict, "strict", false, "Fail the command when any image cannot be observed")
@@ -160,32 +160,32 @@ func newImportObserveCmd() *cobra.Command {
 }
 
 func runImportObserve(ctx context.Context) error {
-	inventory, err := importedfleet.ReadImagesFile(importObserveOpts.images)
+	inventory, err := estategraph.ReadImagesFile(importObserveOpts.images)
 	if err != nil {
 		return fmt.Errorf("read images inventory: %w", err)
 	}
-	var observer importedfleet.ImageObserver = importedfleet.RegistryObserver{}
-	var fixtureObservations *importedfleet.Observations
+	var observer estategraph.ImageObserver = estategraph.RegistryObserver{}
+	var fixtureObservations *estategraph.Observations
 	if importObserveOpts.offlineFixtures != "" {
-		fixtures, err := importedfleet.ReadObservations(importObserveOpts.offlineFixtures)
+		fixtures, err := estategraph.ReadObservations(importObserveOpts.offlineFixtures)
 		if err != nil {
 			return fmt.Errorf("read offline fixtures: %w", err)
 		}
 		fixtureObservations = &fixtures
-		observer = importedfleet.NewFixtureObserver(fixtures)
+		observer = estategraph.NewFixtureObserver(fixtures)
 	}
 	// Carrying a prior observation set forward turns an unchanged image from a
 	// full read into a single HEAD. On a large estate where a handful of images
 	// move per day, that is most of the scan.
-	var previous *importedfleet.Observations
+	var previous *estategraph.Observations
 	if path := strings.TrimSpace(importObserveOpts.since); path != "" {
-		prior, err := importedfleet.ReadObservations(path)
+		prior, err := estategraph.ReadObservations(path)
 		if err != nil {
 			return fmt.Errorf("reading previous observations from %s: %w", path, err)
 		}
 		previous = &prior
 	}
-	observations, stats, err := importedfleet.ObserveImages(ctx, inventory, observer, importedfleet.ObserveOptions{
+	observations, stats, err := estategraph.ObserveImages(ctx, inventory, observer, estategraph.ObserveOptions{
 		GeneratedAt: importObserveOpts.generatedAt,
 		Strict:      importObserveOpts.strict,
 		Concurrency: importObserveOpts.concurrency,
@@ -204,7 +204,7 @@ func runImportObserve(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(importObserveOpts.output), 0o755); err != nil {
 		return err
 	}
-	if err := importedfleet.WriteObservations(importObserveOpts.output, observations); err != nil {
+	if err := estategraph.WriteObservations(importObserveOpts.output, observations); err != nil {
 		return err
 	}
 	if strings.EqualFold(GlobalOpts.Format, "json") {
@@ -234,11 +234,11 @@ func newImportApplyEvidenceCmd() *cobra.Command {
 }
 
 func runImportApplyEvidence() error {
-	observations, err := importedfleet.ReadObservations(importApplyEvidenceOpts.observations)
+	observations, err := estategraph.ReadObservations(importApplyEvidenceOpts.observations)
 	if err != nil {
 		return fmt.Errorf("read observations: %w", err)
 	}
-	updated, err := importedfleet.ApplyObservationEvidenceToCatalog(importApplyEvidenceOpts.catalog, observations)
+	updated, err := estategraph.ApplyObservationEvidenceToCatalog(importApplyEvidenceOpts.catalog, observations)
 	if err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ func runImportApplyEvidence() error {
 	return nil
 }
 
-func mergeExtraFixtureObservations(observed importedfleet.Observations, fixtures importedfleet.Observations) importedfleet.Observations {
+func mergeExtraFixtureObservations(observed estategraph.Observations, fixtures estategraph.Observations) estategraph.Observations {
 	seen := map[string]bool{}
 	for _, obs := range observed.Images {
 		if obs.ID != "" {
@@ -295,19 +295,19 @@ func newImportAssessCmd() *cobra.Command {
 }
 
 func runImportAssess() error {
-	inventory, err := importedfleet.ReadImagesFile(importAssessOpts.images)
+	inventory, err := estategraph.ReadImagesFile(importAssessOpts.images)
 	if err != nil {
 		return err
 	}
-	observations, err := importedfleet.ReadObservations(importAssessOpts.observations)
+	observations, err := estategraph.ReadObservations(importAssessOpts.observations)
 	if err != nil {
 		return err
 	}
-	assessment, err := importedfleet.Assess(inventory, observations, importedfleet.AssessOptions{GeneratedAt: importAssessOpts.generatedAt, CatalogPath: importAssessOpts.catalog})
+	assessment, err := estategraph.Assess(inventory, observations, estategraph.AssessOptions{GeneratedAt: importAssessOpts.generatedAt, CatalogPath: importAssessOpts.catalog})
 	if err != nil {
 		return err
 	}
-	if err := importedfleet.WriteAssessmentDir(importAssessOpts.output, assessment); err != nil {
+	if err := estategraph.WriteAssessmentDir(importAssessOpts.output, assessment); err != nil {
 		return err
 	}
 	if strings.EqualFold(GlobalOpts.Format, "json") {
@@ -336,14 +336,14 @@ func newImportReportCmd() *cobra.Command {
 }
 
 func runImportReport() error {
-	assessment, err := importedfleet.ReadAssessmentDir(importReportOpts.assessment)
+	assessment, err := estategraph.ReadAssessmentDir(importReportOpts.assessment)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(importReportOpts.output), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(importReportOpts.output, []byte(importedfleet.ReportMarkdown(assessment)), 0o644); err != nil {
+	if err := os.WriteFile(importReportOpts.output, []byte(estategraph.ReportMarkdown(assessment)), 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "[import-report] wrote %s\n", importReportOpts.output)

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./schemas/clearcutt-fleet.schema.json
+# yaml-language-server: $schema=./schemas/clearcutt-config.schema.json
 apiVersion: clearcutt.dev/v1
 kind: ClearCuttConfig
 metadata:
@@ -41,29 +41,10 @@ matrix:
     - dev
     - slim
     - distroless
-release:
-  sourceBranch: main
-  workflowIdentity: https://github.com/northcutted/clearcutt/.github/workflows/release.yml@refs/heads/main
-  slsaBuilder: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
-  nixCache:
-    bucket: clearcutt-nix-cache
-    publicBaseUrl: https://nix-cache.clearcutt.dev
-    signingKeyName: clearcutt-cache-1
-    publicKey: clearcutt-cache-1:0O2A23T11EBggh2Uz+LJcaRMBpuS9eUjeWmXKP0QoDE=
-    cloudflareZoneName: clearcutt.dev
 catalog:
   releaseLimit: 10
   scanDepth: "4"
   scanAll: false
-admission:
-  engine: kyverno
-  environment: production
-  namespace: apps
-  denyDevTier: true
-  requireSlsa: true
-  requireSbom: true
-  requireSignature: true
-  requireDigest: true
 remediation:
   policy:
     productionTiers:
@@ -74,7 +55,3 @@ remediation:
     requireFixedVersion: true
     epssPercentileBoostAt: 0.90
     kevBoost: true
-
-templates:
-  runtimes:
-    - java

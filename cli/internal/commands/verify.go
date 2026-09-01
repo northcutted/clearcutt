@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -390,7 +390,7 @@ func runVerify(imageID string) error {
 		}
 	}
 
-	// 10. Risk-policy vulnerability gate (opt-in). The same fleet.Materiality the
+	// 10. Risk-policy vulnerability gate (opt-in). The same config.Materiality the
 	// remediation planner and the crypto floor use decides scope, so verify
 	// blocks exactly the findings the rest of the platform treats as material:
 	// reachable + production + (KEV | EPSS | severity). must_fix and unfixable
@@ -434,11 +434,11 @@ func runVerify(imageID string) error {
 				}
 				decision := findingMateriality(finding, prodTier, policy)
 				switch decision.Disposition {
-				case fleet.DispositionMustFix:
+				case config.DispositionMustFix:
 					mustFix[key] = finding
-				case fleet.DispositionMustAcknowledge:
+				case config.DispositionMustAcknowledge:
 					mustAck[key] = finding
-				case fleet.DispositionAutoAccept:
+				case config.DispositionAutoAccept:
 					accepted[key] = policyAcceptance{Finding: finding, Reason: decision.Reason}
 				}
 			}

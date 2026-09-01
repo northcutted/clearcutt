@@ -172,7 +172,7 @@ human approval.
 Imported-fleet mode emits structured JSON suitable for agents:
 
 - `observations.json`
-- `imported-fleet-summary.json`
+- `estate-summary.json`
 - `evidence-gaps.json`
 - `policy-posture.json`
 - `runtime-contract-gaps.json`

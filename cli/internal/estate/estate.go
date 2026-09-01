@@ -51,7 +51,7 @@ const (
 
 // maxFileBytes bounds a single stored file. An estate snapshot is metadata —
 // layer digests and labels, never image content — so a real one is a few MB even
-// for a large fleet. A file past this bound means something is being stored here
+// for a large estate. A file past this bound means something is being stored here
 // that does not belong.
 const maxFileBytes = 256 << 20
 
