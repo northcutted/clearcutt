@@ -224,12 +224,71 @@ Both are capped for readability (24 images, 40 edges) and say what was elided.
 
 Pair generation walks the layer index rather than the image list, so images with
 nothing in common are never compared — on a sparse estate that turns a quadratic scan
-into work proportional to the sharing that actually exists. Above 500 images the
-pairwise and clustering legs are skipped entirely with a warning; core, coverage, and
-deduplication accounting are linear in total layers and stay available.
+into work proportional to the sharing that actually exists.
+
+That is not the whole story, though, and the exception is the interesting case. Cost
+is the sum over layers of `C(carriers, 2)`, so a single layer carried by every image
+contributes `C(N, 2)` on its own — and a well-governed estate is exactly where that
+happens. The better the fleet, the more images sit on one base, the wider that base's
+layers reach.
+
+A pair budget bounds it. Layers are processed narrowest-first, so when the budget is
+reached the layers dropped are the widest ones — the layers nearly everything carries,
+which say the least about whether any two images are alike. A layer present in every
+image adds the same constant to every pair's intersection; it cannot separate them.
+Those layers are still reported in full as fleet core and blast radius, which is where
+a wide layer is the interesting answer rather than noise.
+
+A dropped layer is excluded from the union as well as the intersection, so Jaccard is
+computed over the layers that actually discriminate. Excluding it from only one side
+would depress every score by an arbitrary constant.
+
+When the budget bites, the graph says so in `warnings` with the count of excluded
+layers. A 2000-image estate with a universal base layer keeps full similarity and
+clustering; core, coverage and deduplication accounting are linear in total layers and
+are never affected.
 
 `--max-pairs` (default 250, `-1` for all) caps reporting only. Clustering always sees
 every qualifying pair.
+
+## Persisting A Snapshot
+
+`clearcutt estate push` stores a snapshot — the observations plus both graphs — in a
+registry as an OCI artifact, and `estate pull` reads it back.
+
+```bash
+clearcutt estate push ghcr.io/acme/clearcutt-estate:$(date +%F) \
+  --dir . --generated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+clearcutt estate pull ghcr.io/acme/clearcutt-estate:2026-08-31 --output ./snapshot
+```
+
+The registry is a deliberate backing store rather than a convenient one. The evidence
+lives under the same auth boundary, replication and retention policy as the images it
+describes; digests make each snapshot immutable and addressable; tags give history, so
+estate drift is a diff between two tags; and a mirrored registry carries its own
+evidence into an air gap. Nothing new has to be operated — no database to run, back
+up, or get paged for.
+
+Snapshots are deterministic: files are sorted, so identical content produces an
+identical manifest digest. A nightly job that re-pushes an unchanged estate does not
+mint a new version, and "has anything changed?" is answerable by comparing digests
+rather than diffing content.
+
+Two things worth knowing:
+
+- **Sign it.** When the registry is the thing being audited, storing the audit inside
+  it is a mild conflict of interest. `clearcutt` already wraps cosign; a signed
+  snapshot makes tampering detectable rather than merely unlikely.
+- **`pull` refuses foreign artifacts.** A manifest whose config media type is not
+  `application/vnd.clearcutt.estate.v1+json` is rejected rather than read. Pulling an
+  ordinary image and treating its layers as governance evidence would be worse than
+  failing.
+
+Storage is not the scaling limit here — an observation is metadata, never image
+content, so a 10,000-image estate is tens of MB. The limit is the observe fan-out:
+every image costs an index fetch, a per-platform manifest and a config, so a large
+estate is bounded by registry rate limits long before anything else.
 
 ## The Published View
 

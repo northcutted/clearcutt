@@ -175,7 +175,18 @@ local files.
 # Use it as a CI gate
 ./clearcutt graph build --observations dist/scan/observations.json \
   --output dist/scan/graph.json --min-confidence verified --fail-on-stale
+
+# Persist the snapshot where the images live, and read it back
+./clearcutt estate push ghcr.io/acme/clearcutt-estate:2026-08-31 \
+  --dir dist/scan --generated-at 2026-08-31T00:00:00Z
+./clearcutt estate pull ghcr.io/acme/clearcutt-estate:2026-08-31 --output ./snapshot
 ```
+
+`estate push` stores observations and both graphs as a single OCI artifact. It is
+deterministic — identical content yields an identical digest — so a scheduled push of
+an unchanged estate does not create a new version, and drift is a diff between two
+tags. `estate pull` rejects any manifest that is not a ClearCutt estate artifact. See
+[registry-graph.md](registry-graph.md#persisting-a-snapshot).
 
 `registry scan` prefers the distribution `_catalog` endpoint filtered by
 `--namespace`; registries that do not implement it (GHCR, Docker Hub) need
