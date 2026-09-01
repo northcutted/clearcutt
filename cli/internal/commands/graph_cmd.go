@@ -42,6 +42,7 @@ claims made by whoever built the image, and labelled as such.`,
 	}
 	cmd.AddCommand(newGraphBuildCmd())
 	cmd.AddCommand(newGraphLayersCmd())
+	cmd.AddCommand(newGraphPackagesCmd())
 	return cmd
 }
 

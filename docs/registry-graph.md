@@ -211,6 +211,70 @@ detection on no evidence.
 For a composed estate the useful lens is the layer view — what images have in
 common, and which of them one vulnerable layer reaches.
 
+## Package-Level Governance
+
+`graph packages` analyses an estate by what it INSTALLS, not by what it stacks.
+It is the view that works for composed builders, and it answers the question a
+layer view cannot: when a CVE lands against a named package at a named version,
+which images ship it.
+
+```bash
+clearcutt graph packages --observations observations.json --output packages.json
+
+# An openssl advisory just landed.
+clearcutt graph packages --observations observations.json --package openssl
+```
+
+### For Nix this costs nothing
+
+Nix `dockerTools` writes one history entry per layer naming the store paths that
+layer carries, and the image **config** — already fetched to observe the image at
+all — therefore contains the exact package set with content hashes.
+
+Measured on a real 404-image Nix estate: 395 images resolved, 581 distinct
+packages with exact versions, in under a second, with **zero registry requests**.
+
+A store hash is stronger identity than a version string: two images carrying
+`openssl-3.6.2` may still carry different builds of it, and the hash tells them
+apart.
+
+### For other builders it costs requests, and says so first
+
+Builders that leave no package trail in their config need an SBOM, which has to
+be fetched. That is opt-in, and the cost is reported before it is spent:
+
+```
+[graph-packages] 5 image(s) record no package set in their config.
+[graph-packages] --fetch-sboms would recover them with 1 registry fetch(es)
+                 (4 avoided by deduplicating identical content).
+```
+
+Two things keep this affordable:
+
+- **Only unresolved images are fetched.** Nix images never enter the expensive
+  path.
+- **Fetches deduplicate by manifest digest.** An estate re-tags the same content
+  on every release, so the number of distinct images is far below the number of
+  tags. Ten tags on one image cost one fetch.
+
+With `--fetch-sboms`, the command warns on stderr before making any request,
+naming the request count, the concurrency, and how many fetches deduplication
+avoided. A failed or missing SBOM leaves that image's packages **unknown**, never
+silently empty — the distinction matters when the answer feeds a vulnerability
+question.
+
+SBOMs are read from OCI referrers first, then the cosign `sha256-<digest>.sbom`
+sidecar convention. SPDX and CycloneDX are both parsed.
+
+### Lineage: the relation composed estates actually have
+
+For a composed estate the meaningful relation is not ancestry but shared build
+inputs. `graph packages` reports lineage pairs by package-set overlap, using the
+same budgeted, narrowest-first comparison as the layer graph — so a package
+nearly every image carries, which cannot distinguish any two of them, is dropped
+from scoring before it can blow up memory, and is still reported in full under
+reach.
+
 ### Layer-Prefix Detection Assumes A Stacked Base
 
 This is the main limitation to know about. `layer-prefix` proof requires the base's
