@@ -203,3 +203,46 @@ func TestEstateHistoryOnAnEmptySeriesSaysSo(t *testing.T) {
 		t.Errorf("a one-entry series should say a trend is not possible yet:\n%s", stdout)
 	}
 }
+
+// TestRegistryClientsPreferEnvironmentCredentials pins the resolution order that
+// dogfooding exposed. `estate push` could only authenticate from a docker
+// config, so it failed in CI — the one environment it is built for, where a
+// runner has REGISTRY_TOKEN or GITHUB_TOKEN and no docker config at all.
+//
+// The order is: explicit environment credentials, then the ambient keychain.
+// That way the same command works on a laptop and on a runner without a flag.
+func TestRegistryClientsPreferEnvironmentCredentials(t *testing.T) {
+	for _, key := range []string{"REGISTRY_USER", "REGISTRY_TOKEN", "CLEARCUTT_REGISTRY_USER", "CLEARCUTT_REGISTRY_TOKEN", "GITHUB_ACTOR", "GITHUB_TOKEN"} {
+		t.Setenv(key, "")
+	}
+	if user, token := registryDestCredentialPair(); user != "" || token != "" {
+		t.Fatalf("with no environment set, credentials should be empty, got %q/%q", user, token)
+	}
+
+	t.Setenv("REGISTRY_USER", "ci-bot")
+	t.Setenv("REGISTRY_TOKEN", "s3cret")
+	user, token := registryDestCredentialPair()
+	if user != "ci-bot" || token != "s3cret" {
+		t.Fatalf("explicit registry credentials should win, got %q/%q", user, token)
+	}
+
+	// GITHUB_TOKEN is the CI fallback, and must be picked up when the
+	// ClearCutt-specific variables are unset.
+	t.Setenv("REGISTRY_USER", "")
+	t.Setenv("REGISTRY_TOKEN", "")
+	t.Setenv("GITHUB_ACTOR", "octocat")
+	t.Setenv("GITHUB_TOKEN", "ghs_token")
+	user, token = registryDestCredentialPair()
+	if user != "octocat" || token != "ghs_token" {
+		t.Fatalf("GITHUB_* should be the CI fallback, got %q/%q", user, token)
+	}
+
+	// And the estate client must actually use them rather than silently
+	// falling back to the keychain.
+	restore := estateOpts.insecure
+	estateOpts.insecure = false
+	t.Cleanup(func() { estateOpts.insecure = restore })
+	if estateClient() == nil {
+		t.Fatal("estate client should be constructible from environment credentials")
+	}
+}

@@ -84,6 +84,13 @@ func estateClient() *estate.Client {
 	if estateOpts.insecure {
 		return estate.NewInsecureClient()
 	}
+	// Prefer explicit credentials from the environment, then fall back to the
+	// ambient keychain. A CI runner has REGISTRY_TOKEN or GITHUB_TOKEN and no
+	// docker config; a developer laptop has the reverse. Resolving in this order
+	// means the same command works in both without a flag.
+	if user, token := registryDestCredentialPair(); user != "" && token != "" {
+		return estate.NewBasicAuthClient(user, token)
+	}
 	return estate.NewClient()
 }
 

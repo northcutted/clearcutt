@@ -67,6 +67,20 @@ func NewClient() *Client {
 	return &Client{remoteOpts: []remote.Option{remote.WithAuthFromKeychain(authn.DefaultKeychain)}}
 }
 
+// NewBasicAuthClient authenticates with explicit credentials rather than the
+// ambient keychain.
+//
+// This is the CI case, and it is the common one: a runner has registry
+// credentials in the environment and no docker config at all. Keychain-only
+// auth means `estate push` fails in precisely the place it is meant to run,
+// which is how this was found — dogfooding the tool against its own registry.
+func NewBasicAuthClient(username, password string) *Client {
+	return &Client{remoteOpts: []remote.Option{remote.WithAuth(&authn.Basic{
+		Username: username,
+		Password: password,
+	})}}
+}
+
 // NewInsecureClient speaks plain HTTP without auth, for hermetic tests against
 // an in-process registry. Do not use it for real traffic.
 func NewInsecureClient() *Client {

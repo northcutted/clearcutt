@@ -55,6 +55,11 @@ func evidenceClient() *evidence.Client {
 	if evidenceOpts.insecure {
 		return evidence.NewInsecureClient()
 	}
+	// Same resolution order as estate and fleet publish: explicit environment
+	// credentials first, ambient keychain second.
+	if user, token := registryDestCredentialPair(); user != "" && token != "" {
+		return evidence.NewBasicAuthClient(user, token)
+	}
 	return evidence.NewClient()
 }
 
