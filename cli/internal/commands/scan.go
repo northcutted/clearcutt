@@ -71,9 +71,9 @@ in catalog mode it is best-effort.`,
 	cmd.Flags().BoolVar(&scanOpts.all, "all", parseScanBool(os.Getenv("SCAN_ALL_TAGS")), "Scan every cached tag (overrides --depth)")
 	cmd.Flags().StringVar(&scanOpts.kevFile, "kev-file", os.Getenv("KEV_FILE"), "Optional CISA KEV catalog JSON file for known-exploited enrichment")
 	cmd.Flags().IntVar(&scanOpts.concurrency, "concurrency", 0, "Parallel grype workers (0 = CPU count or $SCAN_CONCURRENCY)")
-	cmd.Flags().StringVar(&scanOpts.grypeConfig, "grype-config", os.Getenv("GRYPE_CONFIG"), "Grype config file with the fleet ignore rules (default: core/.grype.yaml when present)")
+	cmd.Flags().StringVar(&scanOpts.grypeConfig, "grype-config", os.Getenv("GRYPE_CONFIG"), "Grype config file holding the ignore rules (default: core/.grype.yaml when present)")
 	cmd.Flags().BoolVar(&scanOpts.updateDB, "update-db", parseScanBool(os.Getenv("SCAN_UPDATE_DB")), "Refresh the local Grype vulnerability database before scanning")
-	cmd.Flags().StringVar(&scanOpts.coreDir, "core-dir", "", "Optional Nix fleet core directory; when set, run Grype through the pinned Nix dev shell")
+	cmd.Flags().StringVar(&scanOpts.coreDir, "core-dir", "", "Optional path to core/; when set, run Grype through the pinned Nix dev shell")
 	cmd.AddCommand(NewScanRefreshKEVCmd())
 	return cmd
 }
