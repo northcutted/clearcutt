@@ -160,6 +160,57 @@ affected — regardless of whether any of them is "based on" any other.
 When an image cannot be placed in the graph but does share layers, the unresolved
 reason says so and points here rather than leaving a dead end.
 
+### Composed Builders: Nix, Wolfi, And Friends
+
+Base detection rests on layer prefixes — a derived image begins with exactly its
+base's layers, in order. That holds for Docker, buildkit and buildpacks, where a
+build literally starts FROM another image.
+
+It does not hold for **Nix `dockerTools`** or **apko** (Wolfi, Chainguard). Those
+take a package set and lay it out across layers by size and sharing. Two images
+built from the same package set share most of their layers and neither is a
+prefix of the other, because neither was built *on* the other. They are siblings,
+not ancestor and descendant.
+
+So ClearCutt classifies how each image was assembled, from metadata it already
+has — no extra pulls:
+
+| builder | signal | layering |
+| --- | --- | --- |
+| `nix` | history entries naming `/nix/store/…` paths | composed |
+| `apko` | `createdBy: apko`, or `dev.chainguard.*` labels | composed |
+| `buildpacks` | `io.buildpacks.*` labels | stacking |
+| `buildkit` | `buildkit.dockerfile.v0` in history | stacking |
+| `debuerreotype` | Debian's official base builder | stacking |
+| `docker` | `#(nop)` / `RUN /bin/sh -c` history | stacking |
+
+`graph build` reports the mix, and when an estate is predominantly composed and
+resolves no bases, it says so explicitly:
+
+```
+[graph] 404 image(s) observed: 0 base famil(ies), 404 consumer(s), 0 root(s)
+[graph] resolved 0 consumer(s): 0 on the current base, 0 stale, 404 undetermined
+[graph] built by: nix x395, unidentified x9 (9 stacking, 395 composed)
+
+[graph] No base relationships were found, and for this estate that is the correct
+        answer rather than a gap: it is built by nix, which composes layers from a
+        package set instead of stacking them on a base image...
+```
+
+**Zero resolved means opposite things on the two estate shapes.** On a Docker
+estate it is missing provenance worth chasing. On a Nix or Wolfi estate it is the
+correct answer, and chasing it wastes an afternoon. The note only fires when the
+estate is at least 75% composed AND nothing resolved — a mixed estate still wants
+its stacking images resolved, and a stacking estate with nothing resolved has a
+real gap that must not be explained away.
+
+An unidentified builder is assumed to STACK. That is the direction that keeps
+coverage honest: assuming composed would silently exempt an image from base
+detection on no evidence.
+
+For a composed estate the useful lens is the layer view — what images have in
+common, and which of them one vulnerable layer reaches.
+
 ### Layer-Prefix Detection Assumes A Stacked Base
 
 This is the main limitation to know about. `layer-prefix` proof requires the base's

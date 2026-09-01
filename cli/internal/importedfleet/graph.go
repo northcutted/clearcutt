@@ -98,6 +98,10 @@ type Graph struct {
 // GraphSummary is the headline count set an audit report leads with.
 type GraphSummary struct {
 	ObservedImages      int            `json:"observedImages"`
+	// Builders records how the estate was assembled. It is here because base
+	// detection only applies to stacking builders, so the same "0 resolved"
+	// number means opposite things on a Docker estate and a Nix one.
+	Builders BuilderProfile `json:"builders"`
 	BaseFamilies        int            `json:"baseFamilies"`
 	Consumers           int            `json:"consumers"`
 	RootImages          int            `json:"rootImages"`
@@ -320,6 +324,13 @@ func BuildGraph(observations Observations, opts GraphOptions) (Graph, error) {
 	graph.Summary.SharedLayers = len(graph.SharedLayers)
 	if len(graph.SharedLayers) > 0 {
 		graph.Summary.WidestLayerReach = graph.SharedLayers[0].ImageCount
+	}
+
+	graph.Summary.Builders = ProfileBuilders(observations)
+	if note := ComposedEstateNote(graph.Summary.Builders, graph.Summary.ResolvedConsumers); note != "" {
+		// Prepend: on a composed estate this reframes every other number in the
+		// report, so it must not arrive after a list of things that "failed".
+		graph.Warnings = append([]string{note}, graph.Warnings...)
 	}
 
 	sort.SliceStable(graph.Roots, func(i, j int) bool { return graph.Roots[i].ImageRef < graph.Roots[j].ImageRef })

@@ -325,6 +325,30 @@ func graphGateResult(graph importedfleet.Graph, opts graphBuildFlags) error {
 	return ErrCheckFailed
 }
 
+// describeBuilders renders the builder mix most-common first, so an operator
+// reads what actually produced their estate rather than an alphabetical list.
+func describeBuilders(profile importedfleet.BuilderProfile) string {
+	type row struct {
+		name  string
+		count int
+	}
+	rows := make([]row, 0, len(profile.ByBuilder))
+	for name, count := range profile.ByBuilder {
+		rows = append(rows, row{name, count})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].count != rows[j].count {
+			return rows[i].count > rows[j].count
+		}
+		return rows[i].name < rows[j].name
+	})
+	parts := make([]string, 0, len(rows))
+	for _, r := range rows {
+		parts = append(parts, fmt.Sprintf("%s x%d", r.name, r.count))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // printGraphSummary renders the terminal pane of glass: what is stale, what is
 // unknown, and how much of the graph rests on proof rather than on a label.
 func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
@@ -333,6 +357,18 @@ func printGraphSummary(graph importedfleet.Graph, opts graphBuildFlags) {
 		s.ObservedImages, s.BaseFamilies, s.Consumers, s.RootImages)
 	fmt.Fprintf(out, "[graph] resolved %d consumer(s): %d on the current base, %d stale, %d undetermined\n",
 		s.ResolvedConsumers, s.CurrentConsumers, s.StaleConsumers, s.UnresolvedConsumers)
+
+	// How the estate was built decides what those numbers mean. On a Nix or
+	// Wolfi estate zero resolved is the correct answer, not a coverage gap, and
+	// an operator who is not told that will go looking for provenance that was
+	// never there.
+	if b := s.Builders; b.Stacking+b.Composed > 0 {
+		fmt.Fprintf(out, "[graph] built by: %s (%d stacking, %d composed)\n",
+			describeBuilders(b), b.Stacking, b.Composed)
+	}
+	if note := importedfleet.ComposedEstateNote(s.Builders, s.ResolvedConsumers); note != "" {
+		fmt.Fprintf(out, "\n[graph] %s\n\n", note)
+	}
 
 	proven := s.EdgesByConfidence["verified"]
 	if s.ResolvedConsumers > 0 {
