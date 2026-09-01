@@ -1,0 +1,218 @@
+{
+  "apiVersion": "clearcutt.dev/v1",
+  "kind": "LayerCommonalityGraph",
+  "generatedAt": "2026-09-01T00:23:37.138066Z",
+  "summary": {
+    "images": 19,
+    "distinctLayers": 96,
+    "sharedLayers": 12,
+    "uniqueLayers": 84,
+    "coreLayers": 0,
+    "commonLayers": 0,
+    "coverageThreshold": 0.75,
+    "storedBytes": 703783530,
+    "naiveBytes": 823723318,
+    "sharingRatio": 0.15,
+    "identicalGroups": 0,
+    "clusters": 0,
+    "pairsCompared": 8,
+    "pairsReported": 0
+  },
+  "images": [
+    {
+      "ref": "cgr.dev/chainguard/static:latest",
+      "layers": 1,
+      "sharedLayers": 0,
+      "uniqueLayers": 1,
+      "totalBytes": 609732,
+      "sharedBytes": 0,
+      "uniqueBytes": 609732,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/bitnami/nginx:latest",
+      "layers": 1,
+      "sharedLayers": 0,
+      "uniqueLayers": 1,
+      "totalBytes": 44941227,
+      "sharedBytes": 0,
+      "uniqueBytes": 44941227,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/alpine:3.20",
+      "layers": 1,
+      "sharedLayers": 0,
+      "uniqueLayers": 1,
+      "totalBytes": 3630321,
+      "sharedBytes": 0,
+      "uniqueBytes": 3630321,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/debian:bookworm-slim",
+      "layers": 1,
+      "sharedLayers": 1,
+      "uniqueLayers": 0,
+      "totalBytes": 28232655,
+      "sharedBytes": 28232655,
+      "uniqueBytes": 0,
+      "uniqueShare": 0
+    },
+    {
+      "ref": "docker.io/library/hello-world:latest",
+      "layers": 1,
+      "sharedLayers": 0,
+      "uniqueLayers": 1,
+      "totalBytes": 2415,
+      "sharedBytes": 0,
+      "uniqueBytes": 2415,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/nginx:1.27",
+      "layers": 7,
+      "sharedLayers": 0,
+      "uniqueLayers": 7,
+      "totalBytes": 72385735,
+      "sharedBytes": 0,
+      "uniqueBytes": 72385735,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/node:20-slim",
+      "layers": 5,
+      "sharedLayers": 0,
+      "uniqueLayers": 5,
+      "totalBytes": 71374710,
+      "sharedBytes": 0,
+      "uniqueBytes": 71374710,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/node:22-alpine",
+      "layers": 4,
+      "sharedLayers": 1,
+      "uniqueLayers": 3,
+      "totalBytes": 57738922,
+      "sharedBytes": 3846391,
+      "uniqueBytes": 53892531,
+      "uniqueShare": 0.93
+    },
+    {
+      "ref": "docker.io/library/node:22-slim",
+      "layers": 5,
+      "sharedLayers": 1,
+      "uniqueLayers": 4,
+      "totalBytes": 79887605,
+      "sharedBytes": 28232655,
+      "uniqueBytes": 51654950,
+      "uniqueShare": 0.65
+    },
+    {
+      "ref": "docker.io/library/photon:5.0",
+      "layers": 1,
+      "sharedLayers": 0,
+      "uniqueLayers": 1,
+      "totalBytes": 19482730,
+      "sharedBytes": 0,
+      "uniqueBytes": 19482730,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/library/postgres:16",
+      "layers": 14,
+      "sharedLayers": 1,
+      "uniqueLayers": 13,
+      "totalBytes": 160236290,
+      "sharedBytes": 29792658,
+      "uniqueBytes": 130443632,
+      "uniqueShare": 0.81
+    },
+    {
+      "ref": "docker.io/library/python:3.11-slim",
+      "layers": 4,
+      "sharedLayers": 1,
+      "uniqueLayers": 3,
+      "totalBytes": 45533330,
+      "sharedBytes": 29792658,
+      "uniqueBytes": 15740672,
+      "uniqueShare": 0.35
+    },
+    {
+      "ref": "docker.io/library/python:3.12-alpine",
+      "layers": 4,
+      "sharedLayers": 1,
+      "uniqueLayers": 3,
+      "totalBytes": 18022162,
+      "sharedBytes": 3846391,
+      "uniqueBytes": 14175771,
+      "uniqueShare": 0.79
+    },
+    {
+      "ref": "docker.io/library/python:3.12-slim",
+      "layers": 4,
+      "sharedLayers": 1,
+      "uniqueLayers": 3,
+      "totalBytes": 43202721,
+      "sharedBytes": 29792658,
+      "uniqueBytes": 13410063,
+      "uniqueShare": 0.31
+    },
+    {
+      "ref": "docker.io/library/python:3.12-slim-bookworm",
+      "layers": 4,
+      "sharedLayers": 1,
+      "uniqueLayers": 3,
+      "totalBytes": 45437565,
+      "sharedBytes": 28232655,
+      "uniqueBytes": 17204910,
+      "uniqueShare": 0.38
+    },
+    {
+      "ref": "docker.io/library/redis:7-alpine",
+      "layers": 7,
+      "sharedLayers": 0,
+      "uniqueLayers": 7,
+      "totalBytes": 16258831,
+      "sharedBytes": 0,
+      "uniqueBytes": 16258831,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "docker.io/paketobuildpacks/run-jammy-base:latest",
+      "layers": 4,
+      "sharedLayers": 0,
+      "uniqueLayers": 4,
+      "totalBytes": 52853102,
+      "sharedBytes": 0,
+      "uniqueBytes": 52853102,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "gcr.io/distroless/java21-debian12:latest",
+      "layers": 30,
+      "sharedLayers": 9,
+      "uniqueLayers": 21,
+      "totalBytes": 63177538,
+      "sharedBytes": 42771,
+      "uniqueBytes": 63134767,
+      "uniqueShare": 1
+    },
+    {
+      "ref": "gcr.io/distroless/static-debian12:latest",
+      "layers": 12,
+      "sharedLayers": 9,
+      "uniqueLayers": 3,
+      "totalBytes": 715727,
+      "sharedBytes": 42771,
+      "uniqueBytes": 672956,
+      "uniqueShare": 0.94
+    }
+  ],
+  "common": [],
+  "identical": [],
+  "clusters": [],
+  "similar": [],
+  "warnings": []
+}
