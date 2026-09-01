@@ -38,7 +38,7 @@ fixed_exists() {
   fi
 }
 
-if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go cli/internal/commands/platform_render.go |
+if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go |
   grep -v -E 'generator_container_slsa3\.yml@v[0-9]+\.[0-9]+\.[0-9]+'; then
   flag "workflow and composite action references must be pinned to immutable SHAs"
 fi

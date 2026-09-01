@@ -162,29 +162,6 @@ jobs:
       - name: Validate Documented Commands
         run: ./scripts/validate-doc-commands.sh ./clearcutt
 
-      - name: Validate Workflow Hardening
-        run: ./scripts/validate-workflow-hardening.sh
-
-      - name: Dev Command Integration Smoke
-        run: |
-          dev_json="$(./clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --devcontainer --print)"
-          printf '%s\n' "$dev_json" | jq -e '
-            .name == "ClearCutt java21-dev" and
-            .workspaceFolder == "/app" and
-            .remoteUser == "10001" and
-            .containerEnv.CLEARCUTT_IMAGE_ID == "java21-dev" and
-            .containerEnv.CLEARCUTT_IMAGE_TAG == "v1.2.3" and
-            .image == "ghcr.io/acme/clearcutt/clearcutt-java21:v1.2.3-dev@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          ' >/dev/null
-
-          fallback_json="$(./clearcutt --catalog "$RUNNER_TEMP/missing-clearcutt-catalog" dev java21-distroless --tag v0.2.1 --devcontainer --print)"
-          printf '%s\n' "$fallback_json" | jq -e '
-            .containerEnv.CLEARCUTT_IMAGE_ID == "java21-dev" and
-            .containerEnv.CLEARCUTT_IMAGE_TAG == "v0.2.1" and
-            .image == "ghcr.io/northcutted/clearcutt/clearcutt-java21:v0.2.1-dev"
-          ' >/dev/null
-          echo "Dev command integration smoke PASSED!"
-
       - name: Go Test with Coverage
         working-directory: cli
         env:

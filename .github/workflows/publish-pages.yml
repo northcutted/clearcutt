@@ -52,9 +52,6 @@ jobs:
           version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
           repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
