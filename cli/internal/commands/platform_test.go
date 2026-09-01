@@ -34,7 +34,7 @@ func writeFleetConfig(t *testing.T, dir string) string {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	path := filepath.Join(dir, "clearcutt.fleet.yaml")
+	path := filepath.Join(dir, fleet.DefaultConfigPath)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestMatrixAddRemoveUpdatesFleetConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	path := filepath.Join(root, "clearcutt.fleet.yaml")
+	path := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestPlatformInitWritesStarterKitAndHonorsForce(t *testing.T) {
 		t.Fatalf("platform init failed: %v\n%s", err, stdout)
 	}
 	expected := []string{
-		"clearcutt.fleet.yaml",
+		fleet.DefaultConfigPath,
 		"core/lib/platform-metadata.nix",
 		"docs/platform-kit.md",
 	}
@@ -533,7 +533,7 @@ func TestPlatformNewScaffoldsLocalizedFleetRepo(t *testing.T) {
 		t.Fatalf("platform new failed: %v\n%s", err, stdout)
 	}
 	for _, rel := range []string{
-		"clearcutt.fleet.yaml",
+		fleet.DefaultConfigPath,
 		".github/workflows/release.yml",
 		".github/workflows/publish-pages.yml",
 		"cli/go.mod",
@@ -552,7 +552,7 @@ func TestPlatformNewScaffoldsLocalizedFleetRepo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(target, "core", "build-outputs")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("core build outputs should not be scaffolded, err=%v", err)
 	}
-	cfg, err := fleet.Load(filepath.Join(target, "clearcutt.fleet.yaml"))
+	cfg, err := fleet.Load(filepath.Join(target, fleet.DefaultConfigPath))
 	if err != nil {
 		t.Fatalf("load scaffolded fleet config: %v", err)
 	}
@@ -633,7 +633,7 @@ func TestPlatformNewScaffoldsFromSourceArchiveOutsideCheckout(t *testing.T) {
 	}
 	target := filepath.Join(outsideCheckout, "golden-images")
 	expected := []string{
-		"clearcutt.fleet.yaml",
+		fleet.DefaultConfigPath,
 		".github/workflows/release.yml",
 		"cli/go.mod",
 		"core/flake.nix",
@@ -648,7 +648,7 @@ func TestPlatformNewScaffoldsFromSourceArchiveOutsideCheckout(t *testing.T) {
 			t.Fatalf("expected archive-scaffolded %s: %v", rel, err)
 		}
 	}
-	cfg, err := fleet.Load(filepath.Join(target, "clearcutt.fleet.yaml"))
+	cfg, err := fleet.Load(filepath.Join(target, fleet.DefaultConfigPath))
 	if err != nil {
 		t.Fatalf("load archive-scaffolded config: %v", err)
 	}
@@ -686,7 +686,7 @@ func TestPlatformNewScaffoldsFromEmbeddedSourceOutsideCheckout(t *testing.T) {
 	}
 	target := filepath.Join(outsideCheckout, "embedded-fleet")
 	for _, rel := range []string{
-		"clearcutt.fleet.yaml",
+		fleet.DefaultConfigPath,
 		".github/workflows/release.yml",
 		"cli/go.mod",
 		"cli/internal/platformsource/archive/source.zip",
@@ -889,7 +889,7 @@ func TestPlatformDoctorGithubWarnsForOptionalReadinessGaps(t *testing.T) {
 		PublicBaseURL:  "https://nix-cache.acme.example",
 		SigningKeyName: "acme-cache-1",
 	}
-	writeFleetConfigStruct(t, filepath.Join(root, "clearcutt.fleet.yaml"), cfg)
+	writeFleetConfigStruct(t, filepath.Join(root, fleet.DefaultConfigPath), cfg)
 	writePlatformStatusFixture(t, root, "ghcr.io/acme/platform/clearcutt-*")
 
 	oldCapture := captureExternalOutput
@@ -939,7 +939,7 @@ func TestPlatformStatusWarnsForNonGHCRRegistry(t *testing.T) {
 	root := t.TempDir()
 	cfg := fleet.DefaultConfig("acme", "platform")
 	cfg.Registry.Host = "registry.example.com"
-	writeFleetConfigStruct(t, filepath.Join(root, "clearcutt.fleet.yaml"), cfg)
+	writeFleetConfigStruct(t, filepath.Join(root, fleet.DefaultConfigPath), cfg)
 	files := map[string]string{
 		".github/workflows/release.yml":                 "if: ${{ github.ref != 'refs/heads/main' }}\n--workflow-identity \"https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}\"\nclearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet publish-target\nclearcutt fleet assemble-target\nclearcutt fleet build-cli-assets\nclearcutt fleet finalize-release\nclearcutt platform registry-env\nslsa-github-generator\n",
 		".github/workflows/pr-gate.yml":                 "clearcutt fleet workflow-matrices\nuses: ./.github/actions/install-clearcutt\nclearcutt platform setup-nix\nCLEARCUTT_BUILD_ENGINE\n--engine \"${CLEARCUTT_BUILD_ENGINE}\"\nclearcutt fleet certify-target\nclearcutt verify boundary-suite\n",
@@ -992,7 +992,7 @@ func TestPlatformRegistryEnvUsesFleetHostAndGithubOutput(t *testing.T) {
 	cfg := fleet.DefaultConfig("acme", "platform")
 	cfg.Registry.Host = "registry.example.com/"
 	cfg.Registry.ImagePrefix = "golden"
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, fleet.DefaultConfigPath)
 	writeFleetConfigStruct(t, configPath, cfg)
 	ghOut := filepath.Join(root, "github-output")
 
@@ -1054,7 +1054,7 @@ func TestPlatformReleasePlanRendersProductionBoundaryJSON(t *testing.T) {
 	cfg.Registry.Host = "registry.example.com"
 	cfg.Matrix.Languages = []string{"java21", "node24"}
 	cfg.Services = []fleet.ServiceImage{{ID: "postgres16", Template: "postgres", Version: "16"}}
-	writeFleetConfigStruct(t, filepath.Join(root, "clearcutt.fleet.yaml"), cfg)
+	writeFleetConfigStruct(t, filepath.Join(root, fleet.DefaultConfigPath), cfg)
 	writePlatformStatusFixture(t, root, "registry.example.com/acme/platform/platform-*")
 
 	stdout, err := runCLI(t, "--format", "json", "platform", "release-plan", "--output", root)
@@ -1151,7 +1151,7 @@ func TestPlatformStatusFailsWhenReleaseBranchGuardDrifts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "clearcutt.fleet.yaml"), raw, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, fleet.DefaultConfigPath), raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
 	files := map[string]string{
@@ -1201,7 +1201,7 @@ func TestPlatformSetupNixWritesConfigAndGithubEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	cfgPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	cfgPath := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -1286,7 +1286,7 @@ func TestPlatformSetupNixRunsCommandInsideConfiguredDevShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "clearcutt.fleet.yaml"), raw, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, fleet.DefaultConfigPath), raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
 

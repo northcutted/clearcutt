@@ -623,7 +623,7 @@ exit 2
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(t.TempDir(), "clearcutt.fleet.yaml")
+	configPath := filepath.Join(t.TempDir(), fleet.DefaultConfigPath)
 	if err := os.WriteFile(configPath, configRaw, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -751,7 +751,7 @@ func TestCatalogSiteBuildRejectsConflictingGeneratedCatalogInputs(t *testing.T) 
 	}
 	stdout, err := runCLI(t,
 		"catalog", "site", "build",
-		"--config", "clearcutt.fleet.yaml",
+		"--config", fleet.DefaultConfigPath,
 		"--images", inventoryPath,
 		"--output", filepath.Join(t.TempDir(), "site"),
 	)
@@ -1109,7 +1109,7 @@ func TestCatalogGenerateIncludeServicesEmitsV2ServiceRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -1233,7 +1233,7 @@ func TestCatalogGenerateIncludeServicesFoldsServiceReleaseAssets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}

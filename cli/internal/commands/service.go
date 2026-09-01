@@ -208,7 +208,7 @@ the generated Nix extension stays an implementation detail.`,
 }
 
 func addServiceCommonFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&serviceOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &serviceOpts.fleetConfig, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&serviceOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 }
 

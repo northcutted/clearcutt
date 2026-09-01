@@ -67,7 +67,7 @@ an include-matrix derived from clearcutt.fleet.yaml.`,
 		},
 	}
 	exportCmd.Flags().StringVar(&matrixOpts.source, "source", "catalog", "Matrix source: catalog or fleet")
-	exportCmd.Flags().StringVar(&matrixOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(exportCmd, &matrixOpts.fleetConfig, "Path to the ClearCutt config")
 	exportCmd.Flags().BoolVar(&matrixOpts.githubActions, "github-actions", false, "Emit a GitHub Actions include matrix")
 	exportCmd.Flags().StringVar(&matrixOpts.matrixKind, "matrix", "release", "GitHub Actions matrix kind: release or image")
 
@@ -83,7 +83,7 @@ selected in the current fleet config.`,
 			return runMatrixExplain(args[0])
 		},
 	}
-	explainCmd.Flags().StringVar(&matrixOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(explainCmd, &matrixOpts.fleetConfig, "Path to the ClearCutt config")
 
 	addCmd := &cobra.Command{
 		Use:   "add <runtime-line>",
@@ -98,7 +98,7 @@ Use runtime scaffold first when the runtime line is not built in.`,
 			return runMatrixAdd(args[0])
 		},
 	}
-	addCmd.Flags().StringVar(&matrixOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(addCmd, &matrixOpts.fleetConfig, "Path to the ClearCutt config")
 	addCmd.Flags().StringVar(&matrixOpts.tiers, "tiers", "", "Optional comma-separated tiers to ensure: dev,slim,distroless")
 	addCmd.Flags().StringVar(&matrixOpts.systems, "systems", "", "Optional comma-separated systems to ensure, for example x86_64-linux,aarch64-linux")
 
@@ -113,7 +113,7 @@ Use runtime scaffold first when the runtime line is not built in.`,
 			return runMatrixRemove(args[0])
 		},
 	}
-	removeCmd.Flags().StringVar(&matrixOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(removeCmd, &matrixOpts.fleetConfig, "Path to the ClearCutt config")
 
 	cmd.AddCommand(exportCmd, explainCmd, addCmd, removeCmd)
 

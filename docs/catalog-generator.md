@@ -13,13 +13,13 @@ catalog directory.
 ## ClearCutt Fleet Mode
 
 Fleet mode reads owner, repository, registry, release window, and target
-defaults from `clearcutt.fleet.yaml`, then uses ClearCutt release evidence,
+defaults from `clearcutt.yaml`, then uses ClearCutt release evidence,
 registry enrichment, SBOM cache data, and vulnerability scan JSON where
 available.
 
 ```bash
 clearcutt catalog generate \
-  --config clearcutt.fleet.yaml \
+  --config clearcutt.yaml \
   --include-services \
   --output ./dist/catalog
 ```
@@ -185,6 +185,6 @@ jobs:
         with:
           go-version-file: cli/go.mod
       - run: go build -C cli -o ../clearcutt ./cmd/clearcutt
-      - run: ./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+      - run: ./clearcutt catalog generate --config clearcutt.yaml --include-services --output dist/catalog
       - run: ./clearcutt --catalog dist/catalog catalog validate
 ```

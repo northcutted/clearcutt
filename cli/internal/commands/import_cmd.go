@@ -62,7 +62,7 @@ var importApplyEvidenceOpts importApplyEvidenceFlags
 func NewImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Govern OCI image fleets ClearCutt did not build",
+		Short: "Govern image estates ClearCutt did not build",
 		Long: `Import existing OCI image references into ClearCutt-compatible catalog
 inventories, observe available metadata, assess governance gaps, and generate
 deterministic reports without claiming ClearCutt build provenance.`,
@@ -89,8 +89,8 @@ func newImportImagesCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&importImagesOpts.refs, "refs", "", "Path to newline-delimited OCI image refs")
 	f.StringVar(&importImagesOpts.output, "output", "", "Output images.yaml path")
-	f.StringVar(&importImagesOpts.owner, "owner", "", "Imported fleet owner label")
-	f.StringVar(&importImagesOpts.repo, "repo", "", "Imported fleet repo label")
+	f.StringVar(&importImagesOpts.owner, "owner", "", "Estate owner label")
+	f.StringVar(&importImagesOpts.repo, "repo", "", "Estate repo label")
 	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace for generated catalog examples")
 	f.StringVar(&importImagesOpts.defaultTier, "default-tier", "slim", "Default tier for imported images")
 	f.StringVar(&importImagesOpts.defaultLifecycle, "default-lifecycle", "active", "Default lifecycle status for imported images")
@@ -147,7 +147,7 @@ func newImportObserveCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&importObserveOpts.images, "images", "", "Imported images.yaml inventory")
+	f.StringVar(&importObserveOpts.images, "images", "", "Estate images.yaml inventory")
 	f.StringVar(&importObserveOpts.output, "output", "", "Output observations.json path")
 	f.StringVar(&importObserveOpts.offlineFixtures, "offline-fixtures", "", "Offline observations fixture JSON")
 	f.IntVar(&importObserveOpts.concurrency, "concurrency", importedfleet.DefaultObserveConcurrency, "Images to observe at once; 1 forces serial")
@@ -276,14 +276,14 @@ func newImportAssessCmd() *cobra.Command {
 	importAssessOpts = importAssessFlags{}
 	cmd := &cobra.Command{
 		Use:   "assess",
-		Short: "Assess imported fleet evidence and runtime governance gaps",
+		Short: "Assess estate evidence and runtime governance gaps",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImportAssess()
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&importAssessOpts.images, "images", "", "Imported images.yaml inventory")
+	f.StringVar(&importAssessOpts.images, "images", "", "Estate images.yaml inventory")
 	f.StringVar(&importAssessOpts.observations, "observations", "", "Imported observations.json")
 	f.StringVar(&importAssessOpts.catalog, "catalog", "", "Generated catalog directory")
 	f.StringVar(&importAssessOpts.output, "output", "", "Output governance directory")
@@ -321,7 +321,7 @@ func newImportReportCmd() *cobra.Command {
 	importReportOpts = importReportFlags{}
 	cmd := &cobra.Command{
 		Use:   "report",
-		Short: "Render a deterministic imported-fleet report",
+		Short: "Render a deterministic estate report",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImportReport()
@@ -353,7 +353,7 @@ func runImportReport() error {
 func newImportRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rebase",
-		Short: "Discover imported-fleet rebase candidates and plans",
+		Short: "Discover estate rebase candidates and plans",
 	}
 	cmd.AddCommand(newRebaseDiscoverCmd())
 	cmd.AddCommand(newRebasePlanCmd())

@@ -12,7 +12,7 @@ For build-vs-buy positioning and when not to use ClearCutt, see
 Start with a platform fork that runs under your GitHub organization, registry,
 workflow identities, and catalog site.
 
-- Configure `clearcutt.fleet.yaml` for the runtimes, tiers, architectures, scan
+- Configure `clearcutt.yaml` for the runtimes, tiers, architectures, scan
   windows, and remediation limits you intend to support.
 - Use `clearcutt matrix explain <runtime-line>` before adding a runtime to the
   fleet config; supported runtime IDs are validated before the Nix backend runs.

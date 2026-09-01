@@ -18,7 +18,7 @@ permissions:
   actions: read
 
 # Releases mutate GHCR tags + SLSA provenance. The release identity is pinned to
-# refs/heads/main in clearcutt.fleet.yaml and admission examples, so dispatches
+# refs/heads/main in clearcutt.yaml and admission examples, so dispatches
 # from other refs are rejected before any mutable release work starts.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

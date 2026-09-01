@@ -7,7 +7,7 @@ document, one first command, and then deeper links.
 | --- | --- | --- | --- |
 | App developer | [Getting started](getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` | [App lifecycle](app-lifecycle.md), [Certification](certification.md) |
 | Imported fleet owner | [Imported fleets](imported-fleets.md) | `go -C cli run ./cmd/clearcutt import images --refs ../examples/imported-fleet/refs.txt --output /tmp/clearcutt-import/images.yaml --force` | [Generic OCI mode](generic-oci-mode.md), [Catalog generator](catalog-generator.md) |
-| Platform owner | [Platform kit](platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml` | [Fork validation](fork-validation.md), [Site generator](site-generator.md), [Service images](service-images.md) |
+| Platform owner | [Platform kit](platform-kit.md) | `go -C cli run ./cmd/clearcutt platform status --output "$PWD" --config clearcutt.yaml` | [Fork validation](fork-validation.md), [Site generator](site-generator.md), [Service images](service-images.md) |
 | Security or auditor | [Trust evidence walkthrough](trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` | [Catalog evidence](trust/catalog-evidence.md), [Security model](security-model.md), [Policy bundles](policy-bundles.md) |
 | Manager | [Alternatives and fit](alternatives.md) | `sed -n '1,120p' docs/alternatives.md` | [Enterprise adoption](enterprise-adoption.md), [Platform kit](platform-kit.md) |
 | Open-source reviewer | [Demo path](demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` | [Mental model](concepts/mental-model.md), [Glossary](concepts/glossary.md), [CLI reference](cli-reference.md) |
@@ -27,6 +27,30 @@ document, one first command, and then deeper links.
 - [Registry scan and the base image graph](registry-graph.md): point ClearCutt at a
   registry, discover which images are built on which, and produce an auditable
   inventory with drift.
+## Two words, deliberately
+
+ClearCutt uses **estate** and **fleet** for different things, and the difference
+is the product.
+
+- An **estate** is what you GOVERN: whatever is in your registry, including
+  images you did not build, cannot rebuild, and did not choose. An estate is
+  discovered. Everything in the governance path — `registry scan`,
+  `import observe`, `graph`, `estate`, `evidence`, `certify`, `scan` — works on
+  an estate and reads no configuration about fleets.
+- A **fleet** is what you BUILD: an authored matrix of runtime lines, tiers and
+  architectures. A fleet is declared. `clearcutt fleet …` and
+  `clearcutt platform …` operate on one.
+
+The project ships a fleet of exactly one runtime line, as a fixture that proves
+the build path works end to end. It is not the product. If you only ever govern
+images other people built, you will never open the fleet configuration — and the
+config file is named `clearcutt.yaml` rather than `clearcutt.fleet.yaml` for
+that reason, because eight of its eleven sections have nothing to do with
+building images.
+
+`clearcutt.fleet.yaml` is still read when present, so an existing fork needs no
+migration.
+
 - [Registry-native evidence](registry-native-evidence.md): store evidence,
   estate snapshots and history in the registry instead of GitHub releases — plus
   the two operational constraints that come with it (garbage collection, and

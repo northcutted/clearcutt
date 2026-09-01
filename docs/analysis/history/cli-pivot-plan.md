@@ -292,7 +292,7 @@ build → verify) works end to end and matches the README.
   draft jobs call `clearcutt remediation workflow-params --github-output
   "$GITHUB_OUTPUT"` instead of parsing `matrix export --source fleet` with
   inline `jq`. The command emits scan depth, campaign limits, dev-tier inclusion,
-  and compact remediation policy JSON from `clearcutt.fleet.yaml`.
+  and compact remediation policy JSON from `clearcutt.yaml`.
 - **Scheduled plan/report/run shell assembly is now CLI-owned.** `remediation
   plan` consumes the same CI env defaults as `remediation run`, `remediation
   report --allow-missing` replaces always-run shell file checks, and

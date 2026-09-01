@@ -27,6 +27,7 @@ var Entries = []string{
 	"Makefile",
 	"README.md",
 	"SECURITY.md",
+	"clearcutt.yaml",
 	"clearcutt.fleet.yaml",
 	"go.work",
 	"go.work.sum",

@@ -17,7 +17,7 @@ There are two profiles:
 
 For the extension model, see
 [`docs/extending-clearcutt.md`](extending-clearcutt.md): app teams use templates
-and devcontainers, fleet owners edit `clearcutt.fleet.yaml`, and Nix stays in
+and devcontainers, fleet owners edit `clearcutt.yaml`, and Nix stays in
 the backend authoring path.
 
 ## Golden Path
@@ -182,7 +182,7 @@ than catalog images that already exist:
    publisher, or `CLEARCUTT_CLI_MODE=local` only when intentionally dogfooding
    the checked-out CLI source. Fleet builds run through the Go-owned engine; there
    is no shell fallback.
-2. Edit `clearcutt.fleet.yaml` for enabled runtimes, service images,
+2. Edit `clearcutt.yaml` for enabled runtimes, service images,
    architectures, catalog scan window, admission profile, remediation limits,
    branding, templates, and optional cache settings. Use
    `clearcutt matrix explain java21` and `clearcutt service explain postgres16`
@@ -194,7 +194,7 @@ than catalog images that already exist:
 4. Run `clearcutt platform status` to verify the kit is wired together,
    including fork-local metadata and supported fleet runtime lines.
 5. Run `clearcutt platform release-plan` to print the first-release operating
-   plan generated from `clearcutt.fleet.yaml`. The plan lists the configured
+   plan generated from `clearcutt.yaml`. The plan lists the configured
    registry support tier, matrix size, required GitHub variables/secrets, local
    checks, release steps, verification commands, and the current boundary
    between CLI-owned orchestration, GitHub Actions/SLSA, Nix, Sigstore tooling,
@@ -207,7 +207,7 @@ than catalog images that already exist:
 7. Run `clearcutt platform setup-nix --core-dir core --write-user-config` only
    on machines that will build or publish the fleet. In CI the workflows call
    the same command with `--github-env "$GITHUB_ENV"` so fork cache trust comes
-   from `clearcutt.fleet.yaml`, not workflow constants.
+   from `clearcutt.yaml`, not workflow constants.
 8. Run the release workflow from `main` to publish the configured base-image
    fleet to the registry in `registry.host`. The reference trust policy is
    main-only:
@@ -342,7 +342,7 @@ clearcutt catalog build --limit 10 --scan-depth 4 --core-dir core --update-db --
 clearcutt catalog workflow-params --github-output "$GITHUB_OUTPUT"
 
 # Or generate portable catalog artifacts for policy, audit, and site rendering.
-clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output ./dist/catalog
+clearcutt catalog generate --config clearcutt.yaml --include-services --output ./dist/catalog
 
 # Render a static evidence portal from those artifacts.
 clearcutt catalog site build --catalog ./dist/catalog --output ./dist/site --install --generate-vex

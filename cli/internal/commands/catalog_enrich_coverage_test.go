@@ -36,7 +36,7 @@ func TestCatalogEnrichFleetConfigAndTagBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}

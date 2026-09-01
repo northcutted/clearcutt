@@ -149,7 +149,7 @@ path for teams that want ClearCutt to build and operate a base-image fleet.`,
 			return runPlatformInit()
 		},
 	}
-	initCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to write")
+	addConfigFlag(initCmd, &platformOpts.configPath, "Config path to write")
 	initCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root/output directory")
 	initCmd.Flags().StringVar(&platformOpts.owner, "owner", "", "GitHub owner/org for the fleet (default northcutted)")
 	initCmd.Flags().StringVar(&platformOpts.repo, "repo", "", "GitHub repository for the fleet (default clearcutt)")
@@ -208,7 +208,7 @@ policy examples, and metadata for the requested owner/repo/registry identity.`,
 			return runPlatformStatus()
 		},
 	}
-	statusCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
+	addConfigFlag(statusCmd, &platformOpts.configPath, "Config path to inspect")
 	statusCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root to inspect")
 
 	doctorCmd := &cobra.Command{
@@ -225,7 +225,7 @@ readiness.`,
 			return runPlatformDoctor()
 		},
 	}
-	doctorCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
+	addConfigFlag(doctorCmd, &platformOpts.configPath, "Config path to inspect")
 	doctorCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root to inspect")
 	doctorCmd.Flags().BoolVar(&platformOpts.github, "github", false, "Use gh to check GitHub repository readiness")
 	doctorCmd.Flags().StringVar(&platformOpts.githubRepo, "repo", "", "GitHub owner/repo to inspect (default from fleet config)")
@@ -246,7 +246,7 @@ and GitHub Actions/Nix/Sigstore machinery.`,
 			return runPlatformReleasePlan()
 		},
 	}
-	releasePlanCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
+	addConfigFlag(releasePlanCmd, &platformOpts.configPath, "Config path to inspect")
 	releasePlanCmd.Flags().StringVar(&platformOpts.outputDir, "output", ".", "Repository root to inspect")
 
 	registryEnvCmd := &cobra.Command{
@@ -263,7 +263,7 @@ using CLEARCUTT_REGISTRY_TOKEN or GITHUB_TOKEN.`,
 			return runPlatformRegistryEnv()
 		},
 	}
-	registryEnvCmd.Flags().StringVar(&platformOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
+	addConfigFlag(registryEnvCmd, &platformOpts.configPath, "Config path to inspect")
 	registryEnvCmd.Flags().StringVar(&platformOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append host, username, registry_base, owner, repository, image_prefix, and auth_mode")
 
 	cmd.AddCommand(initCmd, newCmd, statusCmd, doctorCmd, releasePlanCmd, registryEnvCmd, NewPlatformSetupNixCmd(), NewPlatformRenderCmd(), NewPlatformPlanCmd(), NewPlatformApplyCmd(), NewPlatformBootstrapCmd())
@@ -559,7 +559,21 @@ func findPlatformSkeletonRoot(dir string) (string, error) {
 }
 
 func isPlatformSkeletonRoot(dir string) bool {
-	for _, rel := range []string{"clearcutt.fleet.yaml", "core/flake.nix", ".github/workflows/release.yml"} {
+	// EITHER config name identifies a ClearCutt tree — a fork that has not
+	// migrated has only the legacy one — but the rest must all be present.
+	// Listing both names in the all-must-exist loop below would require a tree
+	// to carry both, which no tree does.
+	config := false
+	for _, name := range []string{fleet.DefaultConfigPath, fleet.LegacyConfigPath} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			config = true
+			break
+		}
+	}
+	if !config {
+		return false
+	}
+	for _, rel := range []string{"core/flake.nix", ".github/workflows/release.yml"} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			return false
 		}

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/northcutted/clearcutt/internal/fleet"
+
 	"sigs.k8s.io/yaml"
 )
 
@@ -36,7 +38,7 @@ func TestPlatformRenderFleetCreatesScaffoldAndPrintsResults(t *testing.T) {
 	if result.Profile != platformProfileFleet || result.RegistryBase != "ghcr.io/acme/image-fleet" {
 		t.Fatalf("unexpected render result: %#v", result)
 	}
-	for _, rel := range []string{"clearcutt.fleet.yaml", "core/flake.nix", "site/package.json", "clearcutt.lock", ".clearcutt/github.yaml", ".clearcutt/state.json"} {
+	for _, rel := range []string{fleet.DefaultConfigPath, "core/flake.nix", "site/package.json", "clearcutt.lock", ".clearcutt/github.yaml", ".clearcutt/state.json"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
 			t.Fatalf("fleet render missing %s: %v", rel, err)
 		}

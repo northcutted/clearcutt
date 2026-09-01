@@ -26,7 +26,7 @@ whoever built the images.
 A platform team that wants to build its own base images can. This is how the
 project's single reference fixture is produced:
 
-1. Configure runtime and service lanes in `clearcutt.fleet.yaml`.
+1. Configure runtime and service lanes in `clearcutt.yaml`.
 2. Build platform-owned images with the Nix backend.
 3. Publish images to the fork owner's registry.
 4. Attach release evidence when configured: signatures, SBOMs, provenance, test

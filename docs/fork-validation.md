@@ -14,7 +14,7 @@ go -C cli build -o ../clearcutt ./cmd/clearcutt
 Or run the command without writing a binary:
 
 ```bash
-go -C cli run ./cmd/clearcutt platform status --output "$PWD" --fleet-config clearcutt.fleet.yaml
+go -C cli run ./cmd/clearcutt platform status --output "$PWD" --config clearcutt.yaml
 ```
 
 Review any failed checks before release. The command should identify missing
@@ -27,7 +27,7 @@ Before configuring GitHub settings, generate the first-release operating plan:
 ./clearcutt platform release-plan
 ```
 
-This is a side-effect-free runbook generated from `clearcutt.fleet.yaml` and
+This is a side-effect-free runbook generated from `clearcutt.yaml` and
 local workflow wiring. It lists the registry support tier, required GitHub
 variables/secrets, local checks, release steps, verification commands, and which
 parts are owned by the ClearCutt CLI versus GitHub Actions/SLSA, Nix, Sigstore
@@ -142,7 +142,7 @@ https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/rebase.yml@refs/heads/ma
 
 These must agree across:
 
-- `clearcutt.fleet.yaml`,
+- `clearcutt.yaml`,
 - `.github/workflows/release.yml`,
 - `.github/workflows/rebase.yml`,
 - generated Kyverno/Gatekeeper policy,
@@ -160,7 +160,7 @@ After publishing one release:
   --workflow-identity 'https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main' \
   --core-dir core
 
-./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+./clearcutt catalog generate --config clearcutt.yaml --include-services --output dist/catalog
 ./clearcutt --catalog dist/catalog catalog validate
 ./clearcutt catalog site build --catalog dist/catalog --output dist/site --install
 ```

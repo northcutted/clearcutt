@@ -3,13 +3,66 @@ package fleet
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"sigs.k8s.io/yaml"
 )
 
-const DefaultConfigPath = "clearcutt.fleet.yaml"
+// DefaultConfigPath is the config file ClearCutt writes and looks for first.
+//
+// It used to be "clearcutt.fleet.yaml", which named the smallest thing the file
+// does. Three of its eleven sections configure building a fleet (matrix,
+// release, templates); the other eight are project identity and governance
+// policy — registry, branding, site, catalog, admission, remediation. And the
+// governance commands, which are the product, never read this file at all.
+//
+// The old name implied a prerequisite that does not exist: someone governing
+// their registry does not need to define a fleet, or open this file. That is an
+// adoption barrier made out of a filename.
+const DefaultConfigPath = "clearcutt.yaml"
+
+// ConfigKind is the apiVersion kind ClearCutt writes. LegacyConfigKind is the
+// previous value, still accepted so an existing fork's file loads unchanged.
+const (
+	ConfigKind       = "ClearCuttConfig"
+	LegacyConfigKind = "FleetConfig"
+)
+
+// LegacyConfigPath is the previous name, still read so existing forks keep
+// working. New files are written as DefaultConfigPath.
+const LegacyConfigPath = "clearcutt.fleet.yaml"
+
+// ResolveConfigPath returns the config file to read.
+//
+// An explicit path always wins. Otherwise the new name is preferred, and the
+// legacy name is used when it is the only one present — so a fork that has not
+// migrated needs no flag, and one that has is never surprised by a stale file.
+// When BOTH exist the new name wins, because that is the one a migration wrote.
+func ResolveConfigPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		path = DefaultConfigPath
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	// Fall back to the legacy name IN THE SAME DIRECTORY.
+	//
+	// Resolving only when the path is empty is not enough: every command
+	// defaults its --config flag to the new name, so the path is never empty
+	// and an unmigrated fork would fail with "clearcutt.yaml: no such file"
+	// while its clearcutt.fleet.yaml sat right beside it. Checking the sibling
+	// makes the fallback work for a bare default, a repo-root-rebased default,
+	// and an explicit path alike.
+	if filepath.Base(path) == DefaultConfigPath {
+		legacy := filepath.Join(filepath.Dir(path), LegacyConfigPath)
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+	}
+	return path
+}
 
 // ReferenceOwner and ReferenceRepo identify the upstream ClearCutt project. They
 // are the default fleet identity and the source identity that
@@ -371,7 +424,7 @@ func DefaultConfig(owner, repo string) Config {
 	productName := DeriveProductName(repo)
 	return Config{
 		APIVersion: "clearcutt.dev/v1",
-		Kind:       "FleetConfig",
+		Kind:       ConfigKind,
 		Metadata: Metadata{
 			Name: "clearcutt-reference-fleet",
 		},
@@ -441,9 +494,7 @@ func DefaultConfig(owner, repo string) Config {
 }
 
 func Load(path string) (Config, error) {
-	if path == "" {
-		path = DefaultConfigPath
-	}
+	path = ResolveConfigPath(path)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
@@ -555,8 +606,8 @@ func (c Config) Validate() error {
 	if c.APIVersion != "clearcutt.dev/v1" {
 		return fmt.Errorf("apiVersion must be clearcutt.dev/v1")
 	}
-	if c.Kind != "FleetConfig" {
-		return fmt.Errorf("kind must be FleetConfig")
+	if c.Kind != ConfigKind && c.Kind != LegacyConfigKind {
+		return fmt.Errorf("kind must be %s (or the legacy %s)", ConfigKind, LegacyConfigKind)
 	}
 	if c.Registry.Host == "" || c.Registry.Owner == "" || c.Registry.Repository == "" {
 		return fmt.Errorf("registry.host, registry.owner, and registry.repository are required")

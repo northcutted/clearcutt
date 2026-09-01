@@ -379,7 +379,7 @@ func writeFleetTestConfig(t *testing.T, root string, partial fleet.Config) strin
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	path := filepath.Join(root, "clearcutt.fleet.yaml")
+	path := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}

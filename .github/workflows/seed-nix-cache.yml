@@ -1,6 +1,6 @@
 # ClearCutt Seed Nix Binary Cache
 #
-# Seeds the R2-backed Nix binary cache (release.nixCache in clearcutt.fleet.yaml)
+# Seeds the R2-backed Nix binary cache (release.nixCache in clearcutt.yaml)
 # with the fleet's RUNTIME closures so cold PR-gate legs SUBSTITUTE them instead
 # of recompiling from source.
 #
@@ -43,7 +43,7 @@ on:
       - 'core/lib/registry.nix'
       - 'core/flake.nix'
       - 'core/flake.lock'
-      - 'clearcutt.fleet.yaml'
+      - 'clearcutt.yaml'
 
 permissions:
   contents: read

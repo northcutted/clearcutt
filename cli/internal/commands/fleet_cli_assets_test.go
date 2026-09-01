@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestFleetBuildCLIAssetsBuildsSignsAndChecksumsDeterministically(t *testing.T) {
@@ -21,7 +23,7 @@ func TestFleetBuildCLIAssetsBuildsSignsAndChecksumsDeterministically(t *testing.
 		t.Fatal(err)
 	}
 	// Repo-root markers so the embedded-archive regeneration step can run.
-	for _, marker := range []string{"clearcutt.fleet.yaml", "go.work"} {
+	for _, marker := range []string{fleet.DefaultConfigPath, "go.work"} {
 		if err := os.WriteFile(filepath.Join(root, marker), []byte("# test\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}

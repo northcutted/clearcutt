@@ -19,7 +19,7 @@ func writeTempFleetConfig(t *testing.T) (configPath, coreDir string) {
 	if err != nil {
 		t.Fatalf("marshal default config: %v", err)
 	}
-	configPath = filepath.Join(dir, "clearcutt.fleet.yaml")
+	configPath = filepath.Join(dir, fleet.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

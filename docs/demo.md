@@ -36,7 +36,7 @@ generated artifacts.
 
 ```bash
 go -C cli run ./cmd/clearcutt app template java \
-  --fleet-config ../clearcutt.fleet.yaml \
+  --config ../clearcutt.yaml \
   --output /tmp/clearcutt-demo-app \
   --name payments-api \
   --force

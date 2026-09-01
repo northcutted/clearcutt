@@ -32,7 +32,7 @@ SOURCE_REF="refs/heads/main"
 ```
 
 The workflow identity is a trust boundary. It must match the identity pinned in
-`clearcutt.fleet.yaml`, admission policy, and verifier commands.
+`clearcutt.yaml`, admission policy, and verifier commands.
 
 ## 3. Verify Registry-Side Release Evidence
 

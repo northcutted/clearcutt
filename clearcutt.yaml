@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=./schemas/clearcutt-fleet.schema.json
 apiVersion: clearcutt.dev/v1
-kind: FleetConfig
+kind: ClearCuttConfig
 metadata:
   name: clearcutt-reference-fleet
 registry:

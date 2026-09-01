@@ -57,7 +57,7 @@ func TestFleetCertifyTargetDefaultEngineFailsFastOnDarwin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
 	}
-	cfgPath := filepath.Join(dir, "clearcutt.fleet.yaml")
+	cfgPath := filepath.Join(dir, fleet.DefaultConfigPath)
 	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}

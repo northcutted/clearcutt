@@ -21,7 +21,11 @@
       "const": "clearcutt.dev/v1"
     },
     "kind": {
-      "const": "FleetConfig"
+      "enum": [
+        "ClearCuttConfig",
+        "FleetConfig"
+      ],
+      "description": "ClearCuttConfig is current; FleetConfig is the legacy value, still accepted so existing forks load unchanged."
     },
     "metadata": {
       "type": "object",

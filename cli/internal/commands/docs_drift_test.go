@@ -145,7 +145,7 @@ var knownRuntimeLineTokens = []string{
 
 // loadFleetConfigForDrift reads the repo's own fleet config.
 func loadFleetConfigForDrift(root string) (fleet.Config, error) {
-	return fleet.Load(filepath.Join(root, "clearcutt.fleet.yaml"))
+	return fleet.Load(filepath.Join(root, fleet.DefaultConfigPath))
 }
 
 // TestDocumentedCommandsExist guards prose that shows a command line. Docs are

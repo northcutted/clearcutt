@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestWriteArchiveRoundTripsMinimalRepo(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
-		"clearcutt.fleet.yaml": "registry:\n  host: ghcr.io\n",
+		fleet.DefaultConfigPath: "registry:\n  host: ghcr.io\n",
 		"go.work":              "go 1.22\n",
 		"cli/go.mod":           "module example.com/clearcutt\n",
 		"cli/.DS_Store":        "junk that the rules must skip\n",
@@ -45,7 +47,7 @@ func TestWriteArchiveRoundTripsMinimalRepo(t *testing.T) {
 		names[f.Name] = true
 	}
 	for _, want := range []string{
-		"clearcutt-source/clearcutt.fleet.yaml",
+		"clearcutt-source/clearcutt.yaml",
 		"clearcutt-source/cli/go.mod",
 	} {
 		if !names[want] {

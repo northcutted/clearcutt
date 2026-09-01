@@ -29,7 +29,7 @@ func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
 		}
 	}
 	cfg.Matrix.Languages = languages
-	path := filepath.Join(dir, "clearcutt.fleet.yaml")
+	path := filepath.Join(dir, fleet.DefaultConfigPath)
 	writeFleetConfigStruct(t, path, cfg)
 	return path
 }
@@ -85,14 +85,14 @@ func TestMatrixAddDefaultFleetConfigLandsAtRepoRoot(t *testing.T) {
 		t.Fatalf("matrix add from subdir failed: %v\n%s", err, stdout)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(root, "clearcutt.fleet.yaml"))
+	raw, err := os.ReadFile(filepath.Join(root, fleet.DefaultConfigPath))
 	if err != nil {
 		t.Fatalf("read root fleet config: %v", err)
 	}
 	if !strings.Contains(string(raw), reporootSentinel) {
 		t.Fatalf("root fleet config missing %s:\n%s", reporootSentinel, raw)
 	}
-	if _, err := os.Stat(filepath.Join(subdir, "clearcutt.fleet.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(subdir, fleet.DefaultConfigPath)); !os.IsNotExist(err) {
 		t.Fatalf("matrix add scattered a stray fleet config under %s (stat err=%v)", subdir, err)
 	}
 }
@@ -105,7 +105,7 @@ func TestExplicitRelativeFlagKeepsCwdMeaning(t *testing.T) {
 	}
 	t.Chdir(subdir)
 
-	rootPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	rootPath := filepath.Join(root, fleet.DefaultConfigPath)
 	rootBefore, err := os.ReadFile(rootPath)
 	if err != nil {
 		t.Fatalf("read root fleet config: %v", err)
@@ -138,7 +138,7 @@ func TestResolveRepoRootDefaultGuards(t *testing.T) {
 
 	abs := filepath.Join(root, "pinned.yaml")
 	empty := ""
-	rel := "clearcutt.fleet.yaml"
+	rel := fleet.DefaultConfigPath
 	cmd := &cobra.Command{Use: "guard"}
 	cmd.Flags().StringVar(&abs, "abs", abs, "")
 	cmd.Flags().StringVar(&empty, "empty", empty, "")

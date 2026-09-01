@@ -57,11 +57,11 @@ In your GitHub repository, navigate to **Settings** -> **Secrets and variables**
 
 ---
 
-### Step 4: Configure `clearcutt.fleet.yaml`
+### Step 4: Configure `clearcutt.yaml`
 
 The release workflow does not hardcode bucket names. It calls
 `clearcutt fleet publish-cache`, which reads cache coordinates from
-`clearcutt.fleet.yaml` and skips cleanly when the config or secrets are absent:
+`clearcutt.yaml` and skips cleanly when the config or secrets are absent:
 
 ```yaml
 release:
@@ -88,7 +88,7 @@ clearcutt fleet publish-cache \
 ### Step 5: Configure Clients (Developers & Servers)
 To instruct developer laptops or deployment servers to download pre-compiled
 binaries from your R2 CDN cache, let the CLI write the user-level Nix client
-config from `clearcutt.fleet.yaml`:
+config from `clearcutt.yaml`:
 
 ```bash
 clearcutt platform setup-nix --core-dir core --write-user-config
@@ -105,7 +105,7 @@ trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDS
 ```
 
 Replace `YOUR_PUBLIC_KEY_CONTENT_HERE` with the public trusted key from
-`cache-public-key.pem`. This is safe to commit to `clearcutt.fleet.yaml`; only
+`cache-public-key.pem`. This is safe to commit to `clearcutt.yaml`; only
 `cache-secret-key.pem` belongs in the `NIX_CACHE_SECRET_KEY` GitHub secret.
 
 ---

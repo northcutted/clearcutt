@@ -9,7 +9,7 @@ attestations, and SLSA verification before a fork should rely on them.
 ## The configuration source
 
 Image naming, release login host, and catalog enrichment login host are sourced
-from `clearcutt.fleet.yaml`:
+from `clearcutt.yaml`:
 
 ```yaml
 registry:

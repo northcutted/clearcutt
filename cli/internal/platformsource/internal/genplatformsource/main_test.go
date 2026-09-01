@@ -4,12 +4,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestRunGeneratesArchiveFromRepoRoot(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
-		"clearcutt.fleet.yaml": "registry:\n  host: ghcr.io\n",
+		fleet.DefaultConfigPath: "registry:\n  host: ghcr.io\n",
 		"go.work":              "go 1.22\n",
 		"cli/go.mod":           "module example.com/clearcutt\n",
 	} {
@@ -36,7 +38,7 @@ func TestRunGeneratesArchiveFromRepoRoot(t *testing.T) {
 func TestRunCheckFailsWhenArchiveIsStale(t *testing.T) {
 	root := t.TempDir()
 	for rel, body := range map[string]string{
-		"clearcutt.fleet.yaml": "registry:\n  host: ghcr.io\n",
+		fleet.DefaultConfigPath: "registry:\n  host: ghcr.io\n",
 		"go.work":              "go 1.22\n",
 		"cli/go.mod":           "module example.com/clearcutt\n",
 	} {

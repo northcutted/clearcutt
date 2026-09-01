@@ -87,13 +87,13 @@ Goal: fix overclaims, clarify project boundaries, clarify what works today vs pl
 - ID: P0-05
 - Title: Make service-image readiness conservative
 - Problem: Service images read like a current first-class lane while config and docs mark them preview/non-production.
-- Evidence: `README.md:181`, `clearcutt.fleet.yaml:86-152`, `docs/service-images.md:59-88`, `cli/internal/testdata/mixed-catalog`.
+- Evidence: `README.md:181`, `clearcutt.yaml:86-152`, `docs/service-images.md:59-88`, `cli/internal/testdata/mixed-catalog`.
 - Why it matters: Platform engineers will distrust the project if preview features are presented as production paths.
 - Recommended fix: Label service images as preview/scaffolded everywhere until current catalog evidence and release workflows prove them.
 - Target audience: Platform engineer, security/auditor, engineering manager.
 - Files likely touched: `README.md`, `docs/service-images.md`, `site/src/pages/catalog.astro`, `site/src/components/ServiceGrid.astro`.
 - Acceptance criteria: Service lane copy consistently says preview/non-production unless the default catalog includes current service evidence.
-- Suggested validation command: `rg -n "service lane|Postgres|Valkey|oauth2-proxy|productionAllowed|preview" README.md docs site/src clearcutt.fleet.yaml`.
+- Suggested validation command: `rg -n "service lane|Postgres|Valkey|oauth2-proxy|productionAllowed|preview" README.md docs site/src clearcutt.yaml`.
 - Priority: P0
 - Effort: S
 - Risk: Low.
@@ -239,13 +239,13 @@ Goal: make catalog evidence, signing/provenance/SBOM verification, CLI examples,
 - ID: P2-03
 - Title: Prove the fork is wired before release
 - Problem: Fork setup prerequisites are scattered.
-- Evidence: `FORKING.md:8`, `FORKING.md:79`, `FORKING.md:98`, `clearcutt.fleet.yaml:40-80`, `cli/internal/commands/platform.go`.
+- Evidence: `FORKING.md:8`, `FORKING.md:79`, `FORKING.md:98`, `clearcutt.yaml:40-80`, `cli/internal/commands/platform.go`.
 - Why it matters: Platform engineers need to know whether their fork can operate before running a release.
 - Recommended fix: Add a fork validation checklist using `platform status`, workflow identity checks, registry permissions, GitHub environments, secrets, and Pages/catalog settings.
 - Target audience: Platform engineer, open-source evaluator.
 - Files likely touched: `FORKING.md`, `docs/platform-kit.md`, `README.md`.
 - Acceptance criteria: Fork owner can run one validation sequence and know what remains.
-- Suggested validation command: `go -C cli run ./cmd/clearcutt platform status --output .. --fleet-config ../clearcutt.fleet.yaml`.
+- Suggested validation command: `go -C cli run ./cmd/clearcutt platform status --output .. --config ../clearcutt.yaml`.
 - Priority: P1
 - Effort: S
 - Risk: Low.
@@ -409,13 +409,13 @@ Goal: harden tests, workflow validation, schema validation, release pipeline cor
 - ID: P4-02
 - Title: Make releases main-only or explicitly multi-ref
 - Problem: Non-main release dispatch conflicts with docs/config expectations.
-- Evidence: `.github/workflows/release.yml:27`, `clearcutt.fleet.yaml:41`, `FORKING.md:79`, `.github/workflows/release.yml:767`.
+- Evidence: `.github/workflows/release.yml:27`, `clearcutt.yaml:41`, `FORKING.md:79`, `.github/workflows/release.yml:767`.
 - Why it matters: Signature identity is part of the trust boundary.
 - Recommended fix: Either block non-main releases or document/configure trusted non-main identities and policy examples.
 - Target audience: Security/auditor, platform engineer.
-- Files likely touched: `.github/workflows/release.yml`, `clearcutt.fleet.yaml`, `FORKING.md`, policy docs.
+- Files likely touched: `.github/workflows/release.yml`, `clearcutt.yaml`, `FORKING.md`, policy docs.
 - Acceptance criteria: Release workflow, fleet config, docs, and admission examples agree on trusted identities.
-- Suggested validation command: `rg -n "refs/heads/main|github.ref|workflowIdentity|workflow-identity" .github/workflows clearcutt.fleet.yaml FORKING.md docs`.
+- Suggested validation command: `rg -n "refs/heads/main|github.ref|workflowIdentity|workflow-identity" .github/workflows clearcutt.yaml FORKING.md docs`.
 - Priority: P1
 - Effort: M
 - Risk: Medium because identity policy can break existing release habits.

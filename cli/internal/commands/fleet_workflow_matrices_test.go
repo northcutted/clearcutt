@@ -21,7 +21,7 @@ func TestFleetWorkflowMatricesWritesGitHubOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
 	}
-	cfgPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	cfgPath := filepath.Join(root, fleet.DefaultConfigPath)
 	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

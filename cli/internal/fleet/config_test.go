@@ -53,7 +53,7 @@ func TestDefaultConfigRoundTrip(t *testing.T) {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	path := filepath.Join(t.TempDir(), "clearcutt.fleet.yaml")
+	path := filepath.Join(t.TempDir(), DefaultConfigPath)
 	if err := os.WriteFile(path, raw, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -341,5 +341,99 @@ func TestRemediationTriagePolicyDefaultsAndOverrides(t *testing.T) {
 	})
 	if set.PreferSubstitutable == nil || *set.PreferSubstitutable || set.WaitMaxSeverity != "low" || set.WaitMaxDays == nil || *set.WaitMaxDays != 7 {
 		t.Errorf("explicit triage policy values not preserved: %#v", set)
+	}
+}
+
+// TestConfigPathResolutionKeepsForksWorking pins the migration contract. The
+// file was renamed because DefaultConfigPath implied a prerequisite that
+// does not exist — governance commands never read it — but an existing fork
+// must not need a flag, or a rename, to keep running.
+func TestConfigPathResolutionKeepsForksWorking(t *testing.T) {
+	t.Run("explicit path always wins", func(t *testing.T) {
+		if got := ResolveConfigPath("custom.yaml"); got != "custom.yaml" {
+			t.Fatalf("explicit path = %q", got)
+		}
+	})
+
+	t.Run("legacy name is used when it is the only one present", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if err := os.WriteFile(LegacyConfigPath, []byte("kind: FleetConfig\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ResolveConfigPath(""); got != LegacyConfigPath {
+			t.Fatalf("an unmigrated fork should resolve to %q, got %q", LegacyConfigPath, got)
+		}
+	})
+
+	// The case that actually matters, and that the first version got wrong.
+	// Every command defaults its --config flag to the new name, so the path is
+	// NEVER empty in practice. Resolving only on an empty path meant an
+	// unmigrated fork failed with "clearcutt.yaml: no such file" while its
+	// clearcutt.fleet.yaml sat right beside it.
+	t.Run("the default value falls back to a legacy sibling", func(t *testing.T) {
+		dir := t.TempDir()
+		legacy := filepath.Join(dir, LegacyConfigPath)
+		if err := os.WriteFile(legacy, []byte("kind: FleetConfig\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// Exactly what a command passes: the default, rebased onto a directory.
+		if got := ResolveConfigPath(filepath.Join(dir, DefaultConfigPath)); got != legacy {
+			t.Fatalf("a defaulted path should fall back to its legacy sibling; got %q want %q", got, legacy)
+		}
+	})
+
+	t.Run("an unrelated explicit path is never rewritten", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, LegacyConfigPath), []byte("kind: FleetConfig\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// A caller who names a different file gets that file, present or not —
+		// falling back here would silently read a config they did not ask for.
+		custom := filepath.Join(dir, "somewhere-else.yaml")
+		if got := ResolveConfigPath(custom); got != custom {
+			t.Fatalf("an explicit non-default path must be returned unchanged, got %q", got)
+		}
+	})
+
+	t.Run("new name wins when both exist", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		for _, name := range []string{DefaultConfigPath, LegacyConfigPath} {
+			if err := os.WriteFile(name, []byte("kind: ClearCuttConfig\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// A migration writes the new file and may leave the old one behind.
+		// Preferring the new one means the migration takes effect; preferring
+		// the old one would silently ignore it.
+		if got := ResolveConfigPath(""); got != DefaultConfigPath {
+			t.Fatalf("after a migration the new name must win, got %q", got)
+		}
+	})
+
+	t.Run("neither present falls back to the new name", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if got := ResolveConfigPath(""); got != DefaultConfigPath {
+			t.Fatalf("a fresh project should be told about %q, got %q", DefaultConfigPath, got)
+		}
+	})
+}
+
+// TestBothConfigKindsLoad: an existing file says kind: FleetConfig and must
+// keep loading, while new files say ClearCuttConfig.
+func TestBothConfigKindsLoad(t *testing.T) {
+	for _, kind := range []string{ConfigKind, LegacyConfigKind} {
+		cfg := DefaultConfig("acme", "platform")
+		cfg.Kind = kind
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("kind %q should be accepted: %v", kind, err)
+		}
+	}
+	cfg := DefaultConfig("acme", "platform")
+	cfg.Kind = "SomethingElse"
+	if err := cfg.Validate(); err == nil {
+		t.Error("an unknown kind should still be rejected")
+	}
+	if DefaultConfig("acme", "platform").Kind != ConfigKind {
+		t.Errorf("new configs should be written as %s", ConfigKind)
 	}
 }

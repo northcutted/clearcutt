@@ -11,7 +11,7 @@ import (
 func loadConfigYAML(t *testing.T, body string) Config {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "clearcutt.fleet.yaml")
+	path := filepath.Join(dir, DefaultConfigPath)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

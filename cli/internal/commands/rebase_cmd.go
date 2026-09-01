@@ -33,7 +33,7 @@ var rebasePlanOpts rebasePlanFlags
 func NewRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rebase",
-		Short: "Discover and plan imported-fleet app rebases",
+		Short: "Discover and plan estate app rebases",
 		Long: `Discover and plan app image rebases for imported fleets. These commands
 never publish images, mutate registry tags, or apply a rebase automatically.`,
 	}

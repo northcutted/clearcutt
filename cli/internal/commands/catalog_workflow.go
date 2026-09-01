@@ -51,7 +51,7 @@ Use --github-output in workflows to append limit and scan_depth without jq.`,
 			return runCatalogWorkflowParams()
 		},
 	}
-	cmd.Flags().StringVar(&catalogWorkflowOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &catalogWorkflowOpts.fleetConfig, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&catalogWorkflowOpts.releaseLimit, "release-limit", "", "Optional workflow_dispatch release_limit override")
 	cmd.Flags().StringVar(&catalogWorkflowOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append limit and scan_depth")
 	return cmd

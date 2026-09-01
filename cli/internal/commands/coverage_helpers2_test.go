@@ -55,13 +55,13 @@ func TestPlatformRegistryEnvCommand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := fleet.DefaultConfig("acme", "fleet")
 	cfg.Registry.Host = "registry.example.com"
-	writeFleetConfigStruct(t, filepath.Join(dir, "clearcutt.fleet.yaml"), cfg)
+	writeFleetConfigStruct(t, filepath.Join(dir, fleet.DefaultConfigPath), cfg)
 
 	t.Setenv("CLEARCUTT_REGISTRY_USER", "svc-publisher")
 	githubOutput := filepath.Join(dir, "github-output.txt")
 	stdout, err := runCLI(t,
 		"platform", "registry-env",
-		"--fleet-config", filepath.Join(dir, "clearcutt.fleet.yaml"),
+		"--fleet-config", filepath.Join(dir, fleet.DefaultConfigPath),
 		"--github-output", githubOutput,
 	)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestPlatformRegistryEnvCommand(t *testing.T) {
 		}
 	}
 
-	stdout, err = runCLI(t, "--format", "json", "platform", "registry-env", "--fleet-config", filepath.Join(dir, "clearcutt.fleet.yaml"))
+	stdout, err = runCLI(t, "--format", "json", "platform", "registry-env", "--fleet-config", filepath.Join(dir, fleet.DefaultConfigPath))
 	if err != nil {
 		t.Fatalf("registry-env json failed: %v\n%s", err, stdout)
 	}

@@ -61,7 +61,8 @@ func Materialize() (string, func(), error) {
 func FindRepoRoot(start string) (string, bool) {
 	wd := start
 	for {
-		if _, err := os.Stat(filepath.Join(wd, "clearcutt.fleet.yaml")); err == nil {
+		// Accept either config name so an unmigrated checkout still resolves.
+		if hasClearCuttConfig(wd) {
 			if _, err := os.Stat(filepath.Join(wd, "go.work")); err == nil {
 				return wd, true
 			}
@@ -119,4 +120,15 @@ func unzip(reader *zip.Reader, dir string) error {
 		}
 	}
 	return nil
+}
+
+// hasClearCuttConfig reports whether a directory holds a ClearCutt config under
+// either the current or the legacy name.
+func hasClearCuttConfig(dir string) bool {
+	for _, name := range []string{"clearcutt.yaml", "clearcutt.fleet.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }

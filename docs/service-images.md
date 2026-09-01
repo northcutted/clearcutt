@@ -15,14 +15,14 @@ oauth2-proxy with the same release evidence, catalog visibility, and policy
 language as the runtime fleet.
 
 They are not runtime tiers and they do not use `clearcutt app build`. A service
-image is declared in `clearcutt.fleet.yaml`, expanded into a generated backend
+image is declared in `clearcutt.yaml`, expanded into a generated backend
 extension, built through `clearcutt service`, and rendered as `kind: service` in
 catalog v2.
 
 ## Operator Flow
 
 ```bash
-# Add the built-in service templates to clearcutt.fleet.yaml.
+# Add the built-in service templates to clearcutt.yaml.
 clearcutt service scaffold postgres16 --template postgres --version 16
 clearcutt service scaffold valkey8 --template valkey --version 8
 clearcutt service scaffold oauth2-proxy7 --template oauth2-proxy --version 7
@@ -42,7 +42,7 @@ clearcutt service smoke postgres16 --engine docker
 
 The CLI updates:
 
-- `clearcutt.fleet.yaml`, the public fleet configuration.
+- `clearcutt.yaml`, the public fleet configuration.
 - `core/lib/service-extensions.nix`, generated backend input. Fleet users
   should not hand-edit it.
 
@@ -87,7 +87,7 @@ Service records require service-aware catalog generation:
 
 ```bash
 clearcutt catalog generate \
-  --config clearcutt.fleet.yaml \
+  --config clearcutt.yaml \
   --include-services \
   --output dist/catalog
 

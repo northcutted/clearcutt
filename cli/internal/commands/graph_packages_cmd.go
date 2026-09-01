@@ -30,7 +30,7 @@ func newGraphPackagesCmd() *cobra.Command {
 	graphPackagesOpts = graphPackagesFlags{}
 	cmd := &cobra.Command{
 		Use:   "packages",
-		Short: "Show what the fleet installs, and which images share build inputs",
+		Short: "Show what the estate installs, and which images share build inputs",
 		Long: `Analyse an estate at the PACKAGE level.
 
 This is the view that works for composed builders. Nix dockerTools and apko

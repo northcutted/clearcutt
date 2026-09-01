@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestPlatformNewScaffoldsFromArchiveURL(t *testing.T) {
@@ -68,7 +70,7 @@ func TestPlatformNewScaffoldsFromArchiveURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("platform new from URL failed: %v\n%s", err, stdout)
 	}
-	if _, err := os.Stat(filepath.Join(outside, "url-fleet", "clearcutt.fleet.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(outside, "url-fleet", fleet.DefaultConfigPath)); err != nil {
 		t.Fatalf("expected URL-scaffolded fleet config: %v", err)
 	}
 

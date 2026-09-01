@@ -91,7 +91,7 @@ when the fleet needs a new language family or version that is not built in.`,
 }
 
 func addRuntimeCommonFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&runtimeOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &runtimeOpts.fleetConfig, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&runtimeOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 }
 

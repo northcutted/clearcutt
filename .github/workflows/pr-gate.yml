@@ -40,7 +40,7 @@ jobs:
           filters: |
             fleet:
               - 'core/**'
-              - 'clearcutt.fleet.yaml'
+              - 'clearcutt.yaml'
               - 'schemas/**'
               - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
@@ -52,7 +52,7 @@ jobs:
               - 'cli/internal/fleet/**'
             service:
               - 'core/**'
-              - 'clearcutt.fleet.yaml'
+              - 'clearcutt.yaml'
               - 'schemas/**'
               - 'examples/service-images/**'
               - '.github/actions/setup-nix/action.yml'
@@ -73,7 +73,7 @@ jobs:
             integration:
               - 'core/**'
               - 'cli/**'
-              - 'clearcutt.fleet.yaml'
+              - 'clearcutt.yaml'
               - 'schemas/**'
               - 'Makefile'
               - '.github/actions/setup-nix/action.yml'

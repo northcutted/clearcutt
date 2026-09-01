@@ -50,7 +50,7 @@ ClearCutt also builds ONE hardened base-image line with Nix — java25, in
 `dev`/`slim`/`distroless` tiers, on amd64 and arm64.
 
 The node, python and go recipes ship in `core/lib/registry.nix` as a library a
-fork enables by adding a line to `clearcutt.fleet.yaml`. They are evaluated on
+fork enables by adding a line to `clearcutt.yaml`. They are evaluated on
 every run so an unbuilt recipe cannot rot unnoticed, but they are not built and
 not published.
 
@@ -156,7 +156,7 @@ chmod +x clearcutt-darwin-arm64
 ```
 
 The certificate identity is the release workflow pinned to `refs/heads/main` —
-the same identity recorded in `clearcutt.fleet.yaml` and matched exactly by
+the same identity recorded in `clearcutt.yaml` and matched exactly by
 `clearcutt verify release-evidence`. From a repo clone, the verified binary
 runs the same fixture-backed first proof as above:
 

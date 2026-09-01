@@ -81,7 +81,7 @@ can scaffold an application for them.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&appTemplateOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &appTemplateOpts.configPath, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&appTemplateOpts.outputDir, "output", "", "Output directory (default clearcutt-template-<runtime>)")
 	cmd.Flags().StringVar(&appTemplateOpts.name, "name", "", "Application/template name")
 	cmd.Flags().BoolVar(&appTemplateOpts.force, "force", false, "Overwrite existing files")

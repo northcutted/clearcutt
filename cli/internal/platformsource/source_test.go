@@ -33,7 +33,7 @@ func TestEmbeddedPlatformSourceMaterializes(t *testing.T) {
 	}
 	defer cleanup()
 	for _, rel := range []string{
-		"clearcutt-source/clearcutt.fleet.yaml",
+		"clearcutt-source/clearcutt.yaml",
 		"clearcutt-source/.github/workflows/release.yml",
 		"clearcutt-source/cli/go.mod",
 		"clearcutt-source/cli/internal/platformsource/archive/README.md",

@@ -64,7 +64,7 @@ chmod +x clearcutt-linux-amd64
 
 The identity is exact, not a pattern: releases run only from
 `refs/heads/main`, and the same string is pinned as
-`release.workflowIdentity` in `clearcutt.fleet.yaml` and passed to
+`release.workflowIdentity` in `clearcutt.yaml` and passed to
 `clearcutt verify release-evidence --workflow-identity`. Build from source
 (below) when contributing.
 
@@ -99,7 +99,7 @@ docker save "$APP_IMAGE" -o my-app.tar
 ## Catalog And Trust Commands
 
 ```bash
-./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+./clearcutt catalog generate --config clearcutt.yaml --include-services --output dist/catalog
 ./clearcutt --catalog dist/catalog catalog validate
 ./clearcutt --catalog dist/catalog catalog summarize
 ./clearcutt --catalog dist/catalog catalog inspect java21-distroless
@@ -265,11 +265,11 @@ backend, native in-process boundary gates, and a Go OCI publish path. There is
 no shell fallback.
 
 The reference fleet builds one runtime line — java25 — in three tiers on two
-architectures. `clearcutt.fleet.yaml` configures no service images; `service
+architectures. `clearcutt.yaml` configures no service images; `service
 scaffold` still works if you want them.
 
 `fleet workflow-matrices` is the release/PR-gate planner used by GitHub Actions:
-it reads `clearcutt.fleet.yaml` and emits the runtime release and image
+it reads `clearcutt.yaml` and emits the runtime release and image
 matrices, writing `release_matrix` and `image_matrix` when `--github-output` is
 set.
 `fleet seed-cache-plan` is the no-build cache-warming planner used by the
@@ -282,7 +282,7 @@ the CLI version via ldflags, signs each binary with `cosign sign-blob` when
 `--sign` is set, writes `clearcutt-cli-assets.json`, and emits deterministic
 `SHA256SUMS.txt` entries for installer verification.
 
-`platform release-plan` is side-effect free. It reads `clearcutt.fleet.yaml` and
+`platform release-plan` is side-effect free. It reads `clearcutt.yaml` and
 local workflow wiring, then prints the registry support tier, matrix size,
 required GitHub variables/secrets, local checks, release workflow steps,
 verification commands, and the honest boundary between ClearCutt CLI
@@ -300,7 +300,7 @@ remote repository, settings, and push operations still require both `--apply`
 and `--confirm`.
 
 `catalog workflow-params` is the Pages workflow parameter helper. It reads
-`catalog.releaseLimit` and `catalog.scanDepth` from `clearcutt.fleet.yaml`,
+`catalog.releaseLimit` and `catalog.scanDepth` from `clearcutt.yaml`,
 allows a dispatch-provided release-limit override, and writes `limit` plus
 `scan_depth` for GitHub Actions. `catalog site build --generate-vex` generates
 per-image OpenVEX JSON from the active catalog before running the Astro build, so
@@ -345,7 +345,7 @@ time-boxed vulnerability exceptions. `vex` emits OpenVEX documents.
 ClearCutt reports and gates on vulnerabilities; it does not patch images. The
 `remediation` and `overlay` command groups, which drafted Nix overlay patches
 for the images ClearCutt built, were removed along with the fleet they served.
-`remediation.policy` in `clearcutt.fleet.yaml` still drives the severity
+`remediation.policy` in `clearcutt.yaml` still drives the severity
 thresholds `scan` and `verify` gate on.
 
 ## Drift Check Scope

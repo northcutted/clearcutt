@@ -64,7 +64,7 @@ func newGraphLayersCmd() *cobra.Command {
 	graphLayersOpts = graphLayersFlags{}
 	cmd := &cobra.Command{
 		Use:   "layers",
-		Short: "Show what the fleet has in common at the layer level",
+		Short: "Show what the estate has in common at the layer level",
 		Long: `Analyse content commonality across observed images.
 
 Where 'graph build' asks what an image is built ON — a parentage question answered by

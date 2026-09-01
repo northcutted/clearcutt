@@ -61,7 +61,7 @@ core dev shell used by fleet builds.`,
 			return runPlatformSetupNix(args)
 		},
 	}
-	cmd.Flags().StringVar(&platformNixOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Fleet config path to inspect")
+	addConfigFlag(cmd, &platformNixOpts.configPath, "Config path to inspect")
 	cmd.Flags().StringVar(&platformNixOpts.repoRoot, "repo-root", ".", "Repository root containing the fleet config and core directory")
 	cmd.Flags().StringVar(&platformNixOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 	cmd.Flags().StringVar(&platformNixOpts.configOutput, "config-output", "", "Optional path to write the generated nix.conf fragment")

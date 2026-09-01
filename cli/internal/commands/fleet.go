@@ -120,7 +120,7 @@ any cell fails to evaluate.`,
 			return runFleetSeedCachePlan()
 		},
 	}
-	seedCachePlanCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(seedCachePlanCmd, &fleetOpts.configPath, "Path to the ClearCutt config")
 	seedCachePlanCmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 	seedCachePlanCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append seed_matrix=<json> and has_work=<bool> to")
 
@@ -163,7 +163,7 @@ image_matrix, service_release_matrix, and service_image_matrix outputs.`,
 			return runFleetWorkflowMatrices()
 		},
 	}
-	workflowMatricesCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(workflowMatricesCmd, &fleetOpts.configPath, "Path to the ClearCutt config")
 	workflowMatricesCmd.Flags().StringVar(&fleetOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append workflow matrix JSON outputs")
 
 	buildCLIAssetsCmd := &cobra.Command{
@@ -251,7 +251,7 @@ from the fleet config without writing anything.`,
 			return runFleetCompile()
 		},
 	}
-	compileCmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(compileCmd, &fleetOpts.configPath, "Path to the ClearCutt config")
 	compileCmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 	compileCmd.Flags().BoolVar(&fleetOpts.checkOnly, "check", false, "Verify core/lib/fleet-matrix.nix is up to date without writing; exit non-zero on drift")
 	compileCmd.Flags().BoolVar(&fleetOpts.allowPreview, "allow-preview", false, "Union preview-channel runtimes into the matrix (language-level matrix.languages only)")
@@ -303,7 +303,7 @@ func runFleetCompile() error {
 }
 
 func addFleetCommonFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&fleetOpts.configPath, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &fleetOpts.configPath, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&fleetOpts.coreDir, "core-dir", "core", "Path to the Nix fleet core directory")
 	cmd.Flags().StringVar(&fleetOpts.buildOutputsDir, "build-outputs", "build-outputs", "Path to release build outputs")
 }
