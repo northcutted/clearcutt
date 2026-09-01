@@ -174,22 +174,31 @@ func TestReadGrypeFindingsMatchesTheRealGateSet(t *testing.T) {
 	}
 }
 
-func TestRealScanIsFullyCoveredByTheCommittedAcceptance(t *testing.T) {
-	// End to end against the repo's own acceptance file and the real scan: the
-	// gate should pass today, and every finding should be attributed.
-	repoDoc := filepath.Join("..", "..", "..", "core", "vulnerability-acceptances.yaml")
-	if _, err := os.Stat(repoDoc); err != nil {
-		t.Skipf("no committed acceptance file: %v", err)
-	}
-	doc, err := Load(repoDoc)
+// TestRealScanIsFullyCoveredByARealAcceptance runs the classifier end to end
+// over real grype output and a real acceptance document.
+//
+// Both inputs are fixtures. This used to load the repo's live acceptance file,
+// which coupled a test about whether the MECHANISM works to what the fleet
+// happens to accept this week — so narrowing the shipped fleet to a runtime
+// line with no unfixable findings broke it, for a reason that had nothing to do
+// with the classifier. The live file is guarded separately, by
+// TestShippedAcceptancesAreLoadableAndUnexpired.
+func TestRealScanIsFullyCoveredByARealAcceptance(t *testing.T) {
+	doc, err := Load(filepath.Join("testdata", "openssl-acceptance.yaml"))
 	if err != nil {
-		t.Fatalf("the committed acceptance file must be valid: %v", err)
+		t.Fatalf("the fixture acceptance document must be valid: %v", err)
 	}
 	findings, err := ReadGrypeFindings(filepath.Join("testdata", "openssl-3.6.3.grype.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := Classify(doc, findings, time.Now())
+	if len(findings) == 0 {
+		t.Fatal("the real scan fixture should carry blocking findings, or this proves nothing")
+	}
+	// A fixed instant inside the acceptance window. Using time.Now() would make
+	// this test start failing on 2026-11-01 for reasons unrelated to the code.
+	now := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	res := Classify(doc, findings, now)
 	if len(res.Unaccepted) > 0 {
 		t.Fatalf("findings with no acceptance: %+v", res.Unaccepted)
 	}
