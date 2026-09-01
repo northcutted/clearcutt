@@ -85,6 +85,16 @@ func NewClient() *Client {
 	return &Client{remoteOpts: []remote.Option{remote.WithAuthFromKeychain(authn.DefaultKeychain)}}
 }
 
+// NewBasicAuthClient authenticates with explicit credentials rather than the
+// ambient keychain. CI runners have registry credentials in the environment and
+// no docker config, which is the common case for publishing.
+func NewBasicAuthClient(username, password string) *Client {
+	return &Client{remoteOpts: []remote.Option{remote.WithAuth(&authn.Basic{
+		Username: username,
+		Password: password,
+	})}}
+}
+
 // NewInsecureClient speaks plain HTTP without auth, for hermetic tests against
 // an in-process registry.
 func NewInsecureClient() *Client {

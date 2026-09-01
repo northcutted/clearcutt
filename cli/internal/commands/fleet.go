@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/build"
+	"github.com/northcutted/clearcutt/internal/evidence"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/output"
@@ -19,6 +20,7 @@ import (
 )
 
 type fleetFlags struct {
+	attachEvidence      bool
 	configPath          string
 	coreDir             string
 	buildOutputsDir     string
@@ -87,6 +89,8 @@ GitHub Release finalization.`,
 	}
 	addFleetTargetFlags(publishTargetCmd)
 	publishTargetCmd.Flags().StringVar(&fleetOpts.versionTag, "version-tag", "", "Release version tag, for example v1.2.3")
+	publishTargetCmd.Flags().BoolVar(&fleetOpts.attachEvidence, "attach-evidence", false,
+		"Attach this build's SBOM, scan and test results to the pushed digest as an OCI artifact, so evidence lives with the image on any registry")
 
 	publishCacheCmd := &cobra.Command{
 		Use:   "publish-cache",
@@ -409,7 +413,82 @@ func runFleetPublishTargetGo(cfg fleet.Config, target, coreDir string) error {
 	if digest != "" {
 		fmt.Fprintf(out, "[fleet] pushed staging manifest digest %s\n", digest)
 	}
+	if err := attachTargetEvidence(stageTag, target, outDir); err != nil {
+		return err
+	}
 	return nil
+}
+
+// targetEvidenceFiles maps what CertifyTarget writes to the names an evidence
+// bundle carries. The bundle uses stable, target-independent names so a
+// consumer reads "sbom.json" regardless of which image it came from.
+var targetEvidenceFiles = map[string]string{
+	".sbom.json":         "sbom.json",
+	".grype.json":        "scan.json",
+	".test-results.json": "test-results.json",
+}
+
+// attachTargetEvidence stores this build's evidence in the registry, attached
+// to the digest just pushed.
+//
+// This is what makes `catalog gather --evidence-source=registry` have anything
+// to read. It is additive — the GitHub release upload still runs — but it is
+// OFF by default, matching the read side.
+//
+// Defaulting it on would make every existing publish newly depend on a registry
+// write it did not need before, so a credential that could push an image but
+// not a referrer would turn an upgrade into a failed release. Switching planes
+// is a migration: turn attachment on for a release cycle so the evidence
+// exists, then flip catalog gather to read it.
+//
+// Attachment is pinned to the digest, not the staging tag, so evidence names
+// the exact bytes that were gated — a later push to the same tag does not
+// inherit this build's SBOM.
+func attachTargetEvidence(stageTag, target, outDir string) error {
+	if !fleetOpts.attachEvidence {
+		return nil
+	}
+	bundle := evidence.Bundle{
+		Release: fleetOpts.versionTag,
+		Created: time.Now().UTC().Format(time.RFC3339),
+		Files:   map[string][]byte{},
+	}
+	for suffix, name := range targetEvidenceFiles {
+		path := filepath.Join(outDir, target+suffix)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("reading evidence %s: %w", path, err)
+		}
+		bundle.Files[name] = body
+	}
+	if len(bundle.Files) == 0 {
+		fmt.Fprintf(out, "[fleet] no evidence artifacts in %s; nothing to attach\n", outDir)
+		return nil
+	}
+	digest, err := evidenceClientForFleet().Attach(stageTag, bundle)
+	if err != nil {
+		return fmt.Errorf("attaching evidence to %s: %w", stageTag, err)
+	}
+	names := make([]string, 0, len(bundle.Files))
+	for name := range bundle.Files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	fmt.Fprintf(out, "[fleet] attached evidence to %s: %s\n", stageTag, strings.Join(names, ", "))
+	fmt.Fprintf(out, "[fleet]   bundle %s\n", digest)
+	return nil
+}
+
+// evidenceClientForFleet is a package var so tests can point the attachment at
+// an in-process registry without real credentials.
+var evidenceClientForFleet = func() *evidence.Client {
+	if user, token := registryDestCredentialPair(); user != "" && token != "" {
+		return evidence.NewBasicAuthClient(user, token)
+	}
+	return evidence.NewClient()
 }
 
 func fleetStageTag(cfg fleet.Config, language, tier, system string) string {

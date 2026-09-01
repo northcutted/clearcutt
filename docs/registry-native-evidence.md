@@ -24,6 +24,37 @@ The practical consequence is that GitHub becomes *one* control plane rather than
 *the* control plane. Anything that can run a container and reach a registry can
 run the whole governance loop.
 
+## Writing and reading the plane
+
+Evidence is written by the publish path and read by the catalog. Both halves
+are needed: reading a plane nothing writes to finds nothing.
+
+```bash
+# Write. Off by default; opt in.
+clearcutt fleet publish-target --language java --tier distroless \
+  --system x86_64-linux --attach-evidence
+
+# Read. Defaults to github; opt in.
+clearcutt catalog gather --evidence-source=registry
+```
+
+Both sides are opt-in, and in that order. Defaulting the write on would make
+every existing publish newly depend on a registry write it did not need before —
+a credential that can push an image but not a referrer would turn an upgrade
+into a failed release. Defaulting the read on would point a fork at a plane its
+evidence is not in yet.
+
+**The migration is: turn attachment on for a release cycle so the evidence
+exists, then flip the read side.**
+
+`publish-target` attaches the SBOM, scan and test-results this build produced to
+the digest it just pushed — pinned to the digest, not the staging tag, so a later
+push to the same tag does not inherit this build's evidence.
+
+The bundle uses stable, target-independent file names (`sbom.json`, `scan.json`,
+`test-results.json`), so a consumer reads the same names whatever image produced
+them.
+
 ## Constraint 1: garbage collection
 
 **Attached evidence is a manifest like any other, and registry lifecycle rules
