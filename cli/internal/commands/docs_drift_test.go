@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestCurrentDocsAndSiteAvoidStaleReleaseAndPrimaryForkTagline(t *testing.T) {
@@ -58,4 +60,87 @@ func isCurrentDocsOrSiteTextFile(path string) bool {
 	default:
 		return false
 	}
+}
+
+// TestDocsDoNotClaimRuntimeLinesTheFleetDoesNotBuild guards a drift class this
+// repo has now hit twice: prose that names concrete runtime lines, left behind
+// when the fleet moved.
+//
+// Before the fleet narrowed to one line, six docs still advertised "four LTS
+// runtime lines — java21, node22, python3.14 and go1.26". Three of those four
+// versions had already been superseded by java25/node24/go1.27 in an earlier
+// change, so the docs were describing a fleet that had not existed for some
+// time. Nothing caught it, because prose compiles.
+//
+// The rule is narrow on purpose: a doc may name any line the RECIPE LIBRARY
+// offers, since documenting what a fork can enable is the point. What it may
+// not do is present a line as one this fleet publishes when the compiled matrix
+// does not build it.
+func TestDocsDoNotClaimRuntimeLinesTheFleetDoesNotBuild(t *testing.T) {
+	root, ok := findRepoRoot()
+	if !ok {
+		t.Skip("repo root not found")
+	}
+	cfg, err := loadFleetConfigForDrift(root)
+	if err != nil {
+		t.Skipf("fleet config unreadable: %v", err)
+	}
+	built := map[string]bool{}
+	for _, line := range cfg.Matrix.Languages {
+		built[line] = true
+	}
+
+	// Phrases that assert publication rather than availability. Each is checked
+	// against the same line on which it appears.
+	claims := []string{
+		"lines the project publishes",
+		"lines it publishes",
+		"runtime lines the project publishes",
+		"the fleet builds",
+		"reference fleet builds",
+	}
+
+	for _, rel := range []string{"README.md", "docs/alternatives.md", "docs/cli-reference.md",
+		"docs/app-lifecycle.md", "docs/concepts/mental-model.md"} {
+		path := filepath.Join(root, rel)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			lower := strings.ToLower(line)
+			var claimed bool
+			for _, claim := range claims {
+				if strings.Contains(lower, claim) {
+					claimed = true
+					break
+				}
+			}
+			if !claimed {
+				continue
+			}
+			for _, candidate := range knownRuntimeLineTokens {
+				if !strings.Contains(line, candidate) || built[candidate] {
+					continue
+				}
+				t.Errorf("%s:%d claims the fleet publishes %q, but the compiled matrix builds only %v:\n  %s",
+					rel, i+1, candidate, cfg.Matrix.Languages, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// knownRuntimeLineTokens are the line ids the registry can compile. A doc may
+// mention any of them; it may not claim the fleet publishes one it does not
+// build.
+var knownRuntimeLineTokens = []string{
+	"java21", "java25",
+	"node22", "node24", "node26",
+	"python3.13", "python3.14",
+	"go1.25", "go1.26", "go1.27",
+}
+
+// loadFleetConfigForDrift reads the repo's own fleet config.
+func loadFleetConfigForDrift(root string) (fleet.Config, error) {
+	return fleet.Load(filepath.Join(root, "clearcutt.fleet.yaml"))
 }

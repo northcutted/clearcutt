@@ -3,8 +3,8 @@
 Current readout: ClearCutt has been repositioned from "operate a hardened image
 fleet" to "govern container image estates, including ones it did not build". The
 CVE remediation subsystem, the shell build engine, and most of the image matrix
-were removed in that pass; the fleet that remains is four LTS reference
-fixtures. Design docs describing the removed machinery are in
+were removed in that pass; the fleet that remains is a single reference
+fixture. Design docs describing the removed machinery are in
 [history/](history/).
 
 The files in [history/](history/) are audit snapshots and owner-review inputs.

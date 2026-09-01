@@ -253,9 +253,9 @@ Fleet and service build/publish run through the Go-owned engine: a `nix build`
 backend, native in-process boundary gates, and a Go OCI publish path. There is
 no shell fallback.
 
-The reference fleet builds four LTS runtime lines — java21, node22, python3.14
-and go1.26 — in three tiers on two architectures. `clearcutt.fleet.yaml`
-configures no service images; `service scaffold` still works if you want them.
+The reference fleet builds one runtime line — java25 — in three tiers on two
+architectures. `clearcutt.fleet.yaml` configures no service images; `service
+scaffold` still works if you want them.
 
 `fleet workflow-matrices` is the release/PR-gate planner used by GitHub Actions:
 it reads `clearcutt.fleet.yaml` and emits the runtime release and image

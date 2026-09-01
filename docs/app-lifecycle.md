@@ -45,15 +45,14 @@ Supported base families:
 
 | Stack | Base ids |
 | --- | --- |
-| Java | `java21-dev`, `java21-slim`, `java21-distroless` |
-| Node.js | `node22-dev`, `node22-slim`, `node22-distroless` |
-| Python | `python3.14-dev`, `python3.14-slim`, `python3.14-distroless` |
-| Go | `go1.26-dev`, `go1.26-slim`, `go1.26-distroless` |
+| Java | `java25-dev`, `java25-slim`, `java25-distroless` |
 
-These four LTS lines are the reference fixtures the project publishes. The
-registry also carries recipes for `java25`, `node24`, `python3.13` and `go1.25`;
-add one to your fleet with `clearcutt matrix add`, or scaffold a new runtime
-family with `clearcutt runtime scaffold`.
+That one line is the reference fixture the project publishes. The registry also
+carries recipes for `java21`, `node22`, `node24`, `node26`, `python3.13`,
+`python3.14`, `go1.25`, `go1.26` and `go1.27`; enable one with `clearcutt matrix
+add`, or scaffold a new runtime family with `clearcutt runtime scaffold`. Every
+recipe is evaluated on each run, so one you have not enabled still cannot rot
+without CI noticing.
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.

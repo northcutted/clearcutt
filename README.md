@@ -46,9 +46,13 @@ determined are listed as findings, with the reason.
 
 ## The Reference Fleet
 
-ClearCutt also builds a small fleet of hardened base images with Nix — java21,
-node22, python3.14 and go1.26, in `dev`/`slim`/`distroless` tiers, on amd64 and
-arm64.
+ClearCutt also builds ONE hardened base-image line with Nix — java25, in
+`dev`/`slim`/`distroless` tiers, on amd64 and arm64.
+
+The node, python and go recipes ship in `core/lib/registry.nix` as a library a
+fork enables by adding a line to `clearcutt.fleet.yaml`. They are evaluated on
+every run so an unbuilt recipe cannot rot unnoticed, but they are not built and
+not published.
 
 **These are reference fixtures, not a product.** They exist so the build,
 signing, attestation and verification paths are demonstrable end to end, and so
@@ -277,7 +281,7 @@ base family that is itself out of date will still report its consumers current.
 
 **The reference fleet is a fixture.** It is built from a nixpkgs pin that moves
 when someone merges the update PR. Do not run it in production, and do not read
-its four runtime lines as a supported image feed.
+its single runtime line as a supported image feed.
 
 Use ClearCutt when you need to know what is in your registry and prove things
 about it. Do not use it when you primarily want a vendor SLA, a hosted control

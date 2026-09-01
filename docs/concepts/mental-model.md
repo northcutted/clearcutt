@@ -24,7 +24,7 @@ whoever built the images.
 ## 2. Platform Loop
 
 A platform team that wants to build its own base images can. This is how the
-project's four LTS reference fixtures are produced:
+project's single reference fixture is produced:
 
 1. Configure runtime and service lanes in `clearcutt.fleet.yaml`.
 2. Build platform-owned images with the Nix backend.

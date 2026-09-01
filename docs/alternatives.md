@@ -39,9 +39,11 @@ build mechanics without a governance layer on top.
 
 ## What ClearCutt Is Not
 
-- **Not an image feed.** The four LTS runtime lines it publishes (java21,
-  node22, python3.14, go1.26) are reference fixtures that prove the build and
-  evidence path works end to end. They are not maintained for production use.
+- **Not an image feed.** The one runtime line it publishes (java25) is a
+  reference fixture that proves the build and evidence path works end to end.
+  It is not maintained for production use. Governance features are demonstrated
+  against real public images instead — see `examples/public-estate/` — which is
+  the stronger claim: the product has to work on images it did not build.
 - **Not a patcher.** ClearCutt reports and gates. It will tell you an image is
   on a stale base or missing a signature; it will not rebuild or re-tag it.
 - **Not a scanner.** It normalizes Grype output and gates on policy; it does not
