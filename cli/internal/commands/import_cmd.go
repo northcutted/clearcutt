@@ -31,6 +31,8 @@ type importObserveFlags struct {
 	offlineFixtures string
 	generatedAt     string
 	strict          bool
+	concurrency     int
+	since           string
 }
 
 type importAssessFlags struct {
@@ -148,6 +150,8 @@ func newImportObserveCmd() *cobra.Command {
 	f.StringVar(&importObserveOpts.images, "images", "", "Imported images.yaml inventory")
 	f.StringVar(&importObserveOpts.output, "output", "", "Output observations.json path")
 	f.StringVar(&importObserveOpts.offlineFixtures, "offline-fixtures", "", "Offline observations fixture JSON")
+	f.IntVar(&importObserveOpts.concurrency, "concurrency", importedfleet.DefaultObserveConcurrency, "Images to observe at once; 1 forces serial")
+	f.StringVar(&importObserveOpts.since, "since", "", "Previous observations.json; images whose manifest digest is unchanged are carried forward after one HEAD instead of being re-read")
 	f.StringVar(&importObserveOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
 	f.BoolVar(&importObserveOpts.strict, "strict", false, "Fail the command when any image cannot be observed")
 	_ = cmd.MarkFlagRequired("images")
@@ -170,9 +174,29 @@ func runImportObserve(ctx context.Context) error {
 		fixtureObservations = &fixtures
 		observer = importedfleet.NewFixtureObserver(fixtures)
 	}
-	observations, err := importedfleet.ObserveImages(ctx, inventory, observer, importedfleet.ObserveOptions{GeneratedAt: importObserveOpts.generatedAt, Strict: importObserveOpts.strict})
+	// Carrying a prior observation set forward turns an unchanged image from a
+	// full read into a single HEAD. On a large estate where a handful of images
+	// move per day, that is most of the scan.
+	var previous *importedfleet.Observations
+	if path := strings.TrimSpace(importObserveOpts.since); path != "" {
+		prior, err := importedfleet.ReadObservations(path)
+		if err != nil {
+			return fmt.Errorf("reading previous observations from %s: %w", path, err)
+		}
+		previous = &prior
+	}
+	observations, stats, err := importedfleet.ObserveImages(ctx, inventory, observer, importedfleet.ObserveOptions{
+		GeneratedAt: importObserveOpts.generatedAt,
+		Strict:      importObserveOpts.strict,
+		Concurrency: importObserveOpts.concurrency,
+		Previous:    previous,
+	})
 	if err != nil {
 		return err
+	}
+	if stats.Reused > 0 {
+		fmt.Fprintf(out, "[import-observe] reused %d unchanged observation(s), read %d, failed %d\n",
+			stats.Reused, stats.Observed, stats.Failed)
 	}
 	if fixtureObservations != nil {
 		observations = mergeExtraFixtureObservations(observations, *fixtureObservations)

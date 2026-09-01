@@ -1,0 +1,159 @@
+package estate
+
+import (
+	"fmt"
+	"testing"
+)
+
+func snapshotWith(generatedAt string, images, resolved, proven, stale int) Snapshot {
+	graph := fmt.Sprintf(`{"summary":{"observedImages":%d,"resolvedConsumers":%d,"unresolvedConsumers":%d,
+	  "staleConsumers":%d,"rootImages":2,"edgesByMethod":{"layer-prefix":%d,"oci-base-name":%d}}}`,
+		images, resolved, images-resolved, stale, proven, resolved-proven)
+	layers := `{"summary":{"distinctLayers":96,"sharedLayers":12,"storedBytes":703594496}}`
+	return Snapshot{
+		GeneratedAt: generatedAt,
+		Files: map[string][]byte{
+			"graph.json":        []byte(graph),
+			"layers.json":       []byte(layers),
+			"observations.json": []byte(`{"images":[]}`),
+		},
+	}
+}
+
+func TestHistoryAccumulatesSnapshotsInTimeOrder(t *testing.T) {
+	host := testRegistry(t)
+	client := NewInsecureClient()
+	historyRef := host + "/acme/estate:history"
+
+	// Pushed out of order on purpose: a backfilled run must land in the right
+	// place on the trend line, not at the end of the push log.
+	for _, day := range []struct {
+		at                            string
+		images, resolved, proven, stale int
+	}{
+		{"2026-09-02T00:00:00Z", 21, 9, 7, 1},
+		{"2026-08-31T00:00:00Z", 19, 3, 2, 6},
+		{"2026-09-01T00:00:00Z", 20, 6, 4, 3},
+	} {
+		snapshotRef := fmt.Sprintf("%s/acme/estate:%s", host, day.at[:10])
+		if _, _, err := client.PushSnapshot(snapshotRef, historyRef,
+			snapshotWith(day.at, day.images, day.resolved, day.proven, day.stale)); err != nil {
+			t.Fatalf("push %s: %v", day.at, err)
+		}
+	}
+
+	history, err := client.ReadHistory(historyRef)
+	if err != nil {
+		t.Fatalf("read history: %v", err)
+	}
+	if len(history.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(history.Entries))
+	}
+	wantOrder := []string{"2026-08-31T00:00:00Z", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"}
+	for i, want := range wantOrder {
+		if got := history.Entries[i].GeneratedAt; got != want {
+			t.Errorf("entry %d generatedAt = %s, want %s (history must be time-ordered, not push-ordered)", i, got, want)
+		}
+	}
+
+	first, last, ok := history.Delta()
+	if !ok {
+		t.Fatal("a 3-entry history should report a delta")
+	}
+	if first.Metrics.Resolved != 3 || last.Metrics.Resolved != 9 {
+		t.Errorf("delta should span 3 -> 9 resolved, got %d -> %d", first.Metrics.Resolved, last.Metrics.Resolved)
+	}
+	if first.Metrics.Stale != 6 || last.Metrics.Stale != 1 {
+		t.Errorf("delta should span 6 -> 1 stale, got %d -> %d", first.Metrics.Stale, last.Metrics.Stale)
+	}
+}
+
+// TestHistoryReadPullsNoSnapshotBlobs is the property that makes this design
+// worth the index: a trend over a long series must not cost a blob pull per
+// entry. The metrics live in the index annotations, so reading a year of daily
+// snapshots is one manifest fetch.
+func TestHistoryReadPullsNoSnapshotBlobs(t *testing.T) {
+	host, counts := countingRegistry(t)
+	client := NewInsecureClient()
+	historyRef := host + "/acme/estate:history"
+
+	const days = 30
+	for i := 0; i < days; i++ {
+		at := fmt.Sprintf("2026-09-%02dT00:00:00Z", i+1)
+		ref := fmt.Sprintf("%s/acme/estate:day-%02d", host, i+1)
+		if _, _, err := client.PushSnapshot(ref, historyRef, snapshotWith(at, 19, i, i/2, 19-i)); err != nil {
+			t.Fatalf("push day %d: %v", i+1, err)
+		}
+	}
+
+	counts.reset()
+	history, err := client.ReadHistory(historyRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Entries) != days {
+		t.Fatalf("expected %d entries, got %d", days, len(history.Entries))
+	}
+	if blobs := counts.blobGets(); blobs != 0 {
+		t.Errorf("reading a %d-entry history pulled %d blob(s); the trend must come from index annotations alone", days, blobs)
+	}
+	// Sanity: the metrics really did survive the round trip through annotations.
+	if history.Entries[days-1].Metrics.Resolved != days-1 {
+		t.Errorf("last entry resolved = %d, want %d", history.Entries[days-1].Metrics.Resolved, days-1)
+	}
+}
+
+// TestUnchangedSnapshotDoesNotAddAHistoryEntry: a scheduled job that re-runs
+// against an unchanged estate must not fill the series with rows that say
+// nothing happened.
+func TestUnchangedSnapshotDoesNotAddAHistoryEntry(t *testing.T) {
+	host := testRegistry(t)
+	client := NewInsecureClient()
+	historyRef := host + "/acme/estate:history"
+	snapshot := snapshotWith("2026-09-01T00:00:00Z", 19, 3, 2, 6)
+
+	for i := 0; i < 3; i++ {
+		if _, _, err := client.PushSnapshot(host+"/acme/estate:latest", historyRef, snapshot); err != nil {
+			t.Fatalf("push %d: %v", i, err)
+		}
+	}
+	history, err := client.ReadHistory(historyRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history.Entries) != 1 {
+		t.Fatalf("three pushes of identical content should leave one entry, got %d", len(history.Entries))
+	}
+}
+
+// TestHistoryStorageIsIncremental is the claim the design rests on: snapshots
+// are logically complete but physically deltas, because a blob that did not
+// change is stored once and referenced by every snapshot that contains it.
+func TestHistoryStorageIsIncremental(t *testing.T) {
+	host, counts := countingRegistry(t)
+	client := NewInsecureClient()
+	historyRef := host + "/acme/estate:history"
+
+	// Day one: everything is new.
+	day1 := snapshotWith("2026-09-01T00:00:00Z", 19, 3, 2, 6)
+	if _, _, err := client.PushSnapshot(host+"/acme/estate:d1", historyRef, day1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Day two: the graph moved, but observations.json is byte-identical.
+	day2 := snapshotWith("2026-09-02T00:00:00Z", 19, 5, 4, 4)
+	day2.Files["observations.json"] = day1.Files["observations.json"]
+
+	counts.reset()
+	if _, _, err := client.PushSnapshot(host+"/acme/estate:d2", historyRef, day2); err != nil {
+		t.Fatal(err)
+	}
+	// Day two differs from day one in graph.json alone — observations.json and
+	// layers.json are byte-identical — so exactly one blob is new. Everything
+	// else is already in the registry under the same digest and is referenced,
+	// not re-sent. That is the whole "complete snapshots, delta storage" claim,
+	// measured on the wire rather than asserted in a comment.
+	if uploaded := counts.blobUploads(); uploaded != 1 {
+		t.Errorf("day two changed one file of three, so exactly 1 blob should upload; got %d", uploaded)
+	}
+}

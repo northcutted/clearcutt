@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ type estateFlags struct {
 	generatedAt string
 	insecure    bool
 	output      string
+	history     string
 }
 
 var estateOpts estateFlags
@@ -43,7 +45,7 @@ air gap. Nothing new has to be operated.
 Snapshots are deterministic: identical inputs produce an identical digest, so a
 nightly push of an unchanged estate does not create a new version.`,
 	}
-	cmd.AddCommand(newEstatePushCmd(), newEstatePullCmd())
+	cmd.AddCommand(newEstatePushCmd(), newEstatePullCmd(), newEstateHistoryCmd())
 	return cmd
 }
 
@@ -60,6 +62,7 @@ func newEstatePushCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&estateOpts.files, "file", nil, "Snapshot file(s) to store (default: observations.json, graph.json, layers.json)")
 	cmd.Flags().StringVar(&estateOpts.generatedAt, "generated-at", "", "Snapshot timestamp recorded as a manifest annotation")
 	cmd.Flags().BoolVar(&estateOpts.insecure, "insecure", false, "Use plain HTTP without auth (test registries only)")
+	cmd.Flags().StringVar(&estateOpts.history, "history", "", "Also append this snapshot to a history index at this reference (e.g. ghcr.io/acme/estate:history)")
 	return cmd
 }
 
@@ -121,7 +124,7 @@ func runEstatePush(ref string) error {
 		fmt.Fprintf(out, "[estate] %s not present; pushing without it\n", fileName)
 	}
 
-	digest, err := estateClient().Push(ref, snapshot)
+	digest, historyDigest, err := estateClient().PushSnapshot(ref, estateOpts.history, snapshot)
 	if err != nil {
 		return err
 	}
@@ -136,6 +139,84 @@ func runEstatePush(ref string) error {
 	}
 	fmt.Fprintf(out, "[estate] digest %s\n", digest)
 	fmt.Fprintf(out, "[estate] this digest is stable for identical content, so an unchanged estate re-pushes to the same version\n")
+	if historyDigest != "" {
+		metrics := estate.ExtractMetrics(snapshot)
+		fmt.Fprintf(out, "[estate] appended to history %s (%s)\n", estateOpts.history, historyDigest)
+		fmt.Fprintf(out, "[estate]   %s\n", metrics)
+	}
+	return nil
+}
+
+func newEstateHistoryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "history <reference>",
+		Short: "Show how an estate changed over time",
+		Long: `Read a history index and print the trend.
+
+Reading a trend costs one manifest fetch regardless of how long the series is:
+each run's metrics are carried in the index annotations, so no snapshot blobs
+are pulled. Pull an individual snapshot by digest to drill into a date.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return runEstateHistory(args[0])
+		},
+	}
+	cmd.Flags().BoolVar(&estateOpts.insecure, "insecure", false, "Use plain HTTP without auth (test registries only)")
+	return cmd
+}
+
+func runEstateHistory(ref string) error {
+	history, err := estateClient().ReadHistory(ref)
+	if err != nil {
+		return err
+	}
+	if len(history.Entries) == 0 {
+		fmt.Fprintf(out, "[estate] %s holds no snapshots yet\n", ref)
+		return nil
+	}
+	if strings.EqualFold(GlobalOpts.Format, "json") {
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(history)
+	}
+
+	fmt.Fprintf(out, "%-22s  %6s  %8s  %6s  %6s  %8s\n", "GENERATED", "IMAGES", "RESOLVED", "PROVEN", "STALE", "COVERAGE")
+	for _, entry := range history.Entries {
+		generated := entry.GeneratedAt
+		if generated == "" {
+			generated = "(untimed)"
+		}
+		if len(generated) > 22 {
+			generated = generated[:22]
+		}
+		fmt.Fprintf(out, "%-22s  %6d  %8d  %6d  %6d  %7.0f%%\n",
+			generated, entry.Metrics.Images, entry.Metrics.Resolved, entry.Metrics.Proven,
+			entry.Metrics.Stale, entry.Metrics.Coverage()*100)
+	}
+
+	first, last, ok := history.Delta()
+	if !ok {
+		fmt.Fprintf(out, "\n[estate] one snapshot so far; a trend needs at least two\n")
+		return nil
+	}
+	fmt.Fprintf(out, "\n[estate] over %d snapshots:\n", len(history.Entries))
+	trend := func(label string, from, to int, higherIsBetter bool) {
+		delta := to - from
+		direction := "unchanged"
+		switch {
+		case delta > 0 && higherIsBetter, delta < 0 && !higherIsBetter:
+			direction = "improved"
+		case delta != 0:
+			direction = "regressed"
+		}
+		fmt.Fprintf(out, "[estate]   %-24s %4d -> %-4d  %+d (%s)\n", label, from, to, delta, direction)
+	}
+	trend("images observed", first.Metrics.Images, last.Metrics.Images, true)
+	trend("provenance resolved", first.Metrics.Resolved, last.Metrics.Resolved, true)
+	trend("proven by layer digests", first.Metrics.Proven, last.Metrics.Proven, true)
+	trend("stale consumers", first.Metrics.Stale, last.Metrics.Stale, false)
+	fmt.Fprintf(out, "[estate]   %-24s %3.0f%% -> %.0f%%\n", "proof share of resolved",
+		first.Metrics.ProvenShare()*100, last.Metrics.ProvenShare()*100)
 	return nil
 }
 

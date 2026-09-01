@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -19,43 +20,157 @@ type ImageObserver interface {
 	Observe(ctx context.Context, ref string) (Observation, error)
 }
 
+// DefaultObserveConcurrency is the number of images observed at once.
+//
+// Observation is entirely network-bound — three to five registry round trips
+// per image and no meaningful CPU — so the useful ceiling is set by registry
+// rate limits, not cores. Eight is deliberately modest: it turns a serial scan
+// into a roughly 8x faster one while staying well inside what an anonymous
+// Docker Hub or GHCR client can sustain, because the failure mode of guessing
+// too high is a 429 that fails the whole scan.
+const DefaultObserveConcurrency = 8
+
 type ObserveOptions struct {
 	GeneratedAt string
 	Strict      bool
+	// Concurrency bounds in-flight observations. Zero applies the default; one
+	// forces serial observation.
+	Concurrency int
+	// Previous is a prior observation set to reuse. An image whose manifest
+	// digest is unchanged since Previous is not re-observed: the stored
+	// observation is carried forward after a single HEAD request. See
+	// DigestObserver.
+	Previous *Observations
 }
 
-func ObserveImages(ctx context.Context, inventory ImagesFile, observer ImageObserver, opts ObserveOptions) (Observations, error) {
+// ObserveStats reports what the run actually did, which is the difference
+// between a scan that cost 3-5 requests per image and one that cost 1.
+type ObserveStats struct {
+	Observed int
+	Reused   int
+	Failed   int
+}
+
+// DigestObserver is an optional capability on an ImageObserver: report an
+// image's manifest digest without fetching its config or per-platform
+// manifests.
+//
+// This is what makes incremental observation worth doing. A full observation is
+// three to five round trips; a digest check is one HEAD. On an estate where a
+// handful of images move per day, that is the difference between re-reading
+// everything and re-reading what changed.
+type DigestObserver interface {
+	Digest(ctx context.Context, ref string) (string, error)
+}
+
+func ObserveImages(ctx context.Context, inventory ImagesFile, observer ImageObserver, opts ObserveOptions) (Observations, ObserveStats, error) {
 	generatedAt := opts.GeneratedAt
 	if generatedAt == "" {
 		generatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
+	specs := append([]ImageSpec(nil), inventory.Images...)
+	sort.SliceStable(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })
+
+	previous := map[string]Observation{}
+	if opts.Previous != nil {
+		for _, obs := range opts.Previous.Images {
+			if obs.SourceRef != "" {
+				previous[obs.SourceRef] = obs
+			}
+		}
+	}
+	digester, canDigest := observer.(DigestObserver)
+
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = DefaultObserveConcurrency
+	}
+	if concurrency > len(specs) {
+		concurrency = len(specs)
+	}
+	if concurrency < 1 {
+		concurrency = 1
+	}
+
+	type outcome struct {
+		observation Observation
+		reused      bool
+		failed      bool
+		err         error
+	}
+	// Results are written into a slice indexed by position, so output order is
+	// the sorted input order regardless of completion order. Concurrency must
+	// not make the snapshot non-deterministic — its digest is the thing that
+	// tells an operator whether anything changed.
+	outcomes := make([]outcome, len(specs))
+
+	var wg sync.WaitGroup
+	work := make(chan int)
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				spec := specs[i]
+				if prior, ok := previous[spec.Image]; ok && canDigest && prior.ManifestDigest != "" {
+					if digest, err := digester.Digest(ctx, spec.Image); err == nil && digest == prior.ManifestDigest {
+						outcomes[i] = outcome{observation: prior, reused: true}
+						continue
+					}
+					// A failed or mismatched digest check falls through to a
+					// full observation rather than trusting stale data.
+				}
+				observation, err := observer.Observe(ctx, spec.Image)
+				if err != nil {
+					if opts.Strict {
+						outcomes[i] = outcome{err: fmt.Errorf("%s: observe %s: %w", spec.ID, spec.Image, err)}
+						continue
+					}
+					observation = baseObservation(spec.ID, spec.Image)
+					observation.Warnings = append(observation.Warnings, fmt.Sprintf("observation failed: %v", err))
+					outcomes[i] = outcome{observation: observation, failed: true}
+					continue
+				}
+				outcomes[i] = outcome{observation: observation}
+			}
+		}()
+	}
+	for i := range specs {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+
 	result := Observations{
 		APIVersion:  APIVersion,
 		Kind:        "ImportedFleetObservations",
 		GeneratedAt: generatedAt,
 		Images:      []Observation{},
 	}
-	specs := append([]ImageSpec(nil), inventory.Images...)
-	sort.SliceStable(specs, func(i, j int) bool { return specs[i].ID < specs[j].ID })
-	for _, spec := range specs {
-		observation, err := observer.Observe(ctx, spec.Image)
-		if err != nil {
-			if opts.Strict {
-				return Observations{}, fmt.Errorf("%s: observe %s: %w", spec.ID, spec.Image, err)
-			}
-			observation = baseObservation(spec.ID, spec.Image)
-			observation.Warnings = append(observation.Warnings, fmt.Sprintf("observation failed: %v", err))
+	stats := ObserveStats{}
+	for i, out := range outcomes {
+		if out.err != nil {
+			return Observations{}, ObserveStats{}, out.err
 		}
+		observation := out.observation
 		if observation.ID == "" {
-			observation.ID = spec.ID
+			observation.ID = specs[i].ID
 		}
 		if observation.SourceRef == "" {
-			observation.SourceRef = spec.Image
+			observation.SourceRef = specs[i].Image
 		}
 		normalizeObservation(&observation)
 		result.Images = append(result.Images, observation)
+		switch {
+		case out.reused:
+			stats.Reused++
+		case out.failed:
+			stats.Failed++
+		default:
+			stats.Observed++
+		}
 	}
-	return result, nil
+	return result, stats, nil
 }
 
 func ReadObservations(path string) (Observations, error) {
@@ -101,6 +216,21 @@ func (f *FixtureObserver) Observe(_ context.Context, ref string) (Observation, e
 }
 
 type RegistryObserver struct{}
+
+// Digest reports the manifest digest with a single HEAD request, fetching no
+// config and no per-platform manifests. It is the cheap half of incremental
+// observation: unchanged images cost one round trip instead of three to five.
+func (RegistryObserver) Digest(ctx context.Context, ref string) (string, error) {
+	parsed, err := name.ParseReference(ref, name.WeakValidation)
+	if err != nil {
+		return "", err
+	}
+	desc, err := remote.Head(parsed, remote.WithContext(ctx))
+	if err != nil {
+		return "", err
+	}
+	return desc.Digest.String(), nil
+}
 
 func (RegistryObserver) Observe(ctx context.Context, ref string) (Observation, error) {
 	parsed, err := name.ParseReference(ref, name.WeakValidation)

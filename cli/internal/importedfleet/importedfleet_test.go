@@ -118,7 +118,7 @@ func TestObserveImagesRecordsFailuresUnlessStrict(t *testing.T) {
 		{ID: "missing", Image: "registry.example.com/missing:1"},
 	}}
 	fixture := Observations{Images: []Observation{{ID: "known", SourceRef: "registry.example.com/known:1", DigestRef: "registry.example.com/known@sha256:abc"}}}
-	observations, err := ObserveImages(context.Background(), inventory, NewFixtureObserver(fixture), ObserveOptions{GeneratedAt: "2026-01-01T00:00:00Z"})
+	observations, _, err := ObserveImages(context.Background(), inventory, NewFixtureObserver(fixture), ObserveOptions{GeneratedAt: "2026-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatalf("ObserveImages failed: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestObserveImagesRecordsFailuresUnlessStrict(t *testing.T) {
 	if len(observations.Images[1].Warnings) == 0 {
 		t.Fatalf("expected missing fixture warning: %+v", observations.Images[1])
 	}
-	if _, err := ObserveImages(context.Background(), inventory, NewFixtureObserver(fixture), ObserveOptions{Strict: true}); err == nil {
+	if _, _, err := ObserveImages(context.Background(), inventory, NewFixtureObserver(fixture), ObserveOptions{Strict: true}); err == nil {
 		t.Fatalf("strict observation should fail when a fixture is missing")
 	}
 }
