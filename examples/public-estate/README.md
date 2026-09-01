@@ -66,3 +66,45 @@ nothing, because the debian build it was made from is no longer what the
 Nobody would find that by reading tags, and it is the ordinary case rather than
 a curiosity: base tags move, and images built before the move keep pointing at
 content the tag no longer names.
+
+## The history series
+
+`history.json` is a real two-snapshot series, exported from an estate history
+index with `clearcutt estate history --format json`.
+
+Between 2026-08-31 and 2026-09-01, **6 of the 19 images moved** — new manifest
+digests for `python:3.11-slim`, `python:3.12-slim`, `python:3.12-slim-bookworm`,
+`python:3.12-alpine`, `paketobuildpacks/run-jammy-base` and
+`chainguard/static`, all within 24 hours.
+
+And the governance numbers did not move at all:
+
+| | 2026-08-31 | 2026-09-01 |
+|---|---|---|
+| images | 19 | 19 |
+| resolved | 3 | 3 |
+| proven | 2 | 2 |
+| coverage | 18% | 18% |
+
+That flat line is deliberately not dressed up. It is the honest baseline every
+real estate starts from, and it makes the argument for measuring better than a
+rising chart would: **the content churns constantly and the provenance does not
+improve on its own.** Coverage rises when someone does the work, and the series
+is what shows whether they did.
+
+It also demonstrates why the incremental scan matters. On the second day, 13 of
+19 images were unchanged and cost one HEAD request each instead of a full read.
+
+One nuance visible here: these two snapshots share **no** blobs, because all
+three files changed when six images moved. Content-addressed storage makes an
+unchanged file free, not a changed one — dedup pays on a stable estate or a
+slower cadence, and does nothing when everything moves.
+
+## Regenerating the history
+
+```sh
+clearcutt estate push ghcr.io/acme/estate:$(date +%F) \
+  --dir . --generated-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --history ghcr.io/acme/estate:history
+clearcutt --format json estate history ghcr.io/acme/estate:history > history.json
+```

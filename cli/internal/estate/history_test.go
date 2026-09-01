@@ -1,7 +1,9 @@
 package estate
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -155,5 +157,39 @@ func TestHistoryStorageIsIncremental(t *testing.T) {
 	// measured on the wire rather than asserted in a comment.
 	if uploaded := counts.blobUploads(); uploaded != 1 {
 		t.Errorf("day two changed one file of three, so exactly 1 blob should upload; got %d", uploaded)
+	}
+}
+
+// TestCommittedHistoryFixtureIsReadable guards the series the site renders.
+// history.json is a real export, and the site's Zod schema parses it at build
+// time — so a change to the History shape that the site cannot read should fail
+// here rather than as a broken page.
+func TestCommittedHistoryFixtureIsReadable(t *testing.T) {
+	raw, err := os.ReadFile("../../../examples/public-estate/history.json")
+	if err != nil {
+		t.Skipf("history fixture not present: %v", err)
+	}
+	var history History
+	if err := json.Unmarshal(raw, &history); err != nil {
+		t.Fatalf("the committed history fixture must parse as a History: %v", err)
+	}
+	if len(history.Entries) < 2 {
+		t.Fatalf("the fixture should carry at least two snapshots so the site can render a trend, got %d", len(history.Entries))
+	}
+	for i, entry := range history.Entries {
+		if entry.Digest == "" || entry.GeneratedAt == "" {
+			t.Errorf("entry %d must name a digest and a timestamp, got %+v", i, entry)
+		}
+		if entry.Metrics.Images == 0 {
+			t.Errorf("entry %d carries no metrics; the trend would render empty rows", i)
+		}
+	}
+	// Entries must be time-ordered, because the site renders them in slice order
+	// and reads the first and last as the trend endpoints.
+	for i := 1; i < len(history.Entries); i++ {
+		if history.Entries[i-1].GeneratedAt > history.Entries[i].GeneratedAt {
+			t.Errorf("entries are not time-ordered at index %d: %s then %s",
+				i, history.Entries[i-1].GeneratedAt, history.Entries[i].GeneratedAt)
+		}
 	}
 }

@@ -176,6 +176,66 @@ function loadArtifact<T>(fileName: string, schema: z.ZodType<T>): T | null {
   return null;
 }
 
+/**
+ * A history series read from an estate's OCI index. Each entry's metrics come
+ * from the index annotations, so rendering a trend costs no snapshot blobs.
+ */
+const EstateMetrics = z.object({
+  images: z.number().default(0),
+  resolved: z.number().default(0),
+  unresolved: z.number().default(0),
+  proven: z.number().default(0),
+  stale: z.number().default(0),
+  roots: z.number().default(0),
+  layers: z.number().default(0),
+  shared: z.number().default(0),
+  storedMB: z.number().default(0),
+});
+
+const EstateHistory = z.object({
+  ref: z.string().default(''),
+  digest: z.string().default(''),
+  entries: z.array(z.object({
+    digest: z.string(),
+    generatedAt: z.string().default(''),
+    metrics: EstateMetrics,
+  })).default([]),
+});
+
+export type EstateHistoryT = z.infer<typeof EstateHistory>;
+export type EstateMetricsT = z.infer<typeof EstateMetrics>;
+
+export function loadHistory(): EstateHistoryT | null {
+  return loadArtifact('history.json', EstateHistory);
+}
+
+/**
+ * Coverage is the share of observed consumers whose base is known at all.
+ * Proof share is the share of THOSE that rest on layer evidence rather than a
+ * label the image's own author wrote. The second is the honest one: anyone can
+ * raise coverage by labelling their own images.
+ */
+export function coverage(m: EstateMetricsT): number {
+  const total = m.resolved + m.unresolved;
+  return total === 0 ? 0 : m.resolved / total;
+}
+
+export function proofShare(m: EstateMetricsT): number {
+  return m.resolved === 0 ? 0 : m.proven / m.resolved;
+}
+
+/** Direction of travel for a metric between the first and last snapshot. */
+export function trendOf(
+  from: number,
+  to: number,
+  higherIsBetter: boolean,
+): { delta: number; direction: 'improved' | 'regressed' | 'unchanged' } {
+  const delta = to - from;
+  if (delta === 0) return { delta, direction: 'unchanged' };
+  const improved = higherIsBetter ? delta > 0 : delta < 0;
+  return { delta, direction: improved ? 'improved' : 'regressed' };
+}
+
 export function loadGraph(): BaseImageGraphT | null {
   return loadArtifact('graph.json', BaseImageGraph);
 }

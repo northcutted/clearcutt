@@ -1,0 +1,36 @@
+{
+  "ref": "ghcr.io/northcutted/clearcutt-public-estate:history",
+  "digest": "sha256:76072d25d93308afe05c9063d2431004ff0e2098c9717658aabd2736f31f8850",
+  "entries": [
+    {
+      "digest": "sha256:ab88a1e7ddbc3d20baae39d068b21725721f050a104990503b3b6a49c94f52b7",
+      "generatedAt": "2026-08-31T00:00:00Z",
+      "metrics": {
+        "images": 19,
+        "resolved": 3,
+        "unresolved": 14,
+        "proven": 2,
+        "stale": 0,
+        "roots": 2,
+        "layers": 96,
+        "shared": 12,
+        "storedMB": 671
+      }
+    },
+    {
+      "digest": "sha256:6efa8a1e9078aa3584f273d19cb9a23a22e3eaae7c712c263a2e91d79278d981",
+      "generatedAt": "2026-09-01T00:00:00Z",
+      "metrics": {
+        "images": 19,
+        "resolved": 3,
+        "unresolved": 14,
+        "proven": 2,
+        "stale": 0,
+        "roots": 2,
+        "layers": 96,
+        "shared": 12,
+        "storedMB": 683
+      }
+    }
+  ]
+}
