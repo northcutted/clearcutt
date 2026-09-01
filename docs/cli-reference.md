@@ -87,14 +87,6 @@ Catalog-backed discovery commands need generated catalog data or a fixture:
 ```bash
 ./clearcutt --catalog cli/internal/testdata/catalog list
 ./clearcutt --catalog cli/internal/testdata/catalog inspect java21-distroless
-./clearcutt app template java --output examples/my-java-service --name my-java-service
-./clearcutt --catalog cli/internal/testdata/dev-catalog dev java21-distroless --devcontainer --print
-APP_IMAGE=ghcr.io/acme/my-app:1.0.0
-APP_DIGEST=$(docker buildx imagetools inspect "$APP_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"')
-docker save "$APP_IMAGE" -o my-app.tar
-./clearcutt certify my-app.tar --base java21-distroless --policy certification-policy.yaml --image-ref "${APP_IMAGE%:*}@${APP_DIGEST}"
-./clearcutt app build --base java21-distroless --artifact target/app.jar --dest /workspace/app.jar --entrypoint '["java","-jar","/workspace/app.jar"]' --image ghcr.io/acme/payments-api:1.0.0
-```
 
 ## Catalog And Trust Commands
 

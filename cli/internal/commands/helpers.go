@@ -2,9 +2,7 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -86,26 +84,4 @@ func remediationPolicyFromJSON(raw string) fleet.RemediationPolicy {
 		return fleet.DefaultRemediationPolicy()
 	}
 	return fleet.EffectiveRemediationPolicy(policy)
-}
-
-// resolveCoreDir locates the Nix core workspace, preferring an explicit path.
-func resolveCoreDir(value string) (string, error) {
-	if value != "" {
-		return value, nil
-	}
-	for _, candidate := range []string{".", "core"} {
-		if isClearCuttCoreWorkspace(candidate) {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("could not locate ClearCutt core workspace; pass --core-dir")
-}
-
-// isClearCuttCoreWorkspace identifies the core directory by its flake plus the
-// runtime registry the flake compiles from.
-func isClearCuttCoreWorkspace(dir string) bool {
-	if !fileExists(filepath.Join(dir, "flake.nix")) {
-		return false
-	}
-	return fileExists(filepath.Join(dir, "lib", "registry.nix"))
 }

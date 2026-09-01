@@ -255,7 +255,6 @@ export const defaultSiteConfig: SiteConfig = {
             {
               title: 'Bootstrap the control plane',
               description: 'Render a catalog-only repo first, then graduate to the fleet profile when ClearCutt should build images.',
-              href: 'platform-kit',
               ctaLabel: 'Open bootstrap guide',
             },
             {

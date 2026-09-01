@@ -18,15 +18,8 @@ docs=(
   docs/imported-fleets.md
   docs/catalog-generator.md
   docs/site-generator.md
-  docs/platform-kit.md
-  docs/fork-validation.md
   docs/trust/evidence-walkthrough.md
   docs/trust/catalog-evidence.md
-)
-
-site_docs=(
-  site/src/pages/platform-kit.astro
-  cli/internal/sitetemplate/template/src/pages/platform-kit.astro
 )
 
 fail=0
@@ -64,16 +57,6 @@ check_absent() {
   local pattern="$1"
   local message="$2"
   if search_fixed "$pattern" "${docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
-    echo "docs command drift: $message" >&2
-    cat /tmp/clearcutt-doc-drift.txt >&2
-    fail=1
-  fi
-}
-
-check_absent_site() {
-  local pattern="$1"
-  local message="$2"
-  if search_fixed "$pattern" "${site_docs[@]}" >/tmp/clearcutt-doc-drift.txt; then
     echo "docs command drift: $message" >&2
     cat /tmp/clearcutt-doc-drift.txt >&2
     fail=1
@@ -120,7 +103,6 @@ check_absent "catalog site preview --site" "catalog site preview has no --site f
 check_absent "clearcutt policy verify" "policy generates admission policy; it is not a policy verify subcommand"
 check_absent "v0.11.1" "documented ClearCutt release pins must point at a published release"
 check_absent "imported images have provenance by default" "imported images must not claim provenance by default"
-check_absent_site "catalog site scaffold --output ./catalog-site" "generated catalog site scaffold examples must pass --catalog ./dist/catalog"
 for token in \
   "ClearCutt does not need to create an image to govern it" \
   "ClearCutt did not build"; do
@@ -141,7 +123,6 @@ help_contains "site build output" catalog site build "--output"
 help_contains "site build dependency install" catalog site build "--install"
 help_contains "image catalog policy gate" verify image "--require-signature"
 help_contains "registry-side evidence verification" verify release-evidence "--workflow-identity"
-help_contains "app template generator" app template "--output"
 help_contains "admission policy engine" policy java21-distroless "--engine"
 
 exit "$fail"
