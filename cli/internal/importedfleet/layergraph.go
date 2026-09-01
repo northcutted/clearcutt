@@ -27,10 +27,28 @@ const (
 	defaultMinSimilarity = 0.5
 	// defaultMaxPairs caps emitted pairs; the pair count is quadratic in fleet size.
 	defaultMaxPairs = 250
-	// pairwiseImageLimit is the fleet size above which pairwise analysis is skipped.
-	// Content-level commonality (core, coverage, deduplication) stays available
-	// because it is linear in total layers.
-	pairwiseImageLimit = 500
+	// pairwiseImageLimit is a last-resort ceiling on fleet size for pairwise
+	// analysis. Content-level commonality (core, coverage, deduplication) stays
+	// available above it because it is linear in total layers.
+	//
+	// It is deliberately far above the point the pair budget starts trimming:
+	// the budget bounds memory precisely, so this only catches inputs so large
+	// that even building the layer index is unreasonable.
+	pairwiseImageLimit = 20000
+
+	// defaultMaxPairBudget bounds the number of pair accumulators held at once.
+	//
+	// Pair cost is not quadratic in fleet size, it is the sum over layers of
+	// C(carriers, 2) — an inverted index, so images that share nothing are never
+	// compared. But one layer carried by every image contributes C(N, 2) on its
+	// own, and a well-governed estate is exactly the case where that happens:
+	// the better the fleet, the more images sit on one base, the wider that
+	// base's layers reach.
+	//
+	// A budget is the right control rather than a fleet-size cutoff, because it
+	// bounds what actually consumes memory. At roughly 150 bytes per
+	// accumulator this is about 225MB worst case.
+	defaultMaxPairBudget = 1500000
 )
 
 // LayerGraphOptions configures layer-level analysis.
@@ -46,6 +64,11 @@ type LayerGraphOptions struct {
 	// MaxPairs caps emitted image pairs, most similar first. Zero applies the
 	// default; a negative value keeps all of them.
 	MaxPairs int
+	// MaxPairBudget bounds how many pair accumulators are held while scoring
+	// similarity. Zero applies the default; a negative value removes the bound.
+	// When the budget is reached the widest layers are dropped first, because a
+	// layer nearly everything carries cannot tell any two images apart.
+	MaxPairBudget int
 }
 
 // LayerGraph is the content-commonality view of an observed fleet.
@@ -208,8 +231,17 @@ func BuildLayerGraph(observations Observations, opts LayerGraphOptions) (LayerGr
 		return graph, nil
 	}
 
-	pairs, compared := comparePairs(carriers, layerSets, sizes, minSimilarity)
+	budget := opts.MaxPairBudget
+	if budget == 0 {
+		budget = defaultMaxPairBudget
+	}
+	pairs, compared, skippedLayers := comparePairs(carriers, layerSets, sizes, minSimilarity, budget)
 	graph.Summary.PairsCompared = compared
+	if skippedLayers > 0 {
+		graph.Warnings = append(graph.Warnings, fmt.Sprintf(
+			"pair budget of %d reached; %d of the widest layer(s) were excluded from similarity scoring. Those layers are carried by so many images that they cannot distinguish any two of them; they are still reported in full as fleet core and blast radius.",
+			budget, skippedLayers))
+	}
 	graph.Clusters = clusterImages(refs, pairs, layerSets, carriers, sizes)
 	graph.Summary.Clusters = len(graph.Clusters)
 	if maxPairs > 0 && len(pairs) > maxPairs {
@@ -366,7 +398,7 @@ func groupIdenticalImages(refs []string, layerSets map[string]map[string]struct{
 // Pairs are generated from the layer index rather than from the image list, so images
 // with nothing in common are never compared. On a sparse estate that turns a
 // quadratic scan into work proportional to the sharing that actually exists.
-func comparePairs(carriers map[string][]string, layerSets map[string]map[string]struct{}, sizes map[string]int64, minSimilarity float64) ([]ImagePair, int) {
+func comparePairs(carriers map[string][]string, layerSets map[string]map[string]struct{}, sizes map[string]int64, minSimilarity float64, budget int) ([]ImagePair, int, int) {
 	type accumulator struct {
 		layers int
 		bytes  int64
@@ -376,9 +408,31 @@ func comparePairs(carriers map[string][]string, layerSets map[string]map[string]
 	for digest := range carriers {
 		digests = append(digests, digest)
 	}
-	sort.Strings(digests)
+	// Narrowest layers first, so if the budget runs out the layers dropped are
+	// the widest ones — the layers nearly everything carries, which say the
+	// least about whether any two images are alike. A layer in every image adds
+	// the same constant to every pair's intersection; it cannot separate them.
+	// Those layers are still fully reported as fleet core and blast radius,
+	// which is where a wide layer is actually the interesting answer.
+	sort.SliceStable(digests, func(i, j int) bool {
+		li, lj := len(carriers[digests[i]]), len(carriers[digests[j]])
+		if li != lj {
+			return li < lj
+		}
+		return digests[i] < digests[j]
+	})
+	skippedLayers := 0
+	excluded := map[string]struct{}{}
 	for _, digest := range digests {
 		holders := carriers[digest]
+		if n := len(holders); budget > 0 && n > 1 {
+			// Pairs this layer would add, before inserting any of them.
+			if adding := n * (n - 1) / 2; len(overlap)+adding > budget {
+				skippedLayers++
+				excluded[digest] = struct{}{}
+				continue
+			}
+		}
 		for i := 0; i < len(holders); i++ {
 			for j := i + 1; j < len(holders); j++ {
 				key := [2]string{holders[i], holders[j]}
@@ -392,9 +446,26 @@ func comparePairs(carriers map[string][]string, layerSets map[string]map[string]
 			}
 		}
 	}
+	// A layer excluded from the intersection must be excluded from the union
+	// too, or similarity is measured against layers that were never compared and
+	// every score is depressed by the same arbitrary amount. Scoring over the
+	// layers that actually discriminate keeps Jaccard meaning what it says.
+	effectiveSize := func(ref string) int {
+		size := len(layerSets[ref])
+		if len(excluded) == 0 {
+			return size
+		}
+		for digest := range excluded {
+			if _, ok := layerSets[ref][digest]; ok {
+				size--
+			}
+		}
+		return size
+	}
+
 	pairs := make([]ImagePair, 0, len(overlap))
 	for key, item := range overlap {
-		left, right := len(layerSets[key[0]]), len(layerSets[key[1]])
+		left, right := effectiveSize(key[0]), effectiveSize(key[1])
 		union := left + right - item.layers
 		pair := ImagePair{A: key[0], B: key[1], SharedLayers: item.layers, SharedBytes: item.bytes}
 		if union > 0 {
@@ -420,7 +491,7 @@ func comparePairs(carriers map[string][]string, layerSets map[string]map[string]
 		}
 		return pairs[i].B < pairs[j].B
 	})
-	return pairs, len(overlap)
+	return pairs, len(overlap), skippedLayers
 }
 
 // clusterImages groups images into connected components of the similarity graph, then

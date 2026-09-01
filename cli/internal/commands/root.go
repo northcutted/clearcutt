@@ -103,6 +103,7 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("govern", NewRegistryCmd())
 	add("govern", NewGraphCmd())
 	add("govern", NewImportCmd())
+	add("govern", NewEstateCmd())
 	add("govern", NewCertifyCmd())
 	add("govern", NewVerifyCmd())
 	add("govern", NewConformanceCmd())
