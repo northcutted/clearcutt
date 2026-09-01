@@ -15,11 +15,13 @@ import (
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
+	"github.com/northcutted/clearcutt/internal/evidence"
 	"github.com/northcutted/clearcutt/internal/fleet"
 	"github.com/spf13/cobra"
 )
 
 type catalogGatherFlags struct {
+	evidenceSource   string
 	config           string
 	imagesFile       string
 	limit            int
@@ -98,6 +100,7 @@ func newCatalogGatherCmd() *cobra.Command {
 
 func addCatalogGatherFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&catalogGatherOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum non-draft releases to inspect")
+	cmd.Flags().StringVar(&catalogGatherOpts.evidenceSource, "evidence-source", "auto", "Where release evidence lives: registry (OCI referrers, any registry), github (release assets), or auto")
 	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
@@ -781,7 +784,10 @@ func runCatalogGather() error {
 		return err
 	}
 
-	source := newReleaseSource(owner, repo, os.Getenv("GITHUB_TOKEN"))
+	source, err := resolveReleaseSource(owner, repo, registryBase)
+	if err != nil {
+		return err
+	}
 	releases, err := source.ListReleases(catalogGatherOpts.limit)
 	if err != nil {
 		return err
@@ -873,6 +879,39 @@ func runCatalogGather() error {
 	}
 	fmt.Fprintf(out, "[gather] wrote index.json with %d images\n", len(index.Images))
 	return nil
+}
+
+// resolveReleaseSource picks where release evidence is read from.
+//
+// The catalog builder never knew: it consumes a two-method ReleaseSource, which
+// is why swapping the control plane costs an implementation rather than a
+// rewrite. "registry" reads evidence attached to image digests via OCI
+// referrers and works on any registry; "github" reads GitHub release assets.
+//
+// The default is "auto": use the registry when a registry base is configured,
+// and fall back to GitHub otherwise. Auto exists so an existing fork keeps
+// working when it upgrades, not because ambiguity is desirable — an operator
+// who cares should set the flag.
+func resolveReleaseSource(owner, repo, registryBase string) (catalogbuild.ReleaseSource, error) {
+	mode := strings.ToLower(strings.TrimSpace(catalogGatherOpts.evidenceSource))
+	if mode == "" || mode == "auto" {
+		if strings.TrimSpace(registryBase) != "" {
+			mode = "registry"
+		} else {
+			mode = "github"
+		}
+	}
+	switch mode {
+	case "github":
+		return newReleaseSource(owner, repo, os.Getenv("GITHUB_TOKEN")), nil
+	case "registry":
+		if strings.TrimSpace(registryBase) == "" {
+			return nil, fmt.Errorf("--evidence-source=registry needs a registry base; set registry.host/owner/repository in the fleet config or pass --registry-base")
+		}
+		return evidence.NewReleaseSource(evidence.NewClient(), registryBase), nil
+	default:
+		return nil, fmt.Errorf("unknown --evidence-source %q; want auto, registry, or github", catalogGatherOpts.evidenceSource)
+	}
 }
 
 // newReleaseSource builds the GitHub release source. It is a package var so

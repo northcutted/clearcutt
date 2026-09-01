@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/northcutted/clearcutt/internal/evidence"
+
 	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
@@ -85,4 +87,73 @@ func TestCatalogVexAllWritesPerImageDocuments(t *testing.T) {
 	if len(doc.Statements) == 0 {
 		t.Fatalf("expected VEX statements in generated document: %#v", doc)
 	}
+}
+
+// TestResolveReleaseSourceSelectsThePlane pins the control-plane switch. The
+// catalog builder consumes a two-method ReleaseSource and never knew where
+// evidence came from, which is exactly why the plane is swappable — this test
+// guards that the swap is reachable and that a misconfiguration says so.
+func TestResolveReleaseSourceSelectsThePlane(t *testing.T) {
+	restore := catalogGatherOpts.evidenceSource
+	t.Cleanup(func() { catalogGatherOpts.evidenceSource = restore })
+
+	t.Run("explicit registry", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "registry"
+		source, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := source.(*evidence.ReleaseSource); !ok {
+			t.Fatalf("expected an OCI release source, got %T", source)
+		}
+	})
+
+	t.Run("explicit github", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "github"
+		source, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := source.(*evidence.ReleaseSource); ok {
+			t.Fatal("explicit github must not silently use the registry")
+		}
+	})
+
+	t.Run("auto prefers the registry when one is configured", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "auto"
+		source, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := source.(*evidence.ReleaseSource); !ok {
+			t.Fatalf("auto with a registry base should read the registry, got %T", source)
+		}
+	})
+
+	t.Run("auto falls back to github without a registry", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "auto"
+		source, err := resolveReleaseSource("acme", "app", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := source.(*evidence.ReleaseSource); ok {
+			t.Fatal("auto without a registry base cannot read the registry")
+		}
+	})
+
+	t.Run("registry without a base explains itself", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "registry"
+		if _, err := resolveReleaseSource("acme", "app", ""); err == nil {
+			t.Fatal("registry mode with no registry base should fail")
+		} else if !strings.Contains(err.Error(), "registry base") {
+			t.Fatalf("error should name the missing setting, got: %v", err)
+		}
+	})
+
+	t.Run("unknown mode is rejected", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = "gitlab"
+		if _, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app"); err == nil {
+			t.Fatal("an unknown evidence source should be rejected, not defaulted")
+		}
+	})
 }
