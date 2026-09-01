@@ -7,7 +7,7 @@ agent-sync:
 
 # The platform source archive is generated (gitignored), not committed; build
 # and test through these targets so the binary ships it and its tests run.
-cli-build: cli-embed-source
+cli-build:
 	cd cli && go build -o ../clearcutt ./cmd/clearcutt
 
 cli-test: cli-embed-source

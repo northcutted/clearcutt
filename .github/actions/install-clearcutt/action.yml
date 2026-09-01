@@ -91,7 +91,6 @@ runs:
         VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
         mkdir -p "$(dirname "${OUTPUT}")"
         cd cli
-        go run ./internal/platformsource/internal/genplatformsource
         go build \
           -ldflags="-s -w -X github.com/northcutted/clearcutt/internal/commands.Version=${VERSION}" \
           -o "${BUILD_OUTPUT}" ./cmd/clearcutt

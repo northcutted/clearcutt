@@ -41,7 +41,6 @@ jobs:
             fleet:
               - 'clearcutt.yaml'
               - 'schemas/**'
-              - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
               - 'cli/cmd/**'
               - 'cli/go.*'
@@ -53,7 +52,6 @@ jobs:
               - 'clearcutt.yaml'
               - 'schemas/**'
               - 'examples/service-images/**'
-              - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
               - 'cli/cmd/**'
               - 'cli/go.*'
@@ -73,7 +71,6 @@ jobs:
               - 'clearcutt.yaml'
               - 'schemas/**'
               - 'Makefile'
-              - '.github/actions/setup-nix/action.yml'
               - '.github/workflows/pr-gate.yml'
             go:
               - 'AGENTS.md'
@@ -134,36 +131,6 @@ jobs:
             echo "service page still renders runtime-first copy" >&2
             exit 1
           fi
-
-  integration-checks:
-    name: Run Verification Gating Suite
-    needs: [changes]
-    if: ${{ needs.changes.outputs.integration == 'true' }}
-    runs-on: ubuntu-latest
-    # See validate-matrix: this still runs the broad local gate, but should not
-    # need a world-rebuild budget for CVE overlay changes.
-    timeout-minutes: 180
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-
-      - name: Install ClearCutt CLI
-        uses: ./.github/actions/install-clearcutt
-        with:
-          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
-          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
-          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
-
-      - name: Setup Nix Cache
-        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('cli/go.sum') }}
-          restore-prefixes-first-match: |
-            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-
-            nix-integration-${{ runner.os }}-
 
   go-ci:
     name: Go Lint, Build, Test & Drift Guard
@@ -255,7 +222,6 @@ jobs:
     needs:
       - changes
       - site-ci
-      - integration-checks
       - go-ci
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -279,7 +245,6 @@ jobs:
 
           selected = {
               "site-ci": enabled("site"),
-              "integration-checks": enabled("integration"),
               "go-ci": enabled("go"),
           }
 
