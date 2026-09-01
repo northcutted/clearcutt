@@ -1,6 +1,6 @@
 ---
 name: nix-validate
-description: Evaluate this repo's Nix flake in a container to catch core/ errors before pushing. Use whenever core/flake.nix, core/lib/*.nix, clearcutt.fleet.yaml, or the fleet matrix changes — and always before pushing a branch that touches core/.
+description: Evaluate this repo's Nix flake in a container to catch core/ errors before pushing. Use whenever core/flake.nix, core/lib/*.nix, clearcutt.yaml, or the fleet matrix changes — and always before pushing a branch that touches core/.
 ---
 
 # Validating core/ without Nix installed
@@ -47,7 +47,7 @@ For anything else, use the raw runner:
 Always, before pushing, if the change touches any of:
 
 - `core/flake.nix`, `core/flake.lock`, `core/lib/**`
-- `clearcutt.fleet.yaml` matrix, or anything that regenerates
+- `clearcutt.yaml` matrix, or anything that regenerates
   `core/lib/fleet-matrix.nix`
 - a default that names a runtime line (gates, app templates, scripts)
 

@@ -17,7 +17,7 @@ let
   groupname = "appuser";
 
   # Fork-configurable product identity, supplied via platform-metadata.nix
-  # (written by `clearcutt platform init` from clearcutt.fleet.yaml). Defaults
+  # (written by `clearcutt platform init` from clearcutt.yaml). Defaults
   # keep the upstream brand when no fork metadata is present.
   productName = platformMetadata.productName or "ClearCutt";
   imagePrefix = platformMetadata.imagePrefix or "clearcutt";

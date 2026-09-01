@@ -45,11 +45,11 @@ fi
 
 # SLSA's reusable container generator is the exception to SHA pinning: upstream
 # requires a full vX.Y.Z tag and fails when the workflow is referenced by hash.
-if search_regex 'slsaBuilder: .*@[0-9a-f]{40}|SLSABuilder:[[:space:]]+".*@[0-9a-f]{40}|generator_container_slsa3\.yml@[0-9a-f]{40}' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
+if search_regex 'slsaBuilder: .*@[0-9a-f]{40}|SLSABuilder:[[:space:]]+".*@[0-9a-f]{40}|generator_container_slsa3\.yml@[0-9a-f]{40}' clearcutt.yaml cli/internal/fleet/config.go .github/workflows examples; then
   flag "SLSA generator refs must use the upstream-required full version tag"
 fi
 
-if ! regex_exists 'slsaBuilder: .+@v[0-9]+\.[0-9]+\.[0-9]+' clearcutt.fleet.yaml; then
+if ! regex_exists 'slsaBuilder: .+@v[0-9]+\.[0-9]+\.[0-9]+' clearcutt.yaml; then
   flag "release.slsaBuilder is missing an upstream-required full version tag"
 fi
 

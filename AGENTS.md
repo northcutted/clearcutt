@@ -259,7 +259,7 @@ one they are using.
 
    ```bash
    cd cli && go build -o ../clearcutt ./cmd/clearcutt
-   ./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output /tmp/clearcutt-catalog
+   ./clearcutt catalog generate --config clearcutt.yaml --include-services --output /tmp/clearcutt-catalog
    ./clearcutt --catalog /tmp/clearcutt-catalog catalog validate
    ./clearcutt catalog site build --catalog /tmp/clearcutt-catalog --template site --output /tmp/clearcutt-site --install --clean
    ```

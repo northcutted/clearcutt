@@ -6,7 +6,7 @@ import (
 )
 
 func TestMatrixExplainFallbackAndFailureBranches(t *testing.T) {
-	stdout, err := runCLI(t, "--format", "yaml", "matrix", "explain", "java25", "--fleet-config", "missing-clearcutt.fleet.yaml")
+	stdout, err := runCLI(t, "--format", "yaml", "matrix", "explain", "java25", "--config", "missing-clearcutt.yaml")
 	if err != nil {
 		t.Fatalf("matrix explain should fall back to built-ins when config is missing: %v\n%s", err, stdout)
 	}
@@ -14,7 +14,7 @@ func TestMatrixExplainFallbackAndFailureBranches(t *testing.T) {
 		t.Fatalf("unexpected missing-config explanation:\n%s", stdout)
 	}
 
-	stdout, err = runCLI(t, "matrix", "explain", "ruby3.4", "--fleet-config", "missing-clearcutt.fleet.yaml")
+	stdout, err = runCLI(t, "matrix", "explain", "ruby3.4", "--config", "missing-clearcutt.yaml")
 	if err == nil || !strings.Contains(err.Error(), "unsupported runtime line") {
 		t.Fatalf("expected unsupported fallback error, got err=%v stdout=\n%s", err, stdout)
 	}

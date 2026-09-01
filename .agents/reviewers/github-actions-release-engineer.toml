@@ -47,7 +47,7 @@ Preferred validation commands:
 - `actionlint .github/workflows/publish-pages.yml`
 - `actionlint .github/workflows/scheduled-scan.yml`
 - `actionlint .github/workflows/rebase.yml`
-- `rg -n "permissions:|id-token|contents:|github.ref|refs/heads/main|workflowIdentity|workflow-identity" .github/workflows clearcutt.fleet.yaml FORKING.md docs`
+- `rg -n "permissions:|id-token|contents:|github.ref|refs/heads/main|workflowIdentity|workflow-identity" .github/workflows clearcutt.yaml FORKING.md docs`
 - `rg -n "install.sh|npm ci \\|\\| npm install|curl -fsSL" .github/workflows`
 
 When reporting, include:

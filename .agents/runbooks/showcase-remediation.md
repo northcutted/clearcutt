@@ -230,7 +230,7 @@ new assertion passes; `nix flake show ./core` evaluates clean.
 
 ## Phase 7 — Make the registry tell the truth (headless runtimes + matrix drift)
 
-**Files:** `core/lib/registry.nix`, `clearcutt.fleet.yaml`, `core/tests/structure-test-*.yaml`,
+**Files:** `core/lib/registry.nix`, `clearcutt.yaml`, `core/tests/structure-test-*.yaml`,
 `core/lib/build-fleet.nix`, `docs/security-model.md`.
 
 1. **Java**: add `distrolessOverride` (and `slimOverride`) using a JRE/headless candidate list
@@ -241,7 +241,7 @@ new assertion passes; `nix flake show ./core` evaluates clean.
 3. **Node**: resolve `nodejs-slim_22`/`nodejs-slim_24` directly in the candidate lists; keep
    `removeNpm` only as fallback. Add structure tests asserting `/bin/npm`, `/bin/npx`,
    `/bin/corepack` `shouldExist: false` in slim/distroless.
-4. **Matrix drift gate**: registry.nix builds python 3.13/3.14 that `clearcutt.fleet.yaml` no
+4. **Matrix drift gate**: registry.nix builds python 3.13/3.14 that `clearcutt.yaml` no
    longer lists. Decide with maintainer: prune or re-add. Then add a CI consistency check
    (small Go test or script) diffing `registry.languages` flake eval against
    `matrix.languages` in the fleet config — fail on orphans in either direction.
@@ -289,7 +289,7 @@ poisoned image (add bash to a distroless contents list locally) fails it; the ba
    fields in `cli/internal/catalog/types.go:146-165` (or relax v1 required lists to match v2).
 4. `schemas/clearcutt-fleet.schema.json`: add the missing `runtimeLines` property (it currently
    rejects the documented extension mechanism via `additionalProperties: false`); add a
-   `# yaml-language-server: $schema=…` modeline to `clearcutt.fleet.yaml`; validate fleet.yaml
+   `# yaml-language-server: $schema=…` modeline to `clearcutt.yaml`; validate fleet.yaml
    against the schema in a Go test.
 5. Root/embedded schema parity: delete orphaned `schemas/catalog.schema.json` and
    `schemas/image-record.schema.json` (legacy duplicates), copy
@@ -319,7 +319,7 @@ validation; fixtures pass.
    `docs/cli-reference.md` and use distinct codes throughout the verify family.
 4. **Repo-root resolution**: stop trusting cwd for output paths (root cause of the stray
    `cli/{core,site,docs,examples}` trees the `.gitignore` papers over). Walk up for
-   `go.work`/`clearcutt.fleet.yaml`; refuse mutating commands when no root is found. Delete the
+   `go.work`/`clearcutt.yaml`; refuse mutating commands when no root is found. Delete the
    existing stray trees from local checkouts (they're untracked debris — verify with
    `git ls-files` first). Ensure tests use `t.TempDir()`.
 5. **`make check`**: new target mirroring the pr-gate go-ci job exactly (vet, gofmt check,
@@ -378,7 +378,7 @@ works; `make check` passes from a clean clone and predicts a green pr-gate.
 - **`clearcutt attest verify <ref>`** + a published composite action (`clearcutt-verify-action`)
   wrapping the exact cosign/slsa-verifier/SBOM checks from `verify_release_evidence.go`, with
   the Phase-10 exit codes.
-- **Declarative `hardening:` block** in `clearcutt.fleet.yaml` emitting OCI config knobs and
+- **Declarative `hardening:` block** in `clearcutt.yaml` emitting OCI config knobs and
   the matching K8s `securityContext`/Kyverno policy from one source.
 
 ---

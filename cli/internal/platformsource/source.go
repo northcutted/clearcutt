@@ -57,7 +57,7 @@ func Materialize() (string, func(), error) {
 }
 
 // FindRepoRoot walks up from start looking for the ClearCutt monorepo root
-// (identified by clearcutt.fleet.yaml alongside go.work).
+// (identified by a ClearCutt config alongside go.work).
 func FindRepoRoot(start string) (string, bool) {
 	wd := start
 	for {

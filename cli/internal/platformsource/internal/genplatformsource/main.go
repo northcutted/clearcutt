@@ -29,7 +29,7 @@ func main() {
 func run(wd string, check bool) (string, error) {
 	root, ok := platformsource.FindRepoRoot(wd)
 	if !ok {
-		return "", fmt.Errorf("repo root not found (no clearcutt.fleet.yaml + go.work above %s)", wd)
+		return "", fmt.Errorf("repo root not found (no clearcutt.yaml + go.work above %s)", wd)
 	}
 	if check {
 		if err := platformsource.CheckArchiveFresh(root); err != nil {

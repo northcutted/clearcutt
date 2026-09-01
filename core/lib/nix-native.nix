@@ -7,7 +7,7 @@
 }:
 
 let
-  # Fork-configurable product identity (see clearcutt.fleet.yaml -> branding).
+  # Fork-configurable product identity (see clearcutt.yaml -> branding).
   productName = platformMetadata.productName or "ClearCutt";
   imagePrefix = platformMetadata.imagePrefix or "clearcutt";
 
