@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/northcutted/clearcutt/internal/scan"
 	"github.com/spf13/cobra"
 )
@@ -189,7 +188,7 @@ func scanGrypeCommand(grypeBin string, args ...string) scanCommandSpec {
 	}
 	return scanCommandSpec{
 		name: "nix",
-		args: build.NixDevelopCommand(grypeBin, args...),
+		args: nixDevelopCommand(grypeBin, args...),
 		dir:  scanOpts.coreDir,
 	}
 }

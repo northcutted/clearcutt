@@ -119,8 +119,6 @@ check_absent "catalog site build --include-services" "--include-services belongs
 check_absent "catalog site preview --site" "catalog site preview has no --site flag"
 check_absent "clearcutt policy verify" "policy generates admission policy; it is not a policy verify subcommand"
 check_absent "v0.11.1" "documented ClearCutt release pins must point at a published release"
-check_absent "platform status --output .. --config clearcutt.yaml" "go -C cli run resolves relative paths from cli/; use --output \"$PWD\" or build ./clearcutt first"
-check_absent "imported-fleet mode requires Nix" "imported-fleet mode must stay Nix-free"
 check_absent "imported images have provenance by default" "imported images must not claim provenance by default"
 check_absent_site "catalog site scaffold --output ./catalog-site" "generated catalog site scaffold examples must pass --catalog ./dist/catalog"
 for token in \
@@ -144,9 +142,6 @@ help_contains "site build dependency install" catalog site build "--install"
 help_contains "image catalog policy gate" verify image "--require-signature"
 help_contains "registry-side evidence verification" verify release-evidence "--workflow-identity"
 help_contains "app template generator" app template "--output"
-help_contains "devcontainer generator" dev java21-distroless "--devcontainer"
-help_contains "fork status output root" platform status "--output"
-help_contains "fork status config" platform status "--config"
 help_contains "admission policy engine" policy java21-distroless "--engine"
 
 exit "$fail"

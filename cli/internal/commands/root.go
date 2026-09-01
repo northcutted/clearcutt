@@ -63,7 +63,6 @@ and manage hardened multi-architecture platform-owned base images.`,
 	// multiple SDLC phases, so group them by operator job while the README/site
 	// explain the higher-level lifecycle story.
 	rootCmd.AddGroup(
-		&cobra.Group{ID: "platform", Title: "Platform Kit:"},
 		&cobra.Group{ID: "catalog", Title: "Catalog & Release Evidence:"},
 		&cobra.Group{ID: "browse", Title: "Catalog Discovery:"},
 		&cobra.Group{ID: "apps", Title: "App Team Workflow:"},
@@ -76,16 +75,9 @@ and manage hardened multi-architecture platform-owned base images.`,
 		rootCmd.AddCommand(cmd)
 	}
 
-	// Configure and inspect the forkable product kit.
-	add("platform", NewPlatformCmd())
-	add("platform", NewFleetCmd())
-	add("platform", NewRuntimeCmd())
-	add("platform", NewServiceCmd())
-
 	// Build catalog data and publish release evidence.
 	add("catalog", NewCatalogCmd())
 	add("catalog", NewReleaseCmd())
-	add("catalog", NewMatrixCmd())
 
 	// Browse published catalog contents.
 	add("browse", NewListCmd())
@@ -93,7 +85,6 @@ and manage hardened multi-architecture platform-owned base images.`,
 	add("browse", NewDiffCmd())
 
 	// Give app teams matching dev, build, rebase, mirroring, and admission tools.
-	add("apps", NewDevCmd())
 	add("apps", NewAppCmd())
 	add("apps", NewRebaseCmd())
 	add("apps", NewMirrorCmd())

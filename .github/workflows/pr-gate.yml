@@ -39,7 +39,6 @@ jobs:
         with:
           filters: |
             fleet:
-              - 'core/**'
               - 'clearcutt.yaml'
               - 'schemas/**'
               - '.github/actions/setup-nix/action.yml'
@@ -51,7 +50,6 @@ jobs:
               - 'cli/internal/commands/platform*.go'
               - 'cli/internal/fleet/**'
             service:
-              - 'core/**'
               - 'clearcutt.yaml'
               - 'schemas/**'
               - 'examples/service-images/**'
@@ -71,7 +69,6 @@ jobs:
               - 'docs/site-generator.md'
               - '.github/workflows/pr-gate.yml'
             integration:
-              - 'core/**'
               - 'cli/**'
               - 'clearcutt.yaml'
               - 'schemas/**'
@@ -89,103 +86,6 @@ jobs:
               - '.github/actions/**'
               - '.github/workflows/**'
               - '.github/copilot-instructions.md'
-
-  fleet-matrix:
-    name: Resolve Fleet Matrix
-    needs: [changes]
-    if: ${{ needs.changes.outputs.fleet == 'true' || needs.changes.outputs.service == 'true' }}
-    runs-on: ubuntu-latest
-    outputs:
-      release_matrix: ${{ steps.matrix.outputs.release_matrix }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Install ClearCutt CLI
-        uses: ./.github/actions/install-clearcutt
-        with:
-          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
-          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
-          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
-
-      - name: Export fleet matrix
-        id: matrix
-        run: ./clearcutt fleet workflow-matrices --github-output "$GITHUB_OUTPUT"
-
-  validate-matrix:
-    name: Validate Matrix (${{ matrix.system }} - ${{ matrix.language }} - ${{ matrix.tier }})
-    needs: [changes, fleet-matrix]
-    if: ${{ needs.changes.outputs.fleet == 'true' }}
-    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    # Runtime-scoped CVE patching keeps shared build tooling on upstream
-    # caches. Keep enough room for runtime-specific source builds without
-    # treating every overlay bump as a full toolchain rebuild.
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.fleet-matrix.outputs.release_matrix) }}
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-
-      - name: Install ClearCutt CLI
-        uses: ./.github/actions/install-clearcutt
-        with:
-          mode: ${{ vars.CLEARCUTT_CLI_MODE || 'release' }}
-          version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
-          repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
-
-      - name: Configure ClearCutt Nix Environment
-        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
-
-      - name: Setup Nix Cache
-        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
-        with:
-          # Fleet image derivations are shaped by flake inputs, lib helpers,
-          # registry/service metadata, and CVE overlays. Keep cache keys broad
-          # enough that package graph changes do not restore stale prefixes.
-          # The key is per matrix leg: with a shared key only the FIRST
-          # successful job saves, so every other leg's runtime stack (java,
-          # node, python...) would rebuild cold on every run whenever the CVE
-          # overlays diverge from upstream binary caches.
-          # Scope PR caches to the PR number or manually dispatched branch so
-          # repeated pushes reuse prior local builds before broader fallbacks.
-          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-${{ hashFiles('core/flake.lock', 'core/lib/**') }}
-          restore-prefixes-first-match: |
-            nix-pr-${{ github.event.pull_request.number || github.ref_name }}-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
-            nix-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}-
-            nix-${{ matrix.system }}-
-
-      - name: Install Sigstore Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      # Build, generate SBOM, and scan with Syft + Grype locally.
-      # Omit --publish to prevent any registry copy or keyless OIDC signing.
-      - name: Run Build and Security Gate
-        run: |
-          ./clearcutt fleet certify-target \
-            --system "${{ matrix.system }}" \
-            --language "${{ matrix.language }}" \
-            --tier "${{ matrix.tier }}" \
-            --core-dir core
-
-      # Upload local evidence even when a gate fails so reviewers can inspect
-      # the exact SBOM, Grype findings, and structured predicate.
-      - name: Upload Local Evidence Artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: evidence-pr-${{ matrix.system }}-${{ matrix.language }}-${{ matrix.tier }}
-          path: |
-            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.sbom.json
-            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.grype.json
-            core/build-outputs/${{ matrix.language }}-${{ matrix.tier }}.test-results.json
-          if-no-files-found: ignore
-          retention-days: 7
 
   site-ci:
     name: Catalog Site Service Fixture
@@ -257,19 +157,13 @@ jobs:
           version: ${{ vars.CLEARCUTT_CLI_VERSION || 'v0.17.0' }}
           repo: ${{ vars.CLEARCUTT_CLI_REPO || 'northcutted/clearcutt' }}
 
-      - name: Configure ClearCutt Nix Environment
-        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
-
       - name: Setup Nix Cache
         uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
         with:
-          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('core/flake.lock', 'core/lib/**') }}
+          primary-key: nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-${{ hashFiles('cli/go.sum') }}
           restore-prefixes-first-match: |
             nix-pr-${{ github.event.pull_request.number || github.ref_name }}-integration-${{ runner.os }}-
             nix-integration-${{ runner.os }}-
-
-      - name: Execute Gating Suite
-        run: ./clearcutt verify boundary-suite --core-dir core
 
   go-ci:
     name: Go Lint, Build, Test & Drift Guard
@@ -297,9 +191,6 @@ jobs:
 
       - name: Imported Fleet Offline Demo
         run: CLEARCUTT="$PWD/clearcutt" ./scripts/demo-imported-fleet-offline.sh
-
-      - name: Generated Release Control Plane Smoke
-        run: CLEARCUTT="$PWD/clearcutt" ./scripts/test-generated-release-control-plane.sh
 
       - name: Validate Documented Commands
         run: ./scripts/validate-doc-commands.sh ./clearcutt
@@ -363,8 +254,6 @@ jobs:
     name: PR Gate Summary
     needs:
       - changes
-      - fleet-matrix
-      - validate-matrix
       - site-ci
       - integration-checks
       - go-ci
@@ -389,8 +278,6 @@ jobs:
               return str(outputs.get(name, "")).lower() == "true"
 
           selected = {
-              "fleet-matrix": enabled("fleet") or enabled("service"),
-              "validate-matrix": enabled("fleet"),
               "site-ci": enabled("site"),
               "integration-checks": enabled("integration"),
               "go-ci": enabled("go"),

@@ -31,7 +31,8 @@ are needed: reading a plane nothing writes to finds nothing.
 
 ```bash
 # Write. Off by default; opt in.
-clearcutt fleet publish-target --language java --tier distroless \
+clearcutt evidence attach ghcr.io/acme/app:v1.4.0 --dir ./evidence \
+  --release v1.4.0
   --system x86_64-linux --attach-evidence
 
 # Read. Defaults to github; opt in.
@@ -47,8 +48,8 @@ evidence is not in yet.
 **The migration is: turn attachment on for a release cycle so the evidence
 exists, then flip the read side.**
 
-`publish-target` attaches the SBOM, scan and test-results this build produced to
-the digest it just pushed — pinned to the digest, not the staging tag, so a later
+`evidence attach` stores the SBOM, scan and test results for a release against
+the image digest they describe — pinned to the digest, not the staging tag, so a later
 push to the same tag does not inherit this build's evidence.
 
 The bundle uses stable, target-independent file names (`sbom.json`, `scan.json`,

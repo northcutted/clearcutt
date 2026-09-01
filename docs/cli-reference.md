@@ -14,7 +14,7 @@ The CLI distinguishes "the gate said no" from "the gate could not run":
 | `2` | Policy gate failed: a verification, conformance, certification, exception, or threshold check evaluated and rejected the input. |
 
 Exit code 2 applies to the gating commands — `verify image`, `verify catalog`,
-`verify rebuild`, `verify release-evidence`, `verify boundary-suite`,
+`verify rebuild`, `verify release-evidence`,
 `conformance run`, `certify`, and `exceptions validate` — plus the other
 check-list gates (`catalog validate`, `overlay verify`, `platform status`,
 `runtime validate`, `service validate`, `app diff-base`, `app rebase`). CI
@@ -44,7 +44,7 @@ stderr.
 Releases ship cross-compiled binaries (`clearcutt-<os>-<arch>` for
 `darwin`/`linux`/`windows` on `amd64`/`arm64`), a keyless Sigstore signature
 bundle per binary (`<binary>.sig`), `clearcutt-cli-assets.json`, and a
-`SHA256SUMS.txt` manifest. `clearcutt fleet build-cli-assets` owns the release
+`SHA256SUMS.txt` manifest. The release workflow owns the release
 binary matrix, optional `cosign sign-blob` calls, and checksum manifest; GitHub
 Actions supplies the OIDC identity when the release workflow runs it with
 `--sign`. Download a binary and its `.sig` bundle from the
@@ -130,16 +130,10 @@ docker save "$APP_IMAGE" -o my-app.tar
   --diffoscope-out rebuild.diff.txt \
   --output-predicate
 
-./clearcutt verify boundary-suite --core-dir core
-```
 
 For `verify release-evidence`, `--core-dir core` runs core-pinned verifier tools
 through the scaffolded Nix backend. The current backend supplies Cosign, GitHub
 CLI, and a flake-local SLSA verifier binary derivation.
-`verify boundary-suite --core-dir core` is the PR-gate image-security boundary
-suite: it realizes missing representative archives through the Nix flake, then
-runs native-Go closure-purity and runtime-CVE gates over the same representative
-slim/distroless targets the legacy shell suite covered.
 
 ## Estate Discovery Commands
 
@@ -165,7 +159,7 @@ local files.
   --output dist/scan/graph.json \
   --report dist/scan/inventory.md
 
-# What the fleet has in common at the layer level
+# What the estate has in common at the layer level
 ./clearcutt graph layers \
   --observations dist/scan/observations.json \
   --output dist/scan/layers.json \
@@ -209,104 +203,6 @@ equally old.
 `org.opencontainers.image.base.name`, or build history — in that order — and labels
 every edge with the confidence that method earns. See
 [Registry scan and the base image graph](registry-graph.md).
-
-## Platform Owner Commands
-
-```bash
-./clearcutt platform init --owner YOUR_ORG --repo YOUR_REPO --force
-./clearcutt platform new ./golden-images --owner YOUR_ORG --repo golden-images
-./clearcutt platform new ./golden-images --source ./clearcutt-source.zip --owner YOUR_ORG --repo golden-images
-./clearcutt platform render ./image-platform --profile catalog-only --owner YOUR_ORG --repo image-platform --registry-base ghcr.io/YOUR_ORG/image-platform
-./clearcutt platform render ./release-catalog \
-  --profile catalog-only \
-  --catalog-source github-release \
-  --catalog-source-repo YOUR_ORG/image-factory \
-  --catalog-targets java21-distroless,node22-slim \
-  --catalog-release-limit 1 \
-  --owner YOUR_ORG \
-  --repo release-catalog \
-  --registry-base ghcr.io/YOUR_ORG/image-factory \
-  --pages
-./clearcutt platform status
-./clearcutt platform release-plan
-./clearcutt platform doctor --github
-./clearcutt platform setup-nix --core-dir core --write-user-config
-
-./clearcutt fleet certify-target \
-  --system x86_64-linux \
-  --language java21 \
-  --tier slim
-
-./clearcutt fleet publish-target \
-  --system x86_64-linux \
-  --language java21 \
-  --tier slim \
-  --version-tag v1.2.3
-
-./clearcutt fleet workflow-matrices --github-output "$GITHUB_OUTPUT"
-./clearcutt fleet seed-cache-plan --core-dir core --github-output "$GITHUB_OUTPUT"
-./clearcutt fleet build-cli-assets --version-tag v1.2.3 --build-outputs build-outputs --sign
-
-./clearcutt matrix explain java21
-./clearcutt matrix add java25   # adds a line the registry has a recipe for
-./clearcutt runtime scaffold ruby3.4
-./clearcutt runtime validate ruby3.4
-
-./clearcutt service scaffold postgres16 --template postgres --version 16
-./clearcutt service validate --all
-./clearcutt service build postgres16 --system x86_64-linux
-./clearcutt service smoke postgres16 --engine docker
-./clearcutt service publish postgres16 --system x86_64-linux --version-tag v1.2.3
-
-```
-
-Fleet and service build/publish run through the Go-owned engine: a `nix build`
-backend, native in-process boundary gates, and a Go OCI publish path. There is
-no shell fallback.
-
-The reference fleet builds one runtime line — java25 — in three tiers on two
-architectures. `clearcutt.yaml` configures no service images; `service
-scaffold` still works if you want them.
-
-`fleet workflow-matrices` is the release/PR-gate planner used by GitHub Actions:
-it reads `clearcutt.yaml` and emits the runtime release and image
-matrices, writing `release_matrix` and `image_matrix` when `--github-output` is
-set.
-`fleet seed-cache-plan` is the no-build cache-warming planner used by the
-seed-cache workflow: it dry-runs each release matrix cell against the Nix
-backend, refuses partial output on eval failures, and writes `seed_matrix` plus
-`has_work` for GitHub Actions.
-`fleet build-cli-assets` is the release CLI asset builder used by the release
-workflow: it cross-compiles the six supported OS/architecture binaries, stamps
-the CLI version via ldflags, signs each binary with `cosign sign-blob` when
-`--sign` is set, writes `clearcutt-cli-assets.json`, and emits deterministic
-`SHA256SUMS.txt` entries for installer verification.
-
-`platform release-plan` is side-effect free. It reads `clearcutt.yaml` and
-local workflow wiring, then prints the registry support tier, matrix size,
-required GitHub variables/secrets, local checks, release workflow steps,
-verification commands, and the honest boundary between ClearCutt CLI
-orchestration, GitHub Actions/SLSA, Nix, Sigstore tools, and remediation PR
-drafting. Use `--format json` or `--format yaml` when generating onboarding or
-first-release checklists.
-
-`platform render --profile catalog-only` defaults to `--catalog-source
-inventory` and writes `images.yaml`. `--catalog-source github-release` instead
-requires `--catalog-source-repo OWNER/REPO` and `--catalog-targets`, records the
-source and `--catalog-release-limit` in `clearcutt.lock`, and generates workflows
-that consume published release evidence without copying the source repository.
-Both modes remain Nix-free. `platform bootstrap github` accepts the same flags;
-remote repository, settings, and push operations still require both `--apply`
-and `--confirm`.
-
-`catalog workflow-params` is the Pages workflow parameter helper. It reads
-`catalog.releaseLimit` and `catalog.scanDepth` from `clearcutt.yaml`,
-allows a dispatch-provided release-limit override, and writes `limit` plus
-`scan_depth` for GitHub Actions. `catalog site build --generate-vex` generates
-per-image OpenVEX JSON from the active catalog before running the Astro build, so
-the workflow does not need to parse catalog internals. `catalog build --core-dir
-core --update-db` resolves Grype through the scaffolded Nix backend and refreshes
-the Grype DB inside the CLI-owned scan step.
 
 ## Scan Commands
 

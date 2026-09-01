@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/build"
 	"github.com/spf13/cobra"
 )
 
@@ -146,7 +145,7 @@ func releaseEvidenceCommand(name string, args []string) (string, []string, strin
 	default:
 		return name, args, ""
 	}
-	return "nix", build.NixDevelopCommand(name, args...), coreDir
+	return "nix", nixDevelopCommand(name, args...), coreDir
 }
 
 func runVerifyReleaseEvidence() error {

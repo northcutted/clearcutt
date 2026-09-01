@@ -13,7 +13,6 @@ module_path="$(go list -m)"
 
 # Generate the embedded platform source archive so its tests run for real
 # (they skip when it is absent), then require it for this run.
-go run ./internal/platformsource/internal/genplatformsource
 export CLEARCUTT_REQUIRE_EMBEDDED_SOURCE=1
 
 go test -v -covermode=atomic -coverpkg=./... -coverprofile="$profile" ./...

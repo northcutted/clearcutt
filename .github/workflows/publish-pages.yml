@@ -55,9 +55,6 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix
 
-      - name: Configure ClearCutt Nix Environment
-        run: ./clearcutt platform setup-nix --skip-warm --write-user-config --github-env "$GITHUB_ENV"
-
       - name: Install Sigstore Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
@@ -65,12 +62,25 @@ jobs:
           # produced by the release workflow.
           cosign-release: 'v3.0.6'
 
-      - name: Resolve Registry Login
+      # Reads the registry host from the ClearCutt config rather than assuming
+      # ghcr.io, so a fork pointing at ECR, Harbor or anything else still logs
+      # in to the right place. This used to be `clearcutt platform registry-env`,
+      # which is gone with the rest of the fork-scaffolding kit.
+      # Reads the registry host from the ClearCutt config rather than assuming
+      # ghcr.io, so a fork pointing elsewhere still logs in to the right place.
+      # This used to be `clearcutt platform registry-env`, which is gone with
+      # the rest of the fork-scaffolding kit.
+      - name: Resolve registry settings
         id: registry
         env:
           CLEARCUTT_REGISTRY_USER: ${{ vars.CLEARCUTT_REGISTRY_USER }}
-          GITHUB_ACTOR: ${{ github.actor }}
-        run: ./clearcutt platform registry-env --github-output "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          config=clearcutt.yaml
+          [ -f "$config" ] || config=clearcutt.fleet.yaml
+          host=$(awk '/^registry:/{inside=1; next} inside && /^  host:/{print $2; exit} /^[a-z]/{inside=0}' "$config")
+          echo "host=${host:-ghcr.io}" >> "$GITHUB_OUTPUT"
+          echo "username=${CLEARCUTT_REGISTRY_USER:-$GITHUB_ACTOR}" >> "$GITHUB_OUTPUT"
 
       - name: Authenticate registry client
         env:
