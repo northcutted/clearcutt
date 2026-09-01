@@ -100,7 +100,7 @@ func newCatalogGatherCmd() *cobra.Command {
 
 func addCatalogGatherFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&catalogGatherOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum non-draft releases to inspect")
-	cmd.Flags().StringVar(&catalogGatherOpts.evidenceSource, "evidence-source", "auto", "Where release evidence lives: registry (OCI referrers, any registry), github (release assets), or auto")
+	cmd.Flags().StringVar(&catalogGatherOpts.evidenceSource, "evidence-source", "github", "Where release evidence lives: github (release assets, default) or registry (OCI referrers; works on any registry)")
 	cmd.Flags().StringVar(&catalogGatherOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner (defaults to GH_OWNER, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.repo, "repo", os.Getenv("GH_REPO"), "GitHub repository (defaults to GH_REPO, GITHUB_REPOSITORY, fleet config, or git remote)")
 	cmd.Flags().StringVar(&catalogGatherOpts.registryBase, "registry-base", "", "Registry namespace (defaults to fleet config or ghcr.io/<owner>/<repo>)")
@@ -888,18 +888,20 @@ func runCatalogGather() error {
 // rewrite. "registry" reads evidence attached to image digests via OCI
 // referrers and works on any registry; "github" reads GitHub release assets.
 //
-// The default is "auto": use the registry when a registry base is configured,
-// and fall back to GitHub otherwise. Auto exists so an existing fork keeps
-// working when it upgrades, not because ambiguity is desirable — an operator
-// who cares should set the flag.
+// THE DEFAULT IS GITHUB, on purpose. Registry-native evidence is where this is
+// going, but defaulting to it would silently repoint every existing fork at a
+// registry that does not have their evidence yet — turning an upgrade into an
+// outage and a catalog into a list of empty releases. Switching planes is a
+// migration, so it is opt-in.
+//
+// The first version of this defaulted to the registry whenever a registry base
+// was configured, which is almost always, and three offline tests immediately
+// started reaching for ghcr.io. That was the behaviour change arriving
+// unannounced, caught by tests rather than by users.
 func resolveReleaseSource(owner, repo, registryBase string) (catalogbuild.ReleaseSource, error) {
 	mode := strings.ToLower(strings.TrimSpace(catalogGatherOpts.evidenceSource))
-	if mode == "" || mode == "auto" {
-		if strings.TrimSpace(registryBase) != "" {
-			mode = "registry"
-		} else {
-			mode = "github"
-		}
+	if mode == "" {
+		mode = "github"
 	}
 	switch mode {
 	case "github":
@@ -910,7 +912,7 @@ func resolveReleaseSource(owner, repo, registryBase string) (catalogbuild.Releas
 		}
 		return evidence.NewReleaseSource(evidence.NewClient(), registryBase), nil
 	default:
-		return nil, fmt.Errorf("unknown --evidence-source %q; want auto, registry, or github", catalogGatherOpts.evidenceSource)
+		return nil, fmt.Errorf("unknown --evidence-source %q; want github or registry", catalogGatherOpts.evidenceSource)
 	}
 }
 

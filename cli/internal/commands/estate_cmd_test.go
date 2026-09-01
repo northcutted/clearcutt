@@ -2,6 +2,7 @@ package commands
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -124,5 +125,81 @@ func TestEstatePushWithoutSnapshotFilesExplainsItself(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "import observe") || !strings.Contains(err.Error(), "graph build") {
 		t.Fatalf("error should say which commands produce a snapshot, got: %v", err)
+	}
+}
+
+// TestEstateHistoryCommandRendersTheTrend drives the user-facing trend output,
+// which is the reason the history index exists.
+func TestEstateHistoryCommandRendersTheTrend(t *testing.T) {
+	host := estateTestRegistry(t)
+	historyRef := host + "/acme/estate:history"
+
+	for i, day := range []struct {
+		at                              string
+		images, resolved, proven, stale int
+	}{
+		{"2026-08-31T00:00:00Z", 19, 3, 2, 6},
+		{"2026-09-01T00:00:00Z", 19, 9, 7, 1},
+	} {
+		dir := t.TempDir()
+		graph := fmt.Sprintf(`{"summary":{"observedImages":%d,"resolvedConsumers":%d,"unresolvedConsumers":%d,
+		  "staleConsumers":%d,"rootImages":2,"edgesByMethod":{"layer-prefix":%d}}}`,
+			day.images, day.resolved, day.images-day.resolved, day.stale, day.proven)
+		if err := os.WriteFile(filepath.Join(dir, "graph.json"), []byte(graph), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "layers.json"),
+			[]byte(`{"summary":{"distinctLayers":96,"sharedLayers":12,"storedBytes":703594496}}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ref := fmt.Sprintf("%s/acme/estate:day-%d", host, i)
+		if _, err := runCLI(t, "estate", "push", ref, "--dir", dir,
+			"--generated-at", day.at, "--history", historyRef, "--insecure"); err != nil {
+			t.Fatalf("push %s: %v", day.at, err)
+		}
+	}
+
+	stdout, err := runCLI(t, "estate", "history", historyRef, "--insecure")
+	if err != nil {
+		t.Fatalf("history: %v\n%s", err, stdout)
+	}
+	for _, want := range []string{
+		"2026-08-31T00:00:00Z",
+		"2026-09-01T00:00:00Z",
+		"provenance resolved",
+		"proven by layer digests",
+		"stale consumers",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("trend output missing %q:\n%s", want, stdout)
+		}
+	}
+	// Direction matters more than the numbers: fewer stale consumers is an
+	// improvement, and the output must not call it a regression.
+	if !strings.Contains(stdout, "improved") {
+		t.Errorf("a fleet that resolved more and went less stale should read as improved:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "stale consumers             6 -> 1     -5 (regressed)") {
+		t.Errorf("falling stale count must be an improvement, not a regression:\n%s", stdout)
+	}
+}
+
+func TestEstateHistoryOnAnEmptySeriesSaysSo(t *testing.T) {
+	host := estateTestRegistry(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "graph.json"), []byte(`{"summary":{"observedImages":1}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	historyRef := host + "/acme/estate:history"
+	if _, err := runCLI(t, "estate", "push", host+"/acme/estate:one", "--dir", dir,
+		"--generated-at", "2026-09-01T00:00:00Z", "--history", historyRef, "--insecure"); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := runCLI(t, "estate", "history", historyRef, "--insecure")
+	if err != nil {
+		t.Fatalf("history: %v\n%s", err, stdout)
+	}
+	if !strings.Contains(stdout, "a trend needs at least two") {
+		t.Errorf("a one-entry series should say a trend is not possible yet:\n%s", stdout)
 	}
 }

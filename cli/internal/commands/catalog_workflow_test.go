@@ -119,25 +119,19 @@ func TestResolveReleaseSourceSelectsThePlane(t *testing.T) {
 		}
 	})
 
-	t.Run("auto prefers the registry when one is configured", func(t *testing.T) {
-		catalogGatherOpts.evidenceSource = "auto"
+	// The default must not move an existing fork onto a plane its evidence has
+	// not been written to yet. Switching planes is a migration, not an upgrade
+	// side effect — an earlier version defaulted to the registry whenever a
+	// registry base was configured, and three offline tests immediately started
+	// reaching for ghcr.io.
+	t.Run("default is github even with a registry configured", func(t *testing.T) {
+		catalogGatherOpts.evidenceSource = ""
 		source, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := source.(*evidence.ReleaseSource); !ok {
-			t.Fatalf("auto with a registry base should read the registry, got %T", source)
-		}
-	})
-
-	t.Run("auto falls back to github without a registry", func(t *testing.T) {
-		catalogGatherOpts.evidenceSource = "auto"
-		source, err := resolveReleaseSource("acme", "app", "")
-		if err != nil {
-			t.Fatal(err)
-		}
 		if _, ok := source.(*evidence.ReleaseSource); ok {
-			t.Fatal("auto without a registry base cannot read the registry")
+			t.Fatal("the default must not silently repoint an existing fork at the registry")
 		}
 	})
 
@@ -151,9 +145,9 @@ func TestResolveReleaseSourceSelectsThePlane(t *testing.T) {
 	})
 
 	t.Run("unknown mode is rejected", func(t *testing.T) {
-		catalogGatherOpts.evidenceSource = "gitlab"
+		catalogGatherOpts.evidenceSource = "auto"
 		if _, err := resolveReleaseSource("acme", "app", "ghcr.io/acme/app"); err == nil {
-			t.Fatal("an unknown evidence source should be rejected, not defaulted")
+			t.Fatal("an unrecognised evidence source should be rejected, not defaulted")
 		}
 	})
 }

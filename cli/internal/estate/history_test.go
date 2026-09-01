@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -205,5 +206,58 @@ func TestSeparateHistoryRepoSuggestion(t *testing.T) {
 		if got := suggestSeparateHistoryRepo(ref); got != want {
 			t.Errorf("suggestSeparateHistoryRepo(%q) = %q, want %q", ref, got, want)
 		}
+	}
+}
+
+// TestMetricRatiosAreHonest pins the two derived numbers the estate page leads
+// with. Coverage is easy to move; proof share is not, and conflating them would
+// let a fleet look governed by labelling its own images.
+func TestMetricRatiosAreHonest(t *testing.T) {
+	m := Metrics{Resolved: 8, Unresolved: 12, Proven: 2}
+	if got := m.Coverage(); got < 0.39 || got > 0.41 {
+		t.Errorf("coverage of 8 resolved out of 20 should be ~0.40, got %v", got)
+	}
+	if got := m.ProvenShare(); got != 0.25 {
+		t.Errorf("proof share of 2 proven out of 8 resolved should be 0.25, got %v", got)
+	}
+
+	// Adding label-derived edges raises coverage but must NOT raise proof share.
+	labelled := Metrics{Resolved: 16, Unresolved: 4, Proven: 2}
+	if labelled.Coverage() <= m.Coverage() {
+		t.Error("resolving more images should raise coverage")
+	}
+	if labelled.ProvenShare() >= m.ProvenShare() {
+		t.Error("resolving more images by label must not raise the proof share")
+	}
+
+	// Empty estates report zero rather than dividing by zero.
+	empty := Metrics{}
+	if empty.Coverage() != 0 || empty.ProvenShare() != 0 {
+		t.Errorf("an empty estate should report zero ratios, got %v / %v", empty.Coverage(), empty.ProvenShare())
+	}
+	if !strings.Contains(m.String(), "resolved=8") {
+		t.Errorf("String should summarise the metrics, got %q", m.String())
+	}
+}
+
+// TestExtractMetricsToleratesPartialSnapshots: a snapshot written before
+// `graph layers` ran should still yield the metrics it can supply, rather than
+// failing and losing the whole trend point.
+func TestExtractMetricsToleratesPartialSnapshots(t *testing.T) {
+	graphOnly := Snapshot{Files: map[string][]byte{
+		"graph.json": []byte(`{"summary":{"observedImages":19,"resolvedConsumers":3,"edgesByMethod":{"layer-prefix":2}}}`),
+	}}
+	m := ExtractMetrics(graphOnly)
+	if m.Images != 19 || m.Resolved != 3 || m.Proven != 2 {
+		t.Fatalf("graph metrics should be read without layers.json, got %+v", m)
+	}
+	if m.Layers != 0 {
+		t.Errorf("layer metrics should stay zero when layers.json is absent, got %d", m.Layers)
+	}
+
+	// Malformed JSON must not panic or poison the metrics.
+	broken := Snapshot{Files: map[string][]byte{"graph.json": []byte(`{not json`)}}
+	if got := ExtractMetrics(broken); got != (Metrics{}) {
+		t.Errorf("unreadable graph.json should yield zero metrics, got %+v", got)
 	}
 }
