@@ -41,7 +41,7 @@ type catalogVexAllResult struct {
 func newCatalogWorkflowParamsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow-params",
-		Short: "Emit catalog publishing workflow parameters from clearcutt.fleet.yaml",
+		Short: "Emit catalog publishing workflow parameters from clearcutt.yaml",
 		Long: `Reads clearcutt.fleet.yaml and emits the catalog publishing parameters
 used by GitHub Actions: release ingestion limit and vulnerability scan depth.
 Use --github-output in workflows to append limit and scan_depth without jq.`,

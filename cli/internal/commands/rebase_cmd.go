@@ -34,7 +34,7 @@ func NewRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rebase",
 		Short: "Discover and plan estate app rebases",
-		Long: `Discover and plan app image rebases for imported fleets. These commands
+		Long: `Discover and plan app image rebases across an estate. These commands
 never publish images, mutate registry tags, or apply a rebase automatically.`,
 	}
 	cmd.AddCommand(newRebaseDiscoverCmd())
@@ -46,7 +46,7 @@ func newRebaseDiscoverCmd() *cobra.Command {
 	rebaseDiscoverOpts = rebaseDiscoverFlags{}
 	cmd := &cobra.Command{
 		Use:   "discover",
-		Short: "Discover imported-fleet rebase candidates",
+		Short: "Discover rebase candidates in an estate",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRebaseDiscover()
@@ -99,7 +99,7 @@ func newRebasePlanCmd() *cobra.Command {
 	rebasePlanOpts = rebasePlanFlags{}
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Create an auditable imported-fleet rebase plan",
+		Short: "Create an auditable estate rebase plan",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRebasePlan()
