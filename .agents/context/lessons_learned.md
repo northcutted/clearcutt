@@ -44,7 +44,7 @@ This persistent ledger records critical repository-specific constraints, environ
 
 ### Astro Catalog Data Modes
 * **Context:** Building or previewing the Astro site can silently use ignored local catalog data under `site/src/data/catalog`, which may be stale and is not clean-clone truth.
-* **Lesson:** Be explicit about catalog mode. Use `cli/internal/testdata/catalog` or `cli/internal/testdata/mixed-catalog` for clean-clone and fixture-backed proof. Use `clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output /tmp/clearcutt-catalog` for current generator behavior without touching ignored site data. Use `clearcutt catalog build` only for live release-evidence parity. Inspect `site/src/data/catalog/index.json` before relying on local generated site data.
+* **Lesson:** Be explicit about catalog mode. Use `cli/internal/testdata/catalog` or `cli/internal/testdata/mixed-catalog` for clean-clone and fixture-backed proof. Use `clearcutt catalog generate --config clearcutt.yaml --include-services --output /tmp/clearcutt-catalog` for current generator behavior without touching ignored site data. Use `clearcutt catalog build` only for live release-evidence parity. Inspect `site/src/data/catalog/index.json` before relying on local generated site data.
 
 ---
 

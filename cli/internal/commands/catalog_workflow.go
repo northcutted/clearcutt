@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
 
 type catalogWorkflowFlags struct {
-	fleetConfig       string
+	configPath        string
 	releaseLimit      string
 	githubOutputPath  string
 	vexOutputDir      string
@@ -41,17 +41,17 @@ type catalogVexAllResult struct {
 func newCatalogWorkflowParamsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow-params",
-		Short: "Emit catalog publishing workflow parameters from clearcutt.fleet.yaml",
+		Short: "Emit catalog publishing workflow parameters from clearcutt.yaml",
 		Long: `Reads clearcutt.fleet.yaml and emits the catalog publishing parameters
 used by GitHub Actions: release ingestion limit and vulnerability scan depth.
 Use --github-output in workflows to append limit and scan_depth without jq.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			resolveRepoRootDefault(cmd, "fleet-config", &catalogWorkflowOpts.fleetConfig)
+			resolveRepoRootDefault(cmd, "fleet-config", &catalogWorkflowOpts.configPath)
 			return runCatalogWorkflowParams()
 		},
 	}
-	cmd.Flags().StringVar(&catalogWorkflowOpts.fleetConfig, "fleet-config", fleet.DefaultConfigPath, "Path to clearcutt fleet config")
+	addConfigFlag(cmd, &catalogWorkflowOpts.configPath, "Path to the ClearCutt config")
 	cmd.Flags().StringVar(&catalogWorkflowOpts.releaseLimit, "release-limit", "", "Optional workflow_dispatch release_limit override")
 	cmd.Flags().StringVar(&catalogWorkflowOpts.githubOutputPath, "github-output", "", "Optional GITHUB_OUTPUT file to append limit and scan_depth")
 	return cmd
@@ -76,7 +76,7 @@ without making GitHub Actions parse catalog internals with jq.`,
 }
 
 func runCatalogWorkflowParams() error {
-	params, err := buildCatalogWorkflowParams(catalogWorkflowOpts.fleetConfig, catalogWorkflowOpts.releaseLimit)
+	params, err := buildCatalogWorkflowParams(catalogWorkflowOpts.configPath, catalogWorkflowOpts.releaseLimit)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func runCatalogWorkflowParams() error {
 }
 
 func buildCatalogWorkflowParams(configPath, releaseLimitOverride string) (catalogWorkflowParams, error) {
-	cfg, err := fleet.Load(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return catalogWorkflowParams{}, fmt.Errorf("failed to load fleet config: %w", err)
 	}

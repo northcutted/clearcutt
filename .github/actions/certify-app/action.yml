@@ -8,7 +8,7 @@ inputs:
     description: 'Path to declarative certification-policy.yaml governance file'
     required: true
   base:
-    description: 'Expected ClearCutt base image ID (e.g. java25-distroless or python3.14-slim)'
+    description: 'Expected ClearCutt base image ID (e.g. java21-distroless or python3.14-slim)'
     required: true
   clearcutt-version:
     description: 'ClearCutt CLI release tag to download (e.g. v0.17.0). Pin this for reproducible builds.'

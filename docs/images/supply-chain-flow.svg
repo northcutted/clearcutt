@@ -190,7 +190,7 @@
   <text x="140" y="99" text-anchor="middle" class="cli-text">clearcutt platform init</text>
   <text x="55" y="121" class="text-desc">Defines language, arch, and</text>
   <text x="55" y="135" class="text-desc">security tiers in a unified</text>
-  <text x="55" y="149" class="text-desc">clearcutt.fleet.yaml matrix.</text>
+  <text x="55" y="149" class="text-desc">clearcutt.yaml matrix.</text>
 
   <!-- Node 2: Compile Hardened Bases -->
   <rect x="370" y="55" width="200" height="125" rx="12" class="box-rect rect-platform" />

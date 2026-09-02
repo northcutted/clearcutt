@@ -40,7 +40,7 @@ func findRepoRoot() (string, bool) {
 		return "", false
 	}
 	for {
-		for _, marker := range []string{"clearcutt.fleet.yaml", "go.work"} {
+		for _, marker := range []string{"clearcutt.yaml", "go.work"} {
 			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
 				return dir, true
 			}

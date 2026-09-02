@@ -1,5 +1,14 @@
 # Enterprise Compliance Layering
 
+> **Status note.** The `clearcutt overlay generate` and `clearcutt overlay
+> verify` CLI commands were removed along with the CVE remediation subsystem.
+> The Nix mechanism this page describes is unchanged and still exported as
+> `clearcutt.lib.graftOntoBase` from `core/flake.nix`, so the grafting pattern
+> works. What no longer ships is the CLI wrapper and the generated
+> closure-equivalence in-toto predicate; comparing the two `/nix/store` closures
+> is now something you script yourself.
+
+
 Some enterprises require every workload image to inherit from a certified
 operating-system baseline such as Red Hat UBI, Ubuntu Pro, SLES, or Amazon Linux
 2023. ClearCutt supports that adoption path without pretending the resulting
@@ -57,7 +66,7 @@ mandated source.
 For Ubuntu, Amazon Linux, SLES, or another baseline, change only the
 `dockerTools.pullImage` input and output name. The runtime selection stays on
 the ClearCutt runtime line, for example `runtime = "node22"`,
-`runtime = "python3.14"`, or `runtime = "go1.25"`.
+`runtime = "python3.14"`, or `runtime = "go1.26"`.
 
 ## Closure-Equivalence Predicate
 
@@ -65,6 +74,7 @@ After building a native ClearCutt runtime archive and the grafted archive, emit
 an offline in-toto predicate proving the `/nix/store` closure bytes match:
 
 ```bash
+# REMOVED COMMAND - kept to document the closure-equivalence check it performed.
 clearcutt overlay verify \
   --runtime-archive clearcutt-java21-slim.tar \
   --grafted-archive result \

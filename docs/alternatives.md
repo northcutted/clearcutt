@@ -1,30 +1,54 @@
 # ClearCutt Alternatives And Fit
 
-ClearCutt is a good fit when owning the image supply chain is the requirement.
-It is a poor fit when a team primarily wants a vendor SLA or a hosted control
-plane.
+ClearCutt governs container image estates. It is a poor fit when what you
+actually want is a hardened image feed — that is a different product, and
+several vendors do it well.
 
-This page compares ClearCutt with common approaches a platform team might use
-instead:
+## Read This First
 
-- apko and Chainguard Images
-- gcr.io/distroless
-- plain `pkgs.dockerTools`
-- Docker multi-stage builds
+If your problem is *"our base images have too many CVEs"*, you do not need
+ClearCutt. Pick a hardened image provider:
+
+| Provider | Note |
+| --- | --- |
+| [Docker Hardened Images](https://www.docker.com/products/hardened-images/) | Free and Apache-2.0 since December 2025; paid Enterprise tier for customization, compliance variants, and SLA. |
+| [Chainguard Containers](https://images.chainguard.dev/) | 2,000+ images rebuilt from source, low-to-zero known CVEs. |
+| Minimus, RapidFort, Echo | Same lane, differing catalogs and pricing. |
+| [gcr.io/distroless](https://github.com/GoogleContainerTools/distroless) | Free, narrow, upstream-maintained. |
+| Red Hat UBI Micro, Canonical Chiselled Ubuntu, BellSoft Alpaquita | Distro-vendor minimal bases with support contracts. |
+
+If your problem is *"I do not know what is in my registry, what it is built on,
+or what I can prove about it"* — that is the gap ClearCutt fills, and the
+providers above do not.
 
 ## Manager Readout
 
-Choose ClearCutt when the business value is control and inspectability: your
-fork owns the build recipes, registry namespace, GitHub Actions OIDC identity,
-catalog shape, policy examples, exceptions, and remediation process.
+Choose ClearCutt when the business value is **knowing and proving**: which
+images exist, what each is built on, how far it has drifted from its base, what
+content the estate shares, what evidence each image carries, and which of those
+claims are proven versus self-reported.
 
-Choose a managed feed such as Chainguard Images when the business value is
-outsourcing operations and buying support, patch cadence, and vendor
-accountability.
+Choose a managed feed such as Chainguard or Docker Hardened Images when the
+business value is **outsourcing** patch cadence and buying vendor
+accountability. These are complementary, not competing: ClearCutt is happy to
+govern an estate built entirely from someone else's hardened images, and that is
+arguably its best use.
 
-Choose gcr.io/distroless, Docker multi-stage, or direct `pkgs.dockerTools` when
-the team wants narrower base-image or build mechanics without adopting a
-repository-backed evidence portal and governance CLI.
+Choose plain `pkgs.dockerTools`, apko, or Docker multi-stage when you want
+build mechanics without a governance layer on top.
+
+## What ClearCutt Is Not
+
+- **Not an image feed.** The one runtime line it publishes (java25) is a
+  reference fixture that proves the build and evidence path works end to end.
+  It is not maintained for production use. Governance features are demonstrated
+  against real public images instead — see `examples/public-estate/` — which is
+  the stronger claim: the product has to work on images it did not build.
+- **Not a patcher.** ClearCutt reports and gates. It will tell you an image is
+  on a stale base or missing a signature; it will not rebuild or re-tag it.
+- **Not a scanner.** It normalizes Grype output and gates on policy; it does not
+  maintain a vulnerability database.
+- **Not hosted.** There is no service, no account, and no telemetry.
 
 ## What The Repo Proves Today
 
@@ -58,21 +82,20 @@ making production decisions.
 
 ## Comparison Matrix
 
-| Axis | ClearCutt fork | apko / Chainguard | gcr.io/distroless | Plain `pkgs.dockerTools` | Docker multi-stage |
-|---|---|---|---|---|---|
-| Primary value | Own the image factory, registry, evidence portal, gates, and remediation workflow. | Consume or build minimal images with a strong security-oriented ecosystem and optional managed feed. | Consume minimal base images maintained by the upstream project. | Build OCI images from Nix derivations with direct control over closures. | Keep app builds familiar to Docker users and CI systems. |
-| Control plane | Your Git repository and workflows. | Vendor/service ecosystem or your apko configs. | Upstream image registry plus your app repo. | Your Nix code and CI. | Your Dockerfiles and CI. |
-| Evidence surface | Catalog records, SBOM links, signatures, provenance, tests, scans, exceptions, VEX, and portal pages when configured. | Depends on chosen Chainguard/apko workflow and subscription tier. | Upstream image metadata plus whatever your own pipeline adds. | Whatever you generate around the Nix build. | Whatever your CI adds around the Docker build. |
-| App-team path | Dockerfile templates, devcontainers, local certify/verify commands, and rebase examples. | Usually app teams consume base images; app workflow depends on your platform design. | App teams consume base images directly. | App teams may need Nix literacy unless platform owners wrap it. | App teams already understand the model. |
-| SBOM derivation | Syft-scanned catalog evidence today; Nix-derived SBOM is a planned Phase 12 epic. | Depends on apko/Chainguard workflow. | Not controlled by your fork unless you rescan. | Can be derived from the Nix graph if you build that pipeline. | Usually scanner-derived after image build. |
-| Verification command | `clearcutt verify image` for catalog policy; `verify release-evidence` for registry-side proof. | Vendor or apko-specific verification paths. | Standard registry, cosign, and scanner tools where evidence exists. | Nix evaluation/build checks plus any custom scanner/signing scripts. | Scanner/signing scripts added by your CI. |
-| Operational burden | Highest among packaged options: the fork owner operates the platform. | Lower if buying managed images; moderate if self-operating apko. | Low for base image consumption. | Medium to high; depends on Nix expertise. | Low to medium; hardening and evidence are your responsibility. |
-| Best fit | Platform teams that want ownership and inspectable evidence over convenience. | Teams that want minimal images and are comfortable with the Chainguard/apko model. | Teams that want common minimal upstream bases quickly. | Nix-first teams that want precise closure control. | App teams optimizing for familiarity and speed. |
+| Axis | ClearCutt | Hardened image feed (Chainguard, DHI, Minimus) | gcr.io/distroless | Plain `pkgs.dockerTools` |
+|---|---|---|---|---|
+| Primary value | Know what your estate contains, what it is built on, and what you can prove. | Someone else keeps your base images current. | Free minimal upstream bases. | Precise closure control over images you build. |
+| Works on images you did not build | Yes — this is the main path. | N/A (they are the builder). | N/A | No. |
+| Base-relationship discovery | Layer-digest proof, plus OCI/buildpacks labels as declared claims. | Not offered. | Not offered. | Not offered. |
+| Drift detection | Versions and days behind, per consumer, per base family. | Vendor tells you a newer tag exists. | Watch the upstream repo. | Your own tooling. |
+| Evidence handling | Reports what exists, preserves what is missing, never infers provenance. | Vendor-signed evidence for vendor images. | Whatever your pipeline adds. | Whatever you build. |
+| Patch cadence | None — not its job. | The core of the offering, often SLA-backed. | Upstream's cadence. | Yours. |
+| Operational burden | Low: read-only registry access plus a scheduled job. | Lowest, for money. | Low. | High. |
+| Best fit | Platform and security teams that must answer for an estate. | Teams that want fewer CVEs and will pay to stop thinking about it. | Teams wanting quick minimal bases. | Nix-first teams. |
 
 ## Static Measurement Axes
 
-Use these axes when comparing a ClearCutt fork with another base-image strategy.
-Phase 12 proposes turning this into a scheduled receipts workflow.
+Use these axes when comparing base-image strategies.
 
 | Measurement | ClearCutt command or source | Why it matters |
 |---|---|---|
@@ -83,25 +106,24 @@ Phase 12 proposes turning this into a scheduled receipts workflow.
 | Signature identity | `verify release-evidence` expected OIDC subject and issuer. | Proves which workflow identity signed a release. |
 | Provenance builder | SLSA/GitHub attestation payloads. | Connects source, builder, and subject digest. |
 | App adoption friction | Time to generate a template, build an app, certify locally, and rebase. | Keeps the comparison grounded in app-team experience. |
+| Base drift | `graph build` `versionsBehind` / `daysBehind` per consumer. | Shows whether adoption actually keeps up with the base. |
+| Shared exposure | `graph layers` blast radius and fleet core. | Shows how far one bad layer reaches. |
+| Storage cost of the estate | `graph layers` stored-once versus unshared bytes. | Quantifies what layer reuse is buying. |
 
 ## When To Use ClearCutt
 
-- You want your organization to own the registry namespace, release workflows,
-  OIDC identities, catalog, admission policies, exceptions, and remediation
-  process.
-- Platform engineers can operate a repository-backed image factory.
-- App teams need a paved path that uses Docker, Podman, Kubernetes, Cosign, and
-  the ClearCutt CLI instead of Nix.
-- Security reviewers need inspectable evidence surfaces rather than opaque
-  trust in a feed.
-- You are willing to treat the upstream repo as a reference implementation and
-  validate your fork independently.
+- You have images in a registry and no reliable inventory of what is built on what.
+- You need to show an auditor which images carry which evidence, and which
+  claims are proven rather than asserted.
+- You need to know the blast radius of a vulnerable layer across the estate.
+- You need to catch consumers drifting off a base that has moved on.
+- You want a paved path that works whether the images came from a vendor feed,
+  a Dockerfile, buildpacks, or your own Nix build.
 
 ## When Not To Use ClearCutt
 
-- You need a vendor support contract or managed patch SLA more than ownership.
+- You want hardened base images maintained for you. Use one of the providers above.
+- You want something to automatically patch and republish your images.
 - You need FIPS/STIG certification out of the box.
-- You do not want to maintain GitHub Actions workflows, registry permissions,
-  release approvals, or vulnerability triage.
-- Your organization cannot operate Nix-backed platform builds.
-- You want a hosted commercial product with centralized policy management.
+- You want a hosted product with centralized policy management and support.
+- Your estate is small enough that you already know all of it by heart.

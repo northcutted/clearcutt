@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"github.com/northcutted/clearcutt/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -33,8 +33,8 @@ var rebasePlanOpts rebasePlanFlags
 func NewRebaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rebase",
-		Short: "Discover and plan imported-fleet app rebases",
-		Long: `Discover and plan app image rebases for imported fleets. These commands
+		Short: "Discover and plan estate app rebases",
+		Long: `Discover and plan app image rebases across an estate. These commands
 never publish images, mutate registry tags, or apply a rebase automatically.`,
 	}
 	cmd.AddCommand(newRebaseDiscoverCmd())
@@ -46,7 +46,7 @@ func newRebaseDiscoverCmd() *cobra.Command {
 	rebaseDiscoverOpts = rebaseDiscoverFlags{}
 	cmd := &cobra.Command{
 		Use:   "discover",
-		Short: "Discover imported-fleet rebase candidates",
+		Short: "Discover rebase candidates in an estate",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRebaseDiscover()
@@ -66,26 +66,26 @@ func newRebaseDiscoverCmd() *cobra.Command {
 }
 
 func runRebaseDiscover() error {
-	apps, err := importedfleet.ReadAppInventory(rebaseDiscoverOpts.apps)
+	apps, err := estategraph.ReadAppInventory(rebaseDiscoverOpts.apps)
 	if err != nil {
 		return err
 	}
-	bases, err := importedfleet.ReadImagesFile(rebaseDiscoverOpts.bases)
+	bases, err := estategraph.ReadImagesFile(rebaseDiscoverOpts.bases)
 	if err != nil {
 		return err
 	}
-	observations, err := importedfleet.ReadObservations(rebaseDiscoverOpts.observations)
+	observations, err := estategraph.ReadObservations(rebaseDiscoverOpts.observations)
 	if err != nil {
 		return err
 	}
-	candidates, err := importedfleet.DiscoverRebaseCandidates(apps, bases, observations, rebaseDiscoverOpts.generatedAt)
+	candidates, err := estategraph.DiscoverRebaseCandidates(apps, bases, observations, rebaseDiscoverOpts.generatedAt)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(rebaseDiscoverOpts.output), 0o755); err != nil {
 		return err
 	}
-	if err := importedfleet.WriteRebaseCandidates(rebaseDiscoverOpts.output, candidates); err != nil {
+	if err := estategraph.WriteRebaseCandidates(rebaseDiscoverOpts.output, candidates); err != nil {
 		return err
 	}
 	if strings.EqualFold(GlobalOpts.Format, "json") {
@@ -99,7 +99,7 @@ func newRebasePlanCmd() *cobra.Command {
 	rebasePlanOpts = rebasePlanFlags{}
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Create an auditable imported-fleet rebase plan",
+		Short: "Create an auditable estate rebase plan",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRebasePlan()
@@ -120,22 +120,22 @@ func newRebasePlanCmd() *cobra.Command {
 }
 
 func runRebasePlan() error {
-	candidates, err := importedfleet.ReadRebaseCandidates(rebasePlanOpts.candidates)
+	candidates, err := estategraph.ReadRebaseCandidates(rebasePlanOpts.candidates)
 	if err != nil {
 		return err
 	}
-	observations, err := importedfleet.ReadObservations(rebasePlanOpts.observations)
+	observations, err := estategraph.ReadObservations(rebasePlanOpts.observations)
 	if err != nil {
 		return err
 	}
-	plan, err := importedfleet.PlanRebase(candidates, rebasePlanOpts.candidate, rebasePlanOpts.newBase, observations)
+	plan, err := estategraph.PlanRebase(candidates, rebasePlanOpts.candidate, rebasePlanOpts.newBase, observations)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(rebasePlanOpts.output), 0o755); err != nil {
 		return err
 	}
-	if err := importedfleet.WriteRebasePlan(rebasePlanOpts.output, plan); err != nil {
+	if err := estategraph.WriteRebasePlan(rebasePlanOpts.output, plan); err != nil {
 		return err
 	}
 	if strings.EqualFold(GlobalOpts.Format, "json") {

@@ -35,13 +35,13 @@ Date: 2026-06-30
 ### CC-P0-03: Single-source registry configuration
 
 - **Problem:** Registry host selection must not drift between image naming, release login, catalog enrichment, and default rebase login.
-- **Evidence:** `clearcutt.fleet.yaml` has registry config; `platform registry-env` emits host/user/auth-mode outputs consumed by release, catalog, and rebase workflows.
+- **Evidence:** `clearcutt.yaml` has registry config; `platform registry-env` emits host/user/auth-mode outputs consumed by release, catalog, and rebase workflows.
 - **Recommended fix:** Keep `registry.host` as the source of truth; add second-registry tests before broadening support claims beyond GHCR.
 - **Audience impacted:** Platform engineers, security reviewers.
 - **Priority:** P0
 - **Effort:** M
 - **Risk:** Fork owners misconfigure non-GHCR auth or assume unproven registry evidence behavior.
-- **Files likely involved:** `clearcutt.fleet.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/platform.go`, `.github/workflows/release.yml`, `.github/workflows/publish-pages.yml`, `docs/registry-swap.md`.
+- **Files likely involved:** `clearcutt.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/platform.go`, `.github/workflows/release.yml`, `.github/workflows/publish-pages.yml`, `docs/registry-swap.md`.
 - **Acceptance criteria:** One config value drives image names, workflow auth host, catalog enrichment, and docs examples; non-GHCR support remains tiered until proven.
 - **Suggested validation command:** `go -C cli test ./internal/fleet ./internal/commands -run 'Registry|Platform|Fleet'`
 - **Type:** cross-cutting
@@ -135,13 +135,13 @@ Date: 2026-06-30
 ### CC-P1-05: Make service image release policy explicit
 
 - **Problem:** Preview/non-production service images are configured, but release matrix behavior needs a clear policy.
-- **Evidence:** `clearcutt.fleet.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/service.go`, `.github/workflows/release.yml`.
+- **Evidence:** `clearcutt.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/service.go`, `.github/workflows/release.yml`.
 - **Recommended fix:** Decide whether `productionAllowed: false` services publish by default or require opt-in; document and enforce the decision.
 - **Audience impacted:** Platform engineers, app developers, security engineers.
 - **Priority:** P1
 - **Effort:** M
 - **Risk:** Preview service images look production-endorsed.
-- **Files likely involved:** `clearcutt.fleet.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/service.go`, `docs/service-images.md`, `.github/workflows/release.yml`.
+- **Files likely involved:** `clearcutt.yaml`, `cli/internal/fleet/config.go`, `cli/internal/commands/service.go`, `docs/service-images.md`, `.github/workflows/release.yml`.
 - **Acceptance criteria:** Service release behavior matches lifecycle/production policy.
 - **Suggested validation command:** `go -C cli test ./internal/fleet ./internal/commands -run Service`
 - **Type:** CLI, workflow, docs

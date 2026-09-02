@@ -1,4 +1,4 @@
-.PHONY: cli-embed-source cli-build cli-test cli-vet cli-fmt-check platformsource-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan demo-imported-fleet-offline demo-imported-fleet-live test check agent-sync e2e-test
+.PHONY: cli-build cli-test cli-vet cli-fmt-check site-install site-dev site-build site-typecheck site-verify-catalog core-verify core-remediation-tests catalog-generate catalog-enrich catalog-build catalog-scan demo-imported-fleet-offline demo-imported-fleet-live test check agent-sync
 
 # .agents/ is upstream-only tooling (excluded from platform-new scaffolds), so
 # the target degrades to a note instead of erroring in fork checkouts.
@@ -7,10 +7,7 @@ agent-sync:
 
 # The platform source archive is generated (gitignored), not committed; build
 # and test through these targets so the binary ships it and its tests run.
-cli-embed-source:
-	cd cli && go run ./internal/platformsource/internal/genplatformsource
-
-cli-build: cli-embed-source
+cli-build:
 	cd cli && go build -o ../clearcutt ./cmd/clearcutt
 
 cli-test: cli-embed-source
@@ -26,9 +23,6 @@ cli-fmt-check:
 		echo "$$unformatted"; \
 		exit 1; \
 	fi
-
-platformsource-check:
-	cd cli && go run ./internal/platformsource/internal/genplatformsource --check
 
 # npm ci sentinel: site targets work from a clean clone without a manual
 # `make site-install`, and skip the reinstall until package-lock.json changes.
@@ -77,9 +71,6 @@ core-verify:
 
 core-remediation-tests:
 	cd core && python3 -m unittest tests/test_remediation_pipeline.py tests/test_closure_cve_check.py tests/test_pipeline_evidence.py
-
-e2e-test: cli-build
-	bash core/tests/e2e-runtimes.sh $(STACK)
 
 test: cli-vet cli-test site-typecheck site-build core-remediation-tests
 

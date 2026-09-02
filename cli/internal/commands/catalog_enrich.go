@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/oci"
 	"github.com/northcutted/clearcutt/internal/sign"
 	"github.com/spf13/cobra"
@@ -49,7 +49,7 @@ func newCatalogEnrichCmd() *cobra.Command {
 			return runCatalogEnrichWithConfig(cmd.Flags().Changed("config"), cmd.Flags().Changed("limit"))
 		},
 	}
-	cmd.Flags().StringVar(&catalogEnrichOpts.config, "config", fleet.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
+	cmd.Flags().StringVar(&catalogEnrichOpts.config, "config", config.DefaultConfigPath, "ClearCutt fleet config used for owner/repo/registry/target defaults")
 	cmd.Flags().IntVar(&catalogEnrichOpts.limit, "limit", envIntValue("RELEASE_LIMIT", 10), "Maximum releases to inspect for tags")
 	cmd.Flags().StringVar(&catalogEnrichOpts.tags, "tags", os.Getenv("GATHER_TAGS"), "Comma-separated release tags to enrich")
 	cmd.Flags().StringVar(&catalogEnrichOpts.owner, "owner", os.Getenv("GH_OWNER"), "GitHub owner")
@@ -72,7 +72,7 @@ func runCatalogEnrich() error {
 }
 
 func runCatalogEnrichWithConfig(explicitConfig, limitChanged bool) error {
-	if err := applyCatalogEnrichFleetConfig(explicitConfig, limitChanged); err != nil {
+	if err := applyCatalogEnrichConfig(explicitConfig, limitChanged); err != nil {
 		return err
 	}
 	owner, repo, err := detectCatalogRepo(catalogEnrichOpts.owner, catalogEnrichOpts.repo)
@@ -139,11 +139,11 @@ func runCatalogEnrichWithConfig(explicitConfig, limitChanged bool) error {
 	return nil
 }
 
-func applyCatalogEnrichFleetConfig(explicitConfig, limitChanged bool) error {
+func applyCatalogEnrichConfig(explicitConfig, limitChanged bool) error {
 	if catalogEnrichOpts.config == "" {
 		return nil
 	}
-	cfg, err := fleet.Load(catalogEnrichOpts.config)
+	cfg, err := config.Load(catalogEnrichOpts.config)
 	if err != nil {
 		if explicitConfig || !os.IsNotExist(err) {
 			return err
@@ -163,7 +163,7 @@ func applyCatalogEnrichFleetConfig(explicitConfig, limitChanged bool) error {
 		catalogEnrichOpts.imagePrefix = cfg.Registry.ImagePrefix
 	}
 	if catalogEnrichOpts.targets == "" {
-		catalogEnrichOpts.targets = fleetTargets(cfg)
+		catalogEnrichOpts.targets = catalogTargets(cfg)
 	}
 	if catalogEnrichOpts.includeServices {
 		catalogEnrichOpts.targets = appendFleetServiceTargets(catalogEnrichOpts.targets, cfg)

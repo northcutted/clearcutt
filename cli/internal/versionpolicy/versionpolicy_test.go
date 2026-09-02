@@ -17,15 +17,11 @@ func TestLifecycleForClassification(t *testing.T) {
 		supp   string
 		prod   bool
 	}{
-		// coreLTS + the LTS language lines: active/lts, production on non-dev.
-		{"coreLTS", "dev", "active", "lts", false},
-		{"coreLTS", "slim", "active", "lts", true},
-		{"coreLTS", "distroless", "active", "lts", true},
+		// The LTS language lines: active/lts, production on non-dev.
 		{"java21", "dev", "active", "lts", false},
 		{"java21", "slim", "active", "lts", true},
 		{"java21", "distroless", "active", "lts", true},
 		{"node22", "slim", "active", "lts", true},
-		{"dotnet8", "distroless", "active", "lts", true},
 
 		// python3.13 stays the non-LTS current line.
 		{"python3.13", "dev", "active", "current", false},
@@ -38,9 +34,8 @@ func TestLifecycleForClassification(t *testing.T) {
 		{"python3.14", "distroless", "active", "lts", true},
 
 		// Preview lines stay preview, never production.
-		{"java25", "slim", "preview", "preview", false},
-		{"node24", "distroless", "preview", "preview", false},
-		{"dotnet10", "slim", "preview", "preview", false},
+		{"java25", "slim", "active", "lts", true},
+		{"node24", "distroless", "active", "lts", true},
 
 		// go1.26 is now LTS, but go is omitInProduction (toolchain not shipped in
 		// production tiers), so it is active/lts yet never productionAllowed.
@@ -50,8 +45,6 @@ func TestLifecycleForClassification(t *testing.T) {
 
 		// go1.25 stays an experimental toolchain line.
 		{"go1.25", "slim", "experimental", "unsupported", false},
-		{"rust1.95", "slim", "experimental", "unsupported", false},
-		{"cc15", "distroless", "experimental", "unsupported", false},
 
 		// Unknown lines fall back to the conservative preview default.
 		{"madeup99", "slim", "preview", "preview", false},
@@ -74,17 +67,17 @@ func TestResolve(t *testing.T) {
 		includePreview bool
 		want           string // comma-joined sorted versions
 	}{
-		{"java", "lts", false, "21"},
-		{"java", "lts", true, "21,25"},   // preview unions java25
-		{"java", "preview", false, "25"}, // preview as base channel
-		{"node", "lts", true, "22,24"},
+		{"java", "lts", false, "21,25"}, // both java LTS releases
+		{"java", "lts", true, "21,25"},  // java has no preview line to union
+		{"node", "lts", false, "22,24"},
+		{"node", "lts", true, "22,24,26"}, // preview unions node26   // preview unions node24
+		{"node", "preview", false, "26"},  // preview as base channel
+
 		{"python", "lts", false, "3.14"}, // 3.14 is the LTS line
 		{"python", "current", false, "3.13"},
 		{"python", "current", true, "3.13"}, // python has no preview bucket
-		{"dotnet", "lts", true, "10,8"},
 		{"go", "lts", false, "1.26"},
 		{"go", "experimental", false, "1.25"},
-		{"core", "lts", false, "LTS"},
 	}
 	for _, c := range cases {
 		got, err := Resolve(c.language, c.channel, c.includePreview)
@@ -99,12 +92,6 @@ func TestResolve(t *testing.T) {
 		}
 	}
 
-	// Languages without an LTS line reject channel: lts.
-	for _, lang := range []string{"rust", "cc"} {
-		if _, err := Resolve(lang, "lts", false); err == nil {
-			t.Errorf("Resolve(%q, lts) should error (no LTS line)", lang)
-		}
-	}
 	if _, err := Resolve("kotlin", "lts", false); err == nil {
 		t.Error("Resolve(unknown language) should error")
 	}
@@ -115,9 +102,10 @@ func TestResolve(t *testing.T) {
 
 func TestChannelFor(t *testing.T) {
 	cases := map[string]Channel{
-		"coreLTS":    ChannelLTS,
 		"java21":     ChannelLTS,
-		"java25":     ChannelPreview,
+		"java25":     ChannelLTS,
+		"node26":     ChannelPreview,
+		"node24":     ChannelLTS,
 		"python3.14": ChannelLTS,
 		"python3.13": ChannelCurrent,
 		"go1.26":     ChannelLTS,

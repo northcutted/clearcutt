@@ -21,7 +21,7 @@ data, not a general website generator.
 
 ```bash
 clearcutt catalog generate \
-  --config clearcutt.fleet.yaml \
+  --config clearcutt.yaml \
   --include-services \
   --output ./dist/catalog
 
@@ -77,7 +77,7 @@ catalog:
 
 ```bash
 clearcutt catalog generate \
-  --config clearcutt.fleet.yaml \
+  --config clearcutt.yaml \
   --include-services \
   --output ./dist/catalog
 
@@ -89,7 +89,7 @@ clearcutt catalog site build \
 
 Use `catalog generate --include-services` whenever the site should show service
 image records. Without it, the generated catalog is runtime-only even if
-`clearcutt.fleet.yaml` contains `services[]`.
+`clearcutt.yaml` contains `services[]`.
 
 To verify service rendering without release data, build from the committed
 mixed fixture:

@@ -69,7 +69,7 @@ type EvidenceDiffReport struct {
 func NewDiffCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diff <image-id>",
-		Short: "Compare two versioned releases of a catalog image",
+		Short: "Show what changed between two releases of an image",
 		Long:  `Analyzes differences in layers, packages, vulnerabilities, evidence, lifecycles, and exceptions.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

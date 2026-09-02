@@ -1,8 +1,11 @@
 # ClearCutt Analysis History
 
-Current readout: ClearCutt is ready for targeted serious human feedback on the
-post-hardening branch, with the remaining risks called out in
-[history/post-hardening-readiness.md](history/post-hardening-readiness.md).
+Current readout: ClearCutt has been repositioned from "operate a hardened image
+fleet" to "govern container image estates, including ones it did not build". The
+CVE remediation subsystem, the shell build engine, and most of the image matrix
+were removed in that pass; the fleet that remains is a single reference
+fixture. Design docs describing the removed machinery are in
+[history/](history/).
 
 The files in [history/](history/) are audit snapshots and owner-review inputs.
 They are preserved because they explain earlier credibility risks, action-plan
@@ -13,8 +16,9 @@ be read as the current branch state.
 
 | File | Use it for |
 |---|---|
-| [phase-12-horizon-epics.md](phase-12-horizon-epics.md) | Owner-scoped design intake for the next showcase evidence epics. |
-| [history/post-hardening-readiness.md](history/post-hardening-readiness.md) | Current readiness verdict, superseded blockers, and validation commands from the post-hardening pass. |
+| [history/post-hardening-readiness.md](history/post-hardening-readiness.md) | Readiness verdict and validation commands from the post-hardening pass. |
+| [history/cve-triage-design.md](history/cve-triage-design.md) | The priced-route CVE triage design, removed with the remediation subsystem. Worth reading before rebuilding the idea on `graph`/`import assess`. |
+| [history/cli-pivot-plan.md](history/cli-pivot-plan.md) | The Go-port plan that produced the current CLI-owned orchestration. |
 | [history/clearcutt-audit.md](history/clearcutt-audit.md) | Historical deep audit of product, trust, docs, CLI, site, and release surfaces. |
 | [history/clearcutt-action-plan.md](history/clearcutt-action-plan.md) | Historical audit-derived backlog and phase plan. |
 | [history/decisions-needed.md](history/decisions-needed.md) | Historical owner decisions and tradeoffs. |

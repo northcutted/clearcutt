@@ -9,7 +9,7 @@ import (
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 )
 
 func TestCatalogBuildRunsOfflinePipelineWithFleetConfig(t *testing.T) {
@@ -89,22 +89,22 @@ func TestCatalogBuildRunsOfflinePipelineWithFleetConfig(t *testing.T) {
 	}
 	t.Cleanup(func() { newReleaseSource = oldNewReleaseSource })
 
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	cfg.Matrix.Languages = []string{"python3.13"}
 	cfg.Matrix.Tiers = []string{"slim"}
 	cfg.Catalog.ReleaseLimit = 1
 	cfg.Catalog.ScanDepth = "1"
-	cfg.Services = []fleet.ServiceImage{{
+	cfg.Services = []config.ServiceImage{{
 		ID:       serviceTarget,
 		Template: "postgres",
 		Version:  "16",
 		Smoke:    []string{"postgres --version"},
 	}}
-	raw, err := fleet.Marshal(cfg)
+	raw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, config.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}

@@ -12,15 +12,8 @@ For build-vs-buy positioning and when not to use ClearCutt, see
 Start with a platform fork that runs under your GitHub organization, registry,
 workflow identities, and catalog site.
 
-- Configure `clearcutt.fleet.yaml` for the runtimes, tiers, architectures, scan
+- Configure `clearcutt.yaml` for the runtimes, tiers, architectures, scan
   windows, and remediation limits you intend to support.
-- Use `clearcutt matrix explain <runtime-line>` before adding a runtime to the
-  fleet config; supported runtime IDs are validated before the Nix backend runs.
-- Use `clearcutt matrix add <runtime-line>` for known runtimes and
-  `clearcutt runtime scaffold <runtime-line>` plus `runtime validate` for new
-  runtime families such as Ruby.
-- Run `clearcutt platform status` and the release workflow before asking app
-  teams to migrate.
 - Treat the catalog as the product surface: signatures, SBOMs, provenance, test
   results, and vulnerability scans should each show their own status.
 
@@ -30,8 +23,6 @@ Adoption should start where developers already work: local builds, devcontainers
 and CI.
 
 - Use `clearcutt list` and `clearcutt inspect` to choose a runtime line and tier.
-- Use `clearcutt app template` or the example templates to give teams a known
-  Dockerfile, devcontainer, certification policy, and release workflow.
 - Keep Nix out of the app-team path unless the team is intentionally customizing
   the platform fleet.
 
@@ -41,8 +32,9 @@ If your organization mandates Red Hat UBI, Ubuntu Pro, Amazon Linux, or another
 approved base, use overlays as a migration bridge rather than pretending they
 are equivalent to ClearCutt from-scratch distroless images.
 
-- Use `clearcutt overlay generate` to graft the reproducible `/nix` runtime
-  closure onto the mandated base.
+- Use `clearcutt.lib.graftOntoBase` from `core/flake.nix` to graft the
+  reproducible `/nix` runtime closure onto the mandated base. (The
+  `clearcutt overlay generate` CLI wrapper was removed; the Nix helper remains.)
 - Preserve required agents and OS policy while standardizing language runtimes.
 - Be explicit about the trade-off: overlays inherit the parent image's shell,
   package manager, and CVE footprint.

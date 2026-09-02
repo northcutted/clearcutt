@@ -107,27 +107,9 @@ func TestVerifyClosurePurityCommand(t *testing.T) {
 	}
 }
 
-func TestVerifyRuntimeCveCommand(t *testing.T) {
-	floor := gateFloor(t)
-	stock := gateArchive(t, gateLayerTar(t, map[string]int64{
-		"nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.2/lib/libssl.so": 0o644,
-	}))
-	if _, err := runCLI(t, "verify", "runtime-cve", stock, "--floor", floor); err == nil {
-		t.Fatal("stock openssl-3.6.2 should fail runtime-cve")
-	}
-
-	patched := gateArchive(t, gateLayerTar(t, map[string]int64{
-		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
-	}))
-	if _, err := runCLI(t, "verify", "runtime-cve", patched, "--floor", floor); err != nil {
-		t.Fatalf("patched openssl should pass runtime-cve: %v", err)
-	}
-}
-
 // Exercises --store-paths mode across all three verify gates (a closureInfo
 // store-paths list instead of an image archive).
 func TestVerifyGatesStorePathsMode(t *testing.T) {
-	floor := gateFloor(t)
 	root := t.TempDir()
 	storeDir := filepath.Join(root, "store", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-openssl-3.6.3")
 	if err := os.MkdirAll(filepath.Join(storeDir, "lib"), 0o755); err != nil {
@@ -144,20 +126,16 @@ func TestVerifyGatesStorePathsMode(t *testing.T) {
 	if _, err := runCLI(t, "verify", "closure-purity", "--store-paths", pathsFile); err != nil {
 		t.Fatalf("clean store-paths closure-purity: %v", err)
 	}
-	if _, err := runCLI(t, "verify", "runtime-cve", "--store-paths", pathsFile, "--floor", floor); err != nil {
-		t.Fatalf("clean store-paths runtime-cve: %v", err)
-	}
-	if _, err := runCLI(t, "verify", "boundaries", "--store-paths", pathsFile, "--floor", floor); err != nil {
+	if _, err := runCLI(t, "verify", "boundaries", "--store-paths", pathsFile); err != nil {
 		t.Fatalf("clean store-paths boundaries: %v", err)
 	}
 }
 
 func TestVerifyBoundariesCommand(t *testing.T) {
-	floor := gateFloor(t)
 	clean := gateArchive(t, gateLayerTar(t, map[string]int64{
 		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
 	}))
-	out, err := runCLI(t, "verify", "boundaries", clean, "--floor", floor)
+	out, err := runCLI(t, "verify", "boundaries", clean)
 	if err != nil {
 		t.Fatalf("clean image should pass all boundary gates: %v\n%s", err, out)
 	}
@@ -170,181 +148,7 @@ func TestVerifyBoundariesCommand(t *testing.T) {
 		"nix/store/cccccccccccccccccccccccccccccccc-bash-5.2/bin/bash":           0o755,
 		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
 	}))
-	if _, err := runCLI(t, "verify", "boundaries", impure, "--floor", floor); err == nil {
+	if _, err := runCLI(t, "verify", "boundaries", impure); err == nil {
 		t.Fatal("image with a shell should fail boundaries")
-	}
-}
-
-func writeBoundarySuiteCore(t *testing.T, coreDir string) string {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Join(coreDir, "tests"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(coreDir, "tests", "runtime-dep-floor.json"), []byte(gateFloorJSON()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(coreDir, "tests", "closure-purity-allowlist.txt"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return filepath.Join(coreDir, "build-outputs")
-}
-
-func TestVerifyBoundarySuiteUsesExistingArchives(t *testing.T) {
-	coreDir := t.TempDir()
-	outDir := writeBoundarySuiteCore(t, coreDir)
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
-		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
-	}))
-	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
-		raw, err := os.ReadFile(cleanArchive)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(outDir, target+".tar.gz"), raw, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	oldRun := runExternalCommand
-	runExternalCommand = func(c externalCommand) error {
-		t.Fatalf("boundary suite should not build when archives exist, got %#v", c)
-		return nil
-	}
-	t.Cleanup(func() { runExternalCommand = oldRun })
-
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
-	if err != nil {
-		t.Fatalf("boundary suite should pass existing archives: %v\n%s", err, stdout)
-	}
-	for _, want := range []string{
-		"[boundary-suite] closure-purity coreLTS-distroless",
-		"[boundary-suite] runtime-cve coreLTS-slim",
-		"[boundary-suite] runtime-cve coreLTS-distroless",
-		"representative image-security boundary suite passed",
-	} {
-		if !strings.Contains(stdout, want) {
-			t.Fatalf("expected %q in boundary suite output:\n%s", want, stdout)
-		}
-	}
-}
-
-func TestVerifyBoundarySuiteBuildsMissingArchivesWithNix(t *testing.T) {
-	coreDir := t.TempDir()
-	outDir := writeBoundarySuiteCore(t, coreDir)
-	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
-		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
-	}))
-	archiveRaw, err := os.ReadFile(cleanArchive)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	oldRun := runExternalCommand
-	calls := []externalCommand{}
-	runExternalCommand = func(c externalCommand) error {
-		calls = append(calls, c)
-		if c.Name != "nix" || c.Dir != coreDir {
-			t.Fatalf("unexpected build command: %#v", c)
-		}
-		outLink := ""
-		for i, arg := range c.Args {
-			if arg == "--out-link" && i+1 < len(c.Args) {
-				outLink = c.Args[i+1]
-			}
-		}
-		if outLink == "" {
-			t.Fatalf("missing --out-link in %#v", c)
-		}
-		// Resolve like the real subprocess would: relative to c.Dir, not the
-		// test process cwd — so a relative out-link/cwd mismatch fails here.
-		if !filepath.IsAbs(outLink) {
-			outLink = filepath.Join(c.Dir, outLink)
-		}
-		if err := os.MkdirAll(filepath.Dir(outLink), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(outLink, archiveRaw, 0o644)
-	}
-	t.Cleanup(func() { runExternalCommand = oldRun })
-
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", coreDir)
-	if err != nil {
-		t.Fatalf("boundary suite should build and pass missing archives: %v\n%s", err, stdout)
-	}
-	if len(calls) != 2 {
-		t.Fatalf("expected two nix builds for default slim/distroless archives, got %#v", calls)
-	}
-	joined := strings.Join(append(calls[0].Args, calls[1].Args...), " ")
-	for _, want := range []string{".#coreLTS-slim", ".#coreLTS-distroless", "--accept-flake-config"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("missing build arg %q in calls %#v", want, calls)
-		}
-	}
-	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
-		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {
-			t.Fatalf("expected built archive for %s: %v", target, err)
-		}
-	}
-}
-
-// Regression for the PR-gate failure: `verify boundary-suite --core-dir core`
-// runs nix with cwd=core, so a relative --out-link must still land where the
-// suite reads it from the repo root.
-func TestVerifyBoundarySuiteRelativeCoreDir(t *testing.T) {
-	repoRoot := t.TempDir()
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repoRoot); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWD) })
-
-	coreDir := filepath.Join(repoRoot, "core")
-	outDir := writeBoundarySuiteCore(t, coreDir)
-	cleanArchive := gateArchive(t, gateLayerTar(t, map[string]int64{
-		"nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-openssl-3.6.3/lib/libssl.so": 0o644,
-	}))
-	archiveRaw, err := os.ReadFile(cleanArchive)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	oldRun := runExternalCommand
-	runExternalCommand = func(c externalCommand) error {
-		if c.Name != "nix" {
-			t.Fatalf("unexpected command: %#v", c)
-		}
-		outLink := ""
-		for i, arg := range c.Args {
-			if arg == "--out-link" && i+1 < len(c.Args) {
-				outLink = c.Args[i+1]
-			}
-		}
-		if outLink == "" {
-			t.Fatalf("missing --out-link in %#v", c)
-		}
-		if !filepath.IsAbs(outLink) {
-			outLink = filepath.Join(c.Dir, outLink)
-		}
-		if err := os.MkdirAll(filepath.Dir(outLink), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(outLink, archiveRaw, 0o644)
-	}
-	t.Cleanup(func() { runExternalCommand = oldRun })
-
-	stdout, err := runCLI(t, "verify", "boundary-suite", "--core-dir", "core")
-	if err != nil {
-		t.Fatalf("boundary suite with a relative --core-dir failed: %v\n%s", err, stdout)
-	}
-	for _, target := range []string{"coreLTS-slim", "coreLTS-distroless"} {
-		if _, err := os.Stat(filepath.Join(outDir, target+".tar.gz")); err != nil {
-			t.Fatalf("expected built archive for %s: %v", target, err)
-		}
 	}
 }

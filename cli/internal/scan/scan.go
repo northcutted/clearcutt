@@ -197,9 +197,6 @@ func TargetMetadata(target string) targetMeta {
 		rt = target[:idx]
 		tier = target[idx+1:]
 	}
-	if rt == "coreLTS" {
-		return targetMeta{target: target, runtime: rt, language: "core", version: "LTS", tier: tier}
-	}
 	m := targetRuntimeRe.FindStringSubmatch(rt)
 	if m == nil {
 		return targetMeta{target: target, runtime: rt, language: rt, version: "", tier: tier}

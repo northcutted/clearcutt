@@ -65,7 +65,7 @@ func TestVerifyCatalogFailsWhenSignatureInferredFromProvenance(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v1.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
+			"id": "java21-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
 			"lifecycle": lifecycle, "runtimeContract": runtimeContract, "evidence": evidence,
 		}},
 	}
@@ -78,8 +78,8 @@ func TestVerifyCatalogFailsWhenSignatureInferredFromProvenance(t *testing.T) {
 		"evidence":        evidence,
 		"architectures":   []any{},
 	}
-	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
-	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
+	record := map[string]any{"id": "java21-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
+	writeCatalogFixture(t, dir, index, map[string]any{"java21-slim": record})
 
 	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {
@@ -99,7 +99,7 @@ func TestVerifyCatalogAcceptsCompleteLatestEvidence(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v1.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
+			"id": "java21-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
 			"lifecycle": lifecycle, "runtimeContract": runtimeContract, "evidence": evidence,
 		}},
 	}
@@ -112,8 +112,8 @@ func TestVerifyCatalogAcceptsCompleteLatestEvidence(t *testing.T) {
 		"evidence":        evidence,
 		"architectures":   []any{},
 	}
-	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
-	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
+	record := map[string]any{"id": "java21-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
+	writeCatalogFixture(t, dir, index, map[string]any{"java21-slim": record})
 
 	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err != nil {
@@ -139,7 +139,7 @@ func TestVerifyCatalogRejectsStaleAndObservedEvidence(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v1.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
+			"id": "java21-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
 			"lifecycle": lifecycle, "runtimeContract": runtimeContract, "evidence": evidence,
 		}},
 	}
@@ -148,8 +148,8 @@ func TestVerifyCatalogRejectsStaleAndObservedEvidence(t *testing.T) {
 		"exceptions": zeroExceptions(), "evidence": evidence,
 		"architectures": []any{map[string]any{"arch": "amd64"}},
 	}
-	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
-	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
+	record := map[string]any{"id": "java21-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
+	writeCatalogFixture(t, dir, index, map[string]any{"java21-slim": record})
 
 	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {
@@ -272,7 +272,7 @@ func TestVerifyCatalogFailsWhenNoLatestImages(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v2.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "lifecycle": lifecycle,
+			"id": "java21-slim", "latestTag": "v1.0.0", "lifecycle": lifecycle,
 		}},
 	}
 	writeCatalogFixture(t, dir, index, map[string]any{})
@@ -295,7 +295,7 @@ func TestVerifyCatalogFailsWhenRequiredRawFieldsAreMissing(t *testing.T) {
 	index := map[string]any{
 		"latestTag": "v1.0.0",
 		"images": []any{map[string]any{
-			"id": "coreLTS-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
+			"id": "java21-slim", "latestTag": "v1.0.0", "signed": true, "provenance": true,
 			"lifecycle": lifecycle, "evidence": evidence,
 		}},
 	}
@@ -307,8 +307,8 @@ func TestVerifyCatalogFailsWhenRequiredRawFieldsAreMissing(t *testing.T) {
 		"evidence":        evidence,
 		"architectures":   []any{},
 	}
-	record := map[string]any{"id": "coreLTS-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
-	writeCatalogFixture(t, dir, index, map[string]any{"coreLTS-slim": record})
+	record := map[string]any{"id": "java21-slim", "lifecycle": lifecycle, "runtimeContract": runtimeContract, "releases": []any{release}}
+	writeCatalogFixture(t, dir, index, map[string]any{"java21-slim": record})
 
 	stdout, err := runCLI(t, "--catalog", dir, "verify", "catalog")
 	if err == nil {

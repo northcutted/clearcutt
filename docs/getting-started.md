@@ -4,7 +4,6 @@ This guide is for application developers consuming a ClearCutt fleet. You do
 not need Nix to choose an image, generate a starter, build an app container, or
 certify it locally.
 
-If you operate the forked platform, start with [`platform-kit.md`](platform-kit.md).
 If you review trust evidence, start with
 [`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md).
 
@@ -52,7 +51,6 @@ Build the CLI, then scaffold an app starter with Dockerfile, devcontainer,
 certification policy, release workflow, and rebase workflow:
 
 ```bash
-./clearcutt app template java --output examples/my-java-service --name my-java-service
 ```
 
 The generated README explains the chosen build tier, runtime tier, certification

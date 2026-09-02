@@ -38,7 +38,6 @@ required) and are the only network-touching commands in the CLI:
 	cmd.AddCommand(newAppBuildCmd())
 	cmd.AddCommand(newAppDiffBaseCmd())
 	cmd.AddCommand(newAppRebaseCmd())
-	cmd.AddCommand(newAppTemplateCmd())
 	return cmd
 }
 

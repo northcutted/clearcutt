@@ -12,12 +12,12 @@ import (
 
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
-	"github.com/northcutted/clearcutt/internal/fleet"
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/config"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 )
 
 func TestGenericImageBundleDefaultsToImportedGovernance(t *testing.T) {
-	bundle, err := genericImageBundle(importedfleet.ImageSpec{
+	bundle, err := genericImageBundle(estategraph.ImageSpec{
 		ID:            "sample",
 		Image:         "registry.example.com/sample:1",
 		Language:      catalog.LanguageInfo{ID: "sample", DisplayName: "Sample", Version: "1"},
@@ -615,15 +615,15 @@ exit 2
 		return source
 	}
 
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	cfg.Matrix.Languages = []string{"python3.13"}
 	cfg.Matrix.Tiers = []string{"slim"}
 	cfg.Catalog.ReleaseLimit = 1
-	configRaw, err := fleet.Marshal(cfg)
+	configRaw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(t.TempDir(), "clearcutt.fleet.yaml")
+	configPath := filepath.Join(t.TempDir(), config.DefaultConfigPath)
 	if err := os.WriteFile(configPath, configRaw, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -751,7 +751,7 @@ func TestCatalogSiteBuildRejectsConflictingGeneratedCatalogInputs(t *testing.T) 
 	}
 	stdout, err := runCLI(t,
 		"catalog", "site", "build",
-		"--config", "clearcutt.fleet.yaml",
+		"--config", config.DefaultConfigPath,
 		"--images", inventoryPath,
 		"--output", filepath.Join(t.TempDir(), "site"),
 	)
@@ -1099,17 +1099,17 @@ func TestCatalogValidateRejectsStaleEvidenceManifest(t *testing.T) {
 func TestCatalogGenerateIncludeServicesEmitsV2ServiceRecords(t *testing.T) {
 	outDir := copyFixtureCatalog(t)
 	root := t.TempDir()
-	cfg := fleet.DefaultConfig("acme", "platform")
-	cfg.Services = []fleet.ServiceImage{{
+	cfg := config.DefaultConfig("acme", "platform")
+	cfg.Services = []config.ServiceImage{{
 		ID:       "postgres16",
 		Template: "postgres",
 		Version:  "16",
 	}}
-	raw, err := fleet.Marshal(cfg)
+	raw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, config.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -1220,20 +1220,20 @@ func TestCatalogGenerateIncludeServicesFoldsServiceReleaseAssets(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	cfg.Matrix.Languages = []string{"java21"}
 	cfg.Matrix.Tiers = []string{"distroless"}
 	cfg.Catalog.ReleaseLimit = 1
-	cfg.Services = []fleet.ServiceImage{{
+	cfg.Services = []config.ServiceImage{{
 		ID:       target,
 		Template: "postgres",
 		Version:  "16",
 	}}
-	raw, err := fleet.Marshal(cfg)
+	raw, err := config.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal fleet config: %v", err)
 	}
-	configPath := filepath.Join(root, "clearcutt.fleet.yaml")
+	configPath := filepath.Join(root, config.DefaultConfigPath)
 	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
 		t.Fatalf("write fleet config: %v", err)
 	}
@@ -1288,18 +1288,18 @@ func TestCatalogGenerateIncludeServicesFoldsServiceReleaseAssets(t *testing.T) {
 }
 
 func TestServiceCatalogMetadataOverlayAndSummaries(t *testing.T) {
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	cfg.Registry.ImagePrefix = "platform"
-	service := fleet.ServiceImage{
+	service := config.ServiceImage{
 		ID:         "postgres16",
 		Template:   "postgres",
 		Version:    "16",
-		Ports:      []fleet.ServicePort{{Name: "postgres", Port: 5432, Protocol: "tcp"}},
+		Ports:      []config.ServicePort{{Name: "postgres", Port: 5432, Protocol: "tcp"}},
 		Stateful:   true,
 		DataDirs:   []string{"/var/lib/postgresql/data"},
 		Entrypoint: []string{"clearcutt-postgres-entrypoint"},
 		Smoke:      []string{"postgres --version"},
-		Lifecycle:  fleet.ServiceLifecycle{Status: "preview", Support: "current"},
+		Lifecycle:  config.ServiceLifecycle{Status: "preview", Support: "current"},
 	}
 	record := serviceCatalogRecord(cfg, service, "v1.0.0", "2026-06-05T20:00:00Z")
 	record.Releases[0].ManifestDigest = strPtr("sha256:service")
@@ -1360,7 +1360,7 @@ func TestServiceCatalogMetadataOverlayAndSummaries(t *testing.T) {
 		t.Fatalf("unexpected mixed service entrypoint: %q", got)
 	}
 
-	oauth := fleet.ServiceImage{Template: "oauth2-proxy", Entrypoint: []string{"oauth2-proxy"}}
+	oauth := config.ServiceImage{Template: "oauth2-proxy", Entrypoint: []string{"oauth2-proxy"}}
 	contract := serviceCatalogBuildRuntimeContract(oauth)
 	if contract.User != "10001:10001" || contract.ShellPresent || !contract.CACertificatesPresent || contract.DefaultEntrypoint == nil || *contract.DefaultEntrypoint != "/bin/oauth2-proxy" {
 		t.Fatalf("unexpected service build runtime contract: %#v", contract)

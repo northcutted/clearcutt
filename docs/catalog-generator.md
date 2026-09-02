@@ -13,13 +13,13 @@ catalog directory.
 ## ClearCutt Fleet Mode
 
 Fleet mode reads owner, repository, registry, release window, and target
-defaults from `clearcutt.fleet.yaml`, then uses ClearCutt release evidence,
+defaults from `clearcutt.yaml`, then uses ClearCutt release evidence,
 registry enrichment, SBOM cache data, and vulnerability scan JSON where
 available.
 
 ```bash
 clearcutt catalog generate \
-  --config clearcutt.fleet.yaml \
+  --config clearcutt.yaml \
   --include-services \
   --output ./dist/catalog
 ```
@@ -60,16 +60,7 @@ bootstrap command renders a lightweight GitHub control-plane repo with
 `images.yaml`, catalog/Pages workflows, desired GitHub state, and local docs:
 
 ```bash
-clearcutt platform bootstrap github \
-  --profile catalog-only \
-  --owner acme \
-  --repo image-platform \
-  --registry-base ghcr.io/acme/image-platform \
-  --pages \
-  --environment production \
-  --dir ./image-platform \
-  --dry-run \
-  --force
+clearcutt catalog generate --config clearcutt.yaml --output dist/catalog
 ```
 
 The generated `catalog.yml` workflow runs the same data path shown below, then
@@ -185,6 +176,6 @@ jobs:
         with:
           go-version-file: cli/go.mod
       - run: go build -C cli -o ../clearcutt ./cmd/clearcutt
-      - run: ./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+      - run: ./clearcutt catalog generate --config clearcutt.yaml --include-services --output dist/catalog
       - run: ./clearcutt --catalog dist/catalog catalog validate
 ```

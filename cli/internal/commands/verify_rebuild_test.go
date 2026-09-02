@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"archive/tar"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/northcutted/clearcutt/internal/certify"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -312,4 +316,67 @@ func TestVerifyRebuildDigestNormalizationAndDiffoscopeBranches(t *testing.T) {
 			t.Fatalf("missing diffoscope call %q in:\n%s", want, flat)
 		}
 	}
+}
+
+// overlayLayer builds an uncompressed tar layer from a name->content map.
+func overlayLayer(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		content := []byte(files[name])
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(content))}); err != nil {
+			t.Fatalf("write layer header: %v", err)
+		}
+		if _, err := tw.Write(content); err != nil {
+			t.Fatalf("write layer content: %v", err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close layer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// overlayDockerArchive wraps a layer in a single-image docker-archive tarball.
+func overlayDockerArchive(t *testing.T, layer []byte, tag string) string {
+	t.Helper()
+	manifest, err := json.Marshal([]certify.DockerManifest{{
+		Config:   "config.json",
+		RepoTags: []string{tag},
+		Layers:   []string{"layer.tar"},
+	}})
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	config := []byte(`{"config":{"User":"10001:10001"}}`)
+	path := filepath.Join(t.TempDir(), "image.tar")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	for _, item := range []struct {
+		name string
+		body []byte
+	}{{"manifest.json", manifest}, {"config.json", config}, {"layer.tar", layer}} {
+		if err := tw.WriteHeader(&tar.Header{Name: item.name, Mode: 0o600, Size: int64(len(item.body))}); err != nil {
+			t.Fatalf("write archive header: %v", err)
+		}
+		if _, err := tw.Write(item.body); err != nil {
+			t.Fatalf("write archive body: %v", err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close archive writer: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close archive: %v", err)
+	}
+	return path
 }

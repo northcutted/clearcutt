@@ -4,13 +4,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/spf13/cobra"
 )
 
 // repoRootMarkers identify the root of a ClearCutt checkout (or fork). The
 // fleet config is the operator-facing marker; go.work covers contributor
 // checkouts of this repository itself.
-var repoRootMarkers = []string{"clearcutt.fleet.yaml", "go.work"}
+// repoRootMarkers accept both config names: a fork that has not migrated must
+// still be recognised as a checkout.
+var repoRootMarkers = []string{config.DefaultConfigPath, config.LegacyConfigPath, "go.work"}
 
 // findRepoRoot walks upward from the current working directory looking for a
 // repo marker, stopping at the filesystem root. It returns ("", false) when no

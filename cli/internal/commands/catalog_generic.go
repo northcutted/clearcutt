@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/northcutted/clearcutt/internal/catalog"
 	"github.com/northcutted/clearcutt/internal/catalogbuild"
-	"github.com/northcutted/clearcutt/internal/importedfleet"
+	"github.com/northcutted/clearcutt/internal/estategraph"
 	"sigs.k8s.io/yaml"
 )
 
@@ -58,7 +58,7 @@ func loadGenericImageBundles(path string, generatedAt string) ([]genericImageRec
 	if err != nil {
 		return nil, fmt.Errorf("read generic OCI images inventory: %w", err)
 	}
-	var inventory importedfleet.ImagesFile
+	var inventory estategraph.ImagesFile
 	if err := yaml.Unmarshal(raw, &inventory); err != nil {
 		return nil, fmt.Errorf("parse generic OCI images inventory: %w", err)
 	}
@@ -79,7 +79,7 @@ func loadGenericImageBundles(path string, generatedAt string) ([]genericImageRec
 	return bundles, nil
 }
 
-func genericImageBundle(spec importedfleet.ImageSpec, generatedAt string) (genericImageRecordBundle, error) {
+func genericImageBundle(spec estategraph.ImageSpec, generatedAt string) (genericImageRecordBundle, error) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return genericImageRecordBundle{}, fmt.Errorf("missing id")
 	}

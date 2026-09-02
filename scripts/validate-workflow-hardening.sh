@@ -38,20 +38,13 @@ fixed_exists() {
   fi
 }
 
-if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples cli/internal/commands/app_template.go cli/internal/commands/platform_render.go |
+if search_regex 'uses:[[:space:]]+[^#[:space:]]+@(v[0-9]+|main|master)([[:space:]]|$)' .github/workflows .github/actions examples |
   grep -v -E 'generator_container_slsa3\.yml@v[0-9]+\.[0-9]+\.[0-9]+'; then
   flag "workflow and composite action references must be pinned to immutable SHAs"
 fi
 
-# SLSA's reusable container generator is the exception to SHA pinning: upstream
 # requires a full vX.Y.Z tag and fails when the workflow is referenced by hash.
-if search_regex 'slsaBuilder: .*@[0-9a-f]{40}|SLSABuilder:[[:space:]]+".*@[0-9a-f]{40}|generator_container_slsa3\.yml@[0-9a-f]{40}' clearcutt.fleet.yaml cli/internal/fleet/config.go .github/workflows examples; then
-  flag "SLSA generator refs must use the upstream-required full version tag"
-fi
 
-if ! regex_exists 'slsaBuilder: .+@v[0-9]+\.[0-9]+\.[0-9]+' clearcutt.fleet.yaml; then
-  flag "release.slsaBuilder is missing an upstream-required full version tag"
-fi
 
 # GitHub-context expansion inside run: scripts is a script-injection vector:
 # untrusted event payload fields are pasted into shell code by the templater.

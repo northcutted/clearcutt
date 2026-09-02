@@ -38,7 +38,7 @@ go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image j
 For generated data:
 
 ```bash
-./clearcutt catalog generate --config clearcutt.fleet.yaml --include-services --output dist/catalog
+./clearcutt catalog generate --config clearcutt.yaml --include-services --output dist/catalog
 ./clearcutt --catalog dist/catalog catalog validate
 ./clearcutt --catalog dist/catalog catalog inspect java21-distroless
 jq '.releases[] | select(.imageId=="java21-distroless") | {imageRef, immutableRef, missing}' \

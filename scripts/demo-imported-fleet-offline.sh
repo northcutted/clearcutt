@@ -105,7 +105,7 @@ plan_generated=false
 if command -v jq >/dev/null 2>&1; then
   jq -e '.kind == "ImportedFleetObservations"' "$OUT/dist/observations.json" >/dev/null
   jq -e '.kind == "RebaseCandidateSet"' "$OUT/rebase-candidates.json" >/dev/null
-  jq -e '(.summary.importedImages // 4) == 4' "$OUT/dist/governance/imported-fleet-summary.json" >/dev/null
+  jq -e '(.summary.importedImages // 4) == 4' "$OUT/dist/governance/estate-summary.json" >/dev/null
   jq -e '[.candidates[] | select(.confidence == "verified")] | length >= 1' "$OUT/rebase-candidates.json" >/dev/null
 
   candidate_id="$(jq -r '.candidates[] | select(.confidence == "verified" and (.newBaseCandidates | length > 0)) | .id' "$OUT/rebase-candidates.json" | head -n 1)"
@@ -130,7 +130,7 @@ required_outputs=(
   "$OUT/dist/catalog/index.json"
   "$OUT/dist/catalog/evidence-manifest.json"
   "$OUT/dist/observations.json"
-  "$OUT/dist/governance/imported-fleet-summary.json"
+  "$OUT/dist/governance/estate-summary.json"
   "$OUT/dist/governance/evidence-gaps.json"
   "$OUT/dist/governance/policy-posture.json"
   "$OUT/imported-fleet-report.md"
@@ -153,7 +153,7 @@ echo "  images.yaml"
 echo "  dist/catalog/index.json"
 echo "  dist/catalog/evidence-manifest.json"
 echo "  dist/observations.json"
-echo "  dist/governance/imported-fleet-summary.md"
+echo "  dist/governance/estate-summary.md"
 echo "  dist/governance/evidence-gaps.md"
 echo "  imported-fleet-report.md"
 echo "  rebase-candidates.json"

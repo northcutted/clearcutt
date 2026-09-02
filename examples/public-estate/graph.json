@@ -1,0 +1,377 @@
+{
+  "apiVersion": "clearcutt.dev/v1",
+  "kind": "BaseImageGraph",
+  "generatedAt": "2026-09-01T00:23:10.7616Z",
+  "summary": {
+    "observedImages": 19,
+    "baseFamilies": 2,
+    "consumers": 17,
+    "rootImages": 2,
+    "resolvedConsumers": 3,
+    "unresolvedConsumers": 14,
+    "staleConsumers": 0,
+    "currentConsumers": 3,
+    "edgesByMethod": {
+      "layer-prefix": 2,
+      "oci-base-name": 1
+    },
+    "edgesByConfidence": {
+      "assisted": 1,
+      "verified": 2
+    },
+    "distinctLayers": 96,
+    "sharedLayers": 12,
+    "widestLayerReach": 3
+  },
+  "bases": [
+    {
+      "repository": "docker.io/library/debian",
+      "versions": 1,
+      "currentRef": "docker.io/library/debian:bookworm-slim",
+      "currentDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "currentCreated": "2026-08-24T00:00:00Z",
+      "consumers": 2,
+      "staleConsumers": 0
+    },
+    {
+      "repository": "docker.io/library/photon",
+      "versions": 1,
+      "currentRef": "docker.io/library/photon:5.0",
+      "currentDigest": "sha256:ab4b68e15c8ff6b9c79ba525f696260f772c711761d576dd53bf43c351c9a504",
+      "currentCreated": "2026-07-28T20:50:28.918574219Z",
+      "consumers": 1,
+      "staleConsumers": 0
+    }
+  ],
+  "edges": [
+    {
+      "consumerId": "node-22-slim",
+      "consumerRef": "docker.io/library/node:22-slim",
+      "consumerDigest": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+      "baseRepository": "docker.io/library/debian",
+      "baseRef": "docker.io/library/debian:bookworm-slim",
+      "baseDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "baseCreated": "2026-08-24T00:00:00Z",
+      "currentBaseRef": "docker.io/library/debian:bookworm-slim",
+      "currentBaseDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "method": "layer-prefix",
+      "confidence": "verified",
+      "drift": "current",
+      "versionsBehind": 0,
+      "daysBehind": 0,
+      "signals": [
+        {
+          "type": "layer-prefix",
+          "result": "matched",
+          "weight": "proof",
+          "detail": "consumer's first 1 layer digests match the base exactly"
+        }
+      ],
+      "notes": [
+        "consumer's first 1 layer digests match the base exactly"
+      ]
+    },
+    {
+      "consumerId": "python-3-12-slim-bookworm",
+      "consumerRef": "docker.io/library/python:3.12-slim-bookworm",
+      "consumerDigest": "sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579",
+      "baseRepository": "docker.io/library/debian",
+      "baseRef": "docker.io/library/debian:bookworm-slim",
+      "baseDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "baseCreated": "2026-08-24T00:00:00Z",
+      "currentBaseRef": "docker.io/library/debian:bookworm-slim",
+      "currentBaseDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "method": "layer-prefix",
+      "confidence": "verified",
+      "drift": "current",
+      "versionsBehind": 0,
+      "daysBehind": 0,
+      "signals": [
+        {
+          "type": "layer-prefix",
+          "result": "matched",
+          "weight": "proof",
+          "detail": "consumer's first 1 layer digests match the base exactly"
+        }
+      ],
+      "notes": [
+        "consumer's first 1 layer digests match the base exactly"
+      ]
+    },
+    {
+      "consumerId": "nginx",
+      "consumerRef": "docker.io/bitnami/nginx:latest",
+      "consumerDigest": "sha256:14e3a7235f3cde1cd52e073e2eb152522167e6d893e339e42bda054cef6ff44a",
+      "baseRepository": "docker.io/library/photon",
+      "baseRef": "docker.io/library/photon:5.0",
+      "baseDigest": "sha256:ab4b68e15c8ff6b9c79ba525f696260f772c711761d576dd53bf43c351c9a504",
+      "baseCreated": "2026-07-28T20:50:28.918574219Z",
+      "currentBaseRef": "docker.io/library/photon:5.0",
+      "currentBaseDigest": "sha256:ab4b68e15c8ff6b9c79ba525f696260f772c711761d576dd53bf43c351c9a504",
+      "method": "oci-base-name",
+      "confidence": "assisted",
+      "drift": "current",
+      "versionsBehind": 0,
+      "daysBehind": 0,
+      "signals": [
+        {
+          "type": "oci-base-name",
+          "result": "matched",
+          "weight": "medium",
+          "detail": "org.opencontainers.image.base.name names this base repository"
+        }
+      ],
+      "notes": [
+        "org.opencontainers.image.base.name names this base repository",
+        "base.name names the repository but not a digest; the specific version is inferred, not proven"
+      ]
+    }
+  ],
+  "roots": [
+    {
+      "imageId": "debian-bookworm-slim",
+      "imageRef": "docker.io/library/debian:bookworm-slim",
+      "repository": "docker.io/library/debian",
+      "reason": "other observed images were proven to be built on this image",
+      "consumers": 2
+    },
+    {
+      "imageId": "photon-5-0",
+      "imageRef": "docker.io/library/photon:5.0",
+      "repository": "docker.io/library/photon",
+      "reason": "other observed images were proven to be built on this image",
+      "consumers": 1
+    }
+  ],
+  "sharedLayers": [
+    {
+      "digest": "sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be",
+      "size": 29792658,
+      "imageCount": 3,
+      "images": [
+        "docker.io/library/postgres:16",
+        "docker.io/library/python:3.11-slim",
+        "docker.io/library/python:3.12-slim"
+      ]
+    },
+    {
+      "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+      "size": 28232655,
+      "imageCount": 3,
+      "images": [
+        "docker.io/library/debian:bookworm-slim",
+        "docker.io/library/node:22-slim",
+        "docker.io/library/python:3.12-slim-bookworm"
+      ]
+    },
+    {
+      "digest": "sha256:2780920e5dbfbe103d03a583ed75345306e572ec5a48cb10361f046767d9f29a",
+      "size": 67,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:3214acf345c0cc6bbdb56b698a41ccdefc624a09d6beb0d38b5de0b2303ecaf4",
+      "size": 123,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:52630fc75a18675c530ed9eba5f55eca09b03e91bd5bc15307918bbc1a7e7296",
+      "size": 162,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:55afa1ecc21d2bb5e5045f32dafee56272ffd89860bac26f6c32123439af26a4",
+      "size": 3846391,
+      "imageCount": 2,
+      "images": [
+        "docker.io/library/node:22-alpine",
+        "docker.io/library/python:3.12-alpine"
+      ]
+    },
+    {
+      "digest": "sha256:7c12895b777bcaa8ccae0605b4de635b68fc32d60fa08f421dc3818bf55ee212",
+      "size": 188,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:990a9c434e5e0f11549a8d4a41a1991e621b04e30cd63269adbc97b1dc38fd7e",
+      "size": 12481,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:b839dfae01f66e15c6a8b63520557ed315bdfe036342fa7a0c537259f10d7a9a",
+      "size": 351,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:bf7a4185f01524837d19abde915ffde84e64368b250f5b5e9f6f75aea62a11d4",
+      "size": 29005,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:dcaa5a89b0ccda4b283e16d0b4d0891cd93d5fe05c6798f7806781a6a2d84354",
+      "size": 314,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    },
+    {
+      "digest": "sha256:dd64bf2dd177757451a98fcdc999a339c35dee5d9872d8f4dc69c8f3c4dd0112",
+      "size": 80,
+      "imageCount": 2,
+      "images": [
+        "gcr.io/distroless/java21-debian12:latest",
+        "gcr.io/distroless/static-debian12:latest"
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "consumerId": "static",
+      "consumerRef": "cgr.dev/chainguard/static:latest",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions"
+      ]
+    },
+    {
+      "consumerId": "alpine-3-20",
+      "consumerRef": "docker.io/library/alpine:3.20",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available"
+      ]
+    },
+    {
+      "consumerId": "hello-world",
+      "consumerRef": "docker.io/library/hello-world:latest",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available"
+      ]
+    },
+    {
+      "consumerId": "nginx-1-27",
+      "consumerRef": "docker.io/library/nginx:1.27",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions"
+      ]
+    },
+    {
+      "consumerId": "node-20-slim",
+      "consumerRef": "docker.io/library/node:20-slim",
+      "reasons": [
+        "no base relationship detected against 16 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available"
+      ]
+    },
+    {
+      "consumerId": "node-22-alpine",
+      "consumerRef": "docker.io/library/node:22-alpine",
+      "reasons": [
+        "no base relationship detected against 16 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 1 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "postgres-16",
+      "consumerRef": "docker.io/library/postgres:16",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 1 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "python-3-11-slim",
+      "consumerRef": "docker.io/library/python:3.11-slim",
+      "reasons": [
+        "no base relationship detected against 15 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 1 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "python-3-12-alpine",
+      "consumerRef": "docker.io/library/python:3.12-alpine",
+      "reasons": [
+        "no base relationship detected against 15 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 1 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "python-3-12-slim",
+      "consumerRef": "docker.io/library/python:3.12-slim",
+      "reasons": [
+        "no base relationship detected against 15 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 1 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "redis-7-alpine",
+      "consumerRef": "docker.io/library/redis:7-alpine",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available"
+      ]
+    },
+    {
+      "consumerId": "run-jammy-base",
+      "consumerRef": "docker.io/paketobuildpacks/run-jammy-base:latest",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions"
+      ]
+    },
+    {
+      "consumerId": "java21-debian12",
+      "consumerRef": "gcr.io/distroless/java21-debian12:latest",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 9 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    },
+    {
+      "consumerId": "static-debian12",
+      "consumerRef": "gcr.io/distroless/static-debian12:latest",
+      "reasons": [
+        "no base relationship detected against 18 observed base versions",
+        "image declares no labels, so no org.opencontainers.image.base.* or buildpacks metadata was available",
+        "shares 9 layer(s) with other observed images but sits on none of them as a base; builders that distribute content across layers rather than stacking a base (Nix dockerTools.buildLayeredImage, for one) produce this shape — see the shared-layer blast radius"
+      ]
+    }
+  ],
+  "warnings": []
+}

@@ -1,13 +1,11 @@
 package commands
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -16,12 +14,12 @@ import (
 // the tests stay valid regardless of which lines DefaultConfig selects.
 const reporootSentinel = "python3.14"
 
-// writeFleetConfigWithoutSentinel writes a fleet config whose matrix is the
+// writeConfigWithoutSentinel writes a fleet config whose matrix is the
 // default minus reporootSentinel, so adding the sentinel is always a real
 // mutation of that file.
-func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
+func writeConfigWithoutSentinel(t *testing.T, dir string) string {
 	t.Helper()
-	cfg := fleet.DefaultConfig("acme", "platform")
+	cfg := config.DefaultConfig("acme", "platform")
 	languages := make([]string, 0, len(cfg.Matrix.Languages))
 	for _, lang := range cfg.Matrix.Languages {
 		if lang != reporootSentinel {
@@ -29,17 +27,17 @@ func writeFleetConfigWithoutSentinel(t *testing.T, dir string) string {
 		}
 	}
 	cfg.Matrix.Languages = languages
-	path := filepath.Join(dir, "clearcutt.fleet.yaml")
-	writeFleetConfigStruct(t, path, cfg)
+	path := filepath.Join(dir, config.DefaultConfigPath)
+	writeConfigStruct(t, path, cfg)
 	return path
 }
 
-// fakeRepo builds a temp checkout with clearcutt.fleet.yaml at its root (the
+// fakeRepo builds a temp checkout with a ClearCutt config at its root (the
 // repo marker) plus a nested subdirectory mimicking running from cli/internal.
 func fakeRepo(t *testing.T) (root, subdir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFleetConfigWithoutSentinel(t, root)
+	writeConfigWithoutSentinel(t, root)
 	subdir = filepath.Join(root, "cli", "internal")
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatalf("create subdir: %v", err)
@@ -75,70 +73,13 @@ func TestFindRepoRootWalksUpToFleetConfigMarker(t *testing.T) {
 	}
 }
 
-func TestMatrixAddDefaultFleetConfigLandsAtRepoRoot(t *testing.T) {
-	root, subdir := fakeRepo(t)
-	t.Chdir(subdir)
-
-	// The fixture config omits the sentinel, so this add must mutate a file.
-	stdout, err := runCLI(t, "matrix", "add", reporootSentinel)
-	if err != nil {
-		t.Fatalf("matrix add from subdir failed: %v\n%s", err, stdout)
-	}
-
-	raw, err := os.ReadFile(filepath.Join(root, "clearcutt.fleet.yaml"))
-	if err != nil {
-		t.Fatalf("read root fleet config: %v", err)
-	}
-	if !strings.Contains(string(raw), reporootSentinel) {
-		t.Fatalf("root fleet config missing %s:\n%s", reporootSentinel, raw)
-	}
-	if _, err := os.Stat(filepath.Join(subdir, "clearcutt.fleet.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("matrix add scattered a stray fleet config under %s (stat err=%v)", subdir, err)
-	}
-}
-
-func TestExplicitRelativeFlagKeepsCwdMeaning(t *testing.T) {
-	root, subdir := fakeRepo(t)
-	local := filepath.Join(subdir, "custom.fleet.yaml")
-	if err := os.Rename(writeFleetConfigWithoutSentinel(t, t.TempDir()), local); err != nil {
-		t.Fatalf("place local fleet config: %v", err)
-	}
-	t.Chdir(subdir)
-
-	rootPath := filepath.Join(root, "clearcutt.fleet.yaml")
-	rootBefore, err := os.ReadFile(rootPath)
-	if err != nil {
-		t.Fatalf("read root fleet config: %v", err)
-	}
-
-	stdout, err := runCLI(t, "matrix", "add", reporootSentinel, "--fleet-config", "custom.fleet.yaml")
-	if err != nil {
-		t.Fatalf("matrix add with explicit config failed: %v\n%s", err, stdout)
-	}
-
-	raw, err := os.ReadFile(local)
-	if err != nil {
-		t.Fatalf("read explicit fleet config: %v", err)
-	}
-	if !strings.Contains(string(raw), reporootSentinel) {
-		t.Fatalf("explicit cwd-relative fleet config was not updated:\n%s", raw)
-	}
-	rootAfter, err := os.ReadFile(rootPath)
-	if err != nil {
-		t.Fatalf("read root fleet config: %v", err)
-	}
-	if !bytes.Equal(rootBefore, rootAfter) {
-		t.Fatalf("explicit --fleet-config must not redirect writes to the repo root")
-	}
-}
-
 func TestResolveRepoRootDefaultGuards(t *testing.T) {
 	root, subdir := fakeRepo(t)
 	t.Chdir(subdir)
 
 	abs := filepath.Join(root, "pinned.yaml")
 	empty := ""
-	rel := "clearcutt.fleet.yaml"
+	rel := config.DefaultConfigPath
 	cmd := &cobra.Command{Use: "guard"}
 	cmd.Flags().StringVar(&abs, "abs", abs, "")
 	cmd.Flags().StringVar(&empty, "empty", empty, "")
@@ -164,5 +105,18 @@ func TestResolveRepoRootDefaultGuards(t *testing.T) {
 	resolveRepoRootDefault(cmd, "rel", &rel)
 	if !samePath(t, filepath.Dir(rel), root) {
 		t.Fatalf("relative default %q did not land at repo root %q", rel, root)
+	}
+}
+
+// writeConfigStruct writes a config to an exact PATH (not a directory),
+// which is what repo-root detection uses as its marker.
+func writeConfigStruct(t *testing.T, path string, cfg config.Config) {
+	t.Helper()
+	raw, err := config.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

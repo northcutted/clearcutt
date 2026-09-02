@@ -1,33 +1,33 @@
 {
-  "$comment": "Canonical version + lifecycle policy for ClearCutt runtime lines. EDIT THIS FILE (core/lib/version-policy.json); cli/internal/versionpolicy/version-policy.json is a byte-identical mirror embedded in the CLI binary and enforced by TestVersionPolicyMirrorMatchesCanonical. Channels: lts/current are production-eligible (status=active); preview is opt-in (status=preview, only via --allow-preview); experimental marks toolchain lines (status=experimental, support=unsupported). omitInProduction marks toolchain languages whose runtime is not shipped in production tiers (mirrors registry.nix) and are therefore never productionAllowed. This is the single source of truth for runtime-line classification; the Nix flake reads it starting in the fleet-compilation work.",
+  "$comment": "Canonical version + lifecycle policy for ClearCutt runtime lines. EDIT THIS FILE (core/lib/version-policy.json); cli/internal/versionpolicy/version-policy.json is a byte-identical mirror embedded in the CLI binary and enforced by TestVersionPolicyMirrorMatchesCanonical. Channels: lts/current are production-eligible (status=active); preview is opt-in (status=preview, only via --allow-preview); experimental marks toolchain lines (status=experimental, support=unsupported). omitInProduction marks toolchain languages whose runtime is not shipped in production tiers (mirrors registry.nix) and are therefore never productionAllowed. This is the single source of truth for runtime-line classification. Every language listed here must have a matching recipe in core/lib/registry.nix.",
   "schemaVersion": 1,
   "languages": {
-    "core": {
-      "versions": { "LTS": "lts" }
-    },
     "java": {
-      "versions": { "21": "lts", "25": "preview" }
+      "versions": {
+        "21": "lts",
+        "25": "lts"
+      }
     },
     "node": {
-      "versions": { "22": "lts", "24": "preview" }
+      "versions": {
+        "22": "lts",
+        "24": "lts",
+        "26": "preview"
+      }
     },
     "python": {
-      "versions": { "3.13": "current", "3.14": "lts" }
-    },
-    "dotnet": {
-      "versions": { "8": "lts", "10": "preview" }
+      "versions": {
+        "3.13": "current",
+        "3.14": "lts"
+      }
     },
     "go": {
       "omitInProduction": true,
-      "versions": { "1.25": "experimental", "1.26": "lts" }
-    },
-    "rust": {
-      "omitInProduction": true,
-      "versions": { "1.95": "experimental" }
-    },
-    "cc": {
-      "omitInProduction": true,
-      "versions": { "15": "experimental" }
+      "versions": {
+        "1.25": "experimental",
+        "1.26": "lts",
+        "1.27": "current"
+      }
     }
   }
 }

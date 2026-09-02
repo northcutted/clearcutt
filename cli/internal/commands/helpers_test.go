@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bytes"
+	"github.com/northcutted/clearcutt/internal/config"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -34,3 +36,28 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 	err := cmd.Execute()
 	return buf.String(), err
 }
+
+// writeExecutable writes a file with the executable bit set. Tests use it to stand
+// up fake tools on PATH.
+func writeExecutable(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeConfig writes the default config into dir and returns its path.
+func writeConfig(t *testing.T, dir string) string {
+	t.Helper()
+	raw, err := config.Marshal(config.DefaultConfig("acme", "platform"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, config.DefaultConfigPath)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func stringPtr(v string) *string { return &v }

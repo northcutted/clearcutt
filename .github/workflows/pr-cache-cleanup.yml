@@ -1,6 +1,6 @@
 # Purge PR-scoped Nix caches when the PR closes.
 #
-# pr-gate.yml and e2e-runtimes.yml key their Nix store caches with a
+# pr-gate.yml keys its Nix store cache with a
 # nix-pr-<number>- prefix so repeated pushes to one PR reuse that PR's own
 # heavyweight builds. Those entries are only useful while the PR is open, and
 # they are large (multi-GB per language/tier leg) against the repository's

@@ -1,0 +1,614 @@
+apiVersion: clearcutt.dev/v1
+generatedAt: "2026-08-31T00:00:00Z"
+images:
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: alpine-3-20
+  image: docker.io/library/alpine:3.20
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/alpine:3.20
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: debian-bookworm-slim
+  image: docker.io/library/debian:bookworm-slim
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/debian:bookworm-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: hello-world
+  image: docker.io/library/hello-world:latest
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/hello-world:latest
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: java21-debian12
+  image: gcr.io/distroless/java21-debian12:latest
+  language:
+    displayName: Java
+    id: java
+    version: "21"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: gcr.io/distroless/java21-debian12:latest
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: medium
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: nginx
+  image: docker.io/bitnami/nginx:latest
+  language:
+    displayName: Nginx
+    id: nginx
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/bitnami/nginx:latest
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: nginx-1-27
+  image: docker.io/library/nginx:1.27
+  language:
+    displayName: Nginx
+    id: nginx
+    version: "1.27"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/nginx:1.27
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: node-20-slim
+  image: docker.io/library/node:20-slim
+  language:
+    displayName: Node.js
+    id: node
+    version: "20"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/node:20-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: node-22-alpine
+  image: docker.io/library/node:22-alpine
+  language:
+    displayName: Node.js
+    id: node
+    version: "22"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/node:22-alpine
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: node-22-slim
+  image: docker.io/library/node:22-slim
+  language:
+    displayName: Node.js
+    id: node
+    version: "22"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/node:22-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: photon-5-0
+  image: docker.io/library/photon:5.0
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/photon:5.0
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: postgres-16
+  image: docker.io/library/postgres:16
+  language:
+    displayName: Postgres
+    id: postgres
+    version: "16"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/postgres:16
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: python-3-11-slim
+  image: docker.io/library/python:3.11-slim
+  language:
+    displayName: Python
+    id: python
+    version: "3.11"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.11-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: python-3-12-alpine
+  image: docker.io/library/python:3.12-alpine
+  language:
+    displayName: Python
+    id: python
+    version: "3.12"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.12-alpine
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: python-3-12-slim
+  image: docker.io/library/python:3.12-slim
+  language:
+    displayName: Python
+    id: python
+    version: "3.12"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.12-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: python-3-12-slim-bookworm
+  image: docker.io/library/python:3.12-slim-bookworm
+  language:
+    displayName: Python
+    id: python
+    version: "3.12"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.12-slim-bookworm
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: redis-7-alpine
+  image: docker.io/library/redis:7-alpine
+  language:
+    displayName: Valkey/Redis
+    id: valkey
+    version: "7"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/redis:7-alpine
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: run-jammy-base
+  image: docker.io/paketobuildpacks/run-jammy-base:latest
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/paketobuildpacks/run-jammy-base:latest
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: static
+  image: cgr.dev/chainguard/static:latest
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: cgr.dev/chainguard/static:latest
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: public-estate
+    productionIntent: unknown
+  id: static-debian12
+  image: gcr.io/distroless/static-debian12:latest
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-08-31T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: gcr.io/distroless/static-debian12:latest
+  tier: slim
+kind: ImportedFleetInventory
+owner: public-estate
+repo: demo

@@ -1,56 +1,62 @@
 # ClearCutt
 
-**A CLI for bootstrapping GitHub-native container image control planes: catalog,
-release, signing, attestation, policy, and app-team adoption workflows generated
-into your own repo.**
+**Point it at a registry. Find out which images are built on what, how stale
+they are, and what you can actually prove about them.**
 
 [![Live Catalog Site](https://img.shields.io/badge/Live%20Catalog-Site-blueviolet.svg?logo=astro&logoColor=white)](https://northcutted.github.io/clearcutt)
 [![ClearCutt PR Gating](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/northcutted/clearcutt/actions/workflows/pr-gate.yml)
-[![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
-[![SLSA Provenance](https://img.shields.io/badge/SLSA-Provenance-green.svg)](https://slsa.dev)
 [![Cosign Signed](https://img.shields.io/badge/Sigstore-Cosign%20Signed-orange.svg)](https://sigstore.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-ClearCutt is a free, open-source CLI for teams that want to own their container
-image supply chain in a GitHub-native, git-based control-plane repository. Use
-the CLI to generate the repo that owns catalog inputs, workflows, static
-evidence portal publishing, CI/CD gates, admission policy examples, app-team
-templates, release/signing/attestation paths, and remediation workflows under
-**your** registry, GitHub Actions OIDC identities, and review process.
+ClearCutt is a free, open-source CLI for governing container image estates —
+including estates it did not build. It enumerates a registry, works out which
+images are layered on which, measures how far each consumer has drifted from its
+base, reports what the estate has in common, and produces an auditable inventory
+that is honest about what it cannot prove.
 
-ClearCutt can govern image fleets it did not build. Start by importing existing
-OCI images into a catalog, then add evidence, policy, app onboarding, and rebase
-planning over time. If you later want full provenance and reproducible rebuilds,
-graduate to a ClearCutt-operated fleet.
-
-There is no hosted ClearCutt control plane. The generated repository is the
-control plane: it owns configuration, builds or imported image inventory,
-evidence, catalog, policies, and operational burden. The upstream
-`northcutted/clearcutt` repository remains the CLI and reference implementation
-source; direct forks remain an advanced/backward-compatible path.
+There is no hosted control plane and no image feed to subscribe to. ClearCutt
+reads registries you already have and writes files you own.
 
 ![Terminal demo of fixture-backed ClearCutt catalog inspection, image verification, app template generation, and catalog site build](docs/images/demo.gif)
 
-## What It Is
+## What It Does
 
-ClearCutt is best understood as a **CLI that bootstraps user-owned container
-image control planes**, not a hosted product. It provides the pieces a platform
-team can render, configure, run, inspect, and adapt:
-
-| Surface | What it does today | Owner |
+| | Command | Question it answers |
 | --- | --- | --- |
-| Catalog-only control plane | Generates a lightweight Nix-free repo around either `images.yaml` or selected evidence from another repository's GitHub releases, with validation and static site publishing. | Platform team |
-| Runtime base images | Publishes language runtime images in `dev`, `slim`, and `distroless` tiers. | Platform team |
-| Service images | Publishes platform-owned service images such as Postgres, Valkey, and oauth2-proxy. | Platform team |
-| Catalog and portal | Reports image metadata, evidence channels, vulnerability scans, tests, and missing data. | Platform team |
-| App path | Gives app teams templates, devcontainers, local certification, app build, and rebase examples. | App teams |
-| Trust controls | Provides signing, SBOM, provenance, policy, exception, VEX, and remediation examples. | Platform and security teams |
+| **Discover** | `registry scan` | What is actually published under this namespace? |
+| **Map** | `graph build` | Which images are built on which, and how stale is each one? |
+| **Compare** | `graph layers` | What does the fleet have in common, and what would a fix reach? |
+| **Assess** | `import observe` → `import assess` | What evidence exists per image, and what is missing? |
+| **Gate** | `verify`, `certify`, `policy` | Does this image meet policy, at CI and at admission? |
+| **Publish** | `catalog build`, `catalog site build` | A static evidence portal anyone can read. |
 
-Nix is the backend build engine for platform-owned images. App teams consume the
-fleet with Docker, Podman, Kubernetes, Cosign, and the ClearCutt CLI; they do
-not need to learn Nix.
+None of that requires ClearCutt to have built the image, or requires anyone to
+adopt Nix, buildpacks, or a particular Dockerfile.
 
-![ClearCutt supply chain flow: Nix store base builds feed OIDC-based signing and attestation, whose evidence is checked by Kubernetes admission policy at deploy time](docs/images/supply-chain-flow.svg)
+### It says what it cannot prove
+
+The distinguishing behaviour is refusal to overclaim. A base relationship found
+by comparing layer digests is reported as **proof**; one read from an
+`org.opencontainers.image.base.digest` label is reported as a **claim its author
+made**, and a self-reported label never outranks layer evidence. Imported images
+never gain provenance they did not come with. Images whose base cannot be
+determined are listed as findings, with the reason.
+
+## ClearCutt Builds No Images
+
+ClearCutt governs estates; it does not produce them. There is no image feed to
+subscribe to, no base images to adopt, and nothing to migrate onto.
+
+That is deliberate. Hardened base images are a solved and competitive market —
+Docker Hardened Images went free and Apache-2.0 in December 2025, and Chainguard
+publishes thousands. What none of them tells you is what is actually in *your*
+registry, what it is built on, and what you can prove about it. That is the layer
+ClearCutt works at. If you want a hardened image feed, use one of the
+[alternatives](docs/alternatives.md).
+
+Because ClearCutt builds nothing, it works the same on images from anywhere:
+Debian- or Alpine-based, Wolfi, Nix, buildpacks, or something you assembled
+yourself. It reports how each was built and picks the analysis that fits.
 
 ## First Proof From A Clean Clone
 
@@ -76,6 +82,93 @@ smoke tests, lifecycle status, and vulnerability thresholds. Use
 `verify release-evidence`, Cosign, GitHub attestations, and SLSA verification
 when you need registry-side cryptographic proof for a published OCI ref.
 
+## Point It At A Registry
+
+The clean-clone commands above read a committed fixture. This reads a real
+registry. Every step is read-only: it lists tags and reads manifests and image
+configs, and writes local files. Nothing is pulled, mutated, or published.
+
+```bash
+go -C cli build -o ../clearcutt ./cmd/clearcutt
+
+# 1. Ask the registry what it holds. Registries without a _catalog endpoint
+#    (GHCR, Docker Hub) need --repository, which repeats.
+export GHCR_TOKEN=$(gh auth token)
+./clearcutt registry scan \
+  --registry ghcr.io --namespace YOUR_ORG/YOUR_REPO \
+  --repository YOUR_BASE_IMAGE --repository YOUR_APP_IMAGE \
+  --username YOUR_USER --password-env GHCR_TOKEN \
+  --output dist/scan/images.yaml
+
+# 2. Read each image's manifest, config, layers, and labels.
+./clearcutt import observe \
+  --images dist/scan/images.yaml --output dist/scan/observations.json
+
+# 3. Work out which images are built on which, and how stale each one is.
+./clearcutt graph build \
+  --observations dist/scan/observations.json \
+  --output dist/scan/graph.json --report dist/scan/inventory.md
+
+# 4. Report what the estate has in common, with a diagram.
+./clearcutt graph layers \
+  --observations dist/scan/observations.json \
+  --output dist/scan/layers.json --report dist/scan/commonality.md
+```
+
+`graph build` writes an auditable inventory: base families, which consumers sit
+on which version, how many versions and days behind each one is, and how every
+relationship was established. `graph layers` answers the remediation question —
+if a layer carries a vulnerable package, which images ship it.
+
+Both can gate CI. `graph build --min-confidence verified --fail-on-stale` exits
+2 when anything is on a stale base, and still writes the report.
+
+Pass the results to the site builder to publish them as pages — `/estate` and
+`/estate/layers` — with `catalog site build --graph … --layers …`.
+
+See [registry scan and the base image graph](docs/registry-graph.md).
+
+### Which images ship a vulnerable package
+
+`graph packages` answers the question an advisory actually raises. For estates
+built by Nix `dockerTools` it costs **no extra requests at all**: the package set
+with exact versions is already in the image config that step 2 fetched.
+
+```bash
+./clearcutt graph packages --observations dist/scan/observations.json --package openssl
+```
+
+```
+openssl  3.6.2      259 images
+openssl  3.6.2-bin   66 images
+  → then names every one of them
+```
+
+Builders that record no package set need an SBOM, which has to be fetched.
+That is opt-in via `--fetch-sboms`, and the command prints how many requests it
+will make — and what deduplication saves — before making them.
+
+### Keep the answers, and show they improved
+
+Snapshots persist as OCI artifacts in the registry the images already live in,
+so there is no database to run and evidence travels with a mirror.
+
+```bash
+./clearcutt estate push ghcr.io/acme/estate:$(date +%F) \
+  --dir dist/scan --history ghcr.io/acme/estate:history
+
+./clearcutt estate history ghcr.io/acme/estate:history
+```
+
+The history is an OCI index whose entries carry each run's metrics as
+annotations, so reading a trend costs one request no matter how long the series
+gets. `evidence attach` stores SBOMs, scans and provenance against the image
+digest they describe, and `evidence export` copies them somewhere with its own
+retention guarantees — registry lifecycle rules can delete attachments.
+
+See [registry-native evidence](docs/registry-native-evidence.md) for the
+garbage-collection and tag-mutability constraints that come with this.
+
 ## Install
 
 Each release publishes cross-compiled CLI binaries named
@@ -98,7 +191,7 @@ chmod +x clearcutt-darwin-arm64
 ```
 
 The certificate identity is the release workflow pinned to `refs/heads/main` —
-the same identity recorded in `clearcutt.fleet.yaml` and matched exactly by
+the same identity recorded in `clearcutt.yaml` and matched exactly by
 `clearcutt verify release-evidence`. From a repo clone, the verified binary
 runs the same fixture-backed first proof as above:
 
@@ -113,9 +206,10 @@ Building from source stays the contributor path; see
 
 | Role | First document | First useful command |
 | --- | --- | --- |
+| Estate owner | [Registry scan and the base image graph](docs/registry-graph.md) | `go -C cli run ./cmd/clearcutt registry scan --registry ghcr.io --namespace YOUR_ORG/YOUR_REPO --repository YOUR_IMAGE --output /tmp/images.yaml` |
 | App developer | [Getting started](docs/getting-started.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog inspect java21-distroless` |
 | Imported fleet owner | [Imported fleets](docs/imported-fleets.md) | `go -C cli run ./cmd/clearcutt import images --refs ../examples/imported-fleet/refs.txt --output /tmp/clearcutt-import/images.yaml --force` |
-| Platform owner | [Platform bootstrap](docs/platform-kit.md) | `go -C cli run ./cmd/clearcutt platform bootstrap github --profile catalog-only --owner YOUR_ORG --repo image-platform --registry-base ghcr.io/YOUR_ORG/image-platform --dir ./image-platform --dry-run --force` |
+| Estate owner | [Registry scan and the base image graph](docs/registry-graph.md) | `go -C cli run ./cmd/clearcutt registry scan --registry ghcr.io --namespace YOUR_ORG/YOUR_REPO --repository YOUR_IMAGE --output /tmp/images.yaml` |
 | Security or auditor | [Trust evidence walkthrough](docs/trust/evidence-walkthrough.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image java21-distroless --require-signature --require-sbom --require-provenance --allow-preview` |
 | Engineering manager | [Alternatives and fit](docs/alternatives.md) | `sed -n '1,120p' docs/alternatives.md` |
 | Open-source evaluator | [Demo path](docs/demo.md) | `go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog list` |
@@ -135,31 +229,6 @@ cat /tmp/clearcutt-import-demo/imported-fleet-report.md
 ClearCutt can govern imported images without trusting them by default. It
 records what can be observed, preserves missing evidence, and only treats
 provenance as verified when actual provenance evidence exists.
-
-To prove the two-repository operating model without copying this source tree,
-render a release-backed control plane that consumes selected evidence from the
-ClearCutt release repository:
-
-```bash
-go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-demo \
-  --profile catalog-only \
-  --catalog-source github-release \
-  --catalog-source-repo northcutted/clearcutt \
-  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
-  --catalog-release-limit 1 \
-  --owner northcutted \
-  --repo clearcutt-demo \
-  --registry-base ghcr.io/northcutted/clearcutt \
-  --visibility public \
-  --pages
-
-./scripts/test-generated-release-control-plane.sh
-```
-
-The generated repository contains workflows, desired state, operator docs, and
-site configuration, but no `cli/`, `core/`, `site/`, or Nix source. Creating a
-remote repository remains an explicit `platform bootstrap github --apply
---confirm` action.
 
 The full documentation index is [docs/README.md](docs/README.md).
 
@@ -194,30 +263,37 @@ from ignored local site data.
   non-claims.
 - [Policy bundles](docs/policy-bundles.md) covers Kyverno and Gatekeeper policy
   generation.
-- [Fork validation](docs/fork-validation.md) lists checks to run before an advanced fork's
-  first release.
 
 ## Repo Layout
 
 | Workspace | Purpose |
 | --- | --- |
-| `core/` | Nix image factory, runtime overlays, release pipeline, scans, and conformance tests. |
 | `cli/` | Go governance CLI and tests. |
 | `site/` | Astro catalog portal and generated-site template source. |
 | `docs/` | Role-routed documentation, trust walkthroughs, and operating guides. |
-| `examples/` | App templates, deployment manifests, policy examples, and overlays. |
-| `.github/` | Release, catalog, Pages, remediation, PR, and rebase workflows. |
+| `examples/` | A real public-estate snapshot, deployment manifests, and policy examples. |
+| `.github/` | CLI release, catalog/Pages, and PR gate workflows. |
 
 ## Boundaries
 
-ClearCutt is pre-1.0 and intentionally conservative in its claims. The reference
-repo demonstrates a production-oriented blueprint, but fork owners must operate
-their own registry, workflow identities, release approvals, catalog data,
-admission policies, exception process, and remediation defaults.
+ClearCutt is pre-1.0 and intentionally conservative in its claims.
 
-Use ClearCutt when owning the full image supply chain is the point. Do not use
-it when you primarily want a vendor SLA, hosted control plane, fully managed
-patch stream, or FIPS/STIG certification out of the box.
+**It reports and gates. It does not patch.** ClearCutt will tell you an image is
+on a stale base, is missing a signature, or ships a layer with a known CVE. It
+will not rebuild, re-tag, or mutate a published image to fix that. `app rebase`
+prepares and proves a base swap; publishing it stays a human decision.
+
+**Currency is measured against what a scan observed**, not against upstream. A
+base family that is itself out of date will still report its consumers current.
+
+**The reference fleet is a fixture.** It is built from a nixpkgs pin that moves
+when someone merges the update PR. Do not run it in production, and do not read
+its single runtime line as a supported image feed.
+
+Use ClearCutt when you need to know what is in your registry and prove things
+about it. Do not use it when you primarily want a vendor SLA, a hosted control
+plane, a managed patch stream, or FIPS/STIG certification out of the box — see
+[alternatives and fit](docs/alternatives.md).
 
 ## Security
 

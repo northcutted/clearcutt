@@ -1,5 +1,13 @@
 # Vulnerability Exceptions & OpenVEX Compliance
 
+> **Two different mechanisms, two different claims.** `exceptions.yaml` is the
+> consumer-side waiver against `verify image` thresholds for *your application
+> image*. `core/vulnerability-acceptances.yaml` is the platform-side, expiring
+> acceptance the *build gate* consults when a base image ships a real finding
+> with no reachable fix. Neither is a VEX `not_affected` claim, which asserts the
+> vulnerability does not apply at all — see [security-model.md](security-model.md).
+
+
 This document explains how the ClearCutt platform manages vulnerability exceptions and dynamically exports standard-compliant OpenVEX documents.
 
 ---
@@ -19,7 +27,7 @@ ClearCutt implements an explicit, schema-validated exception model:
   - An owner and detailed remediation reasoning (`reason`).
   - Cryptographic references if status is `accepted_risk`.
 
-`exceptions.yaml` is the **consumer-side** control, distinct from the platform's own CVE route decisions, which live as evidence under `core/overlays/cve/` — overlay and ignore evidence sidecars plus their optional `triage` blocks, produced by `clearcutt remediation triage` ([design](analysis/cve-triage-design.md)). Use a platform-side triage decision when you own the fleet and are choosing how a finding in a shipped base image gets fixed, carried, or waited out; use `exceptions.yaml` when you consume a ClearCutt base and need a scoped, expiring waiver against `verify image` thresholds for your own application image.
+`exceptions.yaml` is the **consumer-side** control: a scoped, expiring waiver against `verify image` thresholds for your own application image. It is now the only exception mechanism ClearCutt ships. The platform-side CVE route decisions that used to sit alongside it — overlay and ignore evidence under `core/overlays/cve/`, produced by `clearcutt remediation triage` — were removed with the remediation subsystem ([decision 6](decisions.md)).
 
 ---
 

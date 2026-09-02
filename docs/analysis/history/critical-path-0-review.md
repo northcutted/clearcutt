@@ -125,7 +125,7 @@ Additional source-current checks run for this audit:
 | `/tmp/clearcutt-critical-path-0-current --catalog cli/internal/testdata/mixed-catalog catalog validate` | pass | 2 image records validated. |
 | `/tmp/clearcutt-critical-path-0-current catalog site build --catalog cli/internal/testdata/mixed-catalog --output /tmp/clearcutt-critical-path-0-current-service-demo --install --clean` | pass | Current-source mixed fixture site build succeeded; 10 pages built. |
 
-Not run in the worktree because this audit was explicitly no-modification: first-path examples that write `examples/`, `dist/`, `clearcutt.fleet.yaml`, generated Nix files, or user config, or that start Docker/Nix-backed flows. Their CLI command paths were checked against help.
+Not run in the worktree because this audit was explicitly no-modification: first-path examples that write `examples/`, `dist/`, `clearcutt.yaml`, generated Nix files, or user config, or that start Docker/Nix-backed flows. Their CLI command paths were checked against help.
 
 ## Documented CLI Help Check
 

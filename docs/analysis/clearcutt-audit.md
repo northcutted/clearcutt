@@ -4,7 +4,7 @@ Date: 2026-06-30
 
 ## Executive readout
 
-ClearCutt is already a serious platform-engineering project, not a toy demo. The core pieces are present: a Go CLI with fleet, catalog, verification, app, remediation, policy, and release commands; a config-driven image matrix in `clearcutt.fleet.yaml`; GitHub Actions workflows that mostly delegate mechanics to `./clearcutt`; a generated catalog site; app templates and app rebase flows; and registry-side evidence verification for signatures, SBOMs, test attestations, and SLSA provenance.
+ClearCutt is already a serious platform-engineering project, not a toy demo. The core pieces are present: a Go CLI with fleet, catalog, verification, app, remediation, policy, and release commands; a config-driven image matrix in `clearcutt.yaml`; GitHub Actions workflows that mostly delegate mechanics to `./clearcutt`; a generated catalog site; app templates and app rebase flows; and registry-side evidence verification for signatures, SBOMs, test attestations, and SLSA provenance.
 
 The strongest product direction is to pivot from "fork this monorepo" to "download a signed `clearcutt` CLI, point it at or scaffold a GitHub repo, and let it create and operate a golden image fleet." That is directionally right. The repo even has a proposed plan for this in `docs/analysis/cli-pivot-plan.md`.
 
@@ -13,7 +13,7 @@ The current release-ready claim should be conservative: ClearCutt provides a GHC
 ## Strongest parts
 
 - The CLI surface is broad and coherent. `go -C cli run ./cmd/clearcutt --help` shows platform kit, catalog/release evidence, app workflow, governance gates, and security operations grouped in a way that matches the product thesis.
-- `clearcutt.fleet.yaml` is a real public contract for registry identity, runtime/service matrix, release identity, SLSA builder, admission defaults, remediation policy, and site branding.
+- `clearcutt.yaml` is a real public contract for registry identity, runtime/service matrix, release identity, SLSA builder, admission defaults, remediation policy, and site branding.
 - `.github/workflows/release.yml` is mostly a thin orchestrator around `./clearcutt fleet ...`, with GitHub Actions supplying OIDC, permissions, matrix execution, artifacts, and reusable SLSA provenance.
 - `verify release-evidence` is a real registry-side gate, distinct from `verify image`, which is correctly documented as a catalog policy gate.
 - The app path is stronger than expected: `app build`, `app diff-base`, `app rebase`, offline `certify`, generated templates, and registry-side signature/provenance guidance are all present.
@@ -58,7 +58,7 @@ The current release-ready claim should be conservative: ClearCutt provides a GHC
 |---|---|---|---|---|---|
 | Platform fleet scaffold | README, docs/platform-kit.md, `platform new`, `platform doctor --github`, `.github/actions/install-clearcutt` | Strong repo layout, workflows, config, docs, checkout/archive/embedded scaffold, GitHub preflight, verified released-CLI install path | Native publish/remediation engines are still not fully Go-owned | Setup friction | Continue porting publish/remediation internals behind the CLI |
 | CLI-first fleet operations | CLI help, fleet command, release workflow | Many release jobs call `./clearcutt fleet ...` | Native Go publish path not default | CLI is not fully self-contained | Finish native Go publish/remediation ports |
-| SLSA Build L3 evidence | release.yml, clearcutt.fleet.yaml, docs | Uses SLSA generator and verification | Actions-owned and GitHub-specific | Overbroad SLSA claim | Phrase as configured GitHub release workflow evidence |
+| SLSA Build L3 evidence | release.yml, clearcutt.yaml, docs | Uses SLSA generator and verification | Actions-owned and GitHub-specific | Overbroad SLSA claim | Phrase as configured GitHub release workflow evidence |
 | Registry can be swapped | docs/registry-swap.md, fleet config | Host now comes from fleet config for release/catalog/default rebase; auth knobs exist | ECR/GAR caveats and second-registry proof remain | Swap looks easier than it is | Keep support tiers and add proven second-registry tests |
 | Catalog is customizable | site config, catalog site CLI | Branding/nav/persona/site config exist | No realistic branded example | Abstract customization | Add example `clearcutt.site.yaml` |
 | Zero-touch patching | Product aspiration, remediation workflows | Scan/plan/report, optional scheduled deterministic draft PRs, manual AI-assisted drafting, and aggregate PR update exist | Human-gated; deterministic authoring still partly Python; LLM optional and immature | Automation overclaim | Call it approved remediation PR drafting |

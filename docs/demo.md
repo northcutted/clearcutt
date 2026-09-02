@@ -32,20 +32,6 @@ go -C cli run ./cmd/clearcutt --catalog internal/testdata/catalog verify image j
 Expected readout: the CLI can list, inspect, and gate catalog data without
 generated artifacts.
 
-## 3. App-Team Path
-
-```bash
-go -C cli run ./cmd/clearcutt app template java \
-  --fleet-config ../clearcutt.fleet.yaml \
-  --output /tmp/clearcutt-demo-app \
-  --name payments-api \
-  --force
-sed -n '1,120p' /tmp/clearcutt-demo-app/README.md
-```
-
-Expected readout: the generated app contains a Dockerfile, devcontainer,
-certification policy, release workflow, and rebase workflow.
-
 ## 4. Catalog Portal Build
 
 ```bash
@@ -64,33 +50,6 @@ Fixture-backed portal screenshots:
 ![Catalog matrix generated from the mixed fixture catalog](images/catalog-matrix.png)
 
 ![java21-distroless evidence section generated from the mixed fixture catalog](images/java21-distroless-evidence.png)
-
-## 5. Generated Control-Plane Proof
-
-Render the repository that a released CLI can create without copying the
-ClearCutt source tree:
-
-```bash
-go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-control-plane-demo \
-  --profile catalog-only \
-  --catalog-source github-release \
-  --catalog-source-repo northcutted/clearcutt \
-  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
-  --catalog-release-limit 1 \
-  --owner northcutted \
-  --repo clearcutt-demo \
-  --registry-base ghcr.io/northcutted/clearcutt \
-  --visibility public \
-  --pages
-
-./scripts/test-generated-release-control-plane.sh
-```
-
-Expected readout: the generated repository contains control-plane desired
-state, pinned workflows, operator docs, and Pages configuration. It contains no
-`cli/`, `core/`, `site/`, `images.yaml`, or Nix source. The deterministic smoke
-build uses committed evidence fixtures; the public demo workflow later consumes
-real GitHub release evidence.
 
 ## 6. Live Trust Walkthrough
 

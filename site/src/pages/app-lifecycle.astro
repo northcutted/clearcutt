@@ -133,125 +133,33 @@ clearcutt app build \\
   {
     title: 'Go',
     versions: '1.25, 1.26',
-    bases: 'go1.25-* / go1.26-*',
+    bases: 'go1.26-*',
     artifact: 'Linux executable',
     note: 'Mark the embedded binary executable.',
     code: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \\
   go build -trimpath -ldflags="-s -w" \\
   -o dist/payments-api ./cmd/payments-api
 
-export BASE_ID="go1.25-distroless"
-export PATCHED_BASE="${baseRef('go1.25-distroless')}"
+export BASE_ID="go1.26-distroless"
+export PATCHED_BASE="${baseRef('go1.26-distroless')}"
 
 clearcutt app build \\
   --base "$BASE_ID" \\
   --artifact dist/payments-api \\
   --dest /workspace/payments-api \\
   --entrypoint '["/workspace/payments-api"]' \\
-  --executable \\
-  --image "$APP_IMAGE"`
-  },
-  {
-    title: '.NET',
-    versions: '8, 10',
-    bases: 'dotnet8-* / dotnet10-*',
-    artifact: 'Single-file publish',
-    note: 'Use Containerfile + certify when sidecar files are required.',
-    code: `dotnet publish src/Payments.Api/Payments.Api.csproj \\
-  -c Release \\
-  -r linux-x64 \\
-  --self-contained false \\
-  -p:PublishSingleFile=true \\
-  -p:PublishTrimmed=true \\
-  -o out
-
-mkdir -p dist
-cp out/Payments.Api dist/payments-api
-
-export BASE_ID="dotnet8-distroless"
-export PATCHED_BASE="${baseRef('dotnet8-distroless')}"
-
-clearcutt app build \\
-  --base "$BASE_ID" \\
-  --artifact dist/payments-api \\
-  --dest /workspace/payments-api \\
-  --entrypoint '["/workspace/payments-api"]' \\
-  --executable \\
-  --image "$APP_IMAGE"`
-  },
-  {
-    title: 'Rust',
-    versions: '1.95',
-    bases: 'rust1.95-*',
-    artifact: 'Linux executable',
-    note: 'A musl target is the most portable distroless shape.',
-    code: `rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
-mkdir -p dist
-cp target/x86_64-unknown-linux-musl/release/payments-api dist/payments-api
-
-export BASE_ID="rust1.95-distroless"
-export PATCHED_BASE="${baseRef('rust1.95-distroless')}"
-
-clearcutt app build \\
-  --base "$BASE_ID" \\
-  --artifact dist/payments-api \\
-  --dest /workspace/payments-api \\
-  --entrypoint '["/workspace/payments-api"]' \\
-  --executable \\
-  --image "$APP_IMAGE"`
-  },
-  {
-    title: 'C/C++',
-    versions: 'GCC 15',
-    bases: 'cc15-*',
-    artifact: 'Static executable',
-    note: `Use the ${devLabel} tier when you want GCC, CMake, or Ninja in a builder.`,
-    code: `cmake -S . -B build \\
-  -DCMAKE_BUILD_TYPE=Release \\
-  -DCMAKE_EXE_LINKER_FLAGS="-static"
-cmake --build build --target payments-api
-
-export BASE_ID="cc15-distroless"
-export PATCHED_BASE="${baseRef('cc15-distroless')}"
-
-clearcutt app build \\
-  --base "$BASE_ID" \\
-  --artifact build/payments-api \\
-  --dest /workspace/payments-api \\
-  --entrypoint '["/workspace/payments-api"]' \\
-  --executable \\
-  --image "$APP_IMAGE"`
-  },
-  {
-    title: 'Core/static',
-    versions: 'LTS',
-    bases: 'coreLTS-*',
-    artifact: 'Static utility',
-    note: 'Best for already-static binaries that only need CA certificates.',
-    code: `zig cc -target x86_64-linux-musl -O2 -static \\
-  -o dist/worker src/worker.c
-
-export BASE_ID="coreLTS-distroless"
-export PATCHED_BASE="${baseRef('coreLTS-distroless')}"
-
-clearcutt app build \\
-  --base "$BASE_ID" \\
-  --artifact dist/worker \\
-  --dest /workspace/worker \\
-  --entrypoint '["/workspace/worker"]' \\
   --executable \\
   --image "$APP_IMAGE"`
   }
 ];
 ---
-<Base title="Rebasable App Lifecycle" description="End-to-end ClearCutt app build, diff, rebase, signing, and attestation examples for every supported stack.">
+<Base title="Rebasable App Lifecycle" description="End-to-end ClearCutt app build, diff, rebase, signing, and attestation examples for each reference runtime line.">
   <div class="space-y-10">
     <header class="space-y-3 border-b border-ink-800/40 pb-5">
       <p class="text-xs font-bold uppercase tracking-[0.22em] text-accent-soft">Downstream Images</p>
       <h1 class="heading text-3xl font-bold">Rebasable App Lifecycle</h1>
       <p class="max-w-3xl text-xs sm:text-sm text-ink-300">
-        Build one signed application artifact onto a ClearCutt base, compare a patched base, and rebase later from CI without rebuilding the app layer. The examples below cover every supported language family and keep the CLI flow aligned with the repository guide.
+        Build one signed application artifact onto a ClearCutt base, compare a patched base, and rebase later from CI without rebuilding the app layer. The examples below cover each runtime line the reference fleet publishes and keep the CLI flow aligned with the repository guide.
       </p>
     </header>
 

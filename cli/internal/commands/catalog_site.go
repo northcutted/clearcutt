@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/northcutted/clearcutt/internal/catalog"
-	"github.com/northcutted/clearcutt/internal/fleet"
+	"github.com/northcutted/clearcutt/internal/config"
 	"github.com/northcutted/clearcutt/internal/sitetemplate"
 	"github.com/northcutted/clearcutt/internal/sitetemplate/rules"
 	"github.com/spf13/cobra"
@@ -37,6 +37,8 @@ type catalogSiteFlags struct {
 	siteURL      string
 	generateVEX  bool
 	vexDir       string
+	graphFile    string
+	layersFile   string
 	workDir      string
 	host         string
 	port         int
@@ -93,6 +95,8 @@ func newCatalogSiteBuildCmd() *cobra.Command {
 	cmd.Flags().StringVar(&catalogSiteOpts.generatedAt, "generated-at", "", "Override generatedAt timestamp for generated catalog data")
 	cmd.Flags().StringVar(&catalogSiteOpts.output, "output", "", "Static site output directory")
 	cmd.Flags().StringVar(&catalogSiteOpts.template, "template", "", "Astro template directory (defaults to templates/astro-catalog or site)")
+	cmd.Flags().StringVar(&catalogSiteOpts.graphFile, "graph", "", "Optional `clearcutt graph build` JSON to publish as the estate view")
+	cmd.Flags().StringVar(&catalogSiteOpts.layersFile, "layers", "", "Optional `clearcutt graph layers` JSON to publish as the layer commonality view")
 	cmd.Flags().StringVar(&catalogSiteOpts.siteConfig, "site-config", "", "Optional clearcutt.site.yaml to copy into the build workspace")
 	cmd.Flags().StringVar(&catalogSiteOpts.overrides, "overrides", "", "Optional site-overrides directory with components/, pages/, styles/, or public/")
 	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Install generated site dependencies with the detected package manager before building")
@@ -123,6 +127,8 @@ generation workflows.`,
 	cmd.Flags().StringVar(&catalogSiteOpts.template, "template", "", "Astro template directory (defaults to templates/astro-catalog or site)")
 	cmd.Flags().StringVar(&catalogSiteOpts.siteConfig, "site-config", "", "Optional clearcutt.site.yaml to copy into the preview workspace")
 	cmd.Flags().StringVar(&catalogSiteOpts.overrides, "overrides", "", "Optional site-overrides directory with components/, pages/, styles/, or public/")
+	cmd.Flags().StringVar(&catalogSiteOpts.graphFile, "graph", "", "Optional `clearcutt graph build` JSON to publish as the estate view")
+	cmd.Flags().StringVar(&catalogSiteOpts.layersFile, "layers", "", "Optional `clearcutt graph layers` JSON to publish as the layer commonality view")
 	cmd.Flags().BoolVar(&catalogSiteOpts.install, "install", false, "Install generated site dependencies with the detected package manager before previewing")
 	cmd.Flags().StringVar(&catalogSiteOpts.basePath, "base-path", "", "Astro base path to pass as BASE_PATH during preview")
 	cmd.Flags().StringVar(&catalogSiteOpts.workDir, "work-dir", "", "Reusable preview workspace; defaults to a temporary directory")
@@ -401,7 +407,45 @@ func materializeCatalogSite(catalogPath, outputDir string, force bool) (string, 
 	if err := ensureRawEvidenceDirs(filepath.Join(outputDir, "public", "catalog")); err != nil {
 		return "", err
 	}
+	if err := stageEstateArtifacts(filepath.Join(outputDir, "public", "estate")); err != nil {
+		return "", err
+	}
 	return templatePath, nil
+}
+
+// stageEstateArtifacts copies the optional `graph build` / `graph layers` output
+// next to the catalog data, where site/src/lib/estate.ts resolves it. Both are
+// optional by design: a site with no estate scan renders an empty state naming
+// the commands that populate it, which is the common case for a fresh scaffold.
+func stageEstateArtifacts(dst string) error {
+	sources := map[string]string{
+		"graph.json":  strings.TrimSpace(catalogSiteOpts.graphFile),
+		"layers.json": strings.TrimSpace(catalogSiteOpts.layersFile),
+	}
+	staged := false
+	for name, src := range sources {
+		if src == "" {
+			continue
+		}
+		if _, err := os.Stat(src); err != nil {
+			return fmt.Errorf("estate artifact %s: %w", src, err)
+		}
+		if !staged {
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return err
+			}
+			staged = true
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), data, 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "[site] staged estate artifact %s\n", name)
+	}
+	return nil
 }
 
 func materializeCatalogSiteTemplate(outputDir string, force bool) (string, error) {
@@ -726,7 +770,7 @@ func writeSiteConfig(outputDir, source string) error {
 func deriveSiteConfigYAML() string {
 	var title, description, sourceRepo, registry string
 	if catalogSiteOpts.config != "" {
-		if cfg, err := fleet.Load(catalogSiteOpts.config); err == nil {
+		if cfg, err := config.Load(catalogSiteOpts.config); err == nil {
 			title = cfg.Branding.ProductName + " Catalog"
 			description = cfg.Site.Description
 			sourceRepo = cfg.RepoURL()
@@ -735,7 +779,7 @@ func deriveSiteConfigYAML() string {
 	}
 	if title == "" {
 		if repo, repoURL, registryBase, ok := catalogIndexIdentity(catalogSiteOpts.catalogPath); ok {
-			title = fleet.DeriveProductName(repo) + " Catalog"
+			title = config.DeriveProductName(repo) + " Catalog"
 			sourceRepo = repoURL
 			if registryBase != "" {
 				registry = "https://" + registryBase
@@ -743,7 +787,7 @@ func deriveSiteConfigYAML() string {
 		}
 	}
 	if title == "" {
-		title = "Base Image Catalog"
+		title = "Container Image Estate"
 	}
 	if description == "" {
 		description = "Static evidence portal generated from signed base-image catalog data"

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/northcutted/clearcutt/internal/fleet"
 )
 
 func TestCatalogDiffAndSummaryRenderBranches(t *testing.T) {
@@ -91,108 +89,6 @@ func TestCatalogDiffAndSummaryRenderBranches(t *testing.T) {
 	summaryBuf.Reset()
 	if err := printCatalogSummary(summary); err != nil || !strings.Contains(summaryBuf.String(), "imageCount: 2") {
 		t.Fatalf("unexpected YAML summary err=%v out=\n%s", err, summaryBuf.String())
-	}
-}
-
-func TestPlatformNixAndSiteHelperBranches(t *testing.T) {
-	root := t.TempDir()
-
-	existing := "keep = true\n\n" + clearcuttNixConfigBegin + "\nold = true\n" + clearcuttNixConfigEnd + "\n\ntrailing = true\n"
-	replaced := replaceManagedNixConfigBlock(existing, "new = true\n")
-	if !strings.Contains(replaced, "keep = true") || !strings.Contains(replaced, "new = true") || strings.Contains(replaced, "old = true") || !strings.Contains(replaced, "trailing = true") {
-		t.Fatalf("managed nix config block was not replaced correctly:\n%s", replaced)
-	}
-	if !strings.Contains(replaceManagedNixConfigBlock("", "new = true"), clearcuttNixConfigBegin) {
-		t.Fatal("empty nix config should receive managed block")
-	}
-	if got := trustedNixCachePublicKey(fleet.NixCache{PublicKey: "cache-key"}); got != "cache-key" {
-		t.Fatalf("trusted public key without signing key = %q", got)
-	}
-
-	xdg := filepath.Join(root, "xdg")
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	userConfig, err := writeUserNixConfig("experimental-features = nix-command flakes\n")
-	if err != nil {
-		t.Fatalf("write user nix config: %v", err)
-	}
-	if !strings.HasPrefix(userConfig, xdg) || !strings.Contains(string(readFile(t, userConfig)), clearcuttNixConfigBegin) {
-		t.Fatalf("unexpected user nix config %s", userConfig)
-	}
-
-	fileOutput := filepath.Join(root, "file-output")
-	if err := os.WriteFile(fileOutput, []byte("not a dir"), 0o644); err != nil {
-		t.Fatal("write file output seed failed")
-	}
-	if err := prepareBuildOutput(fileOutput, false); err == nil {
-		t.Fatal("prepareBuildOutput should reject a file path")
-	}
-	nonEmpty := filepath.Join(root, "non-empty")
-	if err := os.MkdirAll(nonEmpty, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(nonEmpty, "x"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := prepareBuildOutput(nonEmpty, false); err == nil {
-		t.Fatal("prepareBuildOutput should reject non-empty output without clean")
-	}
-	if err := prepareBuildOutput(nonEmpty, true); err != nil {
-		t.Fatalf("prepareBuildOutput clean failed: %v", err)
-	}
-
-	templatePath := filepath.Join(root, "template")
-	workDir := filepath.Join(root, "work")
-	if err := os.MkdirAll(filepath.Join(templatePath, "node_modules"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := ensureNodeDependencies(workDir, templatePath, false, detectPackageManager(workDir)); err != nil {
-		t.Fatalf("expected template node_modules symlink: %v", err)
-	}
-	if !fileExists(filepath.Join(workDir, "node_modules")) {
-		t.Fatal("node_modules symlink was not created")
-	}
-	missingDeps := filepath.Join(root, "missing-deps")
-	if err := ensureNodeDependencies(missingDeps, "", false, detectPackageManager(missingDeps)); err == nil {
-		t.Fatal("ensureNodeDependencies should require install when node_modules is unavailable")
-	}
-
-	siteOut := filepath.Join(root, "site-out")
-	if err := os.MkdirAll(siteOut, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeSiteConfig(siteOut, ""); err != nil {
-		t.Fatalf("write default site config: %v", err)
-	}
-	sourceConfig := filepath.Join(root, "source.site.yaml")
-	if err := os.WriteFile(sourceConfig, []byte("site:\n  title: Source\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeSiteConfig(siteOut, sourceConfig); err != nil {
-		t.Fatalf("copy source site config: %v", err)
-	}
-
-	rawWithFrontmatter := []byte("---\ntitle: Page\n---\n# Page\n")
-	if got := string(ensureMarkdownLayout(rawWithFrontmatter, "../layouts/Base.astro")); !strings.Contains(got, "layout: ../layouts/Base.astro") {
-		t.Fatalf("layout was not injected:\n%s", got)
-	}
-	rawWithLayout := []byte("---\nlayout: custom\n---\n# Page\n")
-	if got := string(ensureMarkdownLayout(rawWithLayout, "../layouts/Base.astro")); got != string(rawWithLayout) {
-		t.Fatalf("existing layout should be preserved:\n%s", got)
-	}
-	if got := string(ensureMarkdownLayout([]byte("# Plain\n"), "../layouts/Base.astro")); !strings.HasPrefix(got, "---\nlayout: ../layouts/Base.astro") {
-		t.Fatalf("plain markdown did not receive frontmatter:\n%s", got)
-	}
-
-	t.Setenv("XDG_CONFIG_HOME", "")
-	defaultUserConfig, err := userNixConfigPath()
-	if err != nil {
-		t.Fatalf("default user nix config path: %v", err)
-	}
-	if !strings.HasSuffix(filepath.ToSlash(defaultUserConfig), "/.config/nix/nix.conf") {
-		t.Fatalf("unexpected default nix config path: %s", defaultUserConfig)
 	}
 }
 
