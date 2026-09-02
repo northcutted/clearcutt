@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates docs/images/demo.gif from scripts/demo.tape.
-# Deterministic inputs: the committed fixture catalog and fleet config.
+# Deterministic inputs: the committed public-estate and nix-estate fixtures.
 # Requires vhs (https://github.com/charmbracelet/vhs); falls back to
 # `nix run nixpkgs#vhs` when vhs is not on PATH.
 set -euo pipefail
@@ -14,7 +14,7 @@ if [[ ! -x ./clearcutt ]]; then
 fi
 
 # The tape scaffolds into /tmp; clear prior runs so output is identical.
-rm -rf /tmp/clearcutt-demo-app
+rm -rf /tmp/estate
 
 if command -v vhs >/dev/null 2>&1; then
   vhs scripts/demo.tape

@@ -17,7 +17,7 @@ that is honest about what it cannot prove.
 There is no hosted control plane and no image feed to subscribe to. ClearCutt
 reads registries you already have and writes files you own.
 
-![Terminal demo of fixture-backed ClearCutt catalog inspection, image verification, app template generation, and catalog site build](docs/images/demo.gif)
+![Terminal demo: ClearCutt graphing 19 real public images, reporting what is proven versus claimed, measuring shared-layer blast radius, and naming every image that ships a given openssl version](docs/images/demo.gif)
 
 ## What It Does
 
