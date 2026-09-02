@@ -60,16 +60,7 @@ bootstrap command renders a lightweight GitHub control-plane repo with
 `images.yaml`, catalog/Pages workflows, desired GitHub state, and local docs:
 
 ```bash
-clearcutt platform bootstrap github \
-  --profile catalog-only \
-  --owner acme \
-  --repo image-platform \
-  --registry-base ghcr.io/acme/image-platform \
-  --pages \
-  --environment production \
-  --dir ./image-platform \
-  --dry-run \
-  --force
+clearcutt catalog generate --config clearcutt.yaml --output dist/catalog
 ```
 
 The generated `catalog.yml` workflow runs the same data path shown below, then

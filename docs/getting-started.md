@@ -51,7 +51,6 @@ Build the CLI, then scaffold an app starter with Dockerfile, devcontainer,
 certification policy, release workflow, and rebase workflow:
 
 ```bash
-./clearcutt app template java --output examples/my-java-service --name my-java-service
 ```
 
 The generated README explains the chosen build tier, runtime tier, certification

@@ -14,13 +14,6 @@ workflow identities, and catalog site.
 
 - Configure `clearcutt.yaml` for the runtimes, tiers, architectures, scan
   windows, and remediation limits you intend to support.
-- Use `clearcutt matrix explain <runtime-line>` before adding a runtime to the
-  fleet config; supported runtime IDs are validated before the Nix backend runs.
-- Use `clearcutt matrix add <runtime-line>` for known runtimes and
-  `clearcutt runtime scaffold <runtime-line>` plus `runtime validate` for new
-  runtime families such as Ruby.
-- Run `clearcutt platform status` and the release workflow before asking app
-  teams to migrate.
 - Treat the catalog as the product surface: signatures, SBOMs, provenance, test
   results, and vulnerability scans should each show their own status.
 
@@ -30,8 +23,6 @@ Adoption should start where developers already work: local builds, devcontainers
 and CI.
 
 - Use `clearcutt list` and `clearcutt inspect` to choose a runtime line and tier.
-- Use `clearcutt app template` or the example templates to give teams a known
-  Dockerfile, devcontainer, certification policy, and release workflow.
 - Keep Nix out of the app-team path unless the team is intentionally customizing
   the platform fleet.
 

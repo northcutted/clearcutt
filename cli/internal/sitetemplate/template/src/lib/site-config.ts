@@ -206,13 +206,13 @@ export const defaultSiteConfig: SiteConfig = {
       docs: '',
     },
     home: {
-      title: 'Base Image Catalog',
+      title: 'Container Image Estate',
       description:
-        'Use this catalog to containerize applications with approved runtime images, inspect evidence, and find the next step for your role.',
+        'What is in this registry, what each image is built on, and what can actually be proven about it. Evidence that is missing is shown as missing.',
       showNotice: true,
-      noticeTitle: 'Before you use this catalog',
+      noticeTitle: 'How to read this',
       noticeBody:
-        'The catalog is a static view of generated image metadata and evidence. Treat missing signatures, provenance, SBOMs, or scans as explicit gaps instead of inferring trust from another channel.',
+        'This is a static view of observed image metadata and collected evidence. A missing signature, SBOM, provenance or scan is shown as an explicit gap — do not infer trust for it from another channel. Relationships proven by layer digests are labelled differently from ones the image author asserted.',
       quickLinks: [
         {
           label: 'Map your estate',

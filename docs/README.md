@@ -27,29 +27,20 @@ document, one first command, and then deeper links.
 - [Registry scan and the base image graph](registry-graph.md): point ClearCutt at a
   registry, discover which images are built on which, and produce an auditable
   inventory with drift.
-## Two words, deliberately
+## One word: estate
 
-ClearCutt uses **estate** and **fleet** for different things, and the difference
-is the product.
+An **estate** is what ClearCutt governs: whatever is in your registry, including
+images you did not build, cannot rebuild, and did not choose. An estate is
+discovered, not declared.
 
-- An **estate** is what you GOVERN: whatever is in your registry, including
-  images you did not build, cannot rebuild, and did not choose. An estate is
-  discovered. Everything in the governance path — `registry scan`,
-  `import observe`, `graph`, `estate`, `evidence`, `certify`, `scan` — works on
-  an estate and reads no configuration about fleets.
-- A **fleet** is what you BUILD: an authored matrix of runtime lines, tiers and
-  architectures. A fleet is declared. `clearcutt fleet …` and
-  `clearcutt platform …` operate on one.
+ClearCutt builds no images, so there is no second noun. Earlier versions also
+used "fleet" for a set of images the project built itself; that capability was
+removed, and with it the word.
 
-The project ships a fleet of exactly one runtime line, as a fixture that proves
-the build path works end to end. It is not the product. If you only ever govern
-images other people built, you will never open the fleet configuration — and the
-config file is named `clearcutt.yaml` rather than `clearcutt.fleet.yaml` for
-that reason, because eight of its eleven sections have nothing to do with
-building images.
-
-`clearcutt.fleet.yaml` is still read when present, so an existing fork needs no
-migration.
+The config file is `clearcutt.yaml`. `clearcutt.fleet.yaml` is still read when
+present, so an existing fork needs no migration, and a config carrying the old
+`templates`, `release` or `admission` sections still validates — those sections
+are simply ignored.
 
 - [Registry-native evidence](registry-native-evidence.md): store evidence,
   estate snapshots and history in the registry instead of GitHub releases — plus

@@ -787,7 +787,7 @@ func deriveSiteConfigYAML() string {
 		}
 	}
 	if title == "" {
-		title = "Base Image Catalog"
+		title = "Container Image Estate"
 	}
 	if description == "" {
 		description = "Static evidence portal generated from signed base-image catalog data"

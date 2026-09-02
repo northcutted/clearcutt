@@ -230,31 +230,6 @@ ClearCutt can govern imported images without trusting them by default. It
 records what can be observed, preserves missing evidence, and only treats
 provenance as verified when actual provenance evidence exists.
 
-To prove the two-repository operating model without copying this source tree,
-render a release-backed control plane that consumes selected evidence from the
-ClearCutt release repository:
-
-```bash
-go -C cli run ./cmd/clearcutt platform render /tmp/clearcutt-demo \
-  --profile catalog-only \
-  --catalog-source github-release \
-  --catalog-source-repo northcutted/clearcutt \
-  --catalog-targets java21-distroless,node24-slim,python3.14-dev \
-  --catalog-release-limit 1 \
-  --owner northcutted \
-  --repo clearcutt-demo \
-  --registry-base ghcr.io/northcutted/clearcutt \
-  --visibility public \
-  --pages
-
-./scripts/test-generated-release-control-plane.sh
-```
-
-The generated repository contains workflows, desired state, operator docs, and
-site configuration, but no `cli/`, `core/`, `site/`, or Nix source. Creating a
-remote repository remains an explicit `platform bootstrap github --apply
---confirm` action.
-
 The full documentation index is [docs/README.md](docs/README.md).
 
 Contributor note: if the platform-source drift check fails, refresh the

@@ -49,15 +49,13 @@ Supported base families:
 
 That one line is the reference fixture the project publishes. The registry also
 carries recipes for `java21`, `node22`, `node24`, `node26`, `python3.13`,
-`python3.14`, `go1.25`, `go1.26` and `go1.27`; enable one with `clearcutt matrix
-add`, or scaffold a new runtime family with `clearcutt runtime scaffold`. Every
+ Every
 recipe is evaluated on each run, so one you have not enabled still cannot rot
 without CI noticing.
 
 Use `dev` for toolchains, `slim` when you need a diagnostic shell, and
 `distroless` for the hardened production target.
 
-Preview lifecycle lines added via `clearcutt matrix add` are suitable for validation and
 early adoption. Production policies with `allowPreview: false` should use active
 runtime lines until the catalog lifecycle for that line moves to active.
 

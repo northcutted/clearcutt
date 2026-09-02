@@ -1,97 +1,96 @@
-# ClearCutt Security Model & Trust Boundaries
+# ClearCutt Security Model
 
-This document defines the supply-chain security model, trust boundaries, and evidence validation systems implemented by the ClearCutt base-image catalog and gating platform.
+ClearCutt is a governance CLI. It reads registries, derives relationships from
+what it finds, and writes reports and artifacts. **It does not build, patch,
+sign, or publish container images.** Everything below is scoped to that.
 
-For a command-level path through one image digest, use
-[`trust/evidence-walkthrough.md`](trust/evidence-walkthrough.md). For catalog
-badge semantics and missing-evidence states, use
-[`trust/catalog-evidence.md`](trust/catalog-evidence.md).
+An earlier version of this document described the security properties of images
+ClearCutt built and published. That capability was removed; the document has
+been rewritten rather than trimmed, because a security model that describes a
+product you do not ship is worse than none.
 
----
+## 1. What ClearCutt does to your infrastructure
 
-## 1. Core Security Assurances
-ClearCutt is designed to establish reliable, evidence-backed supply-chain assurances for base images through four primary pillars:
-- **Digest-Pinned References**: ClearCutt records immutable image digests when release/catalog evidence is available and uses Nix-locked platform inputs for the reference build path. Fork owners should treat any mutable external tag as a configuration gap.
-- **Keyless Signature & SLSA Provenance Evidence**: The release workflow is configured to sign published images with Sigstore Cosign keyless signatures and attach SLSA provenance evidence. Use registry-side verification commands for cryptographic proof; catalog gates report whether that evidence is recorded for a release.
-- **Minimality & Hardening**:
-  - `distroless` tier is verified by conformance/certification checks to be shell-free, package-manager-free, and configured for unprivileged execution (`UID 10001:10001`).
-  - `slim` tier is package-manager-free and executes under a non-root UID while retaining an interactive shell.
-- **Risk-Based Vulnerability Posture**: Production-tier images carry no *reachable, materially-risky, fixable* CVE that the platform has left unaddressed.
-  - *Reachable* = present in the shipped runtime closure rather than only in the build graph (not exploitability/call-graph reachability — a deliberately conservative, over-including proxy).
-  - *Materially risky* = CISA KEV-listed, **or** EPSS percentile ≥ the configured threshold, **or** severity ≥ the configured floor. KEV and EPSS scores are authoritative and dated in-record (CISA / FIRST.org), not ClearCutt's opinion.
-  - *Fixable* = an upstream fixed version exists.
-  - Every finding the policy does not require fixing is auto-recorded as an owned, time-boxed, **expiring** acceptance (OpenVEX) — visible in the catalog, re-evaluated each scan, never silently tolerated. A finding that is reachable and materially risky but has **no** upstream fix blocks until an explicit, expiring acknowledgement is recorded.
-  - The thresholds live in `clearcutt.yaml` `remediation.policy` (reachability, KEV, EPSS percentile, severity floor, expiry). Forks tune the **thresholds**, never per-package waivers.
-  - **Accepting what cannot be fixed.** When a finding is real but no fix is reachable from the pinned nixpkgs, it is recorded in `core/vulnerability-acceptances.yaml`: the exact CVE list, the package and versions it applies to, why no fix exists, a named owner, and an expiry date. The build gate clears those findings and logs each one; an **expired** acceptance fails the build exactly as hard as an unaccepted finding.
-    This is deliberately **not** a VEX `not_affected` statement and **not** a scanner ignore rule. Both of those assert the vulnerability does not apply, and `not_affected` requires a justification from a fixed enum (`vulnerable_code_not_present` and friends) that would simply be false here — the vulnerable code is present. The claim recorded is the one that is actually true and checkable: it affects us, no fix is reachable, someone owns that, and the acceptance runs out.
-  - **What ClearCutt no longer does here.** It used to patch the CVEs it found — a runtime-scoped overlay that rebuilt openssl/sqlite above a floor, plus a store-path identity gate that default-denied any shipped crypto whose exact identity was not allowlisted. That whole machinery is gone. The images build from stock nixpkgs, and ClearCutt reports and gates on findings rather than fixing them: a production image's currency is now a function of how fresh the pinned nixpkgs is, and bumping that pin is an operator action, not something the tool does for you.
+**Reads, by default.** `registry scan`, `import observe`, `graph`, `scan` and
+`certify` list tags and fetch manifests, configs and — only when asked —
+attached SBOMs. They pull no image layers, mutate nothing, and publish nothing.
 
----
+**Writes, only when told.** Three commands write to a registry, and each takes
+an explicit reference:
 
-## 2. Supply-Chain Trust Boundaries
+| command | writes | scope |
+| --- | --- | --- |
+| `estate push` | a snapshot artifact, and optionally a history index | the reference you name |
+| `evidence attach` | an evidence bundle attached to an image digest | the subject's repository |
+| `evidence import` | restores previously exported bundles | the repository you name |
+
+Nothing else in the CLI writes to a registry.
+
+**Credentials.** Explicit environment credentials are preferred
+(`REGISTRY_USER`/`REGISTRY_TOKEN`, then `CLEARCUTT_REGISTRY_*`, then
+`GITHUB_*`), falling back to the ambient Docker keychain. ClearCutt never
+persists credentials and never writes them into reports.
+
+## 2. Trust boundaries
 
 ```mermaid
 graph TD
-    A["Nix build closure"] -->|provenance evidence| B["Sigstore OIDC Signer (keyless certificate)"]
-    B -->|cosign attach| C["Container Registry (GHCR/Private)"]
-    C -->|clearcutt policy generates admission policy| D["Kubernetes Admission Controller (Kyverno/OPA)"]
+    A["Your registry"] -->|manifests, configs, referrers| B["ClearCutt CLI"]
+    B -->|reports and graphs| C["Local files you own"]
+    B -->|estate snapshots, evidence| A
+    C -->|static site| D["Wherever you publish it"]
 ```
 
-### 2.1 Build-Time Assumptions
-- The Nix store compilation pipeline compiles and layers all runtime interpreters inside a completely hermetic closure.
-- Distroless runtime images omit FHS linker/library fallback paths and rely on RPATH/RUNPATH entries bound directly to `/nix/store`.
-- Slim, dev, and service images retain `/lib`/`/lib64` compatibility symlinks for teams that need to run FHS-oriented binaries inside a ClearCutt-managed runtime. Treat those tiers as compatibility tiers, not as the strictest dynamic-linkage boundary.
-- Only the dev tier additionally sets `LD_LIBRARY_PATH=/lib:/lib64:/usr/lib:/usr/lib64` as a foreign-binary convenience. Production tiers (slim, distroless) and service images never set it: glibc resolves libraries in the order `DT_RPATH` > `LD_LIBRARY_PATH` > `DT_RUNPATH`, and Nix-built binaries record their store-bound dependencies in `DT_RUNPATH`, so a global FHS `LD_LIBRARY_PATH` would outrank hermetic store resolution on every binary in the image — the same drift class the RPATH/interpreter gate exists to prevent. The `/lib`/`/lib64` symlinks alone cover FHS foreign binaries through the dynamic loader's default search paths without overriding `DT_RUNPATH`. The absence of `LD_LIBRARY_PATH` in production OCI configs is machine-checked by `clearcutt verify boundary-suite` (runtime images) and `core/tests/service-image-contract.sh` (service images).
-- The RPATH/interpreter gate verifies the binaries in the Nix closure; it does not claim that a downstream application cannot add new dynamic-linkage paths after the image is extended.
+The load-bearing boundary is **between what ClearCutt proves and what it
+repeats.**
 
-### 2.1.1 License Metadata Boundary
-- The source recipes and CLI/site code are Apache-2.0, but released images contain third-party packages from nixpkgs with mixed upstream licenses.
-- OCI image labels therefore use `org.opencontainers.image.licenses=NOASSERTION` for the image artifact and `dev.clearcutt.recipe.license=Apache-2.0` for the ClearCutt recipe layer.
-- The SPDX SBOM is the source of package-level license evidence for a concrete image digest.
+- **Proof.** A `layer-prefix` base relationship is a fact about bytes: the
+  consumer begins with exactly the base's layer digests. Content-identical
+  groups, shared-layer blast radius, and Nix package sets read out of an image
+  config are the same kind of statement.
+- **Claim.** `oci-base-digest`, `buildpacks-metadata`, `oci-base-name` and
+  `history` all originate with whoever built the image. ClearCutt reports them,
+  labels them as assisted rather than verified, and never lets a claim outrank
+  layer evidence.
+- **Unknown.** An image whose provenance cannot be established is reported as
+  undetermined with the reason. Absence is never rendered as zero.
 
-### 2.1.2 Closure-Diff Baseline
-- The G2 remediation gate compares the current image's extracted `/nix/store`
-  roots with a registry-derived known-good image, not with the image being
-  tested.
-- The default baseline is the upstream `java21-slim` rolling image
-  (`ghcr.io/northcutted/clearcutt/clearcutt-corelts:slim`) and the default
-  package boundary is `bash-interactive`.
-- Forks and offline test fixtures can set `CLEARCUTT_G2_KNOWN_GOOD_REF`,
-  `CLEARCUTT_G2_KNOWN_GOOD_ARCH`, `CLEARCUTT_G2_KNOWN_GOOD_CLOSURE`, and
-  `CLEARCUTT_G2_TARGET_PACKAGE` to compare against their own release baseline
-  and patched package.
+Evidence ClearCutt reads — SBOMs, signatures, attestations — is evidence
+**someone else produced**. ClearCutt records whether it is present and
+well-formed. Verifying it cryptographically is `verify release-evidence`,
+cosign, and SLSA verification, against the registry.
 
-### 2.2 Registry & Distribution Boundaries
-- Cryptographic signatures and SPDX SBOMs are stored alongside container images as OCI referrers.
-- Admission controllers must query and verify signature certs (`subject` and `issuer`) before scheduling pods.
+## 3. Registry-native storage
 
-### 2.3 Downstream Rebase Boundaries
-The downstream application lifecycle commands add a separate, explicit trust
-boundary around application payloads:
-- `clearcutt app build` records the digest-pinned base reference and the
-  compressed digest of the final base layer in OCI config labels.
-- `clearcutt app rebase` refuses images that are not marked rebasable, refuses a
-  base-boundary mismatch, and preserves every application layer descriptor after
-  that boundary.
-- The compatibility gate allows only the same runtime family and major/minor
-  line, so patch-level base upgrades are allowed while runtime ABI jumps are
-  blocked.
-- Before an `allowed` rebase attestation is emitted, the rebase workflow verifies
-  the original developer signature over the digest-pinned source image.
-- The rebased image is signed by the rebase-engine workflow, and the rebase
-  predicate is attached as a signed in-toto/cosign attestation.
+Estate snapshots and evidence bundles are OCI artifacts in your registry. Two
+consequences you own:
 
-This does not make the rebase engine magically outside the trusted computing
-base. The engine is still trusted to perform the developer-signature verification
-and to sign the resulting predicate honestly, so production admission policy
-must pin the rebase-engine identity tightly and inspect the predicate fields.
+- **Garbage collection.** An attachment is a manifest, and lifecycle rules can
+  delete it. The referrers tag fallback protects against untagged-manifest
+  pruning but not age- or count-based rules. `evidence export` exists so a copy
+  can live somewhere with its own retention guarantees.
+- **Tag mutability.** The history index and the `sha256-*` referrer tags are
+  rewritten in place and require mutable tags. Snapshots, evidence bundles and
+  release images are write-once.
 
----
+If the registry is the thing being audited, storing the audit inside it is a
+mild conflict of interest. Sign the artifacts.
 
-## 3. Security Model Limitations & Non-Claims
-To remain precise and conservative:
-- **No FIPS Cryptographic Claims**: ClearCutt runtimes use standard upstream cryptographic modules and do not assert FIPS validation unless an explicit cryptographic module boundary has been formally certified.
-- **No Zero Risk Guarantees**: Vulnerability scans only represent findings at a discrete point in time and do not guarantee an absence of future security defects. The production posture in §1 is risk-scoped, not absolute: it asserts that no *reachable, materially-risky, fixable* CVE is left unaddressed — it does **not** claim zero known CVEs. Findings below the materiality bar, or confined to unreachable base layers, are accepted by policy and recorded as owned, time-boxed, expiring exceptions (re-evaluated each scan) rather than silently tolerated. The single trust surface is the threshold configuration itself, which lives in a reviewed config file — never per-finding, never hidden.
-- **BYO Base Image Overlays Limitation**: Overlay images grafted onto mandated corporate operating systems (e.g., Red Hat UBI or AL2023) **do not** inherit ClearCutt's distroless zero-utility guarantee. They retain the parent base image's shell, package manager, and CVE footprint.
-- **Service Data Directory Permissions**: Service images create declared data directories in image layers so rootless smoke tests can start without a mounted volume. Production deployments should mount managed volumes at those paths and enforce their own ownership/mode policy.
-- **CVE Drafting Boundary**: workflows enter remediation through the ClearCutt CLI. The retained drafting backend can still produce untrusted overlay drafts from untrusted advisory text, so drafts require sandboxed execution, `validate-overlays`, build/scan proof, and human review before merge.
+See [registry-native evidence](registry-native-evidence.md).
+
+## 4. Non-claims
+
+- **ClearCutt does not make images safe.** It reports what is there. It cannot
+  patch, rebuild, or re-tag anything.
+- **A scan is a point in time.** Findings reflect the scanner's database at the
+  moment it ran.
+- **A vulnerability acceptance is not a suppression.** An accepted finding stays
+  in the scan output and in the report, carries a named owner and an expiry, and
+  blocks exactly as hard as an unaccepted one once it expires.
+- **Coverage is not proof.** An estate can raise the share of images with a
+  known base by adding labels to its own images. Only layer evidence raises the
+  proven share, which is why the two are reported separately.
+- **ClearCutt trusts your registry credentials, not your registry.** It will
+  faithfully report a compromised image as present; it does not detect tampering
+  beyond what signatures and digests already establish.
+- **No FIPS or certification claims** of any kind.

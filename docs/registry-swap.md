@@ -22,7 +22,7 @@ registry:
 The release and catalog workflows call:
 
 ```bash
-clearcutt platform registry-env --github-output "$GITHUB_OUTPUT"
+# The publish-pages workflow resolves the host from clearcutt.yaml directly.
 ```
 
 That command emits non-secret values such as `host`, `registry_base`, and
@@ -46,12 +46,6 @@ GitHub defaults.
 
 Because these default to the GitHub built-ins, **the canonical GHCR setup keeps
 working with nothing set.**
-
-## Localize the fleet config
-
-Run `clearcutt platform init --owner your-org --repo your-fleet` to localize the
-config, docs, admission policy, and app templates to the new identity. Then edit
-`registry.host` if you are not using GHCR.
 
 ## Registry support tiers
 
@@ -81,9 +75,7 @@ config, docs, admission policy, and app templates to the new identity. Then edit
 - **ECR/GAR short-lived auth** needs an extra auth step today (no `authMode`
   selector yet).
 
-Run `clearcutt platform status` after changing `registry.host`. It passes the
-GHCR reference path and warns for non-GHCR hosts until the fork has configured
-the credential variables above and proven registry-specific evidence behavior.
+After changing `registry.host`, re-run `clearcutt registry scan` against the new host to confirm credentials and reachability.
 
 ## Verify the swap
 
@@ -91,7 +83,7 @@ After configuring the knobs, run a release and confirm evidence resolves against
 the new host:
 
 ```bash
-clearcutt fleet verify-target --system x86_64-linux --language java21 --tier distroless
+clearcutt registry scan --registry "$NEW_HOST" --namespace YOUR_ORG --repository YOUR_IMAGE --output /tmp/images.yaml
 # or, for a consumer of a published image:
 clearcutt certify <your-host>/<org>/<repo>/<image>:<tag> --require-signature --require-provenance
 ```
