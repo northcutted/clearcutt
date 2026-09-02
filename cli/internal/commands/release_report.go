@@ -23,7 +23,7 @@ var releaseOpts releaseFlags
 func NewReleaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "release",
-		Short: "Manage base-image release pipelines",
+		Short: "Generate written release-comparison reports",
 	}
 
 	reportCmd := &cobra.Command{

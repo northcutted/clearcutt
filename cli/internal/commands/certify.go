@@ -79,7 +79,7 @@ type CertifyResponse struct {
 func NewCertifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "certify <tarball-path>",
-		Short: "Certify a downstream application image against platform security contracts",
+		Short: "Certify an application image against its security contract",
 		Long: `Unpacks and parses local OCI/Docker image tarballs completely offline to verify
 non-root users, shell-free distroless tiers, and required OCI labels. Supports both
 legacy 'docker save' archives and OCI-layout archives. Supply-chain attestations

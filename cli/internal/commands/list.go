@@ -22,7 +22,7 @@ var listOpts listFlags
 func NewListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List published ClearCutt images from the catalog",
+		Short: "List the images recorded in the catalog",
 		Long:  `List all ClearCutt images in the catalog index with support for filters and format outputs.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList()

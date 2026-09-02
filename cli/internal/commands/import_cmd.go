@@ -62,7 +62,7 @@ var importApplyEvidenceOpts importApplyEvidenceFlags
 func NewImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
-		Short: "Govern image estates ClearCutt did not build",
+		Short: "Import external OCI refs and observe them without inferring trust",
 		Long: `Import existing OCI image references into ClearCutt-compatible catalog
 inventories, observe available metadata, assess governance gaps, and generate
 deterministic reports without claiming ClearCutt build provenance.`,

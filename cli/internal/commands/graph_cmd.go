@@ -29,7 +29,7 @@ var graphBuildOpts graphBuildFlags
 func NewGraphCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "graph",
-		Short: "Map which images are built on which, and how stale each one is",
+		Short: "Map what an estate is built on, shares, and installs",
 		Long: `Derive the base-image dependency graph for an observed estate.
 
 Where 'rebase discover' checks a relationship someone declared, 'graph build'

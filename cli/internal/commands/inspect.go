@@ -19,7 +19,7 @@ var inspectOpts inspectFlags
 func NewInspectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "inspect <image-id>",
-		Short: "Inspect a specific ClearCutt image record",
+		Short: "Inspect one image record from the catalog",
 		Long:  `Inspect all supply chain evidence, lifecycle states, vulnerabilities, and assets for a single base image.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
