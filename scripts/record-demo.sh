@@ -13,9 +13,6 @@ if [[ ! -x ./clearcutt ]]; then
   (cd cli && go build -o ../clearcutt ./cmd/clearcutt)
 fi
 
-# The tape scaffolds into /tmp; clear prior runs so output is identical.
-rm -rf /tmp/estate
-
 if command -v vhs >/dev/null 2>&1; then
   vhs scripts/demo.tape
 else

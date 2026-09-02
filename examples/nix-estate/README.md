@@ -14,7 +14,7 @@ So for a Nix estate the exact package set, with versions and content hashes,
 costs **no extra registry requests**:
 
 ```sh
-clearcutt graph packages --observations observations.json --package openssl
+clearcutt graph packages --package openssl
 ```
 
 ```

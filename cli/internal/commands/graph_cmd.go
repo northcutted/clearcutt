@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -87,7 +88,7 @@ saves. Shared content means shared exposure, never a base relationship.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&graphLayersOpts.observations, "observations", "", "Observations JSON from `clearcutt import observe`")
+	f.StringVar(&graphLayersOpts.observations, "observations", "observations.json", "Observations JSON from `clearcutt import observe`")
 	f.StringVar(&graphLayersOpts.output, "output", "", "Output layer graph JSON path")
 	f.StringVar(&graphLayersOpts.report, "report", "", "Also write a Markdown commonality report to this path")
 	f.StringVar(&graphLayersOpts.mermaid, "mermaid", "", "Also write the clustered commonality diagram to this path")
@@ -96,8 +97,6 @@ saves. Shared content means shared exposure, never a base relationship.`,
 	f.IntVar(&graphLayersOpts.maxPairs, "max-pairs", 250, "Cap reported image pairs, most similar first (-1 keeps all)")
 	f.StringVar(&graphLayersOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
 	f.BoolVar(&graphLayersOpts.force, "force", false, "Overwrite existing output files")
-	_ = cmd.MarkFlagRequired("observations")
-	_ = cmd.MarkFlagRequired("output")
 	return cmd
 }
 
@@ -124,10 +123,12 @@ func runGraphLayers() error {
 	if err != nil {
 		return err
 	}
-	if err := writeAlongside(opts.output, func(path string) error {
-		return estategraph.WriteLayerGraph(path, graph)
-	}); err != nil {
-		return err
+	if opts.output != "" {
+		if err := writeAlongside(opts.output, func(path string) error {
+			return estategraph.WriteLayerGraph(path, graph)
+		}); err != nil {
+			return err
+		}
 	}
 	if opts.report != "" {
 		if err := writeAlongside(opts.report, func(path string) error {
@@ -202,12 +203,7 @@ func printLayerGraphSummary(graph estategraph.LayerGraph, opts graphLayersFlags)
 	for _, warning := range graph.Warnings {
 		fmt.Fprintf(errOut, "[graph-layers] %s\n", warning)
 	}
-	fmt.Fprintf(out, "\n[graph-layers] wrote %s\n", opts.output)
-	for _, path := range []string{opts.report, opts.mermaid} {
-		if path != "" {
-			fmt.Fprintf(out, "[graph-layers] wrote %s\n", path)
-		}
-	}
+	announceWritten(out, "graph-layers", opts.output, opts.report, opts.mermaid)
 }
 
 // humanSize formats a compressed byte count for terminal output.
@@ -245,7 +241,7 @@ func newGraphBuildCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&graphBuildOpts.observations, "observations", "", "Observations JSON from `clearcutt import observe`")
+	f.StringVar(&graphBuildOpts.observations, "observations", "observations.json", "Observations JSON from `clearcutt import observe`")
 	f.StringVar(&graphBuildOpts.output, "output", "", "Output graph JSON path")
 	f.StringVar(&graphBuildOpts.report, "report", "", "Also write a Markdown governance inventory to this path")
 	f.StringArrayVar(&graphBuildOpts.basePatterns, "base-repository", nil, "Only this repository glob may act as a base (repeatable; default: infer from layering)")
@@ -255,8 +251,6 @@ func newGraphBuildCmd() *cobra.Command {
 	f.BoolVar(&graphBuildOpts.failOnStale, "fail-on-stale", false, "Exit 2 when any consumer sits on a stale base version")
 	f.BoolVar(&graphBuildOpts.failOnUnknown, "fail-on-unknown", false, "Exit 2 when any image's base could not be determined")
 	f.BoolVar(&graphBuildOpts.force, "force", false, "Overwrite existing output files")
-	_ = cmd.MarkFlagRequired("observations")
-	_ = cmd.MarkFlagRequired("output")
 	return cmd
 }
 
@@ -283,10 +277,12 @@ func runGraphBuild() error {
 	if err != nil {
 		return err
 	}
-	if err := writeAlongside(opts.output, func(path string) error {
-		return estategraph.WriteGraph(path, graph)
-	}); err != nil {
-		return err
+	if opts.output != "" {
+		if err := writeAlongside(opts.output, func(path string) error {
+			return estategraph.WriteGraph(path, graph)
+		}); err != nil {
+			return err
+		}
 	}
 	if opts.report != "" {
 		if err := writeAlongside(opts.report, func(path string) error {
@@ -373,7 +369,7 @@ func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 
 	proven := s.EdgesByConfidence["verified"]
 	if s.ResolvedConsumers > 0 {
-		fmt.Fprintf(out, "[graph] %d of %d relationship(s) are proven by layer digests; the rest rest on labels the image author supplied\n",
+		fmt.Fprintf(out, "[graph] %d of %d relationship(s) are proven by layer digests; the rest rely on labels the image author supplied\n",
 			proven, s.ResolvedConsumers)
 	}
 
@@ -427,10 +423,7 @@ func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 	for _, warning := range graph.Warnings {
 		fmt.Fprintf(errOut, "[graph] %s\n", warning)
 	}
-	fmt.Fprintf(out, "\n[graph] wrote %s\n", opts.output)
-	if opts.report != "" {
-		fmt.Fprintf(out, "[graph] wrote %s\n", opts.report)
-	}
+	announceWritten(out, "graph", opts.output, opts.report)
 }
 
 func truncate(value string, width int) string {
@@ -441,4 +434,21 @@ func truncate(value string, width int) string {
 		return value[:width]
 	}
 	return "…" + value[len(value)-width+1:]
+}
+
+// announceWritten reports the artifacts a graph command actually wrote. Every
+// output path is optional, so the leading blank line is emitted only if at
+// least one of them was requested.
+func announceWritten(w io.Writer, label string, paths ...string) {
+	first := true
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if first {
+			fmt.Fprintln(w)
+			first = false
+		}
+		fmt.Fprintf(w, "[%s] wrote %s\n", label, path)
+	}
 }

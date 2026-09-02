@@ -1,9 +1,20 @@
 {
   "apiVersion": "clearcutt.dev/v1",
   "kind": "BaseImageGraph",
-  "generatedAt": "2026-09-01T00:23:10.7616Z",
+  "generatedAt": "2026-08-31T00:00:00Z",
   "summary": {
     "observedImages": 19,
+    "builders": {
+      "byBuilder": {
+        "apko": 1,
+        "buildkit": 7,
+        "buildpacks": 1,
+        "debuerreotype": 8,
+        "unidentified": 2
+      },
+      "stacking": 18,
+      "composed": 1
+    },
     "baseFamilies": 2,
     "consumers": 17,
     "rootImages": 2,

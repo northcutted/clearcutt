@@ -17,7 +17,7 @@ that is honest about what it cannot prove.
 There is no hosted control plane and no image feed to subscribe to. ClearCutt
 reads registries you already have and writes files you own.
 
-![Terminal demo: ClearCutt graphing 19 real public images, reporting what is proven versus claimed, measuring shared-layer blast radius, and naming every image that ships a given openssl version](docs/images/demo.gif)
+![Terminal demo: an openssl advisory answered by naming the four images that ship it, shared-layer blast radius across 19 real public images, and a base-image graph that separates what is proven by layer digest from what is merely claimed by a label](docs/images/demo.gif)
 
 ## What It Does
 
