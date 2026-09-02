@@ -1,94 +1,105 @@
 # ClearCutt demo tape.
 #
-# Regenerate docs/images/demo.gif with ./scripts/record-demo.sh. Every command
-# runs against committed fixtures, so the recording reproduces from a fresh
-# checkout with no network and no credentials.
+# Regenerate docs/images/demo.gif with ./scripts/record-demo.sh.
 #
-# It tells one incident in three questions, in the order they actually get
-# asked, and each command is the whole answer:
-#   1. an advisory names openssl - which images ship it?        (nix-estate)
-#   2. what would one bad layer reach?                          (public-estate)
-#   3. what are those images even based on, and how do we know? (public-estate)
+# This recording is LIVE, not fixture-backed: it starts from nothing but a list
+# of image references and actually observes docker.io, so `import observe` needs
+# network. That is deliberate. The single most common question about the earlier
+# cut was "what is an observations.json?", and the honest answer is not a caption
+# -- it is watching one get made out of eight public image names in two seconds.
 #
-# The provenance beat runs last on purpose. It is both the densest screen and
-# the one thing no scanner does, so it is what the loop rests on.
+# The story is what the tool is genuinely for, in the order a person hits it:
+#   1. here is the estate, and here is where the data comes from   (cat + import)
+#   2. what are these built on, and what would patching move?      (graph build)
+#   3. which of them ship openssl?                                 (graph packages)
 #
-# Captions are typed fast (Type@8ms) because they are meant to be read, not
-# watched; commands are typed at human speed so they register as commands.
+# Beat 3 is a deliberate non-answer. Debian records no package set, so the tool
+# says UNKNOWN and prices the fix rather than reporting absence as zero. Showing
+# the tool fail honestly is the point; a demo that only shows wins teaches a
+# viewer nothing about whether to trust the wins.
 #
-# The geometry is measured, not guessed. Width 1280 at FontSize 16 fits the
-# widest line the CLI emits here (114 columns) without wrapping, and stays
-# legible after GitHub scales the GIF into a README column. Height 600 gives
-# 29 rows; the tallest beat -- `graph build` with its captions -- needs 27, so
-# nothing scrolls off the top and no beat sits in a field of dead pixels.
+# All eight images are public and recognisable and none of them are ours -- the
+# whole claim is that this works on images you did not build.
+#
+# Geometry: FontSize 16 at Width 1240 gives 111 columns, which keeps every
+# summary and table line whole and lets only the two long prose explanations
+# wrap. Fewer columns means a larger effective font once GitHub scales the GIF
+# into a README, so this is as narrow as the content allows. Height 500 gives
+# 24 rows against a 23-row tallest beat, so no screen sits in dead pixels.
 
 Output docs/images/demo.gif
 
 Set Shell bash
 Set FontSize 16
-Set Width 1280
-Set Height 600
+Set Width 1240
+Set Height 500
 Set Padding 14
-Set TypingSpeed 25ms
+Set TypingSpeed 20ms
 
-# Setup, hidden: put the built CLI on PATH, take a clean prompt, open the Nix
-# estate. Each fixture directory holds an observations.json, which is the
-# default every graph command reads -- hence the bare commands below.
+# Hidden setup: build a scratch estate containing nothing but the ref list, so
+# what follows is genuinely end-to-end and the repo is not written to.
 Hide
 Type "export PATH=$PWD:$PATH" Enter
 Type "export PS1='$ '" Enter
-Type "cd examples/nix-estate" Enter
+Type "rm -rf /tmp/clearcutt-demo && mkdir -p /tmp/clearcutt-demo" Enter
+Type "cat examples/runtime-estate/refs.txt > /tmp/clearcutt-demo/refs.txt" Enter
+Type "cd /tmp/clearcutt-demo" Enter
 Type "clear" Enter
 Show
-Sleep 800ms
+Sleep 600ms
 
-Type@8ms "# An openssl advisory just landed. Which of our images actually ship it?"
+Type@8ms "# Eight images we run. We built none of them, and none of them say what they are."
+Enter
+Sleep 800ms
+Type "cat refs.txt"
+Enter
+Sleep 2.2s
+
+Type "clearcutt import images --refs refs.txt --output images.yaml"
+Enter
+Sleep 1s
+Type "clearcutt import observe --images images.yaml --output observations.json"
+Enter
+Sleep 2.5s
+
+Type@8ms "# That is all an observations file is: 8 manifests and configs, read from the registries."
+Enter
+Sleep 2.2s
+
+Hide
+Type "clear" Enter
+Show
+Sleep 300ms
+
+Type@8ms "# The question that matters: what are they built on, and what would patching actually move?"
+Enter
+Sleep 1s
+Type "clearcutt graph build"
+Enter
+Sleep 5.5s
+
+Type@8ms "# One debian layer under 6 of the 8 - proven by layer digest, not taken on trust from a label."
+Enter
+Type@8ms "# nginx and node:20 are not on it. Patch debian and they do not move. It says so, and says why."
+Enter
+Sleep 4s
+
+Hide
+Type "clear" Enter
+Show
+Sleep 300ms
+
+Type@8ms "# And the question every advisory opens with: which of these ship openssl?"
 Enter
 Sleep 1s
 Type "clearcutt graph packages --package openssl"
 Enter
-Sleep 4.5s
-
-Type@8ms "# Four of ten, by name and version - read out of image configs already fetched."
-Enter
-Type@8ms "# No SBOM to build, no scanner to run, nothing to rebuild."
-Enter
-Sleep 3.2s
-
-Hide
-Type "cd ../public-estate" Enter
-Type "clear" Enter
-Show
-Sleep 400ms
-
-Type@8ms "# Different estate: 19 public images we run but did not build. What would one bad layer reach?"
-Enter
-Sleep 1.2s
-Type "clearcutt graph layers"
-Enter
-Sleep 3.2s
-
-Type@8ms "# 12 layers shared across the estate - and that reuse saves 15% of what storing them would cost."
-Enter
-Sleep 3.2s
-
-Hide
-Type "clear" Enter
-Show
-Sleep 400ms
-
-Type@8ms "# And what are those 19 based on? debian, alpine, node, postgres, chainguard, paketo."
-Enter
-Sleep 1.2s
-Type "clearcutt graph build | head -21"
-Enter
-Sleep 6.5s
-
-Type@8ms "# 3 resolved - and it says which 2 are proven by layer digest, not merely claimed by a label."
-Enter
-Type@8ms "# The other 14 come back undetermined, each with its reason. ClearCutt does not guess."
-Enter
-Sleep 1.8s
-Type@8ms "# Govern the container images you already run - including every one you did not build."
-Enter
 Sleep 4s
+
+Type@8ms "# It does not know - and refuses to call that zero. It prices the answer instead: 8 fetches."
+Enter
+Sleep 3s
+
+Type@8ms "# Proven where it can be proven. Named where it cannot. No scanner, no rebuild, no agent."
+Enter
+Sleep 3s

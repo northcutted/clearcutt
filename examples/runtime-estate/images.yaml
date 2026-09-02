@@ -1,0 +1,262 @@
+apiVersion: clearcutt.dev/v1
+generatedAt: "2026-09-01T00:00:00Z"
+images:
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: debian-bookworm-slim
+  image: docker.io/library/debian:bookworm-slim
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/debian:bookworm-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: nginx-1-27-bookworm
+  image: docker.io/library/nginx:1.27-bookworm
+  language:
+    displayName: Nginx
+    id: nginx
+    version: "1.27"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/nginx:1.27-bookworm
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: node-20-bookworm-slim
+  image: docker.io/library/node:20-bookworm-slim
+  language:
+    displayName: Node.js
+    id: node
+    version: "20"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/node:20-bookworm-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: node-22-bookworm-slim
+  image: docker.io/library/node:22-bookworm-slim
+  language:
+    displayName: Node.js
+    id: node
+    version: "22"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/node:22-bookworm-slim
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: postgres-16-bookworm
+  image: docker.io/library/postgres:16-bookworm
+  language:
+    displayName: Postgres
+    id: postgres
+    version: "16"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/postgres:16-bookworm
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: python-3-11-slim-bookworm
+  image: docker.io/library/python:3.11-slim-bookworm
+  language:
+    displayName: Python
+    id: python
+    version: "3.11"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.11-slim-bookworm
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: high
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: python-3-12-slim-bookworm
+  image: docker.io/library/python:3.12-slim-bookworm
+  language:
+    displayName: Python
+    id: python
+    version: "3.12"
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/python:3.12-slim-bookworm
+  tier: slim
+- evidencePolicy:
+    provenance: optional
+    sbom: optional
+    signature: optional
+    tests: optional
+    vulnerabilityScan: optional
+  governance:
+    classificationConfidence: low
+    imported: true
+    owner: runtime-estate
+    productionIntent: unknown
+  id: ruby-3-3-slim-bookworm
+  image: docker.io/library/ruby:3.3-slim-bookworm
+  language:
+    displayName: Unknown
+    id: unknown
+    version: unknown
+  lifecycle:
+    deprecatedAt: null
+    eolAt: null
+    productionAllowed: false
+    reason: null
+    status: active
+    support: unsupported
+  origin:
+    createdByClearCutt: false
+    kind: imported
+    observationMode: explicit-list
+    observedAt: "2026-09-01T00:00:00Z"
+    provenanceClaim: none
+    sourceRef: docker.io/library/ruby:3.3-slim-bookworm
+  tier: slim
+kind: ImportedFleetInventory
+owner: runtime-estate
+repo: demo

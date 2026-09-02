@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Regenerates docs/images/demo.gif from scripts/demo.tape.
-# Deterministic inputs: the committed public-estate and nix-estate fixtures.
+# The recording is LIVE: the tape observes real public registries so that the
+# creation of an observations.json is shown rather than asserted. Needs network.
 # Requires vhs (https://github.com/charmbracelet/vhs); falls back to
 # `nix run nixpkgs#vhs` when vhs is not on PATH.
 set -euo pipefail
@@ -12,6 +13,9 @@ if [[ ! -x ./clearcutt ]]; then
   echo "[record-demo] building CLI..." >&2
   (cd cli && go build -o ../clearcutt ./cmd/clearcutt)
 fi
+
+# The tape builds a scratch estate here from examples/runtime-estate/refs.txt.
+rm -rf /tmp/clearcutt-demo
 
 if command -v vhs >/dev/null 2>&1; then
   vhs scripts/demo.tape

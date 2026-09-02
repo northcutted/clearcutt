@@ -17,7 +17,13 @@ that is honest about what it cannot prove.
 There is no hosted control plane and no image feed to subscribe to. ClearCutt
 reads registries you already have and writes files you own.
 
-![Terminal demo: an openssl advisory answered by naming the four images that ship it, shared-layer blast radius across 19 real public images, and a base-image graph that separates what is proven by layer digest from what is merely claimed by a label](docs/images/demo.gif)
+![Terminal demo: eight public images observed live from a list of refs, a base-image graph proving five of five relationships by layer digest and naming the two it cannot, and a package query that answers UNKNOWN rather than zero and prices the fetch that would resolve it](docs/images/demo.gif)
+
+The demo below is live, not staged: it starts from eight public image
+references — debian, node, python, ruby, postgres, nginx — observes them, proves
+one debian layer sits under six of the eight, names the two it cannot place and
+why, and then fails honestly on a package question Debian gives it no way to
+answer. Nothing in it is an image we built.
 
 ## What It Does
 

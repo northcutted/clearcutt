@@ -1,0 +1,8 @@
+docker.io/library/debian:bookworm-slim
+docker.io/library/node:22-bookworm-slim
+docker.io/library/node:20-bookworm-slim
+docker.io/library/python:3.12-slim-bookworm
+docker.io/library/python:3.11-slim-bookworm
+docker.io/library/ruby:3.3-slim-bookworm
+docker.io/library/postgres:16-bookworm
+docker.io/library/nginx:1.27-bookworm
