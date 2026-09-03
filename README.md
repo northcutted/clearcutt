@@ -17,13 +17,17 @@ that is honest about what it cannot prove.
 There is no hosted control plane and no image feed to subscribe to. ClearCutt
 reads registries you already have and writes files you own.
 
-![Terminal demo: eight public images observed live from a list of refs, a base-image graph proving five of five relationships by layer digest and naming the two it cannot, and a package query that answers UNKNOWN rather than zero and prices the fetch that would resolve it](docs/images/demo.gif)
+![Terminal demo walking through four stages — observing eight public images live from a list of refs, proving five of five base relationships by layer digest, answering UNKNOWN rather than zero when Debian records no package list, and answering the same question for free where the builder does record one](docs/images/demo.gif)
 
-The demo below is live, not staged: it starts from eight public image
-references — debian, node, python, ruby, postgres, nginx — observes them, proves
-one debian layer sits under six of the eight, names the two it cannot place and
-why, and then fails honestly on a package question Debian gives it no way to
-answer. Nothing in it is an image we built.
+The demo below is live, not staged, and it is meant to stand on its own — each
+stage names the problem, says what you would have to do without ClearCutt, then
+shows the command. It starts from eight public image references (debian, node,
+python, ruby, postgres, nginx), observes them in about two seconds without
+pulling a single layer, proves one debian layer sits under six of the eight,
+names the two it cannot place and why, and then **fails honestly**: asked which
+images ship openssl, it answers UNKNOWN rather than zero, because Debian records
+no package list — and prices the fetch that would resolve it. The last stage
+shows the same question answered for free where the builder does record one.
 
 ## What It Does
 
