@@ -1,7 +1,7 @@
 {
   "apiVersion": "clearcutt.dev/v1",
   "kind": "LayerCommonalityGraph",
-  "generatedAt": "2026-09-01T00:23:37.138066Z",
+  "generatedAt": "2026-08-31T00:00:00Z",
   "summary": {
     "images": 19,
     "distinctLayers": 96,

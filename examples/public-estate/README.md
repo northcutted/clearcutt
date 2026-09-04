@@ -25,8 +25,20 @@ clearcutt import images   --refs refs.txt --output images.yaml \
                           --generated-at 2026-08-31T00:00:00Z --force
 clearcutt import observe  --images images.yaml --output observations.json \
                           --generated-at 2026-08-31T00:00:00Z
-clearcutt graph build     --observations observations.json --output graph.json
-clearcutt graph layers    --observations observations.json --output layers.json
+clearcutt graph build     --observations observations.json --output graph.json \
+                          --generated-at 2026-08-31T00:00:00Z --force
+clearcutt graph layers    --observations observations.json --output layers.json \
+                          --generated-at 2026-08-31T00:00:00Z --force
+```
+
+Those two `graph` commands are written out in full because `graph.json` and
+`layers.json` are committed here and the recipe has to reproduce them. To just
+*look* at this estate, both flags are optional — `--observations` defaults to
+`./observations.json`, and without `--output` the report goes to the terminal
+and nothing is written:
+
+```sh
+cd examples/public-estate && clearcutt graph build
 ```
 
 Expect `TestPublicEstateFixtureDetectorCoverage` to need updating afterwards; it

@@ -1,0 +1,1121 @@
+{
+  "apiVersion": "clearcutt.dev/v1",
+  "kind": "ImportedFleetObservations",
+  "generatedAt": "2026-09-01T00:00:00Z",
+  "images": [
+    {
+      "id": "debian-bookworm-slim",
+      "sourceRef": "docker.io/library/debian:bookworm-slim",
+      "digestRef": "index.docker.io/library/debian@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "manifestDigest": "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171",
+      "configDigest": "sha256:160466e67bb85a4099d9d9c2356b4a6a64747b281a22c142efbd4539db1b8525",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-08-24T00:00:00Z",
+      "entrypoint": [],
+      "cmd": [
+        "bash"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "nginx-1-27-bookworm",
+      "sourceRef": "docker.io/library/nginx:1.27-bookworm",
+      "digestRef": "index.docker.io/library/nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d",
+      "manifestDigest": "sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d",
+      "configDigest": "sha256:1e5f3c5b981a9f91ca91cf13ce87c2eedfc7a083f4f279552084dd08fc477512",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v5",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/mips64le",
+        "linux/ppc64le",
+        "linux/s390x",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2025-04-16T14:50:31Z",
+      "entrypoint": [
+        "/docker-entrypoint.sh"
+      ],
+      "cmd": [
+        "nginx",
+        "-g",
+        "daemon off;"
+      ],
+      "labels": {
+        "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e"
+      },
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:dad67da3f26bce15939543965e09c4059533b025f707aad72ed3d3f3a09c66f8",
+          "size": 28230129,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:3b00567da96412a0298328fad6b96aadd3bc9ca97e6683534da152b0b9e8a977",
+          "size": 44151007,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:56b81cfa547d78176e719c9cd387e35fbd95ce6e8500efb26d9fbcbac4dbc4f6",
+          "size": 628,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:1bc5dc8b475d9de62c94cf69a139df17aaf7fe7bac76b5133d8048a058fb3c3b",
+          "size": 956,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:979e6233a40af9a51ee2c9894bd42ebf78a79c87cbed70cc6a3840a0952f3d57",
+          "size": 405,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:d2a7ba8dbfee4f222961ad1449648ab46a6cea044e4cfb374450325ecee8f67f",
+          "size": 1211,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:32e44235e1d55a34be577baa12271f067c0bf79ba4e1ca4e6ec484424540132a",
+          "size": 1399,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1749513600'",
+          "comment": "debuerreotype 0.15"
+        },
+        {
+          "createdBy": "LABEL maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV NGINX_VERSION=1.27.5",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV NJS_VERSION=0.8.10",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV NJS_RELEASE=1~bookworm",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PKG_RELEASE=1~bookworm",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV DYNPKG_RELEASE=1~bookworm",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -x     \u0026\u0026 groupadd --system --gid 101 nginx     \u0026\u0026 useradd --system --gid nginx --no-create-home --home /nonexistent --comment \"nginx user\" --shell /bin/false --uid 101 nginx     \u0026\u0026 apt-get update     \u0026\u0026 apt-get install --no-install-recommends --no-install-suggests -y gnupg1 ca-certificates     \u0026\u0026     NGINX_GPGKEYS=\"573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 8540A6F18833A80E9C1653A42FD21310B49F6B46 9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3\";     NGINX_GPGKEY_PATH=/etc/apt/keyrings/nginx-archive-keyring.gpg;     export GNUPGHOME=\"$(mktemp -d)\";     found='';     for NGINX_GPGKEY in $NGINX_GPGKEYS; do     for server in         hkp://keyserver.ubuntu.com:80         pgp.mit.edu     ; do         echo \"Fetching GPG key $NGINX_GPGKEY from $server\";         gpg1 --keyserver \"$server\" --keyserver-options timeout=10 --recv-keys \"$NGINX_GPGKEY\" \u0026\u0026 found=yes \u0026\u0026 break;     done;     test -z \"$found\" \u0026\u0026 echo \u003e\u00262 \"error: failed to fetch GPG key $NGINX_GPGKEY\" \u0026\u0026 exit 1;     done;     gpg1 --export \"$NGINX_GPGKEYS\" \u003e \"$NGINX_GPGKEY_PATH\" ;     rm -rf \"$GNUPGHOME\";     apt-get remove --purge --auto-remove -y gnupg1 \u0026\u0026 rm -rf /var/lib/apt/lists/*     \u0026\u0026 dpkgArch=\"$(dpkg --print-architecture)\"     \u0026\u0026 nginxPackages=\"         nginx=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-xslt=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-geoip=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-image-filter=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-njs=${NGINX_VERSION}+${NJS_VERSION}-${NJS_RELEASE}     \"     \u0026\u0026 case \"$dpkgArch\" in         amd64|arm64)             echo \"deb [signed-by=$NGINX_GPGKEY_PATH] https://nginx.org/packages/mainline/debian/ bookworm nginx\" \u003e\u003e /etc/apt/sources.list.d/nginx.list             \u0026\u0026 apt-get update             ;;         *)             tempDir=\"$(mktemp -d)\"             \u0026\u0026 chmod 777 \"$tempDir\"                         \u0026\u0026 savedAptMark=\"$(apt-mark showmanual)\"                         \u0026\u0026 apt-get update             \u0026\u0026 apt-get install --no-install-recommends --no-install-suggests -y                 curl                 devscripts                 equivs                 git                 libxml2-utils                 lsb-release                 xsltproc             \u0026\u0026 (                 cd \"$tempDir\"                 \u0026\u0026 REVISION=\"${NGINX_VERSION}-${PKG_RELEASE}\"                 \u0026\u0026 REVISION=${REVISION%~*}                 \u0026\u0026 curl -f -L -O https://github.com/nginx/pkg-oss/archive/${REVISION}.tar.gz                 \u0026\u0026 PKGOSSCHECKSUM=\"c773d98b567bd585c17f55702bf3e4c7d82b676bfbde395270e90a704dca3c758dfe0380b3f01770542b4fd9bed1f1149af4ce28bfc54a27a96df6b700ac1745 *${REVISION}.tar.gz\"                 \u0026\u0026 if [ \"$(openssl sha512 -r ${REVISION}.tar.gz)\" = \"$PKGOSSCHECKSUM\" ]; then                     echo \"pkg-oss tarball checksum verification succeeded!\";                 else                     echo \"pkg-oss tarball checksum verification failed!\";                     exit 1;                 fi                 \u0026\u0026 tar xzvf ${REVISION}.tar.gz                 \u0026\u0026 cd pkg-oss-${REVISION}                 \u0026\u0026 cd debian                 \u0026\u0026 for target in base module-geoip module-image-filter module-njs module-xslt; do                     make rules-$target;                     mk-build-deps --install --tool=\"apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes\"                         debuild-$target/nginx-$NGINX_VERSION/debian/control;                 done                 \u0026\u0026 make base module-geoip module-image-filter module-njs module-xslt             )                         \u0026\u0026 apt-mark showmanual | xargs apt-mark auto \u003e /dev/null             \u0026\u0026 { [ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark; }                         \u0026\u0026 ls -lAFh \"$tempDir\"             \u0026\u0026 ( cd \"$tempDir\" \u0026\u0026 dpkg-scanpackages . \u003e Packages )             \u0026\u0026 grep '^Package: ' \"$tempDir/Packages\"             \u0026\u0026 echo \"deb [ trusted=yes ] file://$tempDir ./\" \u003e /etc/apt/sources.list.d/temp.list             \u0026\u0026 apt-get -o Acquire::GzipIndexes=false update             ;;     esac         \u0026\u0026 apt-get install --no-install-recommends --no-install-suggests -y                         $nginxPackages                         gettext-base                         curl     \u0026\u0026 apt-get remove --purge --auto-remove -y \u0026\u0026 rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/nginx.list         \u0026\u0026 if [ -n \"$tempDir\" ]; then         apt-get purge -y --auto-remove         \u0026\u0026 rm -rf \"$tempDir\" /etc/apt/sources.list.d/temp.list;     fi     \u0026\u0026 ln -sf /dev/stdout /var/log/nginx/access.log     \u0026\u0026 ln -sf /dev/stderr /var/log/nginx/error.log     \u0026\u0026 mkdir /docker-entrypoint.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY docker-entrypoint.sh / # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY 10-listen-on-ipv6-by-default.sh /docker-entrypoint.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY 15-local-resolvers.envsh /docker-entrypoint.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY 20-envsubst-on-templates.sh /docker-entrypoint.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY 30-tune-worker-processes.sh /docker-entrypoint.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENTRYPOINT [\"/docker-entrypoint.sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "EXPOSE map[80/tcp:{}]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "STOPSIGNAL SIGQUIT",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "node-20-bookworm-slim",
+      "sourceRef": "docker.io/library/node:20-bookworm-slim",
+      "digestRef": "index.docker.io/library/node@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+      "manifestDigest": "sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+      "configDigest": "sha256:9da6b4e352d0d5c94963eba1832408f5b7b08839cd8be9b6610c05de5118c704",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "linux/s390x",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-04-22T01:45:50.871696016Z",
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "cmd": [
+        "node"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:ff86ea2e5edce334d19a34fbc65d1a511aa1fc823dba1110422f991aa56b44d4",
+          "size": 28236252,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:e54aec64c365815cd7b91e718f00ac6e625562b1de09036b38614621b42c7582",
+          "size": 3308,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:804d4d68057cbb26cbcde9a735148ebc6589911bad32cf9dbddb5b0ba878bf1f",
+          "size": 41422030,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:64cfb949317c9824fd081d55c59a7225bfe1f650c6395ba42d7ed0ccf51993d2",
+          "size": 1712673,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:3c02fd806613748139b8b8a14a69ae3518a1b0e863c57c35aada3b92ed87fb31",
+          "size": 447,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1776729600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c groupadd --gid 1000 node   \u0026\u0026 useradd --uid 1000 --gid node --shell /bin/bash --create-home node # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV NODE_VERSION=20.20.2",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c ARCH= OPENSSL_ARCH= \u0026\u0026 dpkgArch=\"$(dpkg --print-architecture)\"     \u0026\u0026 case \"${dpkgArch##*-}\" in       amd64) ARCH='x64' OPENSSL_ARCH='linux-x86_64';;       ppc64el) ARCH='ppc64le' OPENSSL_ARCH='linux-ppc64le';;       s390x) ARCH='s390x' OPENSSL_ARCH='linux*-s390x';;       arm64) ARCH='arm64' OPENSSL_ARCH='linux-aarch64';;       armhf) ARCH='armv7l' OPENSSL_ARCH='linux-armv4';;       i386) ARCH='x86' OPENSSL_ARCH='linux-elf';;       *) echo \"unsupported architecture\"; exit 1 ;;     esac     \u0026\u0026 set -ex     \u0026\u0026 apt-get update \u0026\u0026 apt-get install -y ca-certificates curl wget gnupg dirmngr xz-utils libatomic1 --no-install-recommends     \u0026\u0026 rm -rf /var/lib/apt/lists/*     \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"     \u0026\u0026 for key in       5BE8A3F6C8A5C01D106C0AD820B1A390B168D356       DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7       CC68F5A3106FF448322E48ED27F5E38D5B0A215F       8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600       890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4       C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C       108F52B48DB57BB0CC439B2997B01419BD92F80A       A363A499291CBBC940DD62E41F10027AF002F8B0     ; do       { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||       { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;     done     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH.tar.xz\"     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt.asc\"     \u0026\u0026 gpg --batch --decrypt --output SHASUMS256.txt SHASUMS256.txt.asc     \u0026\u0026 gpgconf --kill all     \u0026\u0026 rm -rf \"$GNUPGHOME\"     \u0026\u0026 grep \" node-v$NODE_VERSION-linux-$ARCH.tar.xz\\$\" SHASUMS256.txt | sha256sum -c -     \u0026\u0026 tar -xJf \"node-v$NODE_VERSION-linux-$ARCH.tar.xz\" -C /usr/local --strip-components=1 --no-same-owner     \u0026\u0026 rm \"node-v$NODE_VERSION-linux-$ARCH.tar.xz\" SHASUMS256.txt.asc SHASUMS256.txt     \u0026\u0026 find /usr/local/include/node/openssl/archs -mindepth 1 -maxdepth 1 ! -name \"$OPENSSL_ARCH\" -exec rm -rf {} \\;     \u0026\u0026 apt-mark auto '.*' \u003e /dev/null     \u0026\u0026 find /usr/local -type f -executable -exec ldd '{}' ';'       | awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); print so }'       | sort -u       | xargs -r dpkg-query --search       | cut -d: -f1       | sort -u       | xargs -r apt-mark manual     \u0026\u0026 apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false     \u0026\u0026 ln -s /usr/local/bin/node /usr/local/bin/nodejs     \u0026\u0026 node --version     \u0026\u0026 npm --version     \u0026\u0026 rm -rf /tmp/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV YARN_VERSION=1.22.22",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -ex   \u0026\u0026 savedAptMark=\"$(apt-mark showmanual)\"   \u0026\u0026 apt-get update \u0026\u0026 apt-get install -y ca-certificates curl wget gnupg dirmngr --no-install-recommends   \u0026\u0026 rm -rf /var/lib/apt/lists/*   \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"   \u0026\u0026 for key in     6A010C5166006599AA17F08146C2130DFD2497F5   ; do     { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||     { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;   done   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz\"   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz.asc\"   \u0026\u0026 gpg --batch --verify yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 gpgconf --kill all   \u0026\u0026 rm -rf \"$GNUPGHOME\"   \u0026\u0026 mkdir -p /opt   \u0026\u0026 tar -xzf yarn-v$YARN_VERSION.tar.gz -C /opt/   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarn /usr/local/bin/yarn   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarnpkg /usr/local/bin/yarnpkg   \u0026\u0026 rm yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 apt-mark auto '.*' \u003e /dev/null   \u0026\u0026 { [ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark \u003e /dev/null; }   \u0026\u0026 find /usr/local -type f -executable -exec ldd '{}' ';'     | awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); print so }'     | sort -u     | xargs -r dpkg-query --search     | cut -d: -f1     | sort -u     | xargs -r apt-mark manual   \u0026\u0026 apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false   \u0026\u0026 yarn --version   \u0026\u0026 rm -rf /tmp/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "CMD [\"node\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "node-22-bookworm-slim",
+      "sourceRef": "docker.io/library/node:22-bookworm-slim",
+      "digestRef": "index.docker.io/library/node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+      "manifestDigest": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+      "configDigest": "sha256:6e6261159fd399ebe5a3d556b7d89da9c85c873f3f270918aad6c8107da8b411",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-08-25T00:56:00.936273022Z",
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "cmd": [
+        "node"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:cea7eb9bbe80eabf8356efb28b3796ab904f36a32049aeb6b435920ca93f9285",
+          "size": 3314,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:51c53f95c2cae3d00dfc0350297c92dea913fe129ec38b8deb8313e5f3e0297d",
+          "size": 49938210,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:3cddab114edadc7cf5a7b0b591e59f6312aade3dc4fb68e88aacca5eb1cc1c03",
+          "size": 1712979,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:0282d618b52cd2eb8fcf041e780cd66b15e7ebae519a4054c5d293eae6b6d34f",
+          "size": 447,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c groupadd --gid 1000 node   \u0026\u0026 useradd --uid 1000 --gid node --shell /bin/bash --create-home node # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV NODE_VERSION=22.23.2",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c ARCH= OPENSSL_ARCH= \u0026\u0026 dpkgArch=\"$(dpkg --print-architecture)\"     \u0026\u0026 case \"${dpkgArch##*-}\" in       amd64) ARCH='x64' OPENSSL_ARCH='linux-x86_64';;       ppc64el) ARCH='ppc64le' OPENSSL_ARCH='linux-ppc64le';;       s390x) ARCH='s390x' OPENSSL_ARCH='linux*-s390x';;       arm64) ARCH='arm64' OPENSSL_ARCH='linux-aarch64';;       armhf) ARCH='armv7l' OPENSSL_ARCH='linux-armv4';;       *) echo \"unsupported architecture\"; exit 1 ;;     esac     \u0026\u0026 set -ex     \u0026\u0026 apt-get update \u0026\u0026 apt-get install -y ca-certificates curl wget gnupg dirmngr xz-utils libatomic1 --no-install-recommends     \u0026\u0026 rm -rf /var/lib/apt/lists/*     \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"     \u0026\u0026 for key in       5BE8A3F6C8A5C01D106C0AD820B1A390B168D356       DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7       CC68F5A3106FF448322E48ED27F5E38D5B0A215F       8FCCA13FEF1D0C2E91008E09770F7A9A5AE15600       890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4       C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C       108F52B48DB57BB0CC439B2997B01419BD92F80A       A363A499291CBBC940DD62E41F10027AF002F8B0       655F3B5C1FB3FA8D1A0CA6BDE4A7D232B936D2FD     ; do       { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||       { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;     done     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH.tar.xz\"     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt.asc\"     \u0026\u0026 gpg --batch --decrypt --output SHASUMS256.txt SHASUMS256.txt.asc     \u0026\u0026 gpgconf --kill all     \u0026\u0026 rm -rf \"$GNUPGHOME\"     \u0026\u0026 grep \" node-v$NODE_VERSION-linux-$ARCH.tar.xz\\$\" SHASUMS256.txt | sha256sum -c -     \u0026\u0026 tar -xJf \"node-v$NODE_VERSION-linux-$ARCH.tar.xz\" -C /usr/local --strip-components=1 --no-same-owner     \u0026\u0026 rm \"node-v$NODE_VERSION-linux-$ARCH.tar.xz\" SHASUMS256.txt.asc SHASUMS256.txt     \u0026\u0026 find /usr/local/include/node/openssl/archs -mindepth 1 -maxdepth 1 ! -name \"$OPENSSL_ARCH\" -exec rm -rf {} \\;     \u0026\u0026 apt-mark auto '.*' \u003e /dev/null     \u0026\u0026 find /usr/local -type f -executable -exec ldd '{}' ';'       | awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); print so }'       | sort -u       | xargs -r dpkg-query --search       | cut -d: -f1       | sort -u       | xargs -r apt-mark manual     \u0026\u0026 apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false     \u0026\u0026 ln -s /usr/local/bin/node /usr/local/bin/nodejs     \u0026\u0026 node --version     \u0026\u0026 npm --version     \u0026\u0026 rm -rf /tmp/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV YARN_VERSION=1.22.22",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -ex   \u0026\u0026 savedAptMark=\"$(apt-mark showmanual)\"   \u0026\u0026 apt-get update \u0026\u0026 apt-get install -y ca-certificates curl wget gnupg dirmngr --no-install-recommends   \u0026\u0026 rm -rf /var/lib/apt/lists/*   \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"   \u0026\u0026 for key in     6A010C5166006599AA17F08146C2130DFD2497F5   ; do     { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||     { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;   done   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz\"   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz.asc\"   \u0026\u0026 gpg --batch --verify yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 gpgconf --kill all   \u0026\u0026 rm -rf \"$GNUPGHOME\"   \u0026\u0026 mkdir -p /opt   \u0026\u0026 tar -xzf yarn-v$YARN_VERSION.tar.gz -C /opt/   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarn /usr/local/bin/yarn   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarnpkg /usr/local/bin/yarnpkg   \u0026\u0026 rm yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 apt-mark auto '.*' \u003e /dev/null   \u0026\u0026 { [ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark \u003e /dev/null; }   \u0026\u0026 find /usr/local -type f -executable -exec ldd '{}' ';'     | awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); print so }'     | sort -u     | xargs -r dpkg-query --search     | cut -d: -f1     | sort -u     | xargs -r apt-mark manual   \u0026\u0026 apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false   \u0026\u0026 yarn --version   \u0026\u0026 rm -rf /tmp/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "CMD [\"node\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "postgres-16-bookworm",
+      "sourceRef": "docker.io/library/postgres:16-bookworm",
+      "digestRef": "index.docker.io/library/postgres@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825",
+      "manifestDigest": "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825",
+      "configDigest": "sha256:5f71c21b69a7977b82247582e2e731ed76bdebaadb7dd7945ed76bcc9ed06632",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-08-25T00:42:19.848754437Z",
+      "entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "cmd": [
+        "postgres"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:b7af40ae67ad99f933a785c512ac69da5c0d6ed91b9fc154312252c25bbb140f",
+          "size": 1171,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:e5ae2cba81fd05651bc9b02c8f77670bbd28207eb6c336d382b3981f89c5dd7a",
+          "size": 4534269,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:4db28dbab443b290a47801c0c811f07bf409b3fb3369cbded61a742ece7539a5",
+          "size": 1250052,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:4827842fa5e43f2a951ee42a23c4c5b78040fbe07667703e9cf74a9dcda464ee",
+          "size": 8066504,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:a6d4e4d9c5723d65b1a1433d68512fc7c955bac5a05bd4ec04176931c48cd92a",
+          "size": 1196454,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:6ca46ca6518514ce7f4e7bd52b70b3b73f07fdb339fe9eab4ef829ed443791ac",
+          "size": 116,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:3320d5513610fff2343fa08ea736732ec6871597833b820d3418f3e5ec037440",
+          "size": 3141,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:6bc0849873739bada842166b3a054715c46b054adf16176b18423b6c9ef1b505",
+          "size": 111810593,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:2620c4b83e21763b47d726608bcc7be70d295cdd34ce7fc71a5102dbd0202b3a",
+          "size": 10018,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:056882c7cf135febb3d275aa790e1ae6cb2c8ca38c6ab845f30ba6d26a0f72b3",
+          "size": 128,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:57c2f8e41f83887980de3967ffdd61cbcb6086ba058ad01d779e878ba4084d22",
+          "size": 167,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:5ea6527442030bba03ee6cb0818f43c3cbd0b57f60e80a25df73b2947afc631a",
+          "size": 6107,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:907a9d0cea7b7c52b864474104632a445531507064aa5780d64df8eba6c312f4",
+          "size": 186,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tgroupadd -r postgres --gid=999; \tuseradd -r -g postgres --uid=999 --home-dir=/var/lib/postgresql --shell=/bin/bash postgres; \tinstall --verbose --directory --owner postgres --group postgres --mode 1777 /var/lib/postgresql # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -ex; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tgnupg \t\tless \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV GOSU_VERSION=1.19",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends ca-certificates wget; \trm -rf /var/lib/apt/lists/*; \tdpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\"; \twget -O /usr/local/bin/gosu \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch\"; \twget -O /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc\"; \texport GNUPGHOME=\"$(mktemp -d)\"; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \tgpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" /usr/local/bin/gosu.asc; \tapt-mark auto '.*' \u003e /dev/null; \t[ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark \u003e /dev/null; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \tchmod +x /usr/local/bin/gosu; \tgosu --version; \tgosu nobody true # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tif [ -f /etc/dpkg/dpkg.cfg.d/docker ]; then \t\tgrep -q '/usr/share/locale' /etc/dpkg/dpkg.cfg.d/docker; \t\tsed -ri '/\\/usr\\/share\\/locale/d' /etc/dpkg/dpkg.cfg.d/docker; \t\t! grep -q '/usr/share/locale' /etc/dpkg/dpkg.cfg.d/docker; \tfi; \tapt-get update; apt-get install -y --no-install-recommends locales; rm -rf /var/lib/apt/lists/*; \techo 'en_US.UTF-8 UTF-8' \u003e\u003e /etc/locale.gen; \tlocale-gen; \tlocale -a | grep 'en_US.utf8' # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV LANG=en_US.utf8",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tlibnss-wrapper \t\txz-utils \t\tzstd \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c mkdir /docker-entrypoint-initdb.d # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -ex; \tkey='B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'; \texport GNUPGHOME=\"$(mktemp -d)\"; \tmkdir -p /usr/local/share/keyrings/; \tgpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\"; \tgpg --batch --export --armor \"$key\" \u003e /usr/local/share/keyrings/postgres.gpg.asc; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV PG_MAJOR=16",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/16/bin",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PG_VERSION=16.15-1.pgdg12+2",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -ex; \t\texport PYTHONDONTWRITEBYTECODE=1; \t\tdpkgArch=\"$(dpkg --print-architecture)\"; \taptRepo=\"[ signed-by=/usr/local/share/keyrings/postgres.gpg.asc ] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main $PG_MAJOR\"; \tcase \"$dpkgArch\" in \t\tamd64 | arm64 | ppc64el) \t\t\techo \"deb $aptRepo\" \u003e /etc/apt/sources.list.d/pgdg.list; \t\t\tapt-get update; \t\t\t;; \t\t*) \t\t\techo \"deb-src $aptRepo\" \u003e /etc/apt/sources.list.d/pgdg.list; \t\t\t\t\t\tsavedAptMark=\"$(apt-mark showmanual)\"; \t\t\t\t\t\ttempDir=\"$(mktemp -d)\"; \t\t\tcd \"$tempDir\"; \t\t\t\t\t\tapt-get update; \t\t\tapt-get install -y --no-install-recommends dpkg-dev; \t\t\techo \"deb [ trusted=yes ] file://$tempDir ./\" \u003e /etc/apt/sources.list.d/temp.list; \t\t\t_update_repo() { \t\t\t\tdpkg-scanpackages . \u003e Packages; \t\t\t\tapt-get -o Acquire::GzipIndexes=false update; \t\t\t}; \t\t\t_update_repo; \t\t\t\t\t\tnproc=\"$(nproc)\"; \t\t\texport DEB_BUILD_OPTIONS=\"nocheck parallel=$nproc\"; \t\t\tapt-get build-dep -y postgresql-common-dev; \t\t\tapt-get source --compile postgresql-common-dev; \t\t\t_update_repo; \t\t\tapt-get build-dep -y \"postgresql-$PG_MAJOR=$PG_VERSION\"; \t\t\tapt-get source --compile \"postgresql-$PG_MAJOR=$PG_VERSION\"; \t\t\t\t\t\t\t\t\tapt-mark showmanual | xargs apt-mark auto \u003e /dev/null; \t\t\tapt-mark manual $savedAptMark; \t\t\t\t\t\tls -lAFh; \t\t\t_update_repo; \t\t\tgrep '^Package: ' Packages; \t\t\tcd /; \t\t\t;; \tesac; \t\tapt-get install -y --no-install-recommends postgresql-common; \tsed -ri 's/#(create_main_cluster) .*$/\\1 = false/' /etc/postgresql-common/createcluster.conf; \tapt-get install -y --no-install-recommends \t\t\"postgresql-$PG_MAJOR=$PG_VERSION\" \t; \t\trm -rf /var/lib/apt/lists/*; \t\tif [ -n \"$tempDir\" ]; then \t\tapt-get purge -y --auto-remove; \t\trm -rf \"$tempDir\" /etc/apt/sources.list.d/temp.list; \tfi; \t\tfind /usr -name '*.pyc' -type f -exec bash -c 'for pyc; do dpkg -S \"$pyc\" \u0026\u003e /dev/null || rm -vf \"$pyc\"; done' -- '{}' +; \t\tpostgres --version # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tdpkg-divert --add --rename --divert \"/usr/share/postgresql/postgresql.conf.sample.dpkg\" \"/usr/share/postgresql/$PG_MAJOR/postgresql.conf.sample\"; \tcp -v /usr/share/postgresql/postgresql.conf.sample.dpkg /usr/share/postgresql/postgresql.conf.sample; \tln -sv ../postgresql.conf.sample \"/usr/share/postgresql/$PG_MAJOR/\"; \tsed -ri \"s!^#?(listen_addresses)\\s*=\\s*\\S+.*!\\1 = '*'!\" /usr/share/postgresql/postgresql.conf.sample; \tgrep -F \"listen_addresses = '*'\" /usr/share/postgresql/postgresql.conf.sample # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c install --verbose --directory --owner postgres --group postgres --mode 3777 /var/run/postgresql # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV PGDATA=/var/lib/postgresql/data",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c install --verbose --directory --owner postgres --group postgres --mode 1777 \"$PGDATA\" # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "VOLUME [/var/lib/postgresql/data]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "COPY docker-entrypoint.sh docker-ensure-initdb.sh /usr/local/bin/ # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c ln -sT docker-ensure-initdb.sh /usr/local/bin/docker-enforce-initdb.sh # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "STOPSIGNAL SIGINT",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "EXPOSE map[5432/tcp:{}]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "CMD [\"postgres\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "python-3-11-slim-bookworm",
+      "sourceRef": "docker.io/library/python:3.11-slim-bookworm",
+      "digestRef": "index.docker.io/library/python@sha256:528257d48c1da0dcecc2e725d1ae34498d60c965f1241e39cd6a85a8859bdf84",
+      "manifestDigest": "sha256:528257d48c1da0dcecc2e725d1ae34498d60c965f1241e39cd6a85a8859bdf84",
+      "configDigest": "sha256:9356cb064a7cbecce9a3ccba46e7fd5459d3a3e939db884ef7fbf3f757cc5ec8",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-09-01T00:16:51.41639586Z",
+      "entrypoint": [],
+      "cmd": [
+        "python3"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:5916320cd9ac92ae5ba3f99d8c7e3a3821d03b6bac8c7cd2cd1459bf1cc4f327",
+          "size": 3533409,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:882a85d461488e9f738169100e18dabf5b52710cf9de01203645106010390643",
+          "size": 16024064,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:6128e8861235d84a1b973ae2b2847000f2c1163dbf138e56f6ca2127512afdd2",
+          "size": 250,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "ENV PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV LANG=C.UTF-8",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tnetbase \t\ttzdata \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV GPG_KEY=A035C8C19219BA821ECEA86B64E628F8D684696D",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PYTHON_VERSION=3.11.16",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PYTHON_SHA256=91bcdebfdde239a003ae93738a7fce0f9230fee5c4bc2b86f6e6e8c6f98aabe8",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tdpkg-dev \t\tg++ \t\tgcc \t\tgnupg \t\tlibbluetooth-dev \t\tlibbz2-dev \t\tlibc6-dev \t\tlibdb-dev \t\tlibffi-dev \t\tlibgdbm-dev \t\tliblzma-dev \t\tlibncursesw5-dev \t\tlibreadline-dev \t\tlibsqlite3-dev \t\tlibssl-dev \t\tmake \t\ttk-dev \t\tuuid-dev \t\twget \t\txz-utils \t\tzlib1g-dev \t; \t\twget -O python.tar.xz \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz\"; \techo \"$PYTHON_SHA256 *python.tar.xz\" | sha256sum -c -; \twget -O python.tar.xz.asc \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc\"; \tGNUPGHOME=\"$(mktemp -d)\"; export GNUPGHOME; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$GPG_KEY\"; \tgpg --batch --verify python.tar.xz.asc python.tar.xz; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" python.tar.xz.asc; \tmkdir -p /usr/src/python; \ttar --extract --directory /usr/src/python --strip-components=1 --file python.tar.xz; \trm python.tar.xz; \t\tcd /usr/src/python; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \t./configure \t\t--build=\"$gnuArch\" \t\t--enable-loadable-sqlite-extensions \t\t--enable-optimizations \t\t--enable-option-checking=fatal \t\t--enable-shared \t\t$(test \"${gnuArch%%-*}\" != 'riscv64' \u0026\u0026 echo '--with-lto') \t\t--with-ensurepip \t; \tnproc=\"$(nproc)\"; \tEXTRA_CFLAGS=\"$(dpkg-buildflags --get CFLAGS)\"; \tLDFLAGS=\"$(dpkg-buildflags --get LDFLAGS)\"; \tLDFLAGS=\"${LDFLAGS:-} -Wl,--strip-all\"; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:-}\" \t; \trm python; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:-} -Wl,-rpath='\\$\\$ORIGIN/../lib'\" \t\tpython \t; \tmake install; \t\tcd /; \trm -rf /usr/src/python; \t\tfind /usr/local -depth \t\t\\( \t\t\t\\( -type d -a \\( -name test -o -name tests -o -name idle_test \\) \\) \t\t\t-o \\( -type f -a \\( -name '*.pyc' -o -name '*.pyo' -o -name 'libpython*.a' \\) \\) \t\t\\) -exec rm -rf '{}' + \t; \t\tldconfig; \t\tapt-mark auto '.*' \u003e /dev/null; \tapt-mark manual $savedAptMark; \tfind /usr/local -type f -executable -not \\( -name '*tkinter*' \\) -exec ldd '{}' ';' \t\t| awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -rt dpkg-query --search \t\t| awk 'sub(\":$\", \"\", $1) { print $1 }' \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \trm -rf /var/lib/apt/lists/*; \t\texport PYTHONDONTWRITEBYTECODE=1; \tpython3 --version; \t\tpip3 install \t\t--disable-pip-version-check \t\t--no-cache-dir \t\t--no-compile \t\t'setuptools==79.0.1' \t\t'wheel==0.46.3' \t; \tpip3 --version # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tfor src in idle3 pip3 pydoc3 python3 python3-config; do \t\tdst=\"$(echo \"$src\" | tr -d 3)\"; \t\t[ -s \"/usr/local/bin/$src\" ]; \t\t[ ! -e \"/usr/local/bin/$dst\" ]; \t\tln -svT \"$src\" \"/usr/local/bin/$dst\"; \tdone # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "CMD [\"python3\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "python-3-12-slim-bookworm",
+      "sourceRef": "docker.io/library/python:3.12-slim-bookworm",
+      "digestRef": "index.docker.io/library/python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "manifestDigest": "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+      "configDigest": "sha256:59bf1d95c965f12dfc14afaf5af778fc1dbe5b372bd5c281645fc34d4c75d4e7",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-09-01T00:12:51.874345198Z",
+      "entrypoint": [],
+      "cmd": [
+        "python3"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:268fd66f673d556a271a784d33c4541102f05dde43657861a8e793eb30ef38dd",
+          "size": 3533349,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:ec613f6df89286159c101a9b15264bc627366aaf788a9ea9c3a456ad9b9b2b3e",
+          "size": 13672032,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:35ef2f664a5c3b1e1408a24bd668ef33b82a89a534709e1c03aac6d50012d51a",
+          "size": 249,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "ENV PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV LANG=C.UTF-8",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tnetbase \t\ttzdata \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PYTHON_VERSION=3.12.14",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PYTHON_SHA256=5c8462af5790baf43a321a1559dbe0db06d1be4300fb85fb53c40060668e548a",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tdpkg-dev \t\tg++ \t\tgcc \t\tgnupg \t\tlibbluetooth-dev \t\tlibbz2-dev \t\tlibc6-dev \t\tlibdb-dev \t\tlibffi-dev \t\tlibgdbm-dev \t\tliblzma-dev \t\tlibncursesw5-dev \t\tlibreadline-dev \t\tlibsqlite3-dev \t\tlibssl-dev \t\tmake \t\ttk-dev \t\tuuid-dev \t\twget \t\txz-utils \t\tzlib1g-dev \t; \t\twget -O python.tar.xz \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz\"; \techo \"$PYTHON_SHA256 *python.tar.xz\" | sha256sum -c -; \twget -O python.tar.xz.asc \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc\"; \tGNUPGHOME=\"$(mktemp -d)\"; export GNUPGHOME; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$GPG_KEY\"; \tgpg --batch --verify python.tar.xz.asc python.tar.xz; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" python.tar.xz.asc; \tmkdir -p /usr/src/python; \ttar --extract --directory /usr/src/python --strip-components=1 --file python.tar.xz; \trm python.tar.xz; \t\tcd /usr/src/python; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \t./configure \t\t--build=\"$gnuArch\" \t\t--enable-loadable-sqlite-extensions \t\t--enable-optimizations \t\t--enable-option-checking=fatal \t\t--enable-shared \t\t$(test \"${gnuArch%%-*}\" != 'riscv64' \u0026\u0026 echo '--with-lto') \t\t--with-ensurepip \t; \tnproc=\"$(nproc)\"; \tEXTRA_CFLAGS=\"$(dpkg-buildflags --get CFLAGS)\"; \tLDFLAGS=\"$(dpkg-buildflags --get LDFLAGS)\"; \tLDFLAGS=\"${LDFLAGS:-} -Wl,--strip-all\"; \tarch=\"$(dpkg --print-architecture)\"; arch=\"${arch##*-}\"; \tcase \"$arch\" in \t\tamd64|arm64) \t\t\tEXTRA_CFLAGS=\"${EXTRA_CFLAGS:-} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer\"; \t\t\t;; \t\ti386) \t\t\t;; \t\t*) \t\t\tEXTRA_CFLAGS=\"${EXTRA_CFLAGS:-} -fno-omit-frame-pointer\"; \t\t\t;; \tesac; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:-}\" \t; \trm python; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:-} -Wl,-rpath='\\$\\$ORIGIN/../lib'\" \t\tpython \t; \tmake install; \t\tcd /; \trm -rf /usr/src/python; \t\tfind /usr/local -depth \t\t\\( \t\t\t\\( -type d -a \\( -name test -o -name tests -o -name idle_test \\) \\) \t\t\t-o \\( -type f -a \\( -name '*.pyc' -o -name '*.pyo' -o -name 'libpython*.a' \\) \\) \t\t\\) -exec rm -rf '{}' + \t; \t\tldconfig; \t\tapt-mark auto '.*' \u003e /dev/null; \tapt-mark manual $savedAptMark; \tfind /usr/local -type f -executable -not \\( -name '*tkinter*' \\) -exec ldd '{}' ';' \t\t| awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -rt dpkg-query --search \t\t| awk 'sub(\":$\", \"\", $1) { print $1 }' \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \trm -rf /var/lib/apt/lists/*; \t\texport PYTHONDONTWRITEBYTECODE=1; \tpython3 --version; \tpip3 --version # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tfor src in idle3 pip3 pydoc3 python3 python3-config; do \t\tdst=\"$(echo \"$src\" | tr -d 3)\"; \t\t[ -s \"/usr/local/bin/$src\" ]; \t\t[ ! -e \"/usr/local/bin/$dst\" ]; \t\tln -svT \"$src\" \"/usr/local/bin/$dst\"; \tdone # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "CMD [\"python3\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    },
+    {
+      "id": "ruby-3-3-slim-bookworm",
+      "sourceRef": "docker.io/library/ruby:3.3-slim-bookworm",
+      "digestRef": "index.docker.io/library/ruby@sha256:df209d82bb55aeb26b9b08922ee22c15f19b3458455690132dc07a5c52dc1c99",
+      "manifestDigest": "sha256:df209d82bb55aeb26b9b08922ee22c15f19b3458455690132dc07a5c52dc1c99",
+      "configDigest": "sha256:fea0fd56d6f0f0064cea1a54c5d19470098d708730dca26f7e883fad0dd4171c",
+      "platforms": [
+        "linux/386",
+        "linux/amd64",
+        "linux/arm/v7",
+        "linux/arm64/v8",
+        "linux/ppc64le",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown",
+        "unknown/unknown"
+      ],
+      "created": "2026-08-25T01:23:49.547350012Z",
+      "entrypoint": [],
+      "cmd": [
+        "irb"
+      ],
+      "labels": {},
+      "annotations": {},
+      "layers": [
+        {
+          "digest": "sha256:a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+          "size": 28232655,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:ac3963a467bbce2f747543853b774c0c0a2ddb5116e4060e79002ed4c2888ee6",
+          "size": 3523471,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:6bc4c8a04338cc796f1acc6734fc274540ffdf6245fe4806dff6ffc89268a2ec",
+          "size": 190,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:8b1dbf778a9b96d3ba97c46bd147f0b09e48a2c8fda1ab7f3d4c27dedfc5bdbe",
+          "size": 37776704,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        },
+        {
+          "digest": "sha256:69ff7491c79c6f366acf2642418289b2f7383391271438f1a7d19f28750b68f2",
+          "size": 143,
+          "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip"
+        }
+      ],
+      "history": [
+        {
+          "createdBy": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1787529600'",
+          "comment": "debuerreotype 0.17"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tmkdir -p /usr/local/etc; \techo 'gem: --no-document' \u003e\u003e /usr/local/etc/gemrc # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV LANG=C.UTF-8",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV RUBY_VERSION=3.3.12",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV RUBY_DOWNLOAD_URL=https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.12.tar.xz",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV RUBY_DOWNLOAD_SHA256=873e3297990b8cff7a5436f6e510a3a7a18c74e5f2c794e4162e605fe0a743b3",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tdpkg-dev \t\tlibgdbm-dev \t\truby \t\tautoconf \t\tbzip2 \t\tg++ \t\tgcc \t\tlibbz2-dev \t\tlibffi-dev \t\tlibgdbm-compat-dev \t\tlibglib2.0-dev \t\tlibgmp-dev \t\tlibncurses-dev \t\tlibssl-dev \t\tlibxml2-dev \t\tlibxslt-dev \t\tlibyaml-dev \t\tmake \t\twget \t\txz-utils \t\tzlib1g-dev \t; \t\trustArch=; \tdpkgArch=\"$(dpkg --print-architecture)\"; \tcase \"$dpkgArch\" in \t\t'amd64') rustArch='x86_64-unknown-linux-gnu'; rustupUrl='https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init'; rustupSha256='20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c' ;; \t\t'arm64') rustArch='aarch64-unknown-linux-gnu'; rustupUrl='https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init'; rustupSha256='e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c' ;; \tesac; \t\tif [ -n \"$rustArch\" ]; then \t\tmkdir -p /tmp/rust; \t\t\t\twget -O /tmp/rust/rustup-init \"$rustupUrl\"; \t\techo \"$rustupSha256 */tmp/rust/rustup-init\" | sha256sum --check --strict; \t\tchmod +x /tmp/rust/rustup-init; \t\t\t\texport RUSTUP_HOME='/tmp/rust/rustup' CARGO_HOME='/tmp/rust/cargo'; \t\texport PATH=\"$CARGO_HOME/bin:$PATH\"; \t\t/tmp/rust/rustup-init -y --no-modify-path --profile minimal --default-toolchain '1.91.1' --default-host \"$rustArch\"; \t\t\t\trustc --version; \t\tcargo --version; \tfi; \t\twget -O ruby.tar.xz \"$RUBY_DOWNLOAD_URL\"; \techo \"$RUBY_DOWNLOAD_SHA256 *ruby.tar.xz\" | sha256sum --check --strict; \t\tmkdir -p /usr/src/ruby; \ttar -xJf ruby.tar.xz -C /usr/src/ruby --strip-components=1; \trm ruby.tar.xz; \t\tcd /usr/src/ruby; \t\tautoconf; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \t./configure \t\t--build=\"$gnuArch\" \t\t--disable-install-doc \t\t--enable-shared \t\t${rustArch:+--enable-yjit} \t; \tmake -j \"$(nproc)\"; \tmake install; \t\trm -rf /tmp/rust; \tapt-mark auto '.*' \u003e /dev/null; \tapt-mark manual $savedAptMark \u003e /dev/null; \tfind /usr/local -type f -executable -not \\( -name '*tkinter*' \\) -exec ldd '{}' ';' \t\t| awk '/=\u003e/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| awk 'sub(\":$\", \"\", $1) { print $1 }' \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \trm -rf /var/lib/apt/lists/*; \t\tcd /; \trm -r /usr/src/ruby; \tif dpkg -l | grep -i ruby; then exit 1; fi; \t[ \"$(command -v ruby)\" = '/usr/local/bin/ruby' ]; \truby --version; \tgem --version; \tbundle --version # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "ENV GEM_HOME=/usr/local/bundle",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV BUNDLE_SILENCE_ROOT_WARNING=1 BUNDLE_APP_CONFIG=/usr/local/bundle",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "ENV PATH=/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        },
+        {
+          "createdBy": "RUN /bin/sh -c set -eux; \tmkdir \"$GEM_HOME\"; \tchmod 1777 \"$GEM_HOME\" # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "createdBy": "CMD [\"irb\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "emptyLayer": true
+        }
+      ],
+      "evidence": {
+        "signature": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No signature evidence inferred for imported image"
+        },
+        "sbom": {
+          "status": "missing",
+          "source": "none",
+          "claim": "Observed SBOM is not build provenance"
+        },
+        "provenance": {
+          "status": "missing",
+          "source": "none",
+          "claim": "No build provenance inferred for imported image"
+        },
+        "vulnerabilityScan": {
+          "status": "missing",
+          "source": "none"
+        },
+        "tests": {
+          "status": "missing",
+          "source": "none"
+        }
+      },
+      "warnings": []
+    }
+  ]
+}
