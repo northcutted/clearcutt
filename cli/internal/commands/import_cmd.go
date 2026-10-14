@@ -56,8 +56,8 @@ func NewImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import external OCI refs and observe them without inferring trust",
-		Long: `Import existing OCI image references into ClearCutt-compatible catalog
-inventories, observe available metadata, assess governance gaps, and generate
+		Long: `Import existing OCI image references into an images.yaml inventory,
+observe available metadata, assess governance gaps, and generate
 deterministic reports without claiming ClearCutt build provenance.`,
 	}
 	cmd.AddCommand(newImportImagesCmd())
@@ -82,7 +82,7 @@ func newImportImagesCmd() *cobra.Command {
 	f.StringVar(&importImagesOpts.output, "output", "", "Output images.yaml path")
 	f.StringVar(&importImagesOpts.owner, "owner", "", "Estate owner label")
 	f.StringVar(&importImagesOpts.repo, "repo", "", "Estate repo label")
-	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace for generated catalog examples")
+	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace to record in the inventory (registryBase)")
 	f.StringVar(&importImagesOpts.defaultTier, "default-tier", "slim", "Default tier for imported images")
 	f.StringVar(&importImagesOpts.defaultLifecycle, "default-lifecycle", "active", "Default lifecycle status for imported images")
 	f.StringVar(&importImagesOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")

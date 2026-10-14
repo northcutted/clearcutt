@@ -25,7 +25,7 @@ it as a website.
 
 ![Terminal demo walking through four stages — observing eight public images live from a list of refs, proving five of five base relationships by layer digest, answering UNKNOWN rather than zero when Debian records no package list, and answering the same question for free where the builder does record one](docs/images/demo.gif)
 
-The demo below is live, not staged, and it is meant to stand on its own — each
+The demo above is live, not staged, and it is meant to stand on its own — each
 stage names the problem, says what you would have to do without ClearCutt, then
 shows the command. It starts from eight public image references (debian, node,
 python, ruby, postgres, nginx), observes them in about two seconds without
@@ -195,7 +195,7 @@ garbage-collection and tag-mutability constraints that come with this.
 ## Install
 
 Each release publishes cross-compiled CLI binaries named
-`clearcutt-verify-<os>-<arch>` for `darwin`, `linux`, and `windows` on `amd64` and
+`clearcutt-verify-<os>-<arch>` for `darwin` and `linux` on `amd64` and
 `arm64`, a keyless Sigstore signature bundle (`<binary>.sig`) for each, and a
 `SHA256SUMS.txt` checksum manifest. (Releases before the rename to ClearCutt
 Verify name them `clearcutt-<os>-<arch>` and were signed as

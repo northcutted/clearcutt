@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement to ClearCutt.
+description: Suggest an improvement to ClearCutt Verify.
 labels: ["enhancement"]
 body:
   - type: dropdown
@@ -8,9 +8,9 @@ body:
       label: Affected surface
       description: Which part of the repo would this change?
       options:
-        - core (Nix image factory)
         - cli (Go CLI)
-        - site (Astro portal)
+        - contract (estate report schemas)
+        - action (action.yml)
         - docs
         - workflows (.github)
         - other / not sure
@@ -21,7 +21,7 @@ body:
     id: problem
     attributes:
       label: Problem
-      description: What are you trying to do that ClearCutt makes hard or impossible today?
+      description: What are you trying to do that clearcutt-verify makes hard or impossible today?
     validations:
       required: true
 

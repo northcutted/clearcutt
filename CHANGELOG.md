@@ -17,6 +17,9 @@ commands and flags, the estate report contract, the action, release assets).
 When a release is cut, move these entries under a heading for its version.
 -->
 
+- The Markdown reports of `graph build` and `graph layers` name the
+  `clearcutt-verify` binary in their reproduce commands; they still said
+  `clearcutt`.
 - Removed `verify release-evidence`, and with it the `verify` command group.
   It checked the release evidence of images built by the removed image
   factory (an SPDX SBOM, a test-results attestation, and slsa-verifier
