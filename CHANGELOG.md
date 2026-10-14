@@ -43,6 +43,10 @@ workflow archives this section into the release notes.
   major tag no longer count as stale.
 - `--reproduce` reads the rebuilt digest only from clearcutt-factory's final
   result, and a rebuild that exits with an error is never `reproduced`.
+- New `estate pull --allow-missing` succeeds only when nothing is stored at the
+  reference yet; any other failure fails. The documented scheduled job uses it
+  instead of `|| true`, which let a failed pull start a new history that the
+  push then wrote over the old one.
 - For estate report readers (clearcutt-portal's requests, #56–#59), all
   additive: `base.platform` and `base.provenOn` (and `bases[].currentPlatform`)
   say which platform image a base digest names and where the proof was made;

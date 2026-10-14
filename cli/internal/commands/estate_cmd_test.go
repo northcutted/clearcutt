@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 func estateTestRegistry(t *testing.T) string {
@@ -76,6 +79,41 @@ func TestEstateRoundTripsTheRealPublicSnapshot(t *testing.T) {
 		if sha256.Sum256(original) != sha256.Sum256(pulled) {
 			t.Errorf("%s did not round-trip byte for byte (%d bytes out, %d back)", fileName, len(original), len(pulled))
 		}
+	}
+}
+
+// TestEstatePullAllowMissing: a scheduled job's first run has no bundle to
+// pull, and says so with --allow-missing; every other failure still fails,
+// so a job never starts a new history over one it couldn't read.
+func TestEstatePullAllowMissing(t *testing.T) {
+	host := estateTestRegistry(t)
+	dir := t.TempDir()
+	if stdout, err := runCLI(t, "estate", "pull", host+"/acme/estate:latest", "--output", dir, "--insecure"); err == nil {
+		t.Fatalf("pulling nothing succeeded without --allow-missing:\n%s", stdout)
+	}
+	stdout, err := runCLI(t, "estate", "pull", host+"/acme/estate:latest", "--output", dir, "--insecure", "--allow-missing")
+	if err != nil || !strings.Contains(stdout, "nothing at") {
+		t.Fatalf("--allow-missing on a first run: %v\n%s", err, stdout)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("wrote %d files", len(entries))
+	}
+
+	// Something that isn't an estate artifact is a failure, not a first run.
+	img, err := random.Image(64, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := name.ParseReference(host + "/acme/other:latest")
+	if err := remote.Write(ref, img); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, err := runCLI(t, "estate", "pull", ref.String(), "--output", dir, "--insecure", "--allow-missing"); err == nil {
+		t.Fatalf("a foreign artifact passed as missing:\n%s", stdout)
+	}
+	// So is a registry that can't be reached.
+	if stdout, err := runCLI(t, "estate", "pull", "127.0.0.1:1/acme/estate:latest", "--output", dir, "--insecure", "--allow-missing"); err == nil {
+		t.Fatalf("an unreachable registry passed as missing:\n%s", stdout)
 	}
 }
 

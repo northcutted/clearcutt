@@ -192,14 +192,17 @@ artifact (`clearcutt-verify estate push`). A scheduled job pulls the last bundle
 the new run extends its history, verifies, and pushes the result:
 
 ```bash
-clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate || true  # nothing yet on the first run
+clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate --allow-missing  # nothing yet on the first run
 clearcutt-verify estate verify --refs refs.txt --policy policy.yaml --name acme --out dist/estate
 clearcutt-verify estate push ghcr.io/acme/estate:latest --dir dist/estate \
   --file estate-report.json --file estate-history.json \
   --generated-at "$(jq -r .metadata.generatedAt dist/estate/estate-report.json)"
 ```
 
-A portal build pulls the same reference. The push prints the artifact's
+`--allow-missing` succeeds only when the registry says nothing is stored at
+the reference; any other failure fails, so a run never starts a fresh history
+and pushes it over one it couldn't read. A portal build pulls the same
+reference. The push prints the artifact's
 digest; sign it (`cosign sign ghcr.io/acme/estate@sha256:…`) so readers can
 tell the report came from your job.
 

@@ -26,8 +26,10 @@ jobs:
       # Private packages: let cosign read them too (clearcutt-verify reads
       # GITHUB_TOKEN for ghcr.io by itself).
       - run: echo "$GITHUB_TOKEN" | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      # The last report, so this run extends its history.
-      - run: clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate || true
+      # The last report, so this run extends its history. Only "nothing there
+      # yet" (a first run) is allowed to pass; any other failure stops the job
+      # before it could push a new history over the old one.
+      - run: clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate --allow-missing
       - id: verify
         run: clearcutt-verify estate verify --refs estate/refs.txt --policy estate/policy.yaml --name acme --out dist/estate --fail-on failed
       # Keep the report even when the gate fails: that is the run to look at.
@@ -50,8 +52,13 @@ jobs:
   `cosign login` step (or `docker/login-action`). Other registries need their
   own login step.
 - **History.** `estate pull` fetches the last bundle and `estate verify --out`
-  extends `estate-history.json` in it; `estate push` stores the new bundle. Sign
-  it if readers should be able to tell it came from this job:
+  extends `estate-history.json` in it; `estate push` stores the new bundle.
+  `--allow-missing` lets the pull succeed, writing nothing, only when the
+  registry says nothing is stored at the reference (404, `MANIFEST_UNKNOWN`,
+  `NAME_UNKNOWN`): a first run. Any other failure (credentials, network, an
+  artifact that isn't an estate bundle) fails the step, so the job never
+  starts a fresh history and pushes it over the one it couldn't read. Sign
+  the bundle if readers should be able to tell it came from this job:
   `cosign sign ghcr.io/acme/estate@sha256:…` (needs `id-token: write`).
 - **Gate.** `--fail-on failed` (or `unverified`) exits **2** when an image falls
   short of the policy. Usage and runtime errors exit **1**, so a red policy

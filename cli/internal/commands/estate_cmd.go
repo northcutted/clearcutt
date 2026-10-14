@@ -2,23 +2,27 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/northcutted/clearcutt-verify/internal/estate"
 	"github.com/spf13/cobra"
 )
 
 type estateFlags struct {
-	dir         string
-	files       []string
-	generatedAt string
-	insecure    bool
-	output      string
-	history     string
+	dir          string
+	files        []string
+	generatedAt  string
+	insecure     bool
+	output       string
+	history      string
+	allowMissing bool
 }
 
 var estateOpts estateFlags
@@ -79,6 +83,7 @@ func newEstatePullCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&estateOpts.output, "output", ".", "Directory to write the snapshot files into")
 	cmd.Flags().BoolVar(&estateOpts.insecure, "insecure", false, "Use plain HTTP without auth (test registries only)")
+	cmd.Flags().BoolVar(&estateOpts.allowMissing, "allow-missing", false, "Succeed, writing nothing, when the registry has nothing at the reference yet (a first run); any other failure still fails")
 	return cmd
 }
 
@@ -154,6 +159,24 @@ func runEstatePush(ref string) error {
 		fmt.Fprintf(out, "[estate]   %s\n", metrics)
 	}
 	return nil
+}
+
+// notFound reports whether the registry said the reference doesn't exist:
+// no such manifest or repository.
+func notFound(err error) bool {
+	var terr *transport.Error
+	if !errors.As(err, &terr) {
+		return false
+	}
+	if terr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	for _, d := range terr.Errors {
+		if d.Code == transport.ManifestUnknownErrorCode || d.Code == transport.NameUnknownErrorCode {
+			return true
+		}
+	}
+	return false
 }
 
 func newEstateHistoryCmd() *cobra.Command {
@@ -232,6 +255,13 @@ func runEstateHistory(ref string) error {
 func runEstatePull(ref string) error {
 	snapshot, digest, err := estateClient().Pull(ref)
 	if err != nil {
+		// Nothing stored yet is the one failure a first run expects. Anything
+		// else (credentials, network, a foreign artifact) must stop a job that
+		// would otherwise start a new history and push it over the old one.
+		if estateOpts.allowMissing && notFound(err) {
+			fmt.Fprintf(out, "[estate] nothing at %s yet; nothing pulled\n", ref)
+			return nil
+		}
 		return err
 	}
 	if err := os.MkdirAll(estateOpts.output, 0o755); err != nil {
