@@ -49,7 +49,9 @@ cosign verify-blob \
 chmod +x clearcutt-verify-linux-amd64
 ```
 
-In GitHub Actions, `.github/actions/install-clearcutt-verify` does the same.
+In GitHub Actions, the repository's action
+(`uses: northcutted/clearcutt-verify@vX.Y.Z`) does the same; see
+[Verifying an estate in GitHub Actions](github-actions.md).
 
 ## Build
 

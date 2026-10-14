@@ -17,6 +17,10 @@ commands and flags, the estate report contract, the action, release assets).
 When a release is cut, move these entries under a heading for its version.
 -->
 
+- Removed `.github/actions/install-clearcutt-verify`. Install with the
+  repository's action, `uses: northcutted/clearcutt-verify@vX.Y.Z`, which
+  checks the release's checksum and Sigstore bundle the same way.
+
 ## v0.15.0
 
 Released 2026-10-10.

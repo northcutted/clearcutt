@@ -8,7 +8,6 @@ Inspect:
 - `.agents/skills/*/SKILL.md`
 - `.agents/context/lessons_learned.md`
 - `.agents/context/active_context.md`
-- `.agents/runbooks/`
 - `.codex/config.toml`
 - `.codex/rules/`
 - `.github/codex/prompts/`

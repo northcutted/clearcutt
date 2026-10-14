@@ -45,7 +45,6 @@ jobs:
               - 'scripts/**'
               - 'cli/**'
               - '.agents/**'
-              - '.github/actions/**'
               - '.github/workflows/**'
               - '.github/copilot-instructions.md'
 
