@@ -17,9 +17,10 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 	versions := []map[string]any{}
 	for i := 0; i < 101; i++ {
 		tags := []string{}
-		if i == 0 {
+		switch i {
+		case 0:
 			tags = []string{"latest", "1.2.0"}
-		} else if i == 1 {
+		case 1:
 			tags = []string{"sha256-abc.sig"}
 		}
 		versions = append(versions, map[string]any{"metadata": map[string]any{"container": map[string]any{"tags": tags}}})
@@ -33,7 +34,7 @@ func fakeGitHub(t *testing.T) *httptest.Server {
 		switch r.URL.Path {
 		case "/orgs/Acme/packages":
 			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, `{"message":"Not Found"}`)
+			_, _ = fmt.Fprint(w, `{"message":"Not Found"}`)
 		case "/users/Acme/packages":
 			if r.URL.Query().Get("package_type") != "container" {
 				t.Errorf("package_type %q", r.URL.Query().Get("package_type"))

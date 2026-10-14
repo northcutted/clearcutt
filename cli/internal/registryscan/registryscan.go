@@ -328,5 +328,5 @@ func (l *RemoteLister) Tags(ctx context.Context, repository string) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository %q: %w", repository, err)
 	}
-	return remote.ListWithContext(ctx, repo, l.remoteOpts...)
+	return remote.List(repo, append([]remote.Option{remote.WithContext(ctx)}, l.remoteOpts...)...)
 }
