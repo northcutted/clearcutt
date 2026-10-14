@@ -5,7 +5,7 @@ document, one first command, and then deeper links.
 
 | Role | First document | First command | Then read |
 | --- | --- | --- | --- |
-| Estate owner | [Registry scan and the base image graph](registry-graph.md) | `clearcutt-verify registry scan --registry ghcr.io --namespace YOUR_ORG --repository YOUR_IMAGE --output /tmp/images.yaml` | [Registry-native evidence](registry-native-evidence.md), [Imported fleets](imported-fleets.md) |
+| Estate owner | [Registry scan and the base image graph](registry-graph.md) | `clearcutt-verify registry scan --github-org YOUR_ORG --output /tmp/images.yaml` | [Registry-native evidence](registry-native-evidence.md), [Imported fleets](imported-fleets.md) |
 | Security or auditor | [Verifying an estate](verify-estate.md) | `clearcutt-verify estate verify --refs refs.txt --policy policy.yaml --name acme --out /tmp/estate` | [The estate report contract](../contract/README.md), [Security model](security-model.md) |
 | Imported fleet owner | [Imported fleets](imported-fleets.md) | `clearcutt-verify import images --refs examples/imported-fleet/refs.txt --output /tmp/images.yaml --force` | [Registry scan and the base image graph](registry-graph.md) |
 | Manager | [Alternatives and fit](alternatives.md) | `sed -n '1,120p' docs/alternatives.md` | [Mental model](concepts/mental-model.md) |

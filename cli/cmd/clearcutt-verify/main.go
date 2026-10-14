@@ -11,9 +11,9 @@ import (
 // Exit code contract (documented in docs/cli-reference.md):
 //
 //	0 - all checks passed / command succeeded
-//	1 - operational error (bad flags, IO failure, missing catalog, tooling)
-//	2 - a policy gate failed (verification, conformance, certification,
-//	    exception, or threshold checks)
+//	1 - operational error (bad flags, IO failure, missing tooling)
+//	2 - a policy gate failed (estate verify --fail-on, graph build
+//	    --fail-on-stale)
 //
 // CI systems can therefore distinguish "the gate said no" (2) from "the gate
 // could not run" (1) without parsing output.
@@ -25,9 +25,8 @@ const (
 func main() {
 	rootCmd := commands.NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {
-		// Gating failures (verify/certify/conformance/exceptions) already
-		// printed a detailed report; exit with the policy code without an
-		// extra, redundant error line.
+		// Gating failures already printed a detailed report; exit with the
+		// policy code without an extra, redundant error line.
 		if errors.Is(err, commands.ErrCheckFailed) {
 			os.Exit(exitPolicyFailure)
 		}

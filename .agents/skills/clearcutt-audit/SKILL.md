@@ -22,7 +22,6 @@ Use this skill when auditing ClearCutt rather than implementing a fix.
 3. For broad audits, use the project custom agents in `.agents/reviewers/` when subagents are available and the user allows parallel read-only analysis. Good default coverage:
    - `platform_engineer`
    - `security_auditor`
-   - `app_developer`
    - `release_engineer`
    - `docs_architect`
 4. Synthesize findings into the requested output. For deep audits, create or update:

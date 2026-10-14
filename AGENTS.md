@@ -242,7 +242,7 @@ Token efficiency is part of the retrospective. Check whether the agent:
 - relied on generated or stale data and had to redo work;
 - spawned subagents for work that was not read-heavy or parallelizable;
 - kept obsolete context in `.agents/context/active_context.md` instead of moving it to a
-  runbook or memory.
+  skill or memory.
 
 Self-improvement outputs should be owner-reviewable. Agents may propose changes
 to instructions, skills, rules, or lessons, but should not silently rewrite

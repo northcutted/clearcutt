@@ -56,8 +56,8 @@ func NewImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import external OCI refs and observe them without inferring trust",
-		Long: `Import existing OCI image references into ClearCutt-compatible catalog
-inventories, observe available metadata, assess governance gaps, and generate
+		Long: `Import existing OCI image references into an images.yaml inventory,
+observe available metadata, assess governance gaps, and generate
 deterministic reports without claiming ClearCutt build provenance.`,
 	}
 	cmd.AddCommand(newImportImagesCmd())
@@ -82,7 +82,7 @@ func newImportImagesCmd() *cobra.Command {
 	f.StringVar(&importImagesOpts.output, "output", "", "Output images.yaml path")
 	f.StringVar(&importImagesOpts.owner, "owner", "", "Estate owner label")
 	f.StringVar(&importImagesOpts.repo, "repo", "", "Estate repo label")
-	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace for generated catalog examples")
+	f.StringVar(&importImagesOpts.registryBase, "registry-base", "", "Registry namespace to record in the inventory (registryBase)")
 	f.StringVar(&importImagesOpts.defaultTier, "default-tier", "slim", "Default tier for imported images")
 	f.StringVar(&importImagesOpts.defaultLifecycle, "default-lifecycle", "active", "Default lifecycle status for imported images")
 	f.StringVar(&importImagesOpts.generatedAt, "generated-at", "", "Deterministic generated timestamp")
@@ -120,9 +120,9 @@ func runImportImages() error {
 	if strings.EqualFold(GlobalOpts.Format, "json") {
 		return output.PrintJSON(out, summary)
 	}
-	fmt.Fprintf(out, "[import-images] wrote %d imported image(s) to %s\n", summary.ImageCount, importImagesOpts.output)
+	fprintf(out, "[import-images] wrote %d imported image(s) to %s\n", summary.ImageCount, importImagesOpts.output)
 	if summary.LowConfidence > 0 {
-		fmt.Fprintf(out, "[import-images] %d image(s) need classification review\n", summary.LowConfidence)
+		fprintf(out, "[import-images] %d image(s) need classification review\n", summary.LowConfidence)
 	}
 	return nil
 }
@@ -186,7 +186,7 @@ func runImportObserve(ctx context.Context) error {
 		return err
 	}
 	if stats.Reused > 0 {
-		fmt.Fprintf(out, "[import-observe] reused %d unchanged observation(s), read %d, failed %d\n",
+		fprintf(out, "[import-observe] reused %d unchanged observation(s), read %d, failed %d\n",
 			stats.Reused, stats.Observed, stats.Failed)
 	}
 	if fixtureObservations != nil {
@@ -201,7 +201,7 @@ func runImportObserve(ctx context.Context) error {
 	if strings.EqualFold(GlobalOpts.Format, "json") {
 		return output.PrintJSON(out, observations)
 	}
-	fmt.Fprintf(out, "[import-observe] wrote observations for %d image(s) to %s\n", len(observations.Images), importObserveOpts.output)
+	fprintf(out, "[import-observe] wrote observations for %d image(s) to %s\n", len(observations.Images), importObserveOpts.output)
 	return nil
 }
 
@@ -245,7 +245,7 @@ func runImportAssess() error {
 	if strings.EqualFold(GlobalOpts.Format, "json") {
 		return output.PrintJSON(out, assessment)
 	}
-	fmt.Fprintf(out, "[import-assess] wrote imported fleet governance report to %s\n", importAssessOpts.output)
+	fprintf(out, "[import-assess] wrote imported fleet governance report to %s\n", importAssessOpts.output)
 	return nil
 }
 
@@ -278,7 +278,7 @@ func runImportReport() error {
 	if err := os.WriteFile(importReportOpts.output, []byte(estategraph.ReportMarkdown(assessment)), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "[import-report] wrote %s\n", importReportOpts.output)
+	fprintf(out, "[import-report] wrote %s\n", importReportOpts.output)
 	return nil
 }
 

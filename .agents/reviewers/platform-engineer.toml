@@ -9,12 +9,12 @@ You are reviewing ClearCutt as a skeptical Staff+ platform engineer.
 
 Focus on:
 - Whether the architecture is understandable.
-- Whether the fork-and-operate model is credible.
-- Whether the runtime image lane, service image lane, app-team lane, catalog, CLI, and workflows fit together.
-- Whether Nix is framed appropriately.
+- Whether pointing the CLI at a real registry works without hidden setup (credentials, GHCR enumeration, rate limits).
+- Whether discovery, the base image graph, estate verification, the estate report, and the scheduled GitHub Actions job fit together.
+- Whether the split with clearcutt-factory (builds) and clearcutt-portal (publishes the report) is clear.
 - Whether the first-run path is obvious.
 - Whether operational ownership is explained.
-- Whether release, promotion, signing, catalog generation, and policy flows are coherent.
+- Whether the trust policy, verification policy, and gating flows are coherent.
 - Whether this could be operated by a real platform team.
 - What would block adoption in a regulated enterprise.
 

@@ -192,10 +192,10 @@ func runEstateVerify(ctx context.Context, stdout, stderr io.Writer) error {
 	}
 
 	printEstateSummary(stdout, r)
-	fmt.Fprintf(stdout, "\nwrote %s and %s\n", filepath.Join(o.out, report.ReportFile), filepath.Join(o.out, report.HistoryFile))
+	fprintf(stdout, "\nwrote %s and %s\n", filepath.Join(o.out, report.ReportFile), filepath.Join(o.out, report.HistoryFile))
 	s := r.Summary.Verdicts
 	if (o.failOn == "failed" && s.Failed > 0) || (o.failOn == "unverified" && s.Failed+s.Unverified > 0) {
-		fmt.Fprintf(stderr, "[verify-estate] %d failed, %d unverified (--fail-on %s)\n", s.Failed, s.Unverified, o.failOn)
+		fprintf(stderr, "[verify-estate] %d failed, %d unverified (--fail-on %s)\n", s.Failed, s.Unverified, o.failOn)
 		return fmt.Errorf("estate verification: %w", ErrCheckFailed)
 	}
 	return nil
@@ -325,8 +325,8 @@ func historyImages(r *report.Report) []report.HistoryImage {
 
 func printEstateSummary(w io.Writer, r *report.Report) {
 	s := r.Summary
-	fmt.Fprintf(w, "%d images: %d verified, %d failed, %d unverified\n", s.Images, s.Verdicts.Verified, s.Verdicts.Failed, s.Verdicts.Unverified)
-	fmt.Fprintf(w, "bases: %d proven, %d claimed, %d roots, %d unresolved; %d current, %d stale\n",
+	fprintf(w, "%d images: %d verified, %d failed, %d unverified\n", s.Images, s.Verdicts.Verified, s.Verdicts.Failed, s.Verdicts.Unverified)
+	fprintf(w, "bases: %d proven, %d claimed, %d roots, %d unresolved; %d current, %d stale\n",
 		s.Bases.Proven, s.Bases.Claimed, s.Bases.Roots, s.Bases.Unresolved, s.Bases.Current, s.Bases.Stale)
 	for _, st := range r.Stacks {
 		signed := 0
@@ -335,13 +335,13 @@ func printEstateSummary(w io.Writer, r *report.Report) {
 				signed++
 			}
 		}
-		fmt.Fprintf(w, "stack %s: %d apps, %d on an older version; %d of %d versions in use verified\n",
+		fprintf(w, "stack %s: %d apps, %d on an older version; %d of %d versions in use verified\n",
 			st.Repository, st.Consumers, st.StaleConsumers, signed, len(st.Versions))
 	}
-	fmt.Fprintf(w, "\n%-28s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %s\n", "IMAGE", "SIGNATURE", "SBOM", "VULNS", "PROVENANCE", "RECIPE", "REBASE", "REPRO", "VERDICT")
+	fprintf(w, "\n%-28s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %s\n", "IMAGE", "SIGNATURE", "SBOM", "VULNS", "PROVENANCE", "RECIPE", "REBASE", "REPRO", "VERDICT")
 	for _, img := range r.Images {
 		e := img.Evidence
-		fmt.Fprintf(w, "%-28s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %s\n", truncate(img.ID, 28),
+		fprintf(w, "%-28s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %s\n", truncate(img.ID, 28),
 			e.Signature.Status, e.SBOM.Status, e.VulnerabilityScan.Status, e.Provenance.Status, e.Recipe.Status, e.Rebase.Status,
 			img.Reproducibility.Status, img.Verdict.Status)
 	}

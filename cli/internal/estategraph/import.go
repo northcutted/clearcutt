@@ -93,7 +93,7 @@ func readRefs(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // read-only, so a failed Close loses nothing
 
 	var refs []string
 	scanner := bufio.NewScanner(file)

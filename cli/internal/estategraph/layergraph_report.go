@@ -136,7 +136,7 @@ func LayerGraphMarkdown(graph LayerGraph) string {
 	}
 
 	fmt.Fprintf(&b, "## Reproduce this report\n\n")
-	fmt.Fprintf(&b, "```bash\nclearcutt registry scan --registry <host> --namespace <namespace> --output images.yaml\nclearcutt import observe --images images.yaml --output observations.json\nclearcutt graph layers --observations observations.json --output layers.json --report layers.md\n```\n")
+	fmt.Fprintf(&b, "```bash\nclearcutt-verify registry scan --registry <host> --namespace <namespace> --output images.yaml\nclearcutt-verify import observe --images images.yaml --output observations.json\nclearcutt-verify graph layers --observations observations.json --output layers.json --report layers.md\n```\n")
 	return b.String()
 }
 

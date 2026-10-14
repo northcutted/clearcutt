@@ -22,8 +22,8 @@ func collectCommandPaths(cmd *cobra.Command, prefix []string, out *[][]string) {
 
 // Guards the whole command tree, which `go build` cannot: cobra panics at
 // help-render time when a command's GroupID is not registered on its parent
-// (`AddGroup`), and the top-level command grouping + the `verify` subcommand
-// split make that easy to break. Rendering --help for every command catches group
+// (`AddGroup`), and the top-level command grouping makes that easy to break.
+// Rendering --help for every command catches group
 // mis-registration, broken usage templates, and missing metadata in the same
 // `go test` that already runs on every PR — no new CI infrastructure.
 func TestCommandTreeRendersHelpWithoutPanic(t *testing.T) {
@@ -44,7 +44,7 @@ func TestCommandTreeRendersHelpWithoutPanic(t *testing.T) {
 			walk(c, append(path, c.Name()))
 		}
 	}
-	walk(NewRootCmd(), []string{"clearcutt"})
+	walk(NewRootCmd(), []string{"clearcutt-verify"})
 
 	// Behavioral pass: actually render --help for root and every command path. A
 	// group/registration bug panics here; recover so one bad command reports a
@@ -54,7 +54,7 @@ func TestCommandTreeRendersHelpWithoutPanic(t *testing.T) {
 	paths = append([][]string{{}}, paths...) // include root itself
 
 	for _, p := range paths {
-		label := "clearcutt " + strings.Join(p, " ")
+		label := "clearcutt-verify " + strings.Join(p, " ")
 		func() {
 			defer func() {
 				if r := recover(); r != nil {

@@ -293,7 +293,7 @@ func fillImageObservation(obs *Observation, image v1.Image) {
 	}
 	config, err := image.ConfigFile()
 	if err == nil && config != nil {
-		if config.Created.Time.Unix() > 0 {
+		if config.Created.Unix() > 0 {
 			obs.Created = config.Created.Time.UTC().Format(time.RFC3339Nano)
 		}
 		obs.User = config.Config.User

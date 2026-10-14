@@ -71,7 +71,7 @@ Sleep 4s
 Type@12ms "# Before ClearCutt: pull all eight, then pick through them by hand."
 Enter
 Sleep 2.2s
-Type@12ms "# That's about 409MB of downloads to answer a question about metadata."
+Type@12ms "# That's over 400MB of downloads to answer a question about metadata."
 Enter
 Sleep 3s
 
@@ -82,7 +82,7 @@ Type "clearcutt-verify import observe --images images.yaml --output observations
 Enter
 Sleep 4s
 
-Type@12ms "# Two seconds, and it never pulled a layer - only the manifests and configs."
+Type@12ms "# A second or two, and it never pulled a layer - only the manifests and configs."
 Enter
 Sleep 1.5s
 Type "du -h observations.json"
