@@ -77,11 +77,11 @@ func runEstateDependents() error {
 		return printStructured(result)
 	}
 	if len(result.Dependents) == 0 {
-		fmt.Fprintf(out, "no images in %s are built on %s (at strength %s or better)\n", o.report, o.base, o.minStrength)
+		fprintf(out, "no images in %s are built on %s (at strength %s or better)\n", o.report, o.base, o.minStrength)
 		return nil
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "IMAGE\tON\tDRIFT\tSTRENGTH\tSOURCE")
+	fprintln(w, "IMAGE\tON\tDRIFT\tSTRENGTH\tSOURCE")
 	for _, d := range result.Dependents {
 		on := d.Base.Ref
 		if d.Depth > 1 {
@@ -95,7 +95,7 @@ func runEstateDependents() error {
 		if d.Source != nil {
 			source = d.Source.URL
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", d.ImageID, on, drift, d.Base.Strength, source)
+		fprintf(w, "%s\t%s\t%s\t%s\t%s\n", d.ImageID, on, drift, d.Base.Strength, source)
 	}
 	return w.Flush()
 }

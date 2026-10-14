@@ -325,6 +325,6 @@ func readSBOMLayer(layer v1.Layer) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }() // read-only, so a failed Close loses nothing
 	return io.ReadAll(io.LimitReader(reader, 64<<20))
 }

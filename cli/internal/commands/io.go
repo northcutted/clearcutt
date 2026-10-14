@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -24,6 +25,18 @@ var (
 	out    io.Writer = os.Stdout
 	errOut io.Writer = os.Stderr
 )
+
+// fprintf and fprintln write a line of human-readable command output. A failed
+// write to the terminal has nowhere better to be reported, so they drop the
+// error on purpose. Structured output (printStructured) and tables
+// (tabwriter's Flush) return their errors.
+func fprintf(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+func fprintln(w io.Writer, a ...any) {
+	_, _ = fmt.Fprintln(w, a...)
+}
 
 // structuredFormat reports whether the global --format selects a structured
 // machine-readable output (json or yaml/yml) instead of the default human form.

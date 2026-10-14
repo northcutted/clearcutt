@@ -140,7 +140,7 @@ func runGraphLayers() error {
 	if opts.mermaid != "" {
 		diagram := estategraph.LayerGraphMermaid(graph)
 		if diagram == "" {
-			fmt.Fprintf(errOut, "[graph-layers] no diagram written: nothing reached the similarity threshold\n")
+			fprintf(errOut, "[graph-layers] no diagram written: nothing reached the similarity threshold\n")
 		} else if err := writeAlongside(opts.mermaid, func(path string) error {
 			return os.WriteFile(path, []byte(diagram), 0o644)
 		}); err != nil {
@@ -159,11 +159,11 @@ func runGraphLayers() error {
 // shared, what is redundant, and what a fix to shared content would reach.
 func printLayerGraphSummary(graph estategraph.LayerGraph, opts graphLayersFlags) {
 	s := graph.Summary
-	fmt.Fprintf(out, "[graph-layers] %d image(s), %d distinct layer(s): %d shared, %d unique to one image\n",
+	fprintf(out, "[graph-layers] %d image(s), %d distinct layer(s): %d shared, %d unique to one image\n",
 		s.Images, s.DistinctLayers, s.SharedLayers, s.UniqueLayers)
-	fmt.Fprintf(out, "[graph-layers] estate core: %d layer(s) in every image; %d layer(s) in at least %.0f%%\n",
+	fprintf(out, "[graph-layers] estate core: %d layer(s) in every image; %d layer(s) in at least %.0f%%\n",
 		s.CoreLayers, s.CommonLayers, s.CoverageThreshold*100)
-	fmt.Fprintf(out, "[graph-layers] stored once %s vs %s without reuse — sharing avoids %.0f%%\n",
+	fprintf(out, "[graph-layers] stored once %s vs %s without reuse — sharing avoids %.0f%%\n",
 		humanSize(s.StoredBytes), humanSize(s.NaiveBytes), s.SharingRatio*100)
 
 	if len(graph.Identical) > 0 {
@@ -171,37 +171,37 @@ func printLayerGraphSummary(graph estategraph.LayerGraph, opts graphLayersFlags)
 		for _, group := range graph.Identical {
 			total += len(group.Images)
 		}
-		fmt.Fprintf(out, "\n%d image(s) in %d group(s) carry byte-identical content:\n", total, len(graph.Identical))
+		fprintf(out, "\n%d image(s) in %d group(s) carry byte-identical content:\n", total, len(graph.Identical))
 		for _, group := range graph.Identical {
-			fmt.Fprintf(out, "  %d layers, %s\n", group.LayerCount, humanSize(group.Bytes))
+			fprintf(out, "  %d layers, %s\n", group.LayerCount, humanSize(group.Bytes))
 			for _, ref := range group.Images {
-				fmt.Fprintf(out, "    %s\n", ref)
+				fprintf(out, "    %s\n", ref)
 			}
 		}
 	}
 
 	if len(graph.Common) > 0 {
-		fmt.Fprintf(out, "\nMost widely carried layers:\n")
-		fmt.Fprintf(out, "%-30s %8s %10s %9s\n", "LAYER", "IMAGES", "COVERAGE", "SIZE")
+		fprintf(out, "\nMost widely carried layers:\n")
+		fprintf(out, "%-30s %8s %10s %9s\n", "LAYER", "IMAGES", "COVERAGE", "SIZE")
 		for i, layer := range graph.Common {
 			if i >= 5 {
-				fmt.Fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.Common)-5)
+				fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.Common)-5)
 				break
 			}
-			fmt.Fprintf(out, "%-30s %8d %8.0f%% %9s\n", truncate(layer.Digest, 30), layer.ImageCount, layer.Coverage*100, humanSize(layer.Size))
+			fprintf(out, "%-30s %8d %8.0f%% %9s\n", truncate(layer.Digest, 30), layer.ImageCount, layer.Coverage*100, humanSize(layer.Size))
 		}
 	}
 
 	if len(graph.Clusters) > 0 {
-		fmt.Fprintf(out, "\n%d cluster(s):\n", len(graph.Clusters))
-		fmt.Fprintf(out, "%-9s %8s %26s %9s\n", "CLUSTER", "IMAGES", "LAYERS COMMON TO ALL", "SIZE")
+		fprintf(out, "\n%d cluster(s):\n", len(graph.Clusters))
+		fprintf(out, "%-9s %8s %26s %9s\n", "CLUSTER", "IMAGES", "LAYERS COMMON TO ALL", "SIZE")
 		for _, cluster := range graph.Clusters {
-			fmt.Fprintf(out, "%-9d %8d %26d %9s\n", cluster.ID, len(cluster.Images), cluster.SharedLayers, humanSize(cluster.SharedBytes))
+			fprintf(out, "%-9d %8d %26d %9s\n", cluster.ID, len(cluster.Images), cluster.SharedLayers, humanSize(cluster.SharedBytes))
 		}
 	}
 
 	for _, warning := range graph.Warnings {
-		fmt.Fprintf(errOut, "[graph-layers] %s\n", warning)
+		fprintf(errOut, "[graph-layers] %s\n", warning)
 	}
 	announceWritten(out, "graph-layers", opts.output, opts.report, opts.mermaid)
 }
@@ -317,7 +317,7 @@ func graphGateResult(graph estategraph.Graph, opts graphBuildFlags) error {
 		return nil
 	}
 	for _, failure := range failures {
-		fmt.Fprintf(errOut, "[graph] FAIL: %s\n", failure)
+		fprintf(errOut, "[graph] FAIL: %s\n", failure)
 	}
 	return ErrCheckFailed
 }
@@ -350,9 +350,9 @@ func describeBuilders(profile estategraph.BuilderProfile) string {
 // unknown, and how much of the graph rests on proof rather than on a label.
 func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 	s := graph.Summary
-	fmt.Fprintf(out, "[graph] %d image(s) observed: %d base famil(ies), %d consumer(s), %d root(s)\n",
+	fprintf(out, "[graph] %d image(s) observed: %d base famil(ies), %d consumer(s), %d root(s)\n",
 		s.ObservedImages, s.BaseFamilies, s.Consumers, s.RootImages)
-	fmt.Fprintf(out, "[graph] resolved %d consumer(s): %d on the current base, %d stale, %d undetermined\n",
+	fprintf(out, "[graph] resolved %d consumer(s): %d on the current base, %d stale, %d undetermined\n",
 		s.ResolvedConsumers, s.CurrentConsumers, s.StaleConsumers, s.UnresolvedConsumers)
 
 	// How the estate was built decides what those numbers mean. On a Nix or
@@ -360,23 +360,23 @@ func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 	// an operator who is not told that will go looking for provenance that was
 	// never there.
 	if b := s.Builders; b.Stacking+b.Composed > 0 {
-		fmt.Fprintf(out, "[graph] built by: %s (%d stacking, %d composed)\n",
+		fprintf(out, "[graph] built by: %s (%d stacking, %d composed)\n",
 			describeBuilders(b), b.Stacking, b.Composed)
 	}
 	if note := estategraph.ComposedEstateNote(s.Builders, s.ResolvedConsumers); note != "" {
-		fmt.Fprintf(out, "\n[graph] %s\n\n", note)
+		fprintf(out, "\n[graph] %s\n\n", note)
 	}
 
 	proven := s.EdgesByConfidence["verified"]
 	if s.ResolvedConsumers > 0 {
-		fmt.Fprintf(out, "[graph] %d of %d relationship(s) are proven by layer digests; the rest rely on labels the image author supplied\n",
+		fprintf(out, "[graph] %d of %d relationship(s) are proven by layer digests; the rest rely on labels the image author supplied\n",
 			proven, s.ResolvedConsumers)
 	}
 
 	if len(graph.Bases) > 0 {
-		fmt.Fprintf(out, "\n%-44s %9s %10s %8s\n", "BASE REPOSITORY", "VERSIONS", "CONSUMERS", "STALE")
+		fprintf(out, "\n%-44s %9s %10s %8s\n", "BASE REPOSITORY", "VERSIONS", "CONSUMERS", "STALE")
 		for _, base := range graph.Bases {
-			fmt.Fprintf(out, "%-44s %9d %10d %8d\n", truncate(base.Repository, 44), base.Versions, base.Consumers, base.StaleConsumers)
+			fprintf(out, "%-44s %9d %10d %8d\n", truncate(base.Repository, 44), base.Versions, base.Consumers, base.StaleConsumers)
 		}
 	}
 
@@ -393,35 +393,35 @@ func printGraphSummary(graph estategraph.Graph, opts graphBuildFlags) {
 			}
 			return stale[i].ConsumerRef < stale[j].ConsumerRef
 		})
-		fmt.Fprintf(out, "\nStale consumers (rebase candidates):\n")
-		fmt.Fprintf(out, "%-50s %-30s %8s %7s\n", "CONSUMER", "BASE", "BEHIND", "DAYS")
+		fprintf(out, "\nStale consumers (rebase candidates):\n")
+		fprintf(out, "%-50s %-30s %8s %7s\n", "CONSUMER", "BASE", "BEHIND", "DAYS")
 		for _, edge := range stale {
-			fmt.Fprintf(out, "%-50s %-30s %8d %7d\n",
+			fprintf(out, "%-50s %-30s %8d %7d\n",
 				truncate(edge.ConsumerRef, 50), truncate(edge.BaseRepository, 30), edge.VersionsBehind, edge.DaysBehind)
 		}
 	}
 
 	if len(graph.SharedLayers) > 0 {
-		fmt.Fprintf(out, "\nShared layers (blast radius): %d of %d distinct layers are in more than one image; the widest is in %d\n",
+		fprintf(out, "\nShared layers (blast radius): %d of %d distinct layers are in more than one image; the widest is in %d\n",
 			s.SharedLayers, s.DistinctLayers, s.WidestLayerReach)
-		fmt.Fprintf(out, "%-30s %8s\n", "LAYER", "IMAGES")
+		fprintf(out, "%-30s %8s\n", "LAYER", "IMAGES")
 		for i, layer := range graph.SharedLayers {
 			if i >= 5 {
-				fmt.Fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.SharedLayers)-5)
+				fprintf(out, "... %d more (see the graph JSON or --report)\n", len(graph.SharedLayers)-5)
 				break
 			}
-			fmt.Fprintf(out, "%-30s %8d\n", truncate(layer.Digest, 30), layer.ImageCount)
+			fprintf(out, "%-30s %8d\n", truncate(layer.Digest, 30), layer.ImageCount)
 		}
 	}
 
 	if len(graph.Unresolved) > 0 {
-		fmt.Fprintf(out, "\nBase could not be determined for %d image(s):\n", len(graph.Unresolved))
+		fprintf(out, "\nBase could not be determined for %d image(s):\n", len(graph.Unresolved))
 		for _, entry := range graph.Unresolved {
-			fmt.Fprintf(out, "  %s\n    %s\n", entry.ConsumerRef, strings.Join(entry.Reasons, "; "))
+			fprintf(out, "  %s\n    %s\n", entry.ConsumerRef, strings.Join(entry.Reasons, "; "))
 		}
 	}
 	for _, warning := range graph.Warnings {
-		fmt.Fprintf(errOut, "[graph] %s\n", warning)
+		fprintf(errOut, "[graph] %s\n", warning)
 	}
 	announceWritten(out, "graph", opts.output, opts.report)
 }
@@ -446,9 +446,9 @@ func announceWritten(w io.Writer, label string, paths ...string) {
 			continue
 		}
 		if first {
-			fmt.Fprintln(w)
+			fprintln(w)
 			first = false
 		}
-		fmt.Fprintf(w, "[%s] wrote %s\n", label, path)
+		fprintf(w, "[%s] wrote %s\n", label, path)
 	}
 }

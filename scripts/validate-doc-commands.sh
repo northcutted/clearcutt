@@ -63,7 +63,7 @@ check_absent() {
 help_contains() {
   local description="$1"
   shift
-  local token="${@: -1}"
+  local token="${!#}"
   local cmd=("${@:1:$#-1}")
   if ! "$bin" "${cmd[@]}" --help | contains_fixed "$token"; then
     echo "docs command drift: help for 'clearcutt-verify ${cmd[*]}' does not contain '$token' ($description)" >&2

@@ -583,8 +583,8 @@ func bestEdgeFor(consumer Observation, families map[string]*baseFamily, carriers
 	}
 	if best == nil {
 		reasons := []string{}
-		switch {
-		case attempted == 0:
+		switch attempted {
+		case 0:
 			reasons = append(reasons, "no other observed repository could act as a base")
 		default:
 			reasons = append(reasons, fmt.Sprintf("no base relationship detected against %d observed base versions", attempted))

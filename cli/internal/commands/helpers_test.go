@@ -2,7 +2,6 @@ package commands
 
 import (
 	"bytes"
-	"os"
 	"testing"
 )
 
@@ -24,13 +23,4 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 
 	err := cmd.Execute()
 	return buf.String(), err
-}
-
-// writeExecutable writes a file with the executable bit set. Tests use it to stand
-// up fake tools on PATH.
-func writeExecutable(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
-		t.Fatal(err)
-	}
 }

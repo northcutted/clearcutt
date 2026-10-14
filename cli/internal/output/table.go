@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -28,26 +29,10 @@ func (tp *TablePrinter) AddRow(row ...string) {
 // Print writes aligned tab-spaced columns to the writer.
 func (tp *TablePrinter) Print(w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
-
-	// Print headers
-	for i, h := range tp.Headers {
-		fmt.Fprint(tw, h)
-		if i < len(tp.Headers)-1 {
-			fmt.Fprint(tw, "\t")
+	for _, row := range append([][]string{tp.Headers}, tp.Rows...) {
+		if _, err := fmt.Fprintln(tw, strings.Join(row, "\t")); err != nil {
+			return err
 		}
 	}
-	fmt.Fprintln(tw)
-
-	// Print rows
-	for _, row := range tp.Rows {
-		for i, val := range row {
-			fmt.Fprint(tw, val)
-			if i < len(row)-1 {
-				fmt.Fprint(tw, "\t")
-			}
-		}
-		fmt.Fprintln(tw)
-	}
-
 	return tw.Flush()
 }
