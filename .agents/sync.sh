@@ -26,7 +26,6 @@ done
 # Create target directories
 mkdir -p .github
 mkdir -p .vscode
-mkdir -p .claude/skills
 
 # Generate header function
 generate_header() {
@@ -98,9 +97,19 @@ cat <<'EOF' > .vscode/tasks.json
       "problemMatcher": []
     },
     {
-      "label": "Verify CLI & Ecosystem (Fast)",
+      "label": "Build CLI",
       "type": "shell",
-      "command": "./.claude/skills/test-clearcutt/scripts/verify.sh",
+      "command": "make cli-build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Go Tests",
+      "type": "shell",
+      "command": "make cli-test",
       "group": {
         "kind": "test",
         "isDefault": true
@@ -108,35 +117,19 @@ cat <<'EOF' > .vscode/tasks.json
       "problemMatcher": ["$go"]
     },
     {
-      "label": "Nix Conformance Gating",
+      "label": "Pre-PR Gate (make check)",
       "type": "shell",
-      "command": "cd core && nix develop --extra-experimental-features \"nix-command flakes\" --accept-flake-config --command ./tests/verify.sh",
+      "command": "make check",
       "group": {
         "kind": "test",
         "isDefault": false
       },
-      "problemMatcher": []
+      "problemMatcher": ["$go"]
     },
     {
-      "label": "Python Remediation Tests",
+      "label": "Offline Imported Fleet Demo",
       "type": "shell",
-      "command": "make core-remediation-tests",
-      "group": {
-        "kind": "test",
-        "isDefault": false
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "Generate Catalog Metadata",
-      "type": "shell",
-      "command": "make catalog-generate",
-      "problemMatcher": []
-    },
-    {
-      "label": "Build Astro Catalog Site",
-      "type": "shell",
-      "command": "make site-build",
+      "command": "make demo-imported-fleet-offline",
       "problemMatcher": []
     }
   ]

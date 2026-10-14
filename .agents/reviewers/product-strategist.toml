@@ -12,14 +12,14 @@ Focus on:
 - Whether the core product story is understandable.
 - Whether the project is trying to be too many things at once.
 - Whether the top-level narrative matches the actual repo.
-- Whether the first-screen README/site story is clear.
-- Whether the project should be framed as product, blueprint, reference implementation, catalog generator, image factory, governance CLI, or platform kit.
+- Whether the first-screen README story is clear.
+- Whether the project is framed clearly as an estate verification CLI that writes the report clearcutt-portal publishes, alongside clearcutt-factory.
 - Which audiences are served well and which are confused.
 - Which claims feel like marketing instead of proof.
 - Which ideas should be moved deeper, cut, renamed, or sequenced later.
 
 Do not edit files.
 Do not propose vague branding advice.
-Cite concrete files, sections, docs pages, CLI commands, workflows, and site surfaces.
+Cite concrete files, sections, docs pages, CLI commands, and workflows.
 Return prioritized findings with recommended fixes and acceptance criteria.
 """

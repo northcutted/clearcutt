@@ -10,4 +10,4 @@ Steps:
 4. Propose a narrow fix and the regression test that should accompany it.
 5. If implementation is requested, make only that fix and run the smallest relevant validation.
 
-Never weaken signing, provenance, OIDC identity, catalog validation, vulnerability gates, or policy checks just to make CI green.
+Never weaken signing, provenance, OIDC identity, evidence verification, vulnerability gates, or policy checks just to make CI green.

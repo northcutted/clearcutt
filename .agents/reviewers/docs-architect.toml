@@ -15,7 +15,7 @@ Focus on:
 - Whether terms are defined consistently.
 - Whether the docs explain what works today vs what is planned.
 - Whether docs duplicate, contradict, or bury important information.
-- Whether app-team docs and platform-owner docs are separated.
+- Whether the estate owner, security/auditor, and manager paths in README.md and docs/README.md each lead somewhere useful.
 - Whether security/trust docs are easy to find.
 - Whether docs are too marketing-heavy or too implementation-heavy.
 

@@ -25,27 +25,27 @@ prefix_rule(
 prefix_rule(
     pattern = ["gh", "workflow", "run"],
     decision = "prompt",
-    justification = "Workflow dispatch can publish images, refresh evidence, or open remediation work.",
-    match = ["gh workflow run release.yml", "gh workflow run scheduled-scan.yml"],
+    justification = "Dispatching a workflow can tag and publish a ClearCutt Verify release.",
+    match = ["gh workflow run release.yml", "gh workflow run pr-gate.yml"],
 )
 
 prefix_rule(
     pattern = ["gh", "release"],
     decision = "prompt",
-    justification = "Release mutation affects public ClearCutt evidence and catalog assets.",
-    match = ["gh release upload v0.9.8 asset.json", "gh release delete v0.9.8"],
+    justification = "Release mutation changes the signed binaries other repositories install and verify.",
+    match = ["gh release upload v0.15.0 SHA256SUMS.txt", "gh release delete v0.15.0"],
 )
 
 prefix_rule(
     pattern = ["rm", "-rf"],
     decision = "prompt",
     justification = "Recursive deletion should be reviewed in this repo because generated and untracked analysis artifacts are common.",
-    match = ["rm -rf dist", "rm -rf site/dist"],
+    match = ["rm -rf dist", "rm -rf dist/estate"],
 )
 
 prefix_rule(
     pattern = ["rm", "-fr"],
     decision = "prompt",
     justification = "Recursive deletion should be reviewed in this repo because generated and untracked analysis artifacts are common.",
-    match = ["rm -fr dist", "rm -fr site/dist"],
+    match = ["rm -fr dist", "rm -fr dist/estate"],
 )

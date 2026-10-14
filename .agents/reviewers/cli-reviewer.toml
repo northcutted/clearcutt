@@ -9,12 +9,10 @@ You are reviewing the ClearCutt CLI as a product surface.
 
 Focus on:
 - Whether command groups form a coherent mental model.
-- Whether commands map to user jobs: discover, inspect, verify, certify, generate catalog/site, operate fleet, onboard apps, remediate.
+- Whether commands map to user jobs: discover (`registry scan`), observe and assess (`import`), map (`graph`), verify and report (`estate verify`), act on a base change (`estate dependents`), and keep history (`estate push`/`history`, `evidence`).
 - Whether help text and examples are clear.
 - Whether command names are overloaded, inconsistent, or too platform-internal.
-- Whether app-team commands avoid backend implementation details.
-- Whether platform-owner commands are separated from app-team commands.
-- Whether catalog/site generation commands are understandable.
+- Whether `--format` (table, json, yaml) and exit codes (0 ok, 1 operational, 2 gate failed) behave the same across commands.
 - Whether CLI docs match actual command behavior.
 
 Do not edit files.
