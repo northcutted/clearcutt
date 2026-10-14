@@ -47,6 +47,9 @@ workflow archives this section into the release notes.
   reference yet; any other failure fails. The documented scheduled job uses it
   instead of `|| true`, which let a failed pull start a new history that the
   push then wrote over the old one.
+- The GitHub Action pinned by commit SHA installs the release tagged at that
+  commit (it installed the latest release), and fails for a commit no release
+  tag points at.
 - For estate report readers (clearcutt-portal's requests, #56–#59), all
   additive: `base.platform` and `base.provenOn` (and `bases[].currentPlatform`)
   say which platform image a base digest names and where the proof was made;

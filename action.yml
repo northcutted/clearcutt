@@ -7,8 +7,9 @@ inputs:
   version:
     description: >-
       Release to install (vX.Y.Z or latest). Default: the release this action
-      is pinned to, else latest. `source` builds the action's own checkout
-      instead (pin the action by commit SHA).
+      is pinned to, by its tag or by the commit SHA a release tag points at
+      (a SHA no release tag points at fails), else latest. `source` builds
+      the action's own checkout instead.
     required: false
     default: ""
 outputs:
@@ -31,7 +32,22 @@ runs:
         set -euo pipefail
         v="$INPUT_VERSION"
         if [[ -z "$v" ]]; then
-          if [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then v="$ACTION_REF"; else v=latest; fi
+          if [[ "$ACTION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            v="$ACTION_REF"
+          elif [[ "$ACTION_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            # Pinned by commit: install the release tagged at that commit,
+            # never whatever release is latest.
+            v=$(git ls-remote --tags https://github.com/northcutted/clearcutt-verify \
+              | awk -v sha="$ACTION_REF" '$1 == sha { sub("^refs/tags/", "", $2); sub("[\\^][{][}]$", "", $2); print $2 }' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1 || true)
+            if [[ -z "$v" ]]; then
+              echo "::error::clearcutt-verify is pinned to commit $ACTION_REF, which no release tag points at; set version: vX.Y.Z (or source, to build that commit)"
+              exit 1
+            fi
+            v="v$v"
+          else
+            v=latest
+          fi
         fi
         echo "version=$v" >> "$GITHUB_OUTPUT"
 

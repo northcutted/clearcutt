@@ -44,8 +44,12 @@ jobs:
 
 - **Install.** `northcutted/clearcutt-verify@vX.Y.Z` installs cosign and the
   release's binary after checking it against `SHA256SUMS.txt` and its keyless
-  signature from this repository's release workflow. `with: {version: source}`
-  builds the action's own checkout instead; pin the action by commit SHA then.
+  signature from this repository's release workflow. Pinned by commit SHA
+  (`northcutted/clearcutt-verify@<sha> # vX.Y.Z`), it installs the release
+  whose tag points at that commit, and fails for a commit no release tag
+  points at rather than install another version; `with: {version: vX.Y.Z}`
+  names one explicitly. `with: {version: source}` builds the action's own
+  checkout instead.
 - **Registry credentials.** clearcutt-verify reads the Docker keychain, and for
   `ghcr.io` only, the job's `GITHUB_TOKEN`; the token is never sent to another
   registry. cosign reads the Docker keychain, so private packages need the
