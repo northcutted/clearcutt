@@ -259,7 +259,7 @@ func runEstatePull(ref string) error {
 		// else (credentials, network, a foreign artifact) must stop a job that
 		// would otherwise start a new history and push it over the old one.
 		if estateOpts.allowMissing && notFound(err) {
-			fmt.Fprintf(out, "[estate] nothing at %s yet; nothing pulled\n", ref)
+			_, _ = fmt.Fprintf(out, "[estate] nothing at %s yet; nothing pulled\n", ref)
 			return nil
 		}
 		return err
