@@ -88,7 +88,7 @@ Use these axes when comparing base-image strategies.
 | Package count | The estate report's package counts, from SBOM attestations. | Provides a rough review-surface signal. |
 | Critical/high CVEs | The estate report's vulnerability summary, from scan attestations. | Helps compare risk posture, but must include scanner version and scan time. |
 | SBOM source | Where the estate report says each SBOM came from. | Separates scanned evidence from build-graph-derived evidence. |
-| Signature identity | `verify release-evidence` expected OIDC subject and issuer. | Proves which workflow identity signed a release. |
+| Signature identity | `estate verify` trusted signers: certificate identity, OIDC issuer, and the repositories whose workflow runs may sign. | Proves which workflow identity signed an image. |
 | Provenance builder | SLSA/GitHub attestation payloads. | Connects source, builder, and subject digest. |
 | Base drift | `graph build` `versionsBehind` / `daysBehind` per consumer. | Shows whether adoption actually keeps up with the base. |
 | Shared exposure | `graph layers` blast radius and fleet core. | Shows how far one bad layer reaches. |

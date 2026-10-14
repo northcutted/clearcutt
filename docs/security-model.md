@@ -56,9 +56,10 @@ repeats.**
   undetermined with the reason. Absence is never rendered as zero.
 
 Evidence ClearCutt reads — SBOMs, signatures, attestations — is evidence
-**someone else produced**. ClearCutt records whether it is present and
-well-formed. Verifying it cryptographically is `verify release-evidence`,
-cosign, and SLSA verification, against the registry.
+**someone else produced**. `import observe` and `import assess` record
+whether it is present; `estate verify` verifies it with cosign against the
+signers a policy trusts, and evidence anyone else signed is `failed`, not
+trusted.
 
 ## 3. Registry-native storage
 

@@ -89,6 +89,5 @@ fi
 help_contains "estate verification policy" estate verify "--policy"
 help_contains "estate verification gate" estate verify "--fail-on"
 help_contains "base dependents" estate dependents "--base"
-help_contains "registry-side evidence verification" verify release-evidence "--workflow-identity"
 
 exit "$fail"

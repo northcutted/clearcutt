@@ -17,6 +17,11 @@ commands and flags, the estate report contract, the action, release assets).
 When a release is cut, move these entries under a heading for its version.
 -->
 
+- Removed `verify release-evidence`, and with it the `verify` command group.
+  It checked the release evidence of images built by the removed image
+  factory (an SPDX SBOM, a test-results attestation, and slsa-verifier
+  provenance), and its help named a `--core-dir` flag that did not exist.
+  `estate verify` verifies images, one or many, against a trust policy.
 - Removed `.github/actions/install-clearcutt-verify`. Install with the
   repository's action, `uses: northcutted/clearcutt-verify@vX.Y.Z`, which
   checks the release's checksum and Sigstore bundle the same way.

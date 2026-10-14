@@ -10,11 +10,11 @@ import (
 )
 
 // ErrCheckFailed is the sentinel policy error returned by gating commands
-// (verify, certify, conformance, exceptions validate, and the other check-list
-// gates) when one or more policy checks fail. main maps it to process exit
-// code 2 without printing a redundant "Error:" line, since the command has
-// already rendered a detailed report. All other errors are operational
-// (bad flags, IO, missing catalog) and exit 1.
+// (estate verify --fail-on, graph build --fail-on-stale) when one or more
+// policy checks fail. main maps it to process exit code 2 without printing a
+// redundant "Error:" line, since the command has already rendered a detailed
+// report. All other errors are operational (bad flags, IO, an unreachable
+// registry) and exit 1.
 var ErrCheckFailed = errors.New("one or more checks failed")
 
 // out and errOut are the writers used for all command output. They default to

@@ -13,9 +13,8 @@ The CLI distinguishes "the gate said no" from "the gate could not run":
 | `1` | Operational error: bad flags or arguments, IO failure, or required tooling not available. |
 | `2` | Policy gate failed: a check evaluated and rejected the input. |
 
-Exit code 2 comes from `estate verify --fail-on failed|unverified`,
-`graph build --fail-on-stale`, and `verify release-evidence`. Scripts can branch
-on the code:
+Exit code 2 comes from `estate verify --fail-on failed|unverified` and
+`graph build --fail-on-stale`. Scripts can branch on the code:
 
 ```text
 clearcutt-verify estate verify --refs refs.txt --policy policy.yaml --out dist/estate --fail-on failed; case $? in
@@ -152,20 +151,10 @@ every edge with the confidence that method earns. See
 ./clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate
 ```
 
+To verify a single image, give `--refs` a file holding just its reference: an
+estate of one image gets the same checks and the same report.
+
 See [Verifying an estate](verify-estate.md) and the [report contract](../contract/README.md).
-
-## One Image
-
-```bash
-./clearcutt-verify verify release-evidence \
-  --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_IMAGE:TAG \
-  --repo YOUR_ORG/YOUR_REPO \
-  --workflow-identity 'https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main'
-```
-
-`verify release-evidence` checks one published image's Sigstore signature, its
-SBOM and test-result attestations, and its SLSA and GitHub provenance, matching
-the workflow identity exactly.
 
 ## Drift Check Scope
 
