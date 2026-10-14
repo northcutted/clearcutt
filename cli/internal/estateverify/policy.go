@@ -128,6 +128,13 @@ func verdict(img report.Image, p report.Policy) report.Verdict {
 // scan ages are measured against.
 func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict {
 	var failed, unverified []string
+	switch {
+	case len(p.TrustedSigners) == 0:
+		// Nothing about an image can be verified without someone to trust.
+		unverified = append(unverified, "no trusted signer is configured, so nothing about it can be verified")
+	case !requiresAnything(p):
+		unverified = append(unverified, "the policy requires nothing, so there is nothing to verify it against")
+	}
 	for _, k := range p.Required {
 		item := evidenceItem(img.Evidence, k)
 		switch item.Status {
@@ -143,14 +150,25 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		}
 	}
 	if p.FailOn != "" {
-		if img.Vulnerabilities == nil {
-			unverified = append(unverified, "vulnerabilities are unknown (no scan)")
-		} else if n := countAtOrAbove(img.Vulnerabilities, p.FailOn, p.OnlyFixed); n > 0 {
-			fixable := ""
-			if p.OnlyFixed {
-				fixable = " fixable"
+		// Findings come only from verified scans; a scan that isn't verified
+		// on every platform leaves the rest unknown, never clean.
+		scan := img.Evidence.VulnerabilityScan.Status
+		if v := img.Vulnerabilities; v != nil {
+			if n := countAtOrAbove(v, p.FailOn, p.OnlyFixed); n > 0 {
+				fixable := ""
+				if p.OnlyFixed {
+					fixable = " fixable"
+				}
+				failed = append(failed, fmt.Sprintf("%d%s vulnerabilities at %s or above", n, fixable, p.FailOn))
 			}
-			failed = append(failed, fmt.Sprintf("%d%s vulnerabilities at %s or above", n, fixable, p.FailOn))
+		}
+		switch {
+		case img.Vulnerabilities == nil && (scan == "missing" || scan == ""):
+			unverified = append(unverified, "vulnerabilities are unknown (no scan)")
+		case scan != "verified":
+			unverified = append(unverified, "vulnerabilities are unknown (the vulnerability scan is "+scan+", not verified)")
+		case img.Vulnerabilities == nil:
+			unverified = append(unverified, "vulnerabilities are unknown (the verified scan couldn't be read)")
 		}
 	}
 	if p.MaxScanAgeDays > 0 && img.Vulnerabilities != nil {
@@ -167,6 +185,8 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		switch b := img.Base; {
 		case b != nil && b.DaysBehind > p.MaxDaysBehind:
 			failed = append(failed, fmt.Sprintf("base is %d days behind its newest version (limit %d)", b.DaysBehind, p.MaxDaysBehind))
+		case b != nil && b.Drift == "stale" && b.DaysBehindUnknown:
+			unverified = append(unverified, "its base is behind its newest version, by how many days couldn't be measured")
 		case b != nil && b.Drift == "unknown", b == nil && img.Root == "":
 			// A root has no base to fall behind; anything else might.
 			unverified = append(unverified, "how far its base is behind couldn't be measured")
@@ -187,6 +207,11 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		return report.Verdict{Status: "unverified", Reasons: unverified}
 	}
 	return report.Verdict{Status: "verified", Reasons: []string{}}
+}
+
+// requiresAnything reports whether the policy holds images to anything.
+func requiresAnything(p report.Policy) bool {
+	return len(p.Required) > 0 || p.FailOn != "" || p.MaxDaysBehind > 0 || p.MaxScanAgeDays > 0 || p.Reproduce
 }
 
 func countAtOrAbove(v *report.Vulnerabilities, sev string, onlyFixed bool) int {

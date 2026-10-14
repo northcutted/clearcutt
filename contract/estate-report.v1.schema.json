@@ -55,6 +55,10 @@
         "daysBehind": {
           "type": "integer"
         },
+        "daysBehindUnknown": {
+          "description": "DaysBehindUnknown is true when the base is stale but how many days behind couldn't be measured (a creation time is missing, or zeroed by a reproducible build); daysBehind is then 0 and means nothing.",
+          "type": "boolean"
+        },
         "digest": {
           "type": "string"
         },
@@ -276,7 +280,7 @@
               "$ref": "#/$defs/Signer"
             }
           ],
-          "description": "Signer is who signed it, as read from the signing certificate or key."
+          "description": "Signer is who signed it. On verified evidence it is what cosign checked: the certificate's identity and issuer and, for GitHub Actions, the repository and ref of the run that signed (or the trusted key). Otherwise it is what the evidence's certificate claims, unverified."
         },
         "source": {
           "description": "Source is where it was found: cosign-signature, cosign-attestation, github-attestation, or oci-referrer (an unsigned document). Open: new sources may appear.",
@@ -478,7 +482,7 @@
               "$ref": "#/$defs/Factory"
             }
           ],
-          "description": "Factory is present for images built or rebased by clearcutt-factory."
+          "description": "Factory is present for images built or rebased by clearcutt-factory, read from a verified recipe or rebase record."
         },
         "id": {
           "description": "ID is unique within the report and stable across runs for the same repository, e.g. ghcr-io-acme-images-billing.",
@@ -544,7 +548,7 @@
               "$ref": "#/$defs/Vulnerabilities"
             }
           ],
-          "description": "Vulnerabilities is absent when the image has no vulnerability data; that means unknown, not clean."
+          "description": "Vulnerabilities is absent when the image has no vulnerability data; that means unknown, not clean. Findings come only from verified vulnerability attestations."
         },
         "warnings": {
           "items": {
@@ -657,14 +661,14 @@
           "type": "string"
         },
         "platforms": {
-          "description": "Platforms are the platform images whose SBOMs were read; the image's packages are their union.",
+          "description": "Platforms are the platform images whose verified SBOMs were read; the image's packages are their union.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "status": {
-          "description": "Status is that evidence's status: verified (a trusted signer vouched for it) or present (unsigned, or signed by no trusted signer).",
+          "description": "Status is that evidence's status. Packages are read only from SBOMs a trusted signer verified, so anything but verified means some platform image's SBOM wasn't verified and its packages aren't included.",
           "type": "string"
         }
       },
@@ -753,7 +757,7 @@
           "type": "array"
         },
         "trustedSigners": {
-          "description": "TrustedSigners are the identities whose signatures and attestations count as verified. Empty means nothing can be verified, only present.",
+          "description": "TrustedSigners are the identities whose signatures and attestations count as verified. Empty means nothing can be verified, only present, and every image's verdict is unverified.",
           "items": {
             "$ref": "#/$defs/Signer"
           },
@@ -952,7 +956,7 @@
     },
     "Stack": {
       "additionalProperties": false,
-      "description": "Stack is a clearcutt-factory stack published to a registry (stack push), as the estate's apps use it.",
+      "description": "Stack is a clearcutt-factory stack published to a registry (stack push), as the estate's apps use it: one per repository and tag, so apps on ghcr.io/acme/stacks/go:1 and :2 are on two stacks.",
       "properties": {
         "consumers": {
           "description": "Consumers counts the apps built on the stack; StaleConsumers, those pinned to a version other than the current one.",
@@ -1127,7 +1131,7 @@
           "type": "array"
         },
         "status": {
-          "description": "Status is verified (meets every requirement), failed (violates one), or unverified (some requirement couldn't be decided).",
+          "description": "Status is verified (meets every requirement), failed (violates one), or unverified (some requirement couldn't be decided, or the policy has no trusted signer or requires nothing, so nothing was verified).",
           "enum": [
             "verified",
             "failed",

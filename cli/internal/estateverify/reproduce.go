@@ -25,19 +25,30 @@ type FactoryReproducer struct {
 	// share /tmp). It is removed when the image reproduces and kept, for
 	// its logs, when it doesn't.
 	Dir string
-	// Run executes it in dir and returns its combined output; tests replace
-	// it.
-	Run func(ctx context.Context, dir, bin string, args ...string) ([]byte, error)
+	// Run executes it in dir and returns its standard output and error;
+	// tests replace it.
+	Run func(ctx context.Context, dir, bin string, args ...string) (stdout, stderr []byte, err error)
 }
 
-var reproducedRE = regexp.MustCompile(`(?:rebuilt|rebase gives) (sha256:[0-9a-f]{64})`)
+// What clearcutt-factory verify says last: on success, the digest it
+// rebuilt (or rebased to), on its standard output; on a mismatch, the
+// expected digest and the one it got, as its error. Build logs go to a log
+// file, not to either stream, and only these whole lines count.
+var (
+	reproducedRE    = regexp.MustCompile(`^reproducible: (?:rebuilt (sha256:[0-9a-f]{64}) matches|rebase gives (sha256:[0-9a-f]{64}) again)$`)
+	notReproducedRE = regexp.MustCompile(`^error: NOT reproducible: expected (sha256:[0-9a-f]{64}), (?:rebuilt|the rebase gives) (sha256:[0-9a-f]{64})$`)
+)
 
-// Reproduce returns the digest the rebuild produced.
+// Reproduce returns the digest the rebuild produced. A rebuild that exits
+// non-zero gives a digest only when it says it rebuilt a different one;
+// anything else is an error, so a failed rebuild never passes for a
+// reproduced one.
 func (f FactoryReproducer) Reproduce(ctx context.Context, ref string, signer report.Signer) (string, error) {
 	bin := f.Binary
 	if bin == "" {
 		bin = "clearcutt-factory"
 	}
+	_, want, _ := strings.Cut(ref, "@")
 	flags, err := signerFlags(signer)
 	if err != nil {
 		return "", err
@@ -62,23 +73,44 @@ func (f FactoryReproducer) Reproduce(ctx context.Context, ref string, signer rep
 	}
 	run := f.Run
 	if run == nil {
-		run = func(ctx context.Context, dir, bin string, args ...string) ([]byte, error) {
-			var out bytes.Buffer
+		run = func(ctx context.Context, dir, bin string, args ...string) ([]byte, []byte, error) {
+			var stdout, stderr bytes.Buffer
 			cmd := exec.CommandContext(ctx, bin, args...)
-			cmd.Dir, cmd.Stdout, cmd.Stderr = dir, &out, &out
+			cmd.Dir, cmd.Stdout, cmd.Stderr = dir, &stdout, &stderr
 			err := cmd.Run()
-			return out.Bytes(), err
+			return stdout.Bytes(), stderr.Bytes(), err
 		}
 	}
-	out, err := run(ctx, dir, bin, args...)
-	m := reproducedRE.FindSubmatch(out)
-	switch {
-	case m == nil && err != nil:
-		return "", fmt.Errorf("clearcutt-factory verify: %v: %s (in %s)", err, lastLine(string(out)), dir)
-	case m == nil:
-		return "", fmt.Errorf("clearcutt-factory verify gave no digest: %s (in %s)", lastLine(string(out)), dir)
-	case err == nil && f.Dir == "":
-		_ = os.RemoveAll(dir)
+	stdout, stderr, err := run(ctx, dir, bin, args...)
+	if err == nil {
+		m := reproducedRE.FindStringSubmatch(lastLine(string(stdout)))
+		if m == nil {
+			return "", fmt.Errorf("clearcutt-factory verify gave no digest: %s (in %s)", lastLine(string(stdout)), dir)
+		}
+		if f.Dir == "" {
+			_ = os.RemoveAll(dir)
+		}
+		return firstNonEmpty(m[1], m[2]), nil
 	}
-	return string(m[1]), nil
+	for _, line := range strings.Split(string(stderr), "\n") {
+		if m := notReproducedRE.FindStringSubmatch(strings.TrimSpace(line)); m != nil && m[1] == want && m[2] != want {
+			return m[2], nil
+		}
+	}
+	return "", fmt.Errorf("clearcutt-factory verify: %v: %s (in %s)", err, firstLine(firstNonEmpty(errorLine(stderr), lastLine(string(stderr)), lastLine(string(stdout)))), dir)
+}
+
+// errorLine is the error clearcutt-factory exited with.
+func errorLine(stderr []byte) string {
+	for _, line := range strings.Split(string(stderr), "\n") {
+		if strings.HasPrefix(line, "error: ") {
+			return line
+		}
+	}
+	return ""
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return line
 }

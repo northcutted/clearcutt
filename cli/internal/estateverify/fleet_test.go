@@ -217,24 +217,41 @@ func TestReadPolicy(t *testing.T) {
 func TestFactoryReproducer(t *testing.T) {
 	signer := report.Signer{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}
 	digest := "sha256:" + strings.Repeat("d", 64)
+	other := "sha256:" + strings.Repeat("e", 64)
 	var args []string
-	f := FactoryReproducer{Dir: t.TempDir(), Run: func(_ context.Context, _, bin string, a ...string) ([]byte, error) {
-		args = append([]string{bin}, a...)
-		return []byte("building...\nrebuilt " + digest + ", matching the published image\n"), nil
-	}}
-	got, err := f.Reproduce(context.Background(), "r@"+digest, signer)
-	if err != nil || got != digest || strings.Join(args[:4], " ") != "clearcutt-factory verify --image r@"+digest {
-		t.Fatalf("reproduce: %q %v (args %q)", got, err, args)
+	f := FactoryReproducer{Dir: t.TempDir()}
+	run := func(stdout, stderr string, err error) func(context.Context, string, string, ...string) ([]byte, []byte, error) {
+		return func(_ context.Context, _, bin string, a ...string) ([]byte, []byte, error) {
+			args = append([]string{bin}, a...)
+			return []byte(stdout), []byte(stderr), err
+		}
 	}
-	f.Run = func(context.Context, string, string, ...string) ([]byte, error) {
-		return []byte("pulling base\nerror: base image unavailable\n"), errors.New("exit status 1")
+	for _, c := range []struct {
+		name, stdout, stderr string
+		err                  error
+		want, wantErr        string
+	}{
+		{"reproduced", "rebuilding from recipe of r@" + digest + " without cache (linux/amd64)\nreproducible: rebuilt " + digest + " matches\n", "", nil, digest, ""},
+		{"rebase repeated", "repeating the rebase\nreproducible: rebase gives " + digest + " again\n", "", nil, digest, ""},
+		{"different digest", "rebuilding\n", "error: NOT reproducible: expected " + digest + ", rebuilt " + other + "\n  layer 2 differs\n", errors.New("exit status 1"), other, ""},
+		{"different rebase", "", "error: NOT reproducible: expected " + digest + ", the rebase gives " + other + "\n", errors.New("exit status 1"), other, ""},
+		// A failed rebuild never passes, whatever it printed on the way.
+		{"failed after printing the digest", "reproducible: rebuilt " + digest + " matches\n", "error: pushing: denied\n", errors.New("exit status 1"), "", "denied"},
+		{"failed, claiming its own digest", "", "error: NOT reproducible: expected " + digest + ", rebuilt " + digest + "\n", errors.New("exit status 1"), "", "exit status 1"},
+		{"failed, about another image", "", "error: NOT reproducible: expected " + other + ", rebuilt " + digest + "\n", errors.New("exit status 1"), "", "exit status 1"},
+		{"base unavailable", "pulling base\n", "error: base image unavailable\n", errors.New("exit status 1"), "", "base image unavailable"},
+		// Only its last line, whole, says what it rebuilt.
+		{"digest in a log line", "step 3: echo reproducible: rebuilt " + digest + " matches\ndone\n", "", nil, "", "gave no digest"},
+		{"no digest", "done\n", "", nil, "", "gave no digest"},
+	} {
+		f.Run = run(c.stdout, c.stderr, c.err)
+		got, err := f.Reproduce(context.Background(), "r@"+digest, signer)
+		if got != c.want || (c.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.wantErr)) {
+			t.Errorf("%s: got %q, %v; want %q, %q", c.name, got, err, c.want, c.wantErr)
+		}
 	}
-	if _, err := f.Reproduce(context.Background(), "r@"+digest, signer); err == nil || !strings.Contains(err.Error(), "base image unavailable") {
-		t.Errorf("failed rebuild: %v", err)
-	}
-	f.Run = func(context.Context, string, string, ...string) ([]byte, error) { return []byte("done\n"), nil }
-	if _, err := f.Reproduce(context.Background(), "r@"+digest, signer); err == nil || !strings.Contains(err.Error(), "gave no digest") {
-		t.Errorf("no digest: %v", err)
+	if strings.Join(args[:4], " ") != "clearcutt-factory verify --image r@"+digest {
+		t.Errorf("args %q", args)
 	}
 	if _, err := f.Reproduce(context.Background(), "r@"+digest, report.Signer{}); err == nil {
 		t.Error("reproduced without a signer")
@@ -245,16 +262,18 @@ func TestFactoryReproducer(t *testing.T) {
 func TestVerifierRunsCosign(t *testing.T) {
 	dir := t.TempDir()
 	cosign := filepath.Join(dir, "cosign")
-	script := "#!/bin/sh\ncase \"$*\" in *acme*) echo '[]';; *) echo 'Error: no matching signatures' >&2; exit 1;; esac\n"
+	script := "#!/bin/sh\ncase \"$*\" in *acme/images*) echo '[{\"critical\":{\"image\":{\"docker-manifest-digest\":\"sha256:x\"},\"type\":\"cosign container image signature\"}}]';; " +
+		"*) echo 'Error: no matching signatures' >&2; exit 1;; esac\n"
 	if err := os.WriteFile(cosign, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	v := &Verifier{Cosign: cosign, Signers: []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}}}
-	subj := Subject{Ref: "r@sha256:x", Kind: KindSignature}
+	cert := &report.Signer{Identity: ourSigner, Issuer: ghIssuer, SourceRepository: "https://github.com/acme/images"}
+	subj := Subject{Ref: "r@sha256:x", Kind: KindSignature, Signer: cert}
 	if _, err := v.Verify(context.Background(), subj); err != nil {
 		t.Errorf("verify: %v", err)
 	}
-	v.Signers[0].IdentityRegexp = `^https://github\.com/other/`
+	subj.Signer = &report.Signer{Identity: "https://github.com/acme/other/.github/workflows/x.yml@refs/heads/main", Issuer: ghIssuer, SourceRepository: "https://github.com/acme/other"}
 	if _, err := v.Verify(context.Background(), subj); err == nil || !strings.Contains(err.Error(), "no matching signatures") {
 		t.Errorf("untrusted: %v", err)
 	}
@@ -286,13 +305,13 @@ func TestBuildStacks(t *testing.T) {
 	host := strings.TrimPrefix(srv.URL, "http://")
 	ours := fulcioCert(t, ourSigner, ghIssuer)
 
-	pushStack := func(content string) string {
+	pushStack := func(content string, tag ...string) string {
 		img, err := mutate.Append(mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), "application/vnd.clearcutt.factory.stack.v1+yaml"),
 			mutate.Addendum{Layer: static.NewLayer([]byte(content), "application/vnd.clearcutt.factory.stack.v1+yaml")})
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, _ := name.ParseReference(host + "/stacks/go:1")
+		r, _ := name.ParseReference(host + "/stacks/go:" + firstNonEmpty(append(tag, "1")...))
 		if err := remote.Write(r, img); err != nil {
 			t.Fatal(err)
 		}
@@ -303,29 +322,40 @@ func TestBuildStacks(t *testing.T) {
 	attach(t, host+"/stacks/go", v1.Descriptor{MediaType: types.OCIManifestSchema1, Digest: mustHash(t, old)}, bundleJSON(t, PredicateCosignSign, old, map[string]any{}, ours))
 	current := pushStack("kind: Stack\nmetadata: {name: go}\nbuild: golang:1.27\n")
 
-	app := pushIndex(t, host+"/apps/checkout:1", nil, built, nil)
-	appDesc := descriptorOf(t, app)
-	recipe := map[string]any{
-		"factory":  map[string]string{"version": "v0.1.1"},
-		"manifest": "apiVersion: factory.clearcutt.dev/v1alpha1\nkind: App\nmetadata:\n  name: checkout\nspec:\n  stack: " + host + "/stacks/go:1\n",
-		"lock":     "app:\n  stack: go\n  stackDigest: sha256:" + strings.Repeat("d", 64) + "\n  stackArtifact: {ref: " + host + "/stacks/go:1, digest: " + old + "}\n  build: {ref: golang:1, digest: sha256:" + strings.Repeat("c", 64) + "}\n",
+	// The next major version, which billing is on.
+	next := pushStack("kind: Stack\nmetadata: {name: go}\nbuild: golang:2.0\n", "2")
+
+	pushApp := func(app, tag, digest string) {
+		idx := pushIndex(t, host+"/apps/"+app+":1", nil, built, nil)
+		d := descriptorOf(t, idx)
+		recipe := map[string]any{
+			"factory":  map[string]string{"version": "v0.1.1"},
+			"manifest": "apiVersion: factory.clearcutt.dev/v1alpha1\nkind: App\nmetadata:\n  name: " + app + "\nspec:\n  stack: " + host + "/stacks/go:" + tag + "\n",
+			"lock":     "app:\n  stack: go\n  stackDigest: sha256:" + strings.Repeat("d", 64) + "\n  stackArtifact: {ref: " + host + "/stacks/go:" + tag + ", digest: " + digest + "}\n  build: {ref: golang:1, digest: sha256:" + strings.Repeat("c", 64) + "}\n",
+		}
+		attach(t, host+"/apps/"+app, d, bundleJSON(t, PredicateRecipe, d.Digest.String(), recipe, ours))
 	}
-	attach(t, host+"/apps/checkout", appDesc, bundleJSON(t, PredicateRecipe, appDesc.Digest.String(), recipe, ours))
+	pushApp("checkout", "1", old)
+	pushApp("billing", "2", next)
 
 	verifier := acmeVerifier()
-	r, err := Build(context.Background(), observe(t, host, "apps/checkout:1"), Options{
+	r, err := Build(context.Background(), observe(t, host, "apps/checkout:1", "apps/billing:1"), Options{
 		Name: "stacks", Version: "test", GeneratedAt: "2026-10-10T00:00:00Z", Verifier: verifier,
 		Policy: report.Policy{TrustedSigners: verifier.Signers, StackSigners: verifier.Signers},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := r.Images[0].Factory
+	f := r.Images[1].Factory
 	if f == nil || f.Stack != "go" || f.StackRef != host+"/stacks/go:1" || f.StackDigest != old {
 		t.Fatalf("app factory: %+v", f)
 	}
-	if len(r.Stacks) != 1 {
+	// One stack per tag: billing is current on :2, not behind :1.
+	if len(r.Stacks) != 2 {
 		t.Fatalf("stacks: %+v", r.Stacks)
+	}
+	if st := r.Stacks[1]; st.Ref != host+"/stacks/go:2" || st.CurrentDigest != next || st.Consumers != 1 || st.StaleConsumers != 0 || strings.Join(st.Versions[0].Images, ",") != "apps/billing" {
+		t.Errorf("stack :2: %+v", st)
 	}
 	st := r.Stacks[0]
 	if st.Repository != host+"/stacks/go" || st.CurrentDigest != current || st.Consumers != 1 || st.StaleConsumers != 1 {

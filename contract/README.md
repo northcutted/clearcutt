@@ -46,11 +46,18 @@ difference between them is the point:
 | `unknown` | Couldn't be looked for (registry error, unsupported store) | unknown, never as absent, zero, or a pass |
 | `not-applicable` | Doesn't apply (a rebase record for an image that was never rebased) | omit or grey out |
 
+What the report reads out of evidence (`vulnerabilities`, `packages`,
+`source` with `basis: provenance`, `factory`) comes only from evidence that is
+`verified`; nothing in `present` or `failed` evidence is read. A verified
+item's `signer` is the signer cosign checked; on any other status it is what
+the evidence's certificate claims, unverified.
+
 **Bases.** `base.strength` says how an image's base is known: `proof` means the
 image starts with the base's exact layer digests (`method: layer-prefix`);
 `declared`, `assisted`, and `weak` rest on what the image's author wrote.
 Never show a claim as proof. Images without `base` are either `root` (it
-says why) or `unresolved` (it says why not).
+says why) or `unresolved` (it says why not). `base.daysBehindUnknown` marks a
+stale base whose `daysBehind` couldn't be measured: unknown, not zero.
 
 **Vulnerabilities.** An image without `vulnerabilities` has no vulnerability
 data: unknown, not clean. `summary.vulnerabilities.notScanned` counts those.
@@ -62,7 +69,9 @@ true when that count is zero.
 
 **Verdicts.** `verdict.status` is `verified` (meets every requirement in
 `policy`), `failed` (violates one), or `unverified` (a requirement couldn't be
-decided). `verdict.reasons` lists one line per requirement not met.
+decided). With no `policy.trustedSigners`, or a policy that requires nothing,
+every verdict is `unverified`. `verdict.reasons` lists one line per
+requirement not met.
 
 **Identity.** `images[].id` is unique in a report and stable across runs for
 the same repository, so it works in URLs. `base.imageId` links to the base when

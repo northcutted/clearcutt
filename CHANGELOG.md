@@ -17,6 +17,32 @@ Add an entry here in the same PR as any user-visible behavior change
 workflow archives this section into the release notes.
 -->
 
+- **`estate verify` reads only what cosign verified.** Vulnerabilities,
+  packages, the provenance source, and clearcutt-factory details come only from
+  attestations cosign verified against a trusted signer; `present` and
+  `failed` evidence is reported but nothing in it is read. Before, the newest
+  attached copy of each kind was read by its unverified timestamp, so anyone
+  who could push to a repository could attach a newer copy that hid findings,
+  faked a scan time or provenance source, or (with a forged certificate) turned
+  a reusable workflow's `present` signature into `verified`. cosign is now asked
+  for exactly the signer each copy's certificate names, so the signer shown on
+  verified evidence is the one cosign checked; an unverified copy never
+  replaces a verified one; and a signature counts only when cosign verified a
+  signature over the image's digest, not a bundle of another type.
+- Verdicts are stricter: with no trusted signer, or a policy that requires
+  nothing, every image is `unverified` (it was `verified`); `failOn` needs a
+  verified scan on every platform (an unverified clean scan no longer passes);
+  `maxScanAgeDays` measures the oldest platform's scan; with `maxDaysBehind`, a
+  stale base whose age couldn't be measured is `unverified` (new, additive
+  `base.daysBehindUnknown` in the contract); and an image that names a base it
+  can't be shown to be built on stays unresolved instead of becoming a root.
+- Trusted signers' `identityRegexp` must be anchored (`^`) and must not match
+  other owners' workflows: any owner, or `acme-evil` for
+  `^https://github\.com/acme`.
+- `stacks` has one entry per stack repository and tag, so apps on another
+  major tag no longer count as stale.
+- `--reproduce` reads the rebuilt digest only from clearcutt-factory's final
+  result, and a rebuild that exits with an error is never `reproduced`.
 - For estate report readers (clearcutt-portal's requests, #56–#59), all
   additive: `base.platform` and `base.provenOn` (and `bases[].currentPlatform`)
   say which platform image a base digest names and where the proof was made;

@@ -8,7 +8,9 @@
 // The report never overclaims. Evidence is "verified" only when it was found
 // and checked against a trusted signer; "present" when found but not checked;
 // "unknown" when it could not be looked for. Unknown is never reported as a
-// pass, and never as zero.
+// pass, and never as zero. What the report reads out of evidence
+// (vulnerabilities, packages, provenance, clearcutt-factory details) comes
+// only from evidence a trusted signer verified.
 package report
 
 // Contract identifiers.
@@ -85,7 +87,8 @@ type Policy struct {
 	// any of signature, sbom, vulnerabilityScan, provenance, recipe, tests.
 	Required []string `json:"required" enum:"signature,sbom,vulnerabilityScan,provenance,recipe,tests"`
 	// TrustedSigners are the identities whose signatures and attestations
-	// count as verified. Empty means nothing can be verified, only present.
+	// count as verified. Empty means nothing can be verified, only present,
+	// and every image's verdict is unverified.
 	TrustedSigners []Signer `json:"trustedSigners"`
 	// FailOn fails images with vulnerabilities at or above this severity
 	// (negligible, low, medium, high, critical); empty never fails.
@@ -251,10 +254,12 @@ type Image struct {
 	Unresolved []string `json:"unresolved,omitempty"`
 	Evidence   Evidence `json:"evidence"`
 	// Vulnerabilities is absent when the image has no vulnerability data;
-	// that means unknown, not clean.
+	// that means unknown, not clean. Findings come only from verified
+	// vulnerability attestations.
 	Vulnerabilities *Vulnerabilities `json:"vulnerabilities,omitempty"`
 	Reproducibility Reproducibility  `json:"reproducibility"`
-	// Factory is present for images built or rebased by clearcutt-factory.
+	// Factory is present for images built or rebased by clearcutt-factory,
+	// read from a verified recipe or rebase record.
 	Factory *Factory `json:"factory,omitempty"`
 	// Packages is how many package versions the image ships, when known.
 	Packages *int `json:"packages,omitempty"`
@@ -322,6 +327,10 @@ type BaseLink struct {
 	Drift          string `json:"drift" enum:"current,stale,unknown"`
 	VersionsBehind int    `json:"versionsBehind"`
 	DaysBehind     int    `json:"daysBehind"`
+	// DaysBehindUnknown is true when the base is stale but how many days
+	// behind couldn't be measured (a creation time is missing, or zeroed by
+	// a reproducible build); daysBehind is then 0 and means nothing.
+	DaysBehindUnknown bool `json:"daysBehindUnknown,omitempty"`
 	// CurrentRef and CurrentDigest are the newest observed version of the base.
 	CurrentRef    string `json:"currentRef,omitempty"`
 	CurrentDigest string `json:"currentDigest,omitempty"`
@@ -362,7 +371,10 @@ type EvidenceItem struct {
 	Source string `json:"source,omitempty"`
 	// PredicateType is the in-toto predicate type, for attestations.
 	PredicateType string `json:"predicateType,omitempty"`
-	// Signer is who signed it, as read from the signing certificate or key.
+	// Signer is who signed it. On verified evidence it is what cosign
+	// checked: the certificate's identity and issuer and, for GitHub
+	// Actions, the repository and ref of the run that signed (or the trusted
+	// key). Otherwise it is what the evidence's certificate claims, unverified.
 	Signer *Signer `json:"signer,omitempty"`
 	// Ref is where it is stored (e.g. an attestation's repository@digest).
 	Ref string `json:"ref,omitempty"`
@@ -458,18 +470,20 @@ type FactoryInputs struct {
 type PackagesSource struct {
 	// Evidence is the evidence kind it was read from (sbom).
 	Evidence string `json:"evidence"`
-	// Status is that evidence's status: verified (a trusted signer vouched
-	// for it) or present (unsigned, or signed by no trusted signer).
+	// Status is that evidence's status. Packages are read only from SBOMs a
+	// trusted signer verified, so anything but verified means some platform
+	// image's SBOM wasn't verified and its packages aren't included.
 	Status string `json:"status"`
-	// Platforms are the platform images whose SBOMs were read; the image's
-	// packages are their union.
+	// Platforms are the platform images whose verified SBOMs were read; the
+	// image's packages are their union.
 	Platforms []string `json:"platforms,omitempty"`
 }
 
 // Verdict is whether the image meets the policy.
 type Verdict struct {
 	// Status is verified (meets every requirement), failed (violates one),
-	// or unverified (some requirement couldn't be decided).
+	// or unverified (some requirement couldn't be decided, or the policy
+	// has no trusted signer or requires nothing, so nothing was verified).
 	Status string `json:"status" enum:"verified,failed,unverified"`
 	// Reasons explain a failed or unverified verdict, one requirement each.
 	Reasons []string `json:"reasons"`
@@ -493,7 +507,8 @@ type Base struct {
 }
 
 // Stack is a clearcutt-factory stack published to a registry
-// (stack push), as the estate's apps use it.
+// (stack push), as the estate's apps use it: one per repository and tag,
+// so apps on ghcr.io/acme/stacks/go:1 and :2 are on two stacks.
 type Stack struct {
 	// Repository is the stack's registry repository.
 	Repository string `json:"repository"`

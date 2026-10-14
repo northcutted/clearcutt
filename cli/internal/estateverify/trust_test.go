@@ -81,9 +81,9 @@ func TestReproduceBindsTheRepository(t *testing.T) {
 	}
 
 	var args []string
-	f := FactoryReproducer{Dir: t.TempDir(), Run: func(_ context.Context, _, _ string, a ...string) ([]byte, error) {
+	f := FactoryReproducer{Dir: t.TempDir(), Run: func(_ context.Context, _, _ string, a ...string) ([]byte, []byte, error) {
 		args = a
-		return []byte("rebuilt " + digest), nil
+		return []byte("reproducible: rebuilt " + digest + " matches\n"), nil, nil
 	}}
 	if _, err := f.Reproduce(context.Background(), "r@"+digest, got); err != nil || !strings.Contains(strings.Join(args, " "), "--certificate-github-workflow-repository acme/checkout") {
 		t.Errorf("factory args %q, %v", args, err)

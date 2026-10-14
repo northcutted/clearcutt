@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"sigs.k8s.io/yaml"
 
@@ -113,11 +114,9 @@ func mergeVulnerabilities(scans map[string]vulnScan) *report.Vulnerabilities {
 		platforms = append(platforms, p)
 	}
 	sort.Strings(platforms)
+	out.ScannedAt = oldestScan(scans)
 	for _, p := range platforms {
 		s := scans[p]
-		if out.ScannedAt == "" || s.ScannedAt > out.ScannedAt {
-			out.ScannedAt = s.ScannedAt
-		}
 		out.Scanner = firstNonEmpty(out.Scanner, s.Scanner)
 		for _, m := range s.Result.Matches {
 			add(p, m, false)
@@ -146,6 +145,24 @@ func mergeVulnerabilities(scans map[string]vulnScan) *report.Vulnerabilities {
 		}
 	}
 	return out
+}
+
+// oldestScan is when the oldest of the scans ran: the image's findings are
+// only as fresh as its stalest platform's. It is "" when any scan's time is
+// unknown.
+func oldestScan(scans map[string]vulnScan) string {
+	var oldest string
+	var at time.Time
+	for _, s := range scans {
+		t, err := time.Parse(time.RFC3339, s.ScannedAt)
+		if err != nil {
+			return ""
+		}
+		if oldest == "" || t.Before(at) {
+			oldest, at = s.ScannedAt, t
+		}
+	}
+	return oldest
 }
 
 func normalizeSeverity(s string) string {

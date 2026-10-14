@@ -28,13 +28,24 @@ instead.
    bundles as plain signatures.
 2. **Verification.** Each piece of evidence is verified with cosign against
    the policy's trusted signers. Anything not signed by one of them is
-   `failed`, never quietly accepted.
-3. **Contents.** Vulnerability findings come from vulnerability attestations
-   (deduplicated across platforms; VEX-suppressed findings are kept but not
-   counted), packages from SBOM attestations, the source commit from verified
-   SLSA provenance, and clearcutt-factory details from recipes and rebase
-   records. A rebased image is named after the recipe of the image it was
-   rebased from, found by following its verified rebase records back.
+   `failed`, never quietly accepted. cosign is asked for exactly the signer
+   the evidence's certificate names (its identity and issuer, and for GitHub
+   Actions the repository and ref of the run), once a trusted signer accepts
+   that signer, so the signer the report shows on verified evidence is the
+   one cosign checked.
+3. **Contents.** Only what cosign verified is read: vulnerability findings
+   from verified vulnerability attestations (deduplicated across platforms;
+   VEX-suppressed findings are kept but not counted), packages from verified
+   SBOM attestations, the source commit from verified SLSA provenance, and
+   clearcutt-factory details from verified recipes and rebase records.
+   Evidence that is `present` or `failed` is reported, but nothing in it is
+   read or counted. Anyone who can push to a repository can attach more
+   copies of a kind of evidence; a copy that doesn't verify never replaces
+   one that does, however new it claims to be. Among verified copies, the
+   newest counts (for vulnerability scans, by the scan time inside the signed
+   attestation), and the item's `detail` says how many others were ignored.
+   A rebased image is named after the recipe of the image it was rebased
+   from, found by following its verified rebase records back.
 4. **Base.** Where the image's layers start with an observed image's layers,
    that is proof. For images whose base tag has moved on since they were
    built, the base the image names (its `org.opencontainers.image.base.*`
@@ -43,7 +54,9 @@ instead.
    rejected, and drift is measured against the base's current tag.
 5. **Verdict.** `verified` when every requirement is met, `failed` when one
    isn't, `unverified` when one can't be decided (evidence that couldn't be
-   read, or that no trusted signer could vouch for).
+   read, or that no trusted signer could vouch for). With no trusted signers,
+   or a policy that requires nothing, every image is `unverified`: nothing
+   was verified.
 
 ## The policy
 
@@ -53,7 +66,9 @@ kind: VerificationPolicy
 # Evidence an image needs, verified: signature, sbom, vulnerabilityScan,
 # provenance, recipe (clearcutt-factory), tests.
 required: [signature, sbom, provenance]
-# Whose signatures count. Wildcard identities are refused.
+# Whose signatures count. An identityRegexp must start with ^ and must not
+# match other owners' workflows (^https://github\.com/acme/, not
+# ^https://github\.com/acme, which matches acme-evil too); wildcards are refused.
 trustedSigners:
   - identityRegexp: ^https://github\.com/acme/images/
     issuer: https://token.actions.githubusercontent.com
@@ -64,6 +79,11 @@ onlyFixed: true       # ...counting only those with a fix
 maxDaysBehind: 30     # a base more than 30 days behind its newest version fails
 maxScanAgeDays: 7     # a vulnerability scan older than 7 days leaves the image unverified
 ```
+
+`failOn` counts only verified vulnerability scans. An image whose scan isn't
+verified on every platform is `unverified` even when the scan says it is
+clean: its vulnerabilities are unknown. `maxScanAgeDays` measures the oldest
+platform's scan, so every platform must have been scanned recently.
 
 ### Reusable workflows
 
@@ -85,7 +105,9 @@ trustedSigners:
 one repository the run must have been in, and cosign checks the certificate's
 GitHub workflow repository against it (`--certificate-github-workflow-repository`).
 Evidence signed by a reusable workflow with no caller constraint is reported
-as `present`, not `verified`, with the repository it was called from. The
+as `present`, not `verified`, with the repository it was called from; so is
+GitHub Actions evidence whose certificate doesn't name the repository whose
+run signed it. The
 report records each signer's repository and ref (`signer.sourceRepository`,
 `signer.sourceRef`).
 
@@ -117,8 +139,12 @@ policy) or pass `--trust-policy trust.yaml`; its image signers join the
 policy's `trustedSigners`.
 
 With `maxDaysBehind`, an image whose base couldn't be placed is `unverified`:
-it might be behind. Roots (images others are built on, with no base of their
-own) are exempt.
+it might be behind. So is one whose base is behind its newest version by an
+unknown number of days (`base.daysBehindUnknown`: a creation time is missing,
+or zeroed by a reproducible build). Roots (images others are built on, with no
+base of their own) are exempt; an image that names a base in its annotations
+or its recipe's lock is no root, and stays unresolved when that base can't be
+shown.
 
 Without a file, the same policy can be given with `--require`,
 `--trusted-identity-regexp`, `--trusted-issuer`, `--vulnerabilities-fail-on`,
@@ -139,7 +165,9 @@ report's `stacks` lists each such stack: the version its tag names now, every
 version apps are pinned to, each version's signature verified against the
 policy's stack signers (a trust policy's `stack` signers, or `stackSigners:`
 in a VerificationPolicy), and how many apps are on an older version. Each app's
-`factory.stackRef` and `factory.stackDigest` say which.
+`factory.stackRef` and `factory.stackDigest` say which. A stack is a
+repository and a tag: apps on `stacks/go:1` and `stacks/go:2` are on two
+stacks, each compared with its own tag.
 
 ### Who is built on a base
 
@@ -181,7 +209,10 @@ tell the report came from your job.
   the index the tag points at (a base an image claims is checked on one
   platform image), and `base.provenOn` which platform's layers were compared.
 - `packagesSource` says where an image's packages were read from: its SBOM
-  evidence, and whether that verified.
+  evidence, which platforms' verified SBOMs were read, and the SBOM evidence's
+  status (anything but `verified` means some platform's packages are missing).
+- `base.daysBehindUnknown` marks a stale base whose `daysBehind` couldn't be
+  measured.
 - `tests` is `present` (source `recipe`) for clearcutt-factory images whose
   verified recipe declares a smoke test: factory runs it on every platform
   before pushing, but doesn't attest the result.
@@ -202,7 +233,10 @@ build log when the image doesn't reproduce.
 A different digest is `not-reproduced` and fails the image. A rebuild that
 couldn't finish (a registry or the container runtime failing) is
 `not-checked`, with the reason, and leaves the image `unverified`: whether it
-reproduces is still undecided. Without `--reproduce`, images with recipes are
+reproduces is still undecided. The digest is read only from the result
+clearcutt-factory reports last (its final output line on success, its error
+on a mismatch), never from build output, and a rebuild that exits with an
+error is never `reproduced`. Without `--reproduce`, images with recipes are
 `not-checked`.
 
 ## Limits
@@ -215,5 +249,6 @@ reproduces is still undecided. Without `--reproduce`, images with recipes are
   limit; `clearcutt-verify` reads the same credentials.
 - **Tests.** Test evidence counts only as a test-result attestation
   (`https://in-toto.io/attestation/test-result/…`).
-- **Speed.** Each piece of evidence is one cosign verification; `--concurrency`
-  bounds how many images are checked at once.
+- **Speed.** Each signer of each kind of evidence on an image is one cosign
+  verification (at most 8 per kind; more copies are reported unchecked);
+  `--concurrency` bounds how many images are checked at once.

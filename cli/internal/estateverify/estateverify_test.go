@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -47,10 +48,16 @@ const (
 )
 
 // fulcioCert makes a certificate shaped like Fulcio's: the identity as a URI
-// SAN, the issuer in the v2 extension.
+// SAN, the issuer in the v2 extension, and for GitHub Actions the repository
+// whose run signed (the workflow's own).
 func fulcioCert(t *testing.T, identity, issuer string) string {
 	t.Helper()
-	return fulcioCertFrom(t, identity, issuer, "")
+	repo := ""
+	if rest, ok := strings.CutPrefix(identity, "https://github.com/"); ok && issuer == ghIssuer {
+		parts := strings.SplitN(rest, "/", 3)
+		repo = "https://github.com/" + parts[0] + "/" + parts[1]
+	}
+	return fulcioCertFrom(t, identity, issuer, repo)
 }
 
 // fulcioCertFrom also names the repository whose run signed (the Source
@@ -88,6 +95,13 @@ func mustUTF8(v string) []byte {
 // bundleJSON is a Sigstore bundle holding an in-toto statement.
 func bundleJSON(t *testing.T, predicateType, subjectDigest string, predicate any, cert string) []byte {
 	t.Helper()
+	return bundleAt(t, predicateType, subjectDigest, predicate, cert, 1791200000)
+}
+
+// bundleAt is a bundle whose transparency log entry says it was logged at
+// integratedTime (which nothing verifies but cosign).
+func bundleAt(t *testing.T, predicateType, subjectDigest string, predicate any, cert string, integratedTime int64) []byte {
+	t.Helper()
 	st, _ := json.Marshal(map[string]any{
 		"_type":         "https://in-toto.io/Statement/v1",
 		"subject":       []any{map[string]any{"name": "x", "digest": map[string]string{"sha256": strings.TrimPrefix(subjectDigest, "sha256:")}}},
@@ -98,7 +112,7 @@ func bundleJSON(t *testing.T, predicateType, subjectDigest string, predicate any
 		"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
 		"verificationMaterial": map[string]any{
 			"certificate": map[string]string{"rawBytes": cert},
-			"tlogEntries": []any{map[string]string{"integratedTime": "1791200000"}},
+			"tlogEntries": []any{map[string]string{"integratedTime": fmt.Sprint(integratedTime)}},
 		},
 		"dsseEnvelope": map[string]any{"payload": base64.StdEncoding.EncodeToString(st), "payloadType": "application/vnd.in-toto+json"},
 	})
@@ -139,9 +153,38 @@ func TestKindOf(t *testing.T) {
 }
 
 func TestSignerFlags(t *testing.T) {
-	for _, s := range []report.Signer{{IdentityRegexp: ".*", Issuer: ghIssuer}, {IdentityRegexp: "^https://github.com/.*", Issuer: ghIssuer}, {Identity: ourSigner}} {
-		if _, err := signerFlags(s); err == nil {
-			t.Errorf("accepted %+v", s)
+	for _, c := range []struct {
+		signer report.Signer
+		want   string
+	}{
+		{report.Signer{IdentityRegexp: ".*", Issuer: ghIssuer}, "wildcard"},
+		{report.Signer{IdentityRegexp: "^https://github.com/.*", Issuer: ghIssuer}, "wildcard"},
+		// Not anchored, and any owner.
+		{report.Signer{IdentityRegexp: `https://github\.com/.*`, Issuer: ghIssuer}, "wildcard"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/[^/]+/images/`, Issuer: ghIssuer}, "wildcard"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/(acme|[a-z-]+)/`, Issuer: ghIssuer}, "wildcard"},
+		// acme-evil is another owner.
+		{report.Signer{IdentityRegexp: `^https://github\.com/acme`, Issuer: ghIssuer}, "acme-clearcutt-probe"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/acme.*/`, Issuer: ghIssuer}, "wildcard"},
+		{report.Signer{IdentityRegexp: `https://github\.com/acme/`, Issuer: ghIssuer}, "unanchored"},
+		{report.Signer{IdentityRegexp: `(?m)^https://github\.com/acme/`, Issuer: ghIssuer}, "unanchored"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/acme/(`, Issuer: ghIssuer}, "missing closing"},
+		{report.Signer{Identity: ourSigner}, "no OIDC issuer"},
+	} {
+		if _, err := signerFlags(c.signer); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: %v, want %q", c.signer, err, c.want)
+		}
+	}
+	for _, re := range []string{
+		`^https://github\.com/acme/`,
+		`^https://github\.com/(acme|acme-labs)/`,
+		`^https://github\.com/northcutted/clearcutt-factory/\.github/workflows/(images|fleet)\.yml@refs/tags/v`,
+		`^https://github\.com/acme/images/\.github/workflows/release\.yml@refs/heads/main$`,
+		`^(https://github\.com/acme/|https://gitlab\.com/acme/)`,
+		`^.*@acme\.com$`,
+	} {
+		if _, err := signerFlags(report.Signer{IdentityRegexp: re, Issuer: ghIssuer}); err != nil {
+			t.Errorf("refused %s: %v", re, err)
 		}
 	}
 	got, err := signerFlags(report.Signer{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer})
@@ -153,24 +196,81 @@ func TestSignerFlags(t *testing.T) {
 	}
 }
 
-func TestVerifierTriesEachSigner(t *testing.T) {
+// envelope is a DSSE envelope as cosign prints one it verified.
+func envelope(t *testing.T, predicateType, digest string) []byte {
+	t.Helper()
+	st, _ := json.Marshal(map[string]any{"predicateType": predicateType,
+		"subject": []any{map[string]any{"digest": map[string]string{"sha256": strings.TrimPrefix(digest, "sha256:")}}}})
+	env, _ := json.Marshal(map[string]any{"payloadType": "application/vnd.in-toto+json", "payload": st})
+	return append(env, '\n')
+}
+
+// TestVerifierVerifiesTheCertificatesSigner: cosign is asked for exactly the
+// signer the certificate names, once a trusted signer accepts it, and only
+// what it prints about this digest and type counts.
+func TestVerifierVerifiesTheCertificatesSigner(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
 	var calls []string
+	out := envelope(t, "https://cyclonedx.org/bom", digest)
 	v := &Verifier{
 		Signers: []report.Signer{{IdentityRegexp: `^https://github\.com/other/`, Issuer: ghIssuer}, {IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}},
 		Run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
 			calls = append(calls, strings.Join(args, " "))
-			if strings.Contains(strings.Join(args, " "), "acme") {
-				return nil, nil
-			}
-			return nil, errors.New("no matching signatures")
+			return out, nil
 		},
 	}
-	s, err := v.Verify(context.Background(), Subject{Ref: "r@sha256:x", Kind: KindSBOM, PredicateType: "https://cyclonedx.org/bom"})
-	if err != nil || s.IdentityRegexp != `^https://github\.com/acme/` {
-		t.Fatalf("verify: %+v, %v", s, err)
+	cert := &report.Signer{Identity: ourSigner, Issuer: ghIssuer, SourceRepository: "https://github.com/acme/images", SourceRef: "refs/heads/main"}
+	subj := Subject{Ref: "r@" + digest, Kind: KindSBOM, PredicateType: "https://cyclonedx.org/bom", Signer: cert}
+	res, err := v.Verify(context.Background(), subj)
+	if err != nil || res.Trusted.IdentityRegexp != `^https://github\.com/acme/` || res.Signer != *cert || len(res.Statements) != 1 {
+		t.Fatalf("verify: %+v, %v", res, err)
 	}
-	if len(calls) != 2 || !strings.HasPrefix(calls[1], "verify-attestation --type https://cyclonedx.org/bom --output json") {
+	want := "verify-attestation --type https://cyclonedx.org/bom --output json --certificate-identity " + ourSigner + " --certificate-oidc-issuer " + ghIssuer +
+		" --certificate-github-workflow-repository acme/images --certificate-github-workflow-ref refs/heads/main r@" + digest
+	if len(calls) != 1 || calls[0] != want {
 		t.Errorf("calls %q", calls)
+	}
+
+	// cosign's output is about another digest, or another type: nothing verified.
+	for _, o := range [][]byte{envelope(t, "https://cyclonedx.org/bom", "sha256:"+strings.Repeat("b", 64)), envelope(t, PredicateVuln, digest), []byte("not json")} {
+		out = o
+		if _, err := v.Verify(context.Background(), subj); err == nil {
+			t.Errorf("verified %s", o)
+		}
+	}
+	// A certificate no trusted signer accepts isn't run past cosign.
+	calls = nil
+	subj.Signer = &report.Signer{Identity: evilSigner, Issuer: ghIssuer}
+	if _, err := v.Verify(context.Background(), subj); err == nil || !strings.Contains(err.Error(), "doesn't match") || len(calls) != 0 {
+		t.Errorf("untrusted signer: %v (calls %q)", err, calls)
+	}
+	subj.Signer = nil
+	if _, err := v.Verify(context.Background(), subj); err == nil || !strings.Contains(err.Error(), "no certificate") {
+		t.Errorf("no certificate: %v", err)
+	}
+	// A signature over another digest, or a bundle of another type, isn't
+	// a signature over this image.
+	subj.Kind, subj.Signer = KindSignature, cert
+	for o, ok := range map[string]bool{
+		`[{"critical":{"image":{"docker-manifest-digest":"` + digest + `"},"type":"cosign container image signature"}}]`:                    true,
+		`[{"critical":{"image":{"docker-manifest-digest":"` + digest + `"},"type":"` + PredicateCosignSign + `"}}]`:                         true,
+		`[{"critical":{"image":{"docker-manifest-digest":"` + digest + `"},"type":"https://cyclonedx.org/bom"}}]`:                           false,
+		`[{"critical":{"image":{"docker-manifest-digest":"sha256:` + strings.Repeat("b", 64) + `"},"type":"` + PredicateCosignSign + `"}}]`: false,
+	} {
+		out = []byte(o)
+		if _, err := v.Verify(context.Background(), subj); (err == nil) != ok {
+			t.Errorf("signature %s: %v", o, err)
+		}
+	}
+	// Keys verify evidence with no certificate.
+	kv := &Verifier{Signers: []report.Signer{{Key: "cosign.pub"}}, Run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if !strings.Contains(strings.Join(args, " "), "--key cosign.pub") {
+			return nil, errors.New("no key")
+		}
+		return envelope(t, "https://cyclonedx.org/bom", digest), nil
+	}}
+	if res, err := kv.Verify(context.Background(), Subject{Ref: "r@" + digest, Kind: KindSBOM, PredicateType: "https://cyclonedx.org/bom"}); err != nil || res.Signer.Key != "cosign.pub" {
+		t.Errorf("key: %+v %v", res, err)
 	}
 	if _, err := (&Verifier{}).Verify(context.Background(), Subject{Ref: "r@sha256:x", Kind: KindSignature}); !errors.Is(err, ErrNoSigner) {
 		t.Errorf("no signers: %v", err)
@@ -266,7 +366,8 @@ func TestVerdict(t *testing.T) {
 	img := report.Image{Evidence: report.Evidence{Signature: ok, SBOM: ok, VulnerabilityScan: ok, Provenance: ok,
 		Recipe: report.EvidenceItem{Status: "not-applicable"}, Rebase: report.EvidenceItem{Status: "not-applicable"}, Tests: report.EvidenceItem{Status: "missing"}},
 		Vulnerabilities: &report.Vulnerabilities{Findings: []report.Finding{{ID: "CVE-1", Severity: "critical"}}}}
-	p := report.Policy{Required: []string{"signature", "sbom", "recipe"}, FailOn: "critical", OnlyFixed: true}
+	acme := []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}}
+	p := report.Policy{Required: []string{"signature", "sbom", "recipe"}, TrustedSigners: acme, FailOn: "critical", OnlyFixed: true}
 	if v := verdict(img, p); v.Status != "verified" {
 		t.Errorf("unfixable critical with onlyFixed: %+v", v)
 	}
@@ -283,7 +384,7 @@ func TestVerdict(t *testing.T) {
 	if v := verdict(img, p); v.Status != "failed" || len(v.Reasons) != 2 {
 		t.Errorf("failed signature: %+v", v)
 	}
-	p = report.Policy{MaxDaysBehind: 7}
+	p = report.Policy{MaxDaysBehind: 7, TrustedSigners: acme}
 	img.Base = &report.BaseLink{DaysBehind: 9, Drift: "stale"}
 	if v := verdict(img, p); v.Status != "failed" {
 		t.Errorf("stale base: %+v", v)
@@ -344,8 +445,8 @@ func pushIndex(t *testing.T, ref string, base v1.ImageIndex, created time.Time, 
 }
 
 // attach pushes a Sigstore bundle as a referrer of repo@subject, the way
-// cosign v3 does (empty config, bundle layer, subject).
-func attach(t *testing.T, repo string, subject v1.Descriptor, bundle []byte) {
+// cosign v3 does (empty config, bundle layer, subject), and returns where.
+func attach(t *testing.T, repo string, subject v1.Descriptor, bundle []byte) string {
 	t.Helper()
 	img := mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), "application/vnd.oci.empty.v1+json")
 	img, err := mutate.Append(img, mutate.Addendum{Layer: static.NewLayer(bundle, "application/vnd.dev.sigstore.bundle.v0.3+json")})
@@ -358,6 +459,7 @@ func attach(t *testing.T, repo string, subject v1.Descriptor, bundle []byte) {
 	if err := remote.Write(r, withSubject); err != nil {
 		t.Fatal(err)
 	}
+	return r.String()
 }
 
 func descriptorOf(t *testing.T, w partial.Describable) v1.Descriptor {
@@ -369,36 +471,89 @@ func descriptorOf(t *testing.T, w partial.Describable) v1.Descriptor {
 	return *d
 }
 
-// acmeVerifier stands in for cosign: only evidence signed by acme verifies.
-func acmeVerifier() *Verifier {
+// acmeVerifier stands in for cosign: only evidence signed by acme verifies,
+// except the forged copies (attachments by reference), whose certificates
+// no certificate authority issued.
+func acmeVerifier(forged ...string) *Verifier {
+	fake := map[string]bool{}
+	for _, f := range forged {
+		fake[f] = true
+	}
 	return &Verifier{
 		Signers: []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}},
 		Run: func(ctx context.Context, _ string, args ...string) ([]byte, error) {
-			ref := args[len(args)-1]
-			repo, digest, _ := strings.Cut(ref, "@")
-			typ := PredicateCosignSign
-			if args[0] == "verify-attestation" {
-				typ = args[2]
-			}
-			caller := ""
-			for i, a := range args {
-				if a == "--certificate-github-workflow-repository" {
-					caller = "https://github.com/" + args[i+1]
-				}
-			}
-			found, err := (&Discoverer{}).Discover(ctx, repo, digest)
-			if err != nil {
-				return nil, err
-			}
-			for _, f := range found {
-				if f.PredicateType == typ && f.Signer != nil && strings.HasPrefix(f.Signer.Identity, "https://github.com/acme/") &&
-					(caller == "" || f.Signer.SourceRepository == caller) {
-					return nil, nil
-				}
-			}
-			return nil, errors.New("no matching signatures")
+			return fakeCosign(ctx, fake, args)
 		},
 	}
+}
+
+// fakeCosign verifies the way cosign does: every attached copy whose
+// certificate is genuine (acme's, and not forged) and matches the flags, and
+// it prints what it verified (a JSON array of signed payloads for verify, a
+// DSSE envelope per line for verify-attestation).
+func fakeCosign(ctx context.Context, forged map[string]bool, args []string) ([]byte, error) {
+	ref := args[len(args)-1]
+	repo, digest, _ := strings.Cut(ref, "@")
+	flag := func(name string) string {
+		for i := 0; i+1 < len(args)-1; i++ {
+			if args[i] == name {
+				return args[i+1]
+			}
+		}
+		return ""
+	}
+	found, err := (&Discoverer{}).Discover(ctx, repo, digest)
+	if err != nil {
+		return nil, err
+	}
+	var sigs []map[string]any
+	var out bytes.Buffer
+	for _, f := range found {
+		s := f.Signer
+		if f.Format == FormatRawReferrer || forged[f.Ref] || s == nil || !strings.HasPrefix(s.Identity, "https://github.com/acme/") {
+			continue
+		}
+		if id := flag("--certificate-identity"); id != "" && s.Identity != id {
+			continue
+		}
+		if re := flag("--certificate-identity-regexp"); re != "" && !regexp.MustCompile(re).MatchString(s.Identity) {
+			continue
+		}
+		if iss := flag("--certificate-oidc-issuer"); iss != "" && s.Issuer != iss {
+			continue
+		}
+		if r := flag("--certificate-github-workflow-repository"); r != "" && s.SourceRepository != "https://github.com/"+r {
+			continue
+		}
+		if r := flag("--certificate-github-workflow-ref"); r != "" && s.SourceRef != r {
+			continue
+		}
+		if args[0] == "verify" {
+			// cosign v3 accepts a bundle of any type as a signature.
+			typ := f.PredicateType
+			if f.Format == FormatCosignTag && f.Kind == KindSignature {
+				typ = cosignImageSignature
+			}
+			sigs = append(sigs, map[string]any{"critical": map[string]any{"image": map[string]string{"docker-manifest-digest": firstNonEmpty(f.Subject, digest)}, "type": typ}})
+			continue
+		}
+		if f.PredicateType != flag("--type") {
+			continue
+		}
+		env, _ := json.Marshal(map[string]any{"payloadType": "application/vnd.in-toto+json", "payload": f.Statement, "signatures": []any{}})
+		out.Write(append(env, '\n'))
+	}
+	if args[0] == "verify" {
+		if len(sigs) == 0 {
+			return nil, errors.New("no matching signatures")
+		}
+		b, _ := json.Marshal(sigs)
+		return append(b, '\n'), nil
+	}
+	if out.Len() == 0 {
+		return nil, errors.New("no matching attestations")
+	}
+	return out.Bytes(), nil
 }
 
 // observe reads images from the test registry, named by repository.
@@ -530,7 +685,7 @@ func TestBuild(t *testing.T) {
 func TestVerdictScanAge(t *testing.T) {
 	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
 	img := report.Image{Vulnerabilities: &report.Vulnerabilities{ScannedAt: "2026-10-01T00:00:00Z"}}
-	p := report.Policy{MaxScanAgeDays: 7}
+	p := report.Policy{MaxScanAgeDays: 7, TrustedSigners: []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}}}
 	if v := verdictAt(img, p, now); v.Status != "unverified" || !strings.Contains(v.Reasons[0], "9 days old (limit 7)") {
 		t.Errorf("old scan: %+v", v)
 	}
