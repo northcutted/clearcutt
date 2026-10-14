@@ -218,6 +218,17 @@ chmod +x clearcutt-verify-darwin-arm64
 
 The certificate identity is the release workflow pinned to `refs/heads/main`.
 
+Releases after v0.15.0 also carry a SLSA build provenance attestation for each
+binary, signed by the same workflow and stored with GitHub's attestations. With
+the GitHub CLI:
+
+```bash
+gh attestation verify clearcutt-verify-darwin-arm64 \
+  --repo northcutted/clearcutt-verify \
+  --signer-workflow northcutted/clearcutt-verify/.github/workflows/release.yml \
+  --source-ref refs/heads/main
+```
+
 Building from source stays the contributor path; see
 [CONTRIBUTING.md](CONTRIBUTING.md) and the clean-clone proof above.
 

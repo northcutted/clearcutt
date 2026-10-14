@@ -6,8 +6,9 @@ the latest release is supported (see [SECURITY.md](SECURITY.md)).
 Each release on
 [GitHub Releases](https://github.com/northcutted/clearcutt-verify/releases)
 carries the CLI binaries, a Sigstore signature bundle for each, and a
-`SHA256SUMS.txt` manifest. Its notes are generated from the merged pull
-requests; this file is the curated summary.
+`SHA256SUMS.txt` manifest; releases after v0.15.0 also attest each binary's
+build provenance (`gh attestation verify`). Its notes are generated from the
+merged pull requests; this file is the curated summary.
 
 ## Unreleased
 
@@ -17,6 +18,11 @@ commands and flags, the estate report contract, the action, release assets).
 When a release is cut, move these entries under a heading for its version.
 -->
 
+- Release binaries carry a SLSA build provenance attestation, signed by the
+  release workflow and verifiable with `gh attestation verify`. The release
+  workflow signs with cosign v3.1.3, accepts only stable `X.Y.Z` versions,
+  and refuses to publish under a tag that names a different commit than the
+  one it built.
 - The Markdown reports of `graph build` and `graph layers` name the
   `clearcutt-verify` binary in their reproduce commands; they still said
   `clearcutt`.

@@ -52,6 +52,10 @@ In GitHub Actions, the repository's action
 (`uses: northcutted/clearcutt-verify@vX.Y.Z`) does the same; see
 [Verifying an estate in GitHub Actions](github-actions.md).
 
+Releases after v0.15.0 also carry a SLSA build provenance attestation per
+binary, which `gh attestation verify clearcutt-verify-linux-amd64 --repo northcutted/clearcutt-verify`
+checks.
+
 ## Build
 
 ```bash
