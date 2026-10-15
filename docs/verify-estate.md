@@ -40,10 +40,13 @@ instead.
    clearcutt-factory details from verified recipes and rebase records.
    Evidence that is `present` or `failed` is reported, but nothing in it is
    read or counted. Anyone who can push to a repository can attach more
-   copies of a kind of evidence; a copy that doesn't verify never replaces
-   one that does, however new it claims to be. Among verified copies, the
-   newest counts (for vulnerability scans, by the scan time inside the signed
-   attestation), and the item's `detail` says how many others were ignored.
+   copies of a kind of evidence. Every copy whose certificate names a signer
+   the policy accepts is verified, so a copy that doesn't verify never
+   replaces or crowds out one that does, however new it claims to be or
+   however many there are; copies holding content no trusted identity signed
+   cost no cosign run. Among verified copies, the newest counts (for
+   vulnerability scans, by the scan time inside the signed attestation), and
+   the item's `detail` says how many others were ignored.
    A rebased image is named after the recipe of the image it was rebased
    from, found by following its verified rebase records back.
 4. **Base.** Where the image's layers start with an observed image's layers,
@@ -54,9 +57,11 @@ instead.
    rejected, and drift is measured against the base's current tag.
 5. **Verdict.** `verified` when every requirement is met, `failed` when one
    isn't, `unverified` when one can't be decided (evidence that couldn't be
-   read, or that no trusted signer could vouch for). With no trusted signers,
-   or a policy that requires nothing, every image is `unverified`: nothing
-   was verified.
+   read, or that no trusted signer could vouch for). A `verified` verdict
+   rests on evidence a trusted signer vouched for: with no trusted signers
+   every image is `unverified`, and so is an image none of whose evidence
+   verified, whatever else the policy checks. Checks that read no evidence
+   (`maxDaysBehind`, `--reproduce`) can't verify an image on their own.
 
 ## The policy
 
@@ -66,9 +71,9 @@ kind: VerificationPolicy
 # Evidence an image needs, verified: signature, sbom, vulnerabilityScan,
 # provenance, recipe (clearcutt-factory), tests.
 required: [signature, sbom, provenance]
-# Whose signatures count. An identityRegexp must start with ^ and must not
-# match other owners' workflows (^https://github\.com/acme/, not
-# ^https://github\.com/acme, which matches acme-evil too); wildcards are refused.
+# Whose signatures count. Name each owner exactly and end it with / (write
+# ^https://github\.com/acme/, not ^https://github\.com/acme, which matches
+# acme-evil too). See "Identity checks" below for what is refused.
 trustedSigners:
   - identityRegexp: ^https://github\.com/acme/images/
     issuer: https://token.actions.githubusercontent.com
@@ -83,7 +88,20 @@ maxScanAgeDays: 7     # a vulnerability scan older than 7 days leaves the image 
 `failOn` counts only verified vulnerability scans. An image whose scan isn't
 verified on every platform is `unverified` even when the scan says it is
 clean: its vulnerabilities are unknown. `maxScanAgeDays` measures the oldest
-platform's scan, so every platform must have been scanned recently.
+platform's scan, so every platform must have been scanned recently, and an
+image with no verified scan of every platform is `unverified` under it: there
+is no age to measure.
+
+### Identity checks
+
+An `identityRegexp` must start with `^`. It is also refused when it matches an
+identity it surely shouldn't: workflows of made-up owners on GitHub and
+GitLab, and, for identities the expression itself matches, the same identity
+with its owner (the first path segment, on any forge) swapped for a made-up
+one, for one with something before or after it (`acme-evil`), or for one a
+character off (an unescaped `.`), and email identities with their domain
+extended. These probes catch the usual mistakes, not every over-broad
+expression: write the narrowest one that works.
 
 ### Reusable workflows
 
@@ -226,8 +244,9 @@ tell the report came from your job.
 
 `--reproduce` rebuilds every clearcutt-factory image from its verified recipe
 (or repeats its verified rebase) with `clearcutt-factory verify --image`, bound
-to the same repository its evidence was verified against, and records whether
-the digest matched. It needs `clearcutt-factory` on `PATH` (or
+to exactly the signer that verified the recipe or rebase record the report
+shows (its identity, issuer, and the repository of the run that signed), and
+records whether the digest matched. It needs `clearcutt-factory` on `PATH` (or
 `--factory-path`) and a container runtime, and takes as long as the builds do.
 Each rebuild works in its own directory under the user cache directory (on
 macOS, `~/Library/Caches/clearcutt-verify/reproduce/`), which is kept with its
@@ -253,5 +272,7 @@ error is never `reproduced`. Without `--reproduce`, images with recipes are
 - **Tests.** Test evidence counts only as a test-result attestation
   (`https://in-toto.io/attestation/test-result/…`).
 - **Speed.** Each signer of each kind of evidence on an image is one cosign
-  verification (at most 8 per kind; more copies are reported unchecked);
-  `--concurrency` bounds how many images are checked at once.
+  verification; when copies name more than one signer, one more per trusted
+  signer finds which hold content a trusted identity signed, and only their
+  signers are verified. `--concurrency` bounds how many images are checked at
+  once.

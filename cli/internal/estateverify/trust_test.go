@@ -75,8 +75,11 @@ func TestReproduceBindsTheRepository(t *testing.T) {
 	trusted := report.Signer{IdentityRegexp: `^https://github\.com/northcutted/clearcutt-factory/`, Issuer: ghIssuer, SourceRepositoryOwner: "https://github.com/acme", SourceMatchesImage: true}
 	cert := &report.Signer{Identity: "https://github.com/northcutted/clearcutt-factory/.github/workflows/images.yml@refs/tags/v0.1.1", Issuer: ghIssuer, SourceRepository: "https://github.com/acme/checkout"}
 	opts := Options{Reproducer: rep, Policy: report.Policy{Reproduce: true, TrustedSigners: []report.Signer{trusted}}}
-	r := reproduce(context.Background(), img, imageData{recipeVerified: true, recipeSigner: cert, claimedSource: "https://github.com/acme/checkout"}, opts)
-	if r.Status != "reproduced" || got.SourceRepository != "https://github.com/acme/checkout" || got.SourceMatchesImage || got.SourceRepositoryOwner != "" {
+	r := reproduce(context.Background(), img, imageData{recipeVerified: true, recipeSigner: cert}, opts)
+	// Bound to exactly the signer that verified the recipe the report shows,
+	// not to a policy regexp another identity could also match.
+	if r.Status != "reproduced" || got.Identity != cert.Identity || got.IdentityRegexp != "" || got.Issuer != ghIssuer ||
+		got.SourceRepository != "https://github.com/acme/checkout" || got.SourceMatchesImage || got.SourceRepositoryOwner != "" {
 		t.Errorf("reproduced %+v with signer %+v", r, got)
 	}
 

@@ -482,8 +482,9 @@ type PackagesSource struct {
 // Verdict is whether the image meets the policy.
 type Verdict struct {
 	// Status is verified (meets every requirement), failed (violates one),
-	// or unverified (some requirement couldn't be decided, or the policy
-	// has no trusted signer or requires nothing, so nothing was verified).
+	// or unverified (some requirement couldn't be decided, or none of the
+	// image's evidence verified against a trusted signer, so nothing about
+	// it was).
 	Status string `json:"status" enum:"verified,failed,unverified"`
 	// Reasons explain a failed or unverified verdict, one requirement each.
 	Reasons []string `json:"reasons"`

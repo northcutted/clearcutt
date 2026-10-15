@@ -70,50 +70,80 @@ func (v *Verifier) Verify(ctx context.Context, subj Subject) (Verified, error) {
 	if len(v.Signers) == 0 {
 		return Verified{}, ErrNoSigner
 	}
-	cert := subj.Signer
-	keyless := cert != nil && cert.Key == "" && cert.Identity != "" && cert.Issuer != ""
-	var errs []string
-	var accepted []report.Signer
 	for _, s := range v.Signers {
 		if _, err := signerFlags(s); err != nil {
 			return Verified{}, err
 		}
-		switch {
-		case s.Key != "" && keyless:
+	}
+	if !keyless(subj.Signer) {
+		return v.verifyKeys(ctx, subj)
+	}
+	accepted, err := v.accepting(*subj.Signer, subj.ImageSource)
+	if err != nil {
+		return Verified{}, fmt.Errorf("not signed by a trusted signer: %w", err)
+	}
+	flags, signer := exactFlags(*subj.Signer)
+	statements, err := v.verifyWith(ctx, subj, flags)
+	if err != nil {
+		return Verified{}, fmt.Errorf("not signed by a trusted signer: %w", err)
+	}
+	return Verified{Trusted: preferred(accepted, *subj.Signer), Signer: signer, Statements: statements}, nil
+}
+
+// keyless reports whether a certificate names a keyless signer.
+func keyless(cert *report.Signer) bool {
+	return cert != nil && cert.Key == "" && cert.Identity != "" && cert.Issuer != ""
+}
+
+// accepting lists the trusted keyless signers that accept the signer a
+// certificate names, or says why none does. It runs nothing: cosign then
+// checks the certificate is genuine.
+func (v *Verifier) accepting(cert report.Signer, imageSource string) ([]report.Signer, error) {
+	var accepted []report.Signer
+	var errs []string
+	for _, s := range v.Signers {
+		if s.Key != "" {
 			errs = append(errs, "signed with a certificate, not key "+s.Key)
-		case s.Key != "":
-			statements, err := v.verifyWith(ctx, subj, []string{"--key", s.Key})
-			if err != nil {
-				errs = append(errs, err.Error())
-				continue
-			}
-			return Verified{Trusted: s, Signer: report.Signer{Key: s.Key}, Statements: statements}, nil
-		case !keyless:
-			errs = append(errs, "no certificate names who signed it")
-		default:
-			if err := accepts(s, *cert, subj.ImageSource); err != nil {
-				errs = append(errs, err.Error())
-				continue
-			}
-			accepted = append(accepted, s)
+			continue
+		}
+		if err := accepts(s, cert, imageSource); err != nil {
+			errs = append(errs, err.Error())
+			continue
+		}
+		accepted = append(accepted, s)
+	}
+	if len(accepted) == 0 {
+		return nil, errors.New(strings.Join(dedupe(errs), "; "))
+	}
+	return accepted, nil
+}
+
+// preferred picks, among the trusted signers that accept a certificate's
+// signer (they all verify it the same way), one that says which calling
+// repositories count.
+func preferred(accepted []report.Signer, cert report.Signer) report.Signer {
+	for _, s := range accepted {
+		if _, unchecked := callerUnchecked(s, cert); !unchecked {
+			return s
 		}
 	}
-	if len(accepted) > 0 {
-		// Every signer that accepts the certificate's signer verifies it the
-		// same way; prefer one that says which calling repositories count.
-		trusted := accepted[0]
-		for _, s := range accepted {
-			if _, unchecked := callerUnchecked(s, *cert); !unchecked {
-				trusted = s
-				break
-			}
+	return accepted[0]
+}
+
+// verifyKeys verifies evidence with no certificate against the trusted keys.
+func (v *Verifier) verifyKeys(ctx context.Context, subj Subject) (Verified, error) {
+	var errs []string
+	for _, s := range v.Signers {
+		if s.Key == "" {
+			errs = append(errs, "no certificate names who signed it")
+			continue
 		}
-		flags, signer := exactFlags(*cert)
-		statements, err := v.verifyWith(ctx, subj, flags)
-		if err == nil {
-			return Verified{Trusted: trusted, Signer: signer, Statements: statements}, nil
+		statements, err := v.verifyWith(ctx, subj, []string{"--key", s.Key})
+		if err != nil {
+			errs = append(errs, err.Error())
+			continue
 		}
-		errs = append(errs, err.Error())
+		return Verified{Trusted: s, Signer: report.Signer{Key: s.Key}, Statements: statements}, nil
 	}
 	return Verified{}, fmt.Errorf("not signed by a trusted signer: %s", strings.Join(dedupe(errs), "; "))
 }
@@ -384,12 +414,16 @@ var strangers = []string{
 	"probe@clearcutt-probe.example",
 }
 
-// checkIdentityRegexp refuses identity regular expressions that trust
-// strangers: ones that match the identities above, or that match an
-// identity they accept with its GitHub owner swapped for another (any owner,
-// or one whose name merely starts with the owner named:
-// ^https://github\.com/acme matches acme-evil), and unanchored ones, which
-// match inside any identity that contains them.
+// checkIdentityRegexp refuses identity regular expressions that are
+// unanchored (they match inside any identity that contains them) or that
+// match a stranger's identity. Besides the identities above, it probes
+// identities the expression itself matches (one per way through its
+// alternations) with their owner, the first path segment on any forge,
+// swapped for another: a made-up one, the owner with something before or
+// after it (^https://github\.com/acme matches acme-evil), and the owner with
+// one character changed (an unescaped dot). Email identities are probed with
+// their domain extended. This catches the usual mistakes, not every
+// over-broad expression: write the narrowest one that works.
 func checkIdentityRegexp(expr string) error {
 	re, err := regexp.Compile(expr)
 	if err != nil {
@@ -402,25 +436,53 @@ func checkIdentityRegexp(expr string) error {
 	parsed = parsed.Simplify()
 	probes := append([]string{}, strangers...)
 	for _, id := range samples(parsed) {
-		rest, ok := strings.CutPrefix(id, "https://github.com/")
-		if !ok {
-			continue
+		probes = append(probes, ownerVariants(id)...)
+		if strings.Contains(id, "@") && !strings.Contains(id, "://") {
+			probes = append(probes, id+".clearcuttprobe.example")
 		}
-		owner, path, _ := strings.Cut(rest, "/")
-		if path != "" || strings.HasSuffix(rest, "/") {
-			path = "/" + path
-		}
-		probes = append(probes, "https://github.com/clearcutt-probe-owner"+path, "https://github.com/"+owner+"-clearcutt-probe"+path)
 	}
 	for _, id := range probes {
 		if re.MatchString(id) {
-			return fmt.Errorf("refusing a trusted signer with a wildcard identity (%q also matches %s): name the workflow or organization, ending the owner with /", expr, id)
+			return fmt.Errorf("refusing a trusted signer with a wildcard identity (%q also matches %s): name the workflow or organization exactly, ending the owner with /", expr, id)
 		}
 	}
 	if !anchored(parsed) {
 		return fmt.Errorf("refusing an unanchored identityRegexp %q: start it with ^ so it can't match inside another identity", expr)
 	}
 	return nil
+}
+
+// ownerVariants are identities like id (scheme://host/owner/...) with the
+// owner swapped for one its owner doesn't control.
+func ownerVariants(id string) []string {
+	scheme, rest, ok := strings.Cut(id, "://")
+	if !ok {
+		return nil
+	}
+	host, path, ok := strings.Cut(rest, "/")
+	if !ok || host == "" {
+		return nil
+	}
+	owner, tail, more := strings.Cut(path, "/")
+	if more {
+		tail = "/" + tail
+	}
+	prefix := scheme + "://" + host + "/"
+	out := []string{prefix + "clearcuttprobeowner" + tail}
+	if owner == "" {
+		return out
+	}
+	for _, o := range []string{owner + "clearcuttprobe", owner + "-clearcuttprobe", "clearcuttprobe" + owner, "clearcuttprobe-" + owner} {
+		out = append(out, prefix+o+tail)
+	}
+	for i := 0; i < len(owner); i++ {
+		c := byte('x')
+		if owner[i] == 'x' || owner[i] == 'X' {
+			c = 'q'
+		}
+		out = append(out, prefix+owner[:i]+string(c)+owner[i+1:]+tail)
+	}
+	return out
 }
 
 // anchored reports whether every match of re starts at the beginning of
@@ -531,70 +593,169 @@ type verifiedCopy struct {
 	signer, trusted report.Signer
 }
 
-// maxSigners bounds how many signers' copies of one kind of evidence are
-// verified on one image: each is a cosign run, and anyone who can push can
-// attach copies.
-const maxSigners = 8
-
 // verifyEvidence verifies every copy of one kind of evidence on
 // repo@digest. It returns the evidence item, and the copies whose content
 // cosign verified, best first: only those may be read. An unverified copy
-// (unsigned, or signed by someone else, or newer) never stands in for a
-// verified one; it is reported only when nothing verifies.
+// (unsigned, signed by someone else, forged, or newer) never stands in for,
+// or crowds out, a verified one; it is reported only when nothing verifies.
+//
+// Every signer a copy's certificate names that a trusted signer accepts is
+// verified exactly (one cosign run each); signers no trusted signer accepts
+// cost nothing. When copies name more than one acceptable signer, cosign is
+// first asked, once per trusted signer, which of their statements any of its
+// identities signed, and only signers of copies holding one are verified
+// exactly, so copies anyone can attach with made-up certificates cost no
+// more than reading them.
 func verifyEvidence(ctx context.Context, v *Verifier, repo, digest, kind, imageSource string, found []Found) (report.EvidenceItem, []verifiedCopy) {
 	copies := copiesOf(found, kind, digest)
 	if len(copies) == 0 {
 		return report.EvidenceItem{Status: "missing"}, nil
 	}
-	type outcome struct {
-		res Verified
-		err error
+	ref := repo + "@" + digest
+	subject := func(f Found) Subject {
+		return Subject{Ref: ref, Kind: kind, PredicateType: f.PredicateType, ImageSource: imageSource, Signer: f.Signer}
 	}
-	runs := map[string]outcome{}
-	var verified []verifiedCopy
-	var newest report.EvidenceItem
+	status, detail := make([]string, len(copies)), make([]string, len(copies))
+	passed := make([]*verifiedCopy, len(copies))
+	pass := func(i int, res Verified) {
+		f := copies[i]
+		switch reason, unchecked := callerUnchecked(res.Trusted, res.Signer); {
+		case unchecked:
+			status[i], detail[i] = "present", reason
+		case kind != KindSignature && !containsBytes(res.Statements, f.Statement):
+			// Its signer verifies, but not this content.
+			status[i], detail[i] = "failed", "Its signer's other attestations verify, but this one doesn't."
+		default:
+			status[i] = "verified"
+			passed[i] = &verifiedCopy{Found: f, signer: res.Signer, trusted: res.Trusted}
+		}
+	}
+
+	// claim is a signer copies name that a trusted signer accepts.
+	type claim struct {
+		cert     report.Signer
+		accepted []report.Signer
+		copies   []int
+	}
+	claims := map[string][]*claim{} // predicate type → claims
+	byKey := map[string]*claim{}
+	keyCopies := map[string][]int{} // predicate type → copies with no certificate
+	var invalid error
+	for _, s := range v.Signers {
+		if _, err := signerFlags(s); err != nil && invalid == nil {
+			invalid = err
+		}
+	}
 	for i, f := range copies {
-		var status, detail string
-		key := f.PredicateType + "\x00" + signerKey(f.Signer)
-		o, ran := runs[key]
 		switch {
 		case f.Format == FormatRawReferrer:
-			status, detail = "present", "An unsigned document; nothing to verify."
-		case !ran && len(runs) >= maxSigners:
-			status, detail = "present", fmt.Sprintf("Not checked: copies signed by more than %d signers are attached.", maxSigners)
+			status[i], detail[i] = "present", "An unsigned document; nothing to verify."
+		case len(v.Signers) == 0:
+			status[i], detail[i] = "present", "No trusted signer is configured, so it can't be verified."
+		case invalid != nil:
+			status[i], detail[i] = "failed", invalid.Error()
+		case !keyless(f.Signer):
+			keyCopies[f.PredicateType] = append(keyCopies[f.PredicateType], i)
 		default:
-			if !ran {
-				o.res, o.err = v.Verify(ctx, Subject{Ref: repo + "@" + digest, Kind: kind, PredicateType: f.PredicateType, ImageSource: imageSource, Signer: f.Signer})
-				runs[key] = o
+			accepted, err := v.accepting(*f.Signer, imageSource)
+			if err != nil {
+				status[i], detail[i] = "failed", "not signed by a trusted signer: "+err.Error()
+				continue
 			}
-			reason, unchecked := callerUnchecked(o.res.Trusted, o.res.Signer)
-			switch {
-			case errors.Is(o.err, ErrNoSigner):
-				status, detail = "present", "No trusted signer is configured, so it can't be verified."
-			case o.err != nil:
-				status, detail = "failed", o.err.Error()
-			case unchecked:
-				status, detail = "present", reason
-			case kind != KindSignature && !containsBytes(o.res.Statements, f.Statement):
-				// Its signer verifies, but not this content.
-				status, detail = "failed", "Its signer's other attestations verify, but this one doesn't."
-			default:
-				status = "verified"
-				verified = append(verified, verifiedCopy{Found: f, signer: o.res.Signer, trusted: o.res.Trusted})
+			k := f.PredicateType + "\x00" + signerKey(f.Signer)
+			c := byKey[k]
+			if c == nil {
+				c = &claim{cert: *f.Signer, accepted: accepted}
+				byKey[k] = c
+				claims[f.PredicateType] = append(claims[f.PredicateType], c)
+			}
+			c.copies = append(c.copies, i)
+		}
+	}
+
+	for _, pt := range sortedKeys(keyCopies) {
+		idx := keyCopies[pt]
+		res, err := v.verifyKeys(ctx, subject(copies[idx[0]]))
+		for _, i := range idx {
+			if err != nil {
+				status[i], detail[i] = "failed", err.Error()
+				continue
+			}
+			pass(i, res)
+		}
+	}
+
+	for _, predicateType := range sortedKeys(claims) {
+		cs := claims[predicateType]
+		subj := subject(copies[cs[0].copies[0]])
+		if len(cs) > 1 {
+			// Which statements did any identity a trusted signer accepts
+			// sign? Copies holding none can't verify under any signer.
+			genuine, signed := map[string]bool{}, false
+			tried := map[string]bool{}
+			for _, c := range cs {
+				for _, s := range c.accepted {
+					flags, _ := signerFlags(s)
+					if k := strings.Join(flags, "\x00"); !tried[k] {
+						tried[k] = true
+						if statements, err := v.verifyWith(ctx, subj, flags); err == nil {
+							signed = true
+							for _, st := range statements {
+								genuine[string(st)] = true
+							}
+						}
+					}
+				}
+			}
+			kept := cs[:0]
+			for _, c := range cs {
+				holds := signed && kind == KindSignature
+				for _, i := range c.copies {
+					holds = holds || genuine[string(copies[i].Statement)]
+				}
+				if holds {
+					kept = append(kept, c)
+					continue
+				}
+				for _, i := range c.copies {
+					status[i], detail[i] = "failed", "not signed by a trusted signer: cosign found it signed by no identity a trusted signer accepts"
+				}
+			}
+			cs = kept
+		}
+		for _, c := range cs {
+			flags, signer := exactFlags(c.cert)
+			statements, err := v.verifyWith(ctx, subj, flags)
+			for _, i := range c.copies {
+				if err != nil {
+					status[i], detail[i] = "failed", "not signed by a trusted signer: "+err.Error()
+					continue
+				}
+				pass(i, Verified{Trusted: preferred(c.accepted, c.cert), Signer: signer, Statements: statements})
 			}
 		}
-		if i == 0 {
-			newest = report.EvidenceItem{Status: status, Source: sourceName(f), PredicateType: f.PredicateType, Ref: f.Ref, Timestamp: f.Timestamp, Signer: f.Signer, Detail: detail}
+	}
+
+	var verified []verifiedCopy
+	for _, c := range passed {
+		if c != nil {
+			verified = append(verified, *c)
 		}
 	}
 	if len(verified) == 0 {
-		return newest, nil
+		f := copies[0]
+		return report.EvidenceItem{Status: status[0], Source: sourceName(f), PredicateType: f.PredicateType, Ref: f.Ref, Timestamp: f.Timestamp, Signer: f.Signer, Detail: detail[0]}, nil
 	}
-	if kind == KindVulnerabilityScan {
-		// The newest scan by its signed scan time, not by when (the registry
-		// says) it was attached.
-		sort.SliceStable(verified, func(i, j int) bool { return scanTime(verified[i].Found).After(scanTime(verified[j].Found)) })
-	}
+	// Newest first: by the signed scan time for scans (not when the
+	// registry says a copy was attached), else as attached.
+	sort.SliceStable(verified, func(i, j int) bool {
+		if kind == KindVulnerabilityScan {
+			if a, b := scanTime(verified[i].Found), scanTime(verified[j].Found); !a.Equal(b) {
+				return a.After(b)
+			}
+		}
+		return verified[i].Timestamp > verified[j].Timestamp
+	})
 	best := verified[0]
 	signer := best.signer
 	item := report.EvidenceItem{Status: "verified", Source: sourceName(best.Found), PredicateType: best.PredicateType, Ref: best.Ref, Timestamp: best.Timestamp, Signer: &signer}
@@ -604,6 +765,15 @@ func verifyEvidence(ctx context.Context, v *Verifier, repo, digest, kind, imageS
 		item.Detail = fmt.Sprintf("%d other attached copies aren't verified and weren't read.", n)
 	}
 	return item, verified
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // signerKey identifies the signer a copy claims, for verifying each signer once.

@@ -132,8 +132,10 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 	case len(p.TrustedSigners) == 0:
 		// Nothing about an image can be verified without someone to trust.
 		unverified = append(unverified, "no trusted signer is configured, so nothing about it can be verified")
-	case !requiresAnything(p):
-		unverified = append(unverified, "the policy requires nothing, so there is nothing to verify it against")
+	case !anyVerified(img.Evidence):
+		// A verdict rests on something a trusted signer vouched for; checks
+		// that read no evidence (base drift, scan age) can't stand alone.
+		unverified = append(unverified, "none of its evidence is verified, so a trusted signer vouched for nothing about it")
 	}
 	for _, k := range p.Required {
 		item := evidenceItem(img.Evidence, k)
@@ -171,9 +173,17 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 			unverified = append(unverified, "vulnerabilities are unknown (the verified scan couldn't be read)")
 		}
 	}
-	if p.MaxScanAgeDays > 0 && img.Vulnerabilities != nil {
-		scanned, err := time.Parse(time.RFC3339, img.Vulnerabilities.ScannedAt)
+	if p.MaxScanAgeDays > 0 {
+		// The age is measured on verified scans of every platform; with none
+		// to measure, how old its findings are is unknown.
+		var scanned time.Time
+		var err error
+		if img.Vulnerabilities != nil {
+			scanned, err = time.Parse(time.RFC3339, img.Vulnerabilities.ScannedAt)
+		}
 		switch {
+		case img.Vulnerabilities == nil || img.Evidence.VulnerabilityScan.Status != "verified":
+			unverified = append(unverified, "the vulnerability scan's age is unknown (no verified scan of every platform)")
 		case err != nil:
 			unverified = append(unverified, "the vulnerability scan's age is unknown (no scan time)")
 		case now.Sub(scanned) > time.Duration(p.MaxScanAgeDays)*24*time.Hour:
@@ -209,9 +219,15 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 	return report.Verdict{Status: "verified", Reasons: []string{}}
 }
 
-// requiresAnything reports whether the policy holds images to anything.
-func requiresAnything(p report.Policy) bool {
-	return len(p.Required) > 0 || p.FailOn != "" || p.MaxDaysBehind > 0 || p.MaxScanAgeDays > 0 || p.Reproduce
+// anyVerified reports whether any of the image's evidence verified against a
+// trusted signer.
+func anyVerified(e report.Evidence) bool {
+	for _, k := range Kinds {
+		if evidenceItem(e, k).Status == "verified" {
+			return true
+		}
+	}
+	return false
 }
 
 func countAtOrAbove(v *report.Vulnerabilities, sev string, onlyFixed bool) int {

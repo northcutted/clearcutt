@@ -63,8 +63,8 @@ func pushCosignTags(t *testing.T, repo, digest, certB64, predicateType string, p
 type fakeReproducer map[string]string // ref → rebuilt digest ("" fails)
 
 func (f fakeReproducer) Reproduce(_ context.Context, ref string, s report.Signer) (string, error) {
-	if s.IdentityRegexp == "" {
-		return "", errors.New("no trusted signer passed")
+	if s.Identity == "" && s.Key == "" {
+		return "", errors.New("no verified signer passed")
 	}
 	if d := f[ref]; d != "" {
 		return d, nil

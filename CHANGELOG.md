@@ -34,7 +34,6 @@ When a release is cut, move these entries under a heading for its version.
 - Removed `.github/actions/install-clearcutt-verify`. Install with the
   repository's action, `uses: northcutted/clearcutt-verify@vX.Y.Z`, which
   checks the release's checksum and Sigstore bundle the same way.
-
 - **`estate verify` reads only what cosign verified.** Vulnerabilities,
   packages, the provenance source, and clearcutt-factory details come only from
   attestations cosign verified against a trusted signer; `present` and
@@ -44,23 +43,35 @@ When a release is cut, move these entries under a heading for its version.
   faked a scan time or provenance source, or (with a forged certificate) turned
   a reusable workflow's `present` signature into `verified`. cosign is now asked
   for exactly the signer each copy's certificate names, so the signer shown on
-  verified evidence is the one cosign checked; an unverified copy never
-  replaces a verified one; and a signature counts only when cosign verified a
-  signature over the image's digest, not a bundle of another type.
-- Verdicts are stricter: with no trusted signer, or a policy that requires
-  nothing, every image is `unverified` (it was `verified`); `failOn` needs a
-  verified scan on every platform (an unverified clean scan no longer passes);
-  `maxScanAgeDays` measures the oldest platform's scan; with `maxDaysBehind`, a
+  verified evidence is the one cosign checked. Every copy naming a signer the
+  policy accepts is verified, so copies attached under made-up certificates,
+  however many and however new, can't replace or crowd out a verified one
+  (copies holding content no trusted identity signed cost no cosign run). A
+  signature counts only when cosign verified a signature over the image's
+  digest, not a bundle of another type.
+- Verdicts are stricter: a `verified` verdict needs at least one piece of the
+  image's evidence verified against a trusted signer, so with no trusted
+  signer every image is `unverified` (it was `verified`), and checks that read
+  no evidence (`maxDaysBehind`, `--reproduce`) no longer verify an unsigned
+  image; `failOn` needs a verified scan on every platform (an unverified clean
+  scan no longer passes); `maxScanAgeDays` measures the oldest platform's
+  scan, and leaves an image with no verified scan of every platform
+  `unverified`; with `maxDaysBehind`, a
   stale base whose age couldn't be measured is `unverified` (new, additive
   `base.daysBehindUnknown` in the contract); and an image that names a base it
   can't be shown to be built on stays unresolved instead of becoming a root.
-- Trusted signers' `identityRegexp` must be anchored (`^`) and must not match
-  other owners' workflows: any owner, or `acme-evil` for
-  `^https://github\.com/acme`.
+- Trusted signers' `identityRegexp` must be anchored (`^`), and is refused
+  when it matches probe identities of other owners on any forge: made up,
+  prefixed or suffixed (`acme-evil` for `^https://github\.com/acme`), or a
+  character off (an unescaped `.`), or an email domain extended past yours.
+  The probes catch the usual mistakes, not every over-broad expression.
 - `stacks` has one entry per stack repository and tag, so apps on another
   major tag no longer count as stale.
 - `--reproduce` reads the rebuilt digest only from clearcutt-factory's final
-  result, and a rebuild that exits with an error is never `reproduced`.
+  result, a rebuild that exits with an error is never `reproduced`, and the
+  rebuild is bound to exactly the signer (identity, issuer, run repository)
+  that verified the recipe the report shows, not to the first policy regexp
+  that matches.
 - New `estate pull --allow-missing` succeeds only when nothing is stored at the
   reference yet; any other failure fails. The documented scheduled job uses it
   instead of `|| true`, which let a failed pull start a new history that the

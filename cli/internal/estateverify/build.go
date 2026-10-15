@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -610,8 +609,6 @@ type imageData struct {
 	rebaseSigner     *report.Signer
 	recipeVerified   bool
 	rebaseVerified   bool
-	// claimedSource is the repository the image names as its source.
-	claimedSource string
 	// sbomPlatforms are the platform images whose SBOMs were read.
 	sbomPlatforms []string
 	// recipeTest describes the smoke test a verified recipe declares.
@@ -627,7 +624,7 @@ var perPlatform = map[string]bool{KindSBOM: true, KindVulnerabilityScan: true}
 // gatherEvidence discovers and verifies every kind of evidence on the image
 // (index-level kinds) and its platform images (SBOMs and scans).
 func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platforms []report.Platform, opts Options) (report.Evidence, imageData) {
-	data := imageData{vulns: map[string]vulnScan{}, claimedSource: imageSource}
+	data := imageData{vulns: map[string]vulnScan{}}
 	type subject struct{ platform, digest string }
 	subjects := []subject{{"", digest}}
 	for _, p := range platforms {
@@ -867,12 +864,13 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	if !verified || signer == nil {
 		return report.Reproducibility{Status: "not-checked", Method: method, Detail: "Only verified recipes and rebase records are reproduced."}
 	}
-	trusted := trustedSignerFor(*signer, opts.Policy.TrustedSigners)
-	// The rebuild verifies the recipe again; bind it to the same repository.
-	if repo, err := resolveRepository(trusted, Subject{ImageSource: data.claimedSource, Signer: signer}); err == nil && repo != "" {
-		trusted.SourceRepository, trusted.SourceRepositoryOwner, trusted.SourceMatchesImage = repo, "", false
+	// The rebuild verifies the recipe (or rebase record) again: bind it to
+	// the signer this report shows verified it, exactly.
+	bound := report.Signer{Key: signer.Key}
+	if signer.Key == "" {
+		bound = report.Signer{Identity: signer.Identity, Issuer: signer.Issuer, SourceRepository: signer.SourceRepository}
 	}
-	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, trusted)
+	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, bound)
 	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got}
 	switch {
 	case got == img.Digest:
@@ -885,25 +883,6 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 		r.Status, r.Detail = "not-checked", "The rebuild couldn't finish: "+err.Error()
 	}
 	return r
-}
-
-// trustedSignerFor returns the policy signer that matches a certificate's
-// identity (what cosign is told to require when reproducing).
-func trustedSignerFor(cert report.Signer, trusted []report.Signer) report.Signer {
-	for _, t := range trusted {
-		if t.Issuer != "" && t.Issuer != cert.Issuer {
-			continue
-		}
-		if t.Identity != "" && t.Identity == cert.Identity {
-			return t
-		}
-		if t.IdentityRegexp != "" {
-			if re, err := regexp.Compile(t.IdentityRegexp); err == nil && re.MatchString(cert.Identity) {
-				return t
-			}
-		}
-	}
-	return report.Signer{Identity: cert.Identity, Issuer: cert.Issuer}
 }
 
 func dedupePackages(pkgs []pkg) []pkg {

@@ -1131,7 +1131,7 @@
           "type": "array"
         },
         "status": {
-          "description": "Status is verified (meets every requirement), failed (violates one), or unverified (some requirement couldn't be decided, or the policy has no trusted signer or requires nothing, so nothing was verified).",
+          "description": "Status is verified (meets every requirement), failed (violates one), or unverified (some requirement couldn't be decided, or none of the image's evidence verified against a trusted signer, so nothing about it was).",
           "enum": [
             "verified",
             "failed",

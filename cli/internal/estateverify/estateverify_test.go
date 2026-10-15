@@ -164,7 +164,15 @@ func TestSignerFlags(t *testing.T) {
 		{report.Signer{IdentityRegexp: `^https://github\.com/[^/]+/images/`, Issuer: ghIssuer}, "wildcard"},
 		{report.Signer{IdentityRegexp: `^https://github\.com/(acme|[a-z-]+)/`, Issuer: ghIssuer}, "wildcard"},
 		// acme-evil is another owner.
-		{report.Signer{IdentityRegexp: `^https://github\.com/acme`, Issuer: ghIssuer}, "acme-clearcutt-probe"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/acme`, Issuer: ghIssuer}, "acmeclearcuttprobe"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/northcutted(-[a-z]+)?/`, Issuer: ghIssuer}, "northcutted-clearcuttprobe/"},
+		{report.Signer{IdentityRegexp: `^https://github\.com/[^/]*northcutted/`, Issuer: ghIssuer}, "clearcuttprobenorthcutted/"},
+		// An unescaped dot matches other owners too.
+		{report.Signer{IdentityRegexp: `^https://github\.com/north.utted/`, Issuer: ghIssuer}, "wildcard"},
+		// Other forges' owners end too.
+		{report.Signer{IdentityRegexp: `^https://gitlab\.com/acme`, Issuer: "https://gitlab.com"}, "gitlab.com/acmeclearcuttprobe"},
+		// An email domain that goes on is someone else's.
+		{report.Signer{IdentityRegexp: `^.*@acme\.com`, Issuer: "https://accounts.google.com"}, "acme.com.clearcuttprobe.example"},
 		{report.Signer{IdentityRegexp: `^https://github\.com/acme.*/`, Issuer: ghIssuer}, "wildcard"},
 		{report.Signer{IdentityRegexp: `https://github\.com/acme/`, Issuer: ghIssuer}, "unanchored"},
 		{report.Signer{IdentityRegexp: `(?m)^https://github\.com/acme/`, Issuer: ghIssuer}, "unanchored"},
@@ -181,7 +189,9 @@ func TestSignerFlags(t *testing.T) {
 		`^https://github\.com/northcutted/clearcutt-factory/\.github/workflows/(images|fleet)\.yml@refs/tags/v`,
 		`^https://github\.com/acme/images/\.github/workflows/release\.yml@refs/heads/main$`,
 		`^(https://github\.com/acme/|https://gitlab\.com/acme/)`,
+		`^https://github\.com/acme-(dev|prod)/images/`,
 		`^.*@acme\.com$`,
+		`^alice@acme\.com$`,
 	} {
 		if _, err := signerFlags(report.Signer{IdentityRegexp: re, Issuer: ghIssuer}); err != nil {
 			t.Errorf("refused %s: %v", re, err)
@@ -684,7 +694,8 @@ func TestBuild(t *testing.T) {
 
 func TestVerdictScanAge(t *testing.T) {
 	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
-	img := report.Image{Vulnerabilities: &report.Vulnerabilities{ScannedAt: "2026-10-01T00:00:00Z"}}
+	img := report.Image{Vulnerabilities: &report.Vulnerabilities{ScannedAt: "2026-10-01T00:00:00Z"},
+		Evidence: report.Evidence{VulnerabilityScan: report.EvidenceItem{Status: "verified"}}}
 	p := report.Policy{MaxScanAgeDays: 7, TrustedSigners: []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}}}
 	if v := verdictAt(img, p, now); v.Status != "unverified" || !strings.Contains(v.Reasons[0], "9 days old (limit 7)") {
 		t.Errorf("old scan: %+v", v)
@@ -697,7 +708,14 @@ func TestVerdictScanAge(t *testing.T) {
 	if v := verdictAt(img, p, now); v.Status != "unverified" || !strings.Contains(v.Reasons[0], "age is unknown") {
 		t.Errorf("no scan time: %+v", v)
 	}
-	if v := verdictAt(report.Image{}, p, now); v.Status != "verified" {
-		t.Errorf("no scan and no failOn: %+v", v)
+	// With no verified scan there is no age to measure: unknown, not fresh.
+	signed := report.Image{Evidence: report.Evidence{Signature: report.EvidenceItem{Status: "verified"}}}
+	if v := verdictAt(signed, p, now); v.Status != "unverified" || !strings.Contains(v.Reasons[0], "age is unknown") {
+		t.Errorf("no scan: %+v", v)
+	}
+	signed.Vulnerabilities = img.Vulnerabilities
+	signed.Evidence.VulnerabilityScan.Status = "present"
+	if v := verdictAt(signed, p, now); v.Status != "unverified" || !strings.Contains(v.Reasons[0], "age is unknown") {
+		t.Errorf("scan not verified on every platform: %+v", v)
 	}
 }

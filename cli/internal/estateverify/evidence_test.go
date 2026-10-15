@@ -2,6 +2,7 @@ package estateverify
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -177,8 +178,9 @@ func TestForgedCertificateDoesNotVerifyAReusableWorkflow(t *testing.T) {
 }
 
 // TestPolicyWithoutTrust: with no trusted signer nothing can be verified,
-// so nothing evidence says is read and no image is verified; a policy that
-// requires nothing verifies nothing either.
+// so nothing evidence says is read and no image is verified. And a verdict
+// rests on evidence a trusted signer vouched for: checks that read none
+// (scan age, base drift, reproduction) never verify an image on their own.
 func TestPolicyWithoutTrust(t *testing.T) {
 	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
 	defer srv.Close()
@@ -192,28 +194,48 @@ func TestPolicyWithoutTrust(t *testing.T) {
 	for _, p := range im.Manifests {
 		attach(t, host+"/app", p, bundleJSON(t, PredicateVuln, p.Digest.String(), vulnPredicateAt("2026-10-05T00:00:00Z"), ours))
 	}
+	// bare is unsigned and unscanned, and a root: child is built on it.
+	bare := pushIndex(t, host+"/bare:1", nil, built, nil)
+	pushIndex(t, host+"/child:1", bare, built, nil)
 
-	build := func(p report.Policy) report.Image {
+	build := func(p report.Policy) map[string]report.Image {
 		t.Helper()
 		v := acmeVerifier()
 		v.Signers = p.TrustedSigners
-		r, err := Build(context.Background(), observe(t, host, "app:1"), Options{Name: "empty", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: v, Policy: p})
+		r, err := Build(context.Background(), observe(t, host, "app:1", "bare:1", "child:1"), Options{Name: "trust", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: v, Policy: p})
 		if err != nil {
 			t.Fatal(err)
 		}
 		validateReport(t, r)
-		return r.Images[0]
+		out := map[string]report.Image{}
+		for _, i := range r.Images {
+			out[i.ID] = i
+		}
+		return out
 	}
-	a := build(report.Policy{})
+	a := build(report.Policy{})["app"]
 	if a.Evidence.Signature.Status != "present" || a.Evidence.Provenance.Status != "present" || a.Vulnerabilities != nil || (a.Source != nil && a.Source.Basis == "provenance") {
 		t.Errorf("evidence nothing verified was read: %+v, vulnerabilities %+v, source %+v", a.Evidence, a.Vulnerabilities, a.Source)
 	}
 	if a.Verdict.Status != "unverified" || !strings.Contains(a.Verdict.Reasons[0], "no trusted signer") {
 		t.Errorf("empty policy verdict: %+v", a.Verdict)
 	}
-	a = build(report.Policy{TrustedSigners: acmeVerifier().Signers})
-	if a.Evidence.Signature.Status != "verified" || a.Verdict.Status != "unverified" || !strings.Contains(a.Verdict.Reasons[0], "requires nothing") {
-		t.Errorf("policy requiring nothing: %+v, verdict %+v", a.Evidence.Signature, a.Verdict)
+
+	acme := acmeVerifier().Signers
+	for _, p := range []report.Policy{
+		{TrustedSigners: acme},
+		{TrustedSigners: acme, MaxScanAgeDays: 7},
+		{TrustedSigners: acme, MaxDaysBehind: 30},
+		{TrustedSigners: acme, Reproduce: true},
+	} {
+		img := build(p)
+		if b := img["bare"]; b.Root == "" || b.Verdict.Status != "unverified" || !strings.Contains(b.Verdict.Reasons[0], "none of its evidence is verified") {
+			t.Errorf("%+v: unsigned, unscanned root: root %q, verdict %+v", p, b.Root, b.Verdict)
+		}
+		// (app's own base is unknown, so maxDaysBehind can't pass it.)
+		if a := img["app"]; a.Verdict.Status != "verified" && p.MaxDaysBehind == 0 {
+			t.Errorf("%+v: signed, freshly scanned app: %+v", p, a.Verdict)
+		}
 	}
 }
 
@@ -225,7 +247,7 @@ func TestScanAgeIsTheOldestPlatforms(t *testing.T) {
 		t.Errorf("scannedAt %q, want the older platform's", v.ScannedAt)
 	}
 	p := report.Policy{MaxScanAgeDays: 7, TrustedSigners: acmeVerifier().Signers}
-	if got := verdictAt(report.Image{Vulnerabilities: v}, p, time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)); got.Status != "unverified" || !strings.Contains(got.Reasons[0], "9 days old") {
+	if got := verdictAt(report.Image{Vulnerabilities: v, Evidence: report.Evidence{VulnerabilityScan: report.EvidenceItem{Status: "verified"}}}, p, time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)); got.Status != "unverified" || !strings.Contains(got.Reasons[0], "9 days old") {
 		t.Errorf("verdict: %+v", got)
 	}
 	// One platform's scan time is unknown, so the image's is.
@@ -265,7 +287,8 @@ func TestVerdictFailOnNeedsAVerifiedScan(t *testing.T) {
 
 func TestVerdictStaleBaseOfUnknownAge(t *testing.T) {
 	p := report.Policy{TrustedSigners: acmeVerifier().Signers, MaxDaysBehind: 30}
-	img := report.Image{Base: &report.BaseLink{Drift: "stale", DaysBehindUnknown: true}}
+	signed := report.Evidence{Signature: report.EvidenceItem{Status: "verified"}}
+	img := report.Image{Evidence: signed, Base: &report.BaseLink{Drift: "stale", DaysBehindUnknown: true}}
 	if got := verdict(img, p); got.Status != "unverified" || !strings.Contains(got.Reasons[0], "couldn't be measured") {
 		t.Errorf("stale base of unknown age: %+v", got)
 	}
@@ -373,5 +396,61 @@ func TestNewestVerifiedScanBySignedTime(t *testing.T) {
 	}
 	if a.Verdict.Status != "failed" {
 		t.Errorf("verdict: %+v", a.Verdict)
+	}
+}
+
+// TestAttachedCopiesCantCrowdOutATrustedOne: copies anyone can attach under
+// made-up certificates, newer than the trusted scan and more of them than
+// any budget, neither keep the trusted scan from being read nor cost a
+// cosign run each unless they hold content a trusted identity signed.
+func TestAttachedCopiesCantCrowdOutATrustedOne(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ours := fulcioCert(t, ourSigner, ghIssuer)
+	critical := vulnPredicateAt("2026-10-05T00:00:00Z", grypeMatchJSON("CVE-2026-1", "Critical", "openssl", "3.0", "3.1"))
+	idx := pushIndex(t, host+"/app:1", nil, built, nil)
+	im, _ := idx.IndexManifest()
+	var forged []string
+	for _, p := range im.Manifests {
+		attach(t, host+"/app", p, bundleJSON(t, PredicateVuln, p.Digest.String(), critical, ours))
+		for i := range 10 {
+			// Signers no trusted signer accepts, and ones it would (any
+			// workflow of acme's) on certificates no authority issued, each
+			// saying the image is clean; then copies of the trusted scan
+			// itself under forged acceptable certificates.
+			stranger := fmt.Sprintf("https://github.com/mallory%d/x/.github/workflows/x.yml@refs/heads/main", i)
+			lookalike := fmt.Sprintf("https://github.com/acme/fake%d/.github/workflows/x.yml@refs/heads/main", i)
+			replay := fmt.Sprintf("https://github.com/acme/replay%d/.github/workflows/x.yml@refs/heads/main", i)
+			at := int64(later + i)
+			attach(t, host+"/app", p, bundleAt(t, PredicateVuln, p.Digest.String(), vulnPredicateAt("2026-10-09T00:00:00Z"), fulcioCert(t, stranger, ghIssuer), at))
+			forged = append(forged,
+				attach(t, host+"/app", p, bundleAt(t, PredicateVuln, p.Digest.String(), vulnPredicateAt("2026-10-09T00:00:00Z"), fulcioCert(t, lookalike, ghIssuer), at)),
+				attach(t, host+"/app", p, bundleAt(t, PredicateVuln, p.Digest.String(), critical, fulcioCert(t, replay, ghIssuer), at)))
+		}
+	}
+	v := acmeVerifier(forged...)
+	run, calls := v.Run, 0
+	v.Run = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
+		calls++
+		return run(ctx, bin, args...)
+	}
+	// The docs' policy shape: the scan isn't required, failOn is set.
+	r, err := Build(context.Background(), observe(t, host, "app:1"), Options{Name: "crowd", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: v,
+		Policy: report.Policy{TrustedSigners: v.Signers, FailOn: "critical"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := r.Images[0]
+	if a.Evidence.VulnerabilityScan.Status != "verified" || a.Vulnerabilities == nil || a.Vulnerabilities.Counts.Critical != 1 {
+		t.Errorf("the trusted scan was crowded out: %+v, vulnerabilities %+v", a.Evidence.VulnerabilityScan, a.Vulnerabilities)
+	}
+	if a.Verdict.Status != "failed" {
+		t.Errorf("verdict %+v, want failed (exit 2 under --fail-on failed)", a.Verdict)
+	}
+	// Per platform: which statements trusted identities signed (1), the
+	// trusted scan's signer (1), and the forged signers of its copies (10).
+	if calls > 2*12 {
+		t.Errorf("%d cosign runs for 2 platforms", calls)
 	}
 }

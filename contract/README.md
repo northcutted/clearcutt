@@ -69,9 +69,9 @@ true when that count is zero.
 
 **Verdicts.** `verdict.status` is `verified` (meets every requirement in
 `policy`), `failed` (violates one), or `unverified` (a requirement couldn't be
-decided). With no `policy.trustedSigners`, or a policy that requires nothing,
-every verdict is `unverified`. `verdict.reasons` lists one line per
-requirement not met.
+decided). A `verified` verdict rests on at least one piece of the image's
+evidence being `verified`, so with no `policy.trustedSigners` every verdict is
+`unverified`. `verdict.reasons` lists one line per requirement not met.
 
 **Identity.** `images[].id` is unique in a report and stable across runs for
 the same repository, so it works in URLs. `base.imageId` links to the base when
