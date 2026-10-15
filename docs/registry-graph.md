@@ -119,6 +119,14 @@ and a self-reported label never outranks layer proof — if an image claims one 
 its layers prove another, the graph reports the proven one and keeps the contradicting
 claim visible on the edge.
 
+**The nearest base wins.** An app built on a run image that was itself built on an
+upstream base (`cgr.dev/chainguard/wolfi-base`, say) starts with both images' layers.
+When both are observed, the app is built on the run image, whose layer prefix is
+longer, and the run image on the upstream base; both matches stay on the edge as
+signals. Two equally long prefixes are the same layers in two repositories (a mirror):
+the one the image's own `org.opencontainers.image.base.digest` or `.base.name` names
+wins, else the first repository by name, so the result never depends on input order.
+
 ## Drift
 
 A base *family* is every observed version of one repository. Currency is decided by the

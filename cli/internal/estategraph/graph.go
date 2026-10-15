@@ -26,7 +26,9 @@ import (
 //	history             the base appears in the image's build history. A hint.
 //
 // Only the first is evidence; the rest are claims, and the graph labels them as such
-// so an auditor can tell which edges are proven and which are taken on trust.
+// so an auditor can tell which edges are proven and which are taken on trust. An
+// image that starts with the layers of several observed images (an app on a run
+// image on an upstream base) is built on the nearest: the longest prefix.
 const (
 	MethodLayerPrefix        = "layer-prefix"
 	MethodOCIBaseDigest      = "oci-base-digest"
@@ -540,11 +542,57 @@ func groupIntoFamilies(images []Observation, basePatterns []string) map[string]*
 	return families
 }
 
-// bestEdgeFor finds the strongest base relationship for one consumer.
+// candidate is one base version a consumer matched, and how.
+type candidate struct {
+	family         *baseFamily
+	version        Observation
+	method, detail string
+}
+
+// betterBase reports whether a is a better base for consumer than b. The
+// stronger method wins. Among layer-prefix proofs the longer prefix wins:
+// it is the nearest base. An app built on a run image that was itself built
+// on an upstream base starts with both images' layers, and it is built on
+// the run image; the upstream base is the run image's base. Between equally
+// long prefixes (the same layers in two places, such as a mirrored base), a
+// version the consumer's own base labels or annotations name wins. Anything
+// still tied keeps the first match: repositories in name order, each
+// family's versions oldest first.
+func betterBase(consumer Observation, a, b candidate) bool {
+	if ra, rb := methodRank[a.method], methodRank[b.method]; ra != rb {
+		return ra < rb
+	}
+	if a.method == MethodLayerPrefix && len(a.version.Layers) != len(b.version.Layers) {
+		return len(a.version.Layers) > len(b.version.Layers)
+	}
+	if da, db := declaresBase(consumer, a), declaresBase(consumer, b); da != db {
+		return da
+	}
+	return false
+}
+
+// declaresBase reports whether the consumer's labels or annotations name the
+// candidate as its base: its digest (org.opencontainers.image.base.digest)
+// or, failing that, its repository (org.opencontainers.image.base.name). It
+// only breaks ties between equally proven candidates.
+func declaresBase(consumer Observation, c candidate) bool {
+	digest := digestOnly(firstNonEmpty(c.version.DigestRef, c.version.ManifestDigest))
+	for _, m := range []map[string]string{consumer.Labels, consumer.Annotations} {
+		if d := strings.TrimSpace(m["org.opencontainers.image.base.digest"]); d != "" && digest != "" && digestOnly(d) == digest {
+			return true
+		}
+		if n := strings.TrimSpace(m["org.opencontainers.image.base.name"]); n != "" && repositoryOf(n) == c.family.repository {
+			return true
+		}
+	}
+	return false
+}
+
+// bestEdgeFor finds the strongest base relationship for one consumer: the
+// best candidate by betterBase.
 func bestEdgeFor(consumer Observation, families map[string]*baseFamily, carriers map[string]int) (*GraphEdge, []string) {
 	consumerRepo := repositoryOf(firstNonEmpty(consumer.SourceRef, consumer.DigestRef))
-	var best *GraphEdge
-	var bestRank = len(methodRank) + 1
+	var best *candidate
 	signals := []GraphSignal{}
 	attempted := 0
 
@@ -573,12 +621,10 @@ func bestEdgeFor(consumer Observation, families map[string]*baseFamily, carriers
 				Weight: weightForMethod(method),
 				Detail: detail,
 			})
-			rank := methodRank[method]
-			if rank >= bestRank {
-				continue
+			c := candidate{family: family, version: version, method: method, detail: detail}
+			if best == nil || betterBase(consumer, c, *best) {
+				best = &c
 			}
-			bestRank = rank
-			best = buildEdge(consumer, family, version, method, detail)
 		}
 	}
 	if best == nil {
@@ -602,8 +648,9 @@ func bestEdgeFor(consumer Observation, families map[string]*baseFamily, carriers
 		return nil, reasons
 	}
 	sort.SliceStable(signals, func(i, j int) bool { return methodRank[signals[i].Type] < methodRank[signals[j].Type] })
-	best.Signals = signals
-	return best, nil
+	edge := buildEdge(consumer, best.family, best.version, best.method, best.detail)
+	edge.Signals = signals
+	return edge, nil
 }
 
 // buildEdge assembles the edge, including drift against the family's current version.

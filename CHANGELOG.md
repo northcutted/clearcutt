@@ -89,6 +89,13 @@ When a release is cut, move these entries under a heading for its version.
 - `registry scan` skips `sha256-<digest>` tags, where registries without the
   OCI Referrers API keep an image's referrers. They sort above `latest`, so
   with few tags kept per repository the scan could pick one as the image.
+- An image whose layers start with several observed images' layers is built
+  on the nearest one, the longest prefix. With an upstream base such as
+  `cgr.dev/chainguard/wolfi-base` in the inventory, every app was attributed
+  to it instead of to its run image (the first match by repository name won),
+  so `estate dependents --base <run image>` found nothing and stale run images
+  went unreported. Equally long prefixes (a mirrored base) go to the one the
+  image's base annotation names, else the first repository by name.
 
 ## v0.15.0
 
