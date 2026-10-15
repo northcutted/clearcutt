@@ -732,7 +732,7 @@
           "type": "boolean"
         },
         "reproduce": {
-          "description": "Reproduce reports whether this run rebuilt images to check them.",
+          "description": "Reproduce reports whether this run checked that images reproduce: those without a verified reproduction attestation were rebuilt, and one that doesn't reproduce, or couldn't be checked, falls short.",
           "type": "boolean"
         },
         "required": {
@@ -775,8 +775,16 @@
       "additionalProperties": false,
       "description": "Reproducibility is whether rebuilding the image gives the same digest.",
       "properties": {
+        "builder": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ReproductionBuilder"
+            }
+          ],
+          "description": "Builder is where an attested reproduction ran, as its verified attestation says."
+        },
         "checkedAt": {
-          "description": "CheckedAt is when it was checked (RFC 3339).",
+          "description": "CheckedAt is when it was checked (RFC 3339): when this run rebuilt it, or when the attested reproduction ran.",
           "type": "string"
         },
         "detail": {
@@ -793,8 +801,27 @@
             "rebase-repeat"
           ]
         },
+        "ref": {
+          "description": "Ref is where the reproduction attestation is stored (source attestation).",
+          "type": "string"
+        },
+        "signer": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Signer"
+            }
+          ],
+          "description": "Signer is who signed the reproduction attestation, as cosign checked it (source attestation)."
+        },
+        "source": {
+          "description": "Source is where the result comes from: attestation (a clearcutt-factory reproduction attestation on the image, verified against a trusted signer and made from a recipe or rebase record verified on the same image; this run didn't rebuild it) or rebuild (this run rebuilt it, --reproduce). Absent when nothing checked it.",
+          "enum": [
+            "attestation",
+            "rebuild"
+          ]
+        },
         "status": {
-          "description": "Status is reproduced, not-reproduced (the rebuild gave a different digest), not-checked (a recipe exists but this run didn't rebuild, or the rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild from).",
+          "description": "Status is reproduced, not-reproduced (the rebuild gave a different digest), not-checked (a recipe exists but nothing checked it: no verified reproduction attestation, and this run didn't rebuild, or the rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild from).",
           "enum": [
             "reproduced",
             "not-reproduced",
@@ -831,6 +858,43 @@
         "notReproduced",
         "reproduced"
       ],
+      "type": "object"
+    },
+    "ReproductionBuilder": {
+      "additionalProperties": false,
+      "description": "ReproductionBuilder is the machine, and the CI run if any, that reproduced an image, as its reproduction attestation says. It shows the image rebuilt on a fresh machine, not who else could rebuild it.",
+      "properties": {
+        "arch": {
+          "type": "string"
+        },
+        "buildkit": {
+          "description": "BuildKit is the BuildKit it rebuilt with (recipe-rebuild).",
+          "type": "string"
+        },
+        "factoryVersion": {
+          "description": "FactoryVersion is the clearcutt-factory that reproduced it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "ID is the CI run: on GitHub Actions, the run attempt's URL.",
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "os": {
+          "description": "OS and Arch are the machine's, e.g. linux and amd64.",
+          "type": "string"
+        },
+        "runner": {
+          "description": "Runner is github-hosted or self-hosted, on GitHub Actions.",
+          "type": "string"
+        },
+        "workflow": {
+          "description": "Workflow is the workflow the run belongs to (on GitHub Actions, the calling workflow's ref), and Job the job in it.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "SeverityCounts": {

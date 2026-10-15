@@ -144,6 +144,7 @@ func TestKindOf(t *testing.T) {
 		PredicateRecipe:                                   KindRecipe,
 		legacyPredicateRebase:                             KindRebase,
 		"https://in-toto.io/attestation/test-result/v0.1": KindTests,
+		PredicateReproduction:                             KindReproduction,
 		"https://apko.dev/image-configuration":            "",
 	} {
 		if got := KindOf(pt); got != want {

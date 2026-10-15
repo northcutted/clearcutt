@@ -66,8 +66,11 @@ rebase records; cosign v2 tags and v3 bundles), verifies it with cosign
 against the policy's trusted signers, reads vulnerabilities and packages from
 the attestations that verified (nothing from ones that didn't), places the
 image on its base (proven by layer digests where possible), and decides a
-verdict. With no trusted signer, no image is verified. With --reproduce it rebuilds
-clearcutt-factory images from their signed recipes (clearcutt-factory on PATH).
+verdict. With no trusted signer, no image is verified. A verified
+clearcutt-factory reproduction attestation, made from the image's verified
+recipe or rebase record, shows an image reproduced without rebuilding it. With
+--reproduce it rebuilds the other clearcutt-factory images from their signed
+recipes (clearcutt-factory on PATH).
 
 Images come from an observations file (clearcutt-verify import observe) or a list of
 references (--refs), which are imported and observed first.`,
@@ -88,7 +91,7 @@ references (--refs), which are imported and observed first.`,
 	f.StringVar(&o.name, "name", "estate", "Estate name in the report")
 	f.StringVar(&o.out, "out", "", "Bundle directory to write (estate-report.json, estate-history.json)")
 	f.StringVar(&o.history, "history", "", "Previous estate-history.json to extend (default: the one in --out, if any)")
-	f.BoolVar(&o.reproduce, "reproduce", false, "Rebuild clearcutt-factory images from their signed recipes and compare digests")
+	f.BoolVar(&o.reproduce, "reproduce", false, "Rebuild clearcutt-factory images from their signed recipes and compare digests (images with a verified reproduction attestation aren't rebuilt)")
 	f.StringVar(&o.factoryPath, "factory-path", "clearcutt-factory", "clearcutt-factory binary, for --reproduce")
 	f.StringVar(&o.cosignPath, "cosign-path", "cosign", "cosign binary")
 	f.StringVar(&o.generatedAt, "generated-at", "", "Deterministic report timestamp (RFC 3339)")

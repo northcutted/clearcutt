@@ -107,7 +107,9 @@ type Policy struct {
 	// policy's stack signers. Registry stacks the estate's apps are built on
 	// are verified against them.
 	StackSigners []Signer `json:"stackSigners,omitempty"`
-	// Reproduce reports whether this run rebuilt images to check them.
+	// Reproduce reports whether this run checked that images reproduce:
+	// those without a verified reproduction attestation were rebuilt, and
+	// one that doesn't reproduce, or couldn't be checked, falls short.
 	Reproduce bool `json:"reproduce"`
 }
 
@@ -428,18 +430,56 @@ type Finding struct {
 // Reproducibility is whether rebuilding the image gives the same digest.
 type Reproducibility struct {
 	// Status is reproduced, not-reproduced (the rebuild gave a different
-	// digest), not-checked (a recipe exists but this run didn't rebuild, or
-	// the rebuild couldn't finish; see detail), or no-recipe (nothing to
-	// rebuild from).
+	// digest), not-checked (a recipe exists but nothing checked it: no
+	// verified reproduction attestation, and this run didn't rebuild, or the
+	// rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild
+	// from).
 	Status string `json:"status" enum:"reproduced,not-reproduced,not-checked,no-recipe"`
 	// Method is recipe-rebuild (rebuilt from the signed recipe) or
 	// rebase-repeat (repeated the recorded rebase).
 	Method string `json:"method,omitempty" enum:"recipe-rebuild,rebase-repeat"`
-	// CheckedAt is when it was checked (RFC 3339).
+	// CheckedAt is when it was checked (RFC 3339): when this run rebuilt it,
+	// or when the attested reproduction ran.
 	CheckedAt string `json:"checkedAt,omitempty"`
 	// Digest is what the rebuild produced.
 	Digest string `json:"digest,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	// Source is where the result comes from: attestation (a clearcutt-factory
+	// reproduction attestation on the image, verified against a trusted
+	// signer and made from a recipe or rebase record verified on the same
+	// image; this run didn't rebuild it) or rebuild (this run rebuilt it,
+	// --reproduce). Absent when nothing checked it.
+	Source string `json:"source,omitempty" enum:"attestation,rebuild"`
+	// Builder is where an attested reproduction ran, as its verified
+	// attestation says.
+	Builder *ReproductionBuilder `json:"builder,omitempty"`
+	// Signer is who signed the reproduction attestation, as cosign checked
+	// it (source attestation).
+	Signer *Signer `json:"signer,omitempty"`
+	// Ref is where the reproduction attestation is stored (source
+	// attestation).
+	Ref string `json:"ref,omitempty"`
+}
+
+// ReproductionBuilder is the machine, and the CI run if any, that reproduced
+// an image, as its reproduction attestation says. It shows the image rebuilt
+// on a fresh machine, not who else could rebuild it.
+type ReproductionBuilder struct {
+	// ID is the CI run: on GitHub Actions, the run attempt's URL.
+	ID string `json:"id,omitempty"`
+	// Workflow is the workflow the run belongs to (on GitHub Actions, the
+	// calling workflow's ref), and Job the job in it.
+	Workflow string `json:"workflow,omitempty"`
+	Job      string `json:"job,omitempty"`
+	// Runner is github-hosted or self-hosted, on GitHub Actions.
+	Runner string `json:"runner,omitempty"`
+	// OS and Arch are the machine's, e.g. linux and amd64.
+	OS   string `json:"os,omitempty"`
+	Arch string `json:"arch,omitempty"`
+	// FactoryVersion is the clearcutt-factory that reproduced it.
+	FactoryVersion string `json:"factoryVersion,omitempty"`
+	// BuildKit is the BuildKit it rebuilt with (recipe-rebuild).
+	BuildKit string `json:"buildkit,omitempty"`
 }
 
 // Factory describes an image built or rebased by clearcutt-factory, from its

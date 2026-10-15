@@ -273,7 +273,31 @@ tell the report came from your job.
 
 ## Reproducibility
 
-`--reproduce` rebuilds every clearcutt-factory image from its verified recipe
+clearcutt-factory's reusable workflows rebuild each image they publish on a
+second runner (and repeat each fleet rebase), and attest each match on the
+image (`clearcutt-factory verify --image --attest`, predicate
+`https://github.com/northcutted/clearcutt-factory/reproduction/v1`). Such an
+attestation makes an image `reproduced` without rebuilding it, with
+`reproducibility.source: attestation`, when:
+
+- cosign verified it against the policy's image signers, bound like the
+  recipe (`sourceMatchesImage` and the other constraints apply);
+- its subject, and the `digest` it says the reproduction gave, are the image's
+  digest;
+- it was made (`from.digest.sha256`, the sha256 of the signed DSSE payload)
+  from a recipe or rebase record cosign verified on the same image, of the
+  kind its method rebuilds from (`recipe-rebuild` from a recipe,
+  `rebase-repeat` from a rebase record).
+
+The report then gives the method, `checkedAt` (the attestation's
+`reproducedAt`), the digest, who signed it (`signer`), where it is (`ref`),
+and the run and machine that reproduced it (`builder`, as the attestation
+says). It shows the image rebuilt on a fresh machine of the publisher's, not
+that anyone else can rebuild it; `--reproduce` rebuilds the others yourself.
+An attestation that isn't verified, or doesn't meet these conditions, is not
+read or counted, and `reproducibility.detail` says why.
+
+`--reproduce` rebuilds every other clearcutt-factory image from its verified recipe
 (or repeats its verified rebase) with `clearcutt-factory verify --image`, bound
 to exactly the signer that verified the recipe or rebase record the report
 shows (its identity, issuer, and the repository of the run that signed; or
@@ -289,8 +313,9 @@ couldn't finish (a registry or the container runtime failing) is
 reproduces is still undecided. The digest is read only from the result
 clearcutt-factory reports last (its final output line on success, its error
 on a mismatch), never from build output, and a rebuild that exits with an
-error is never `reproduced`. Without `--reproduce`, images with recipes are
-`not-checked`.
+error is never `reproduced`; its `reproducibility.source` is `rebuild`.
+Without `--reproduce`, images with recipes and no verified reproduction
+attestation are `not-checked`.
 
 ## Limits
 

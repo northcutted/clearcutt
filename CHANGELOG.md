@@ -113,6 +113,20 @@ When a release is cut, move these entries under a heading for its version.
   transparency log now says the log inclusion couldn't be verified (and, for
   keys, how to accept it). clearcutt-factory reads the shared trust policy
   strictly, so it has to accept `tlog` before a shared file uses it.
+- `estate verify` reads clearcutt-factory's reproduction attestations
+  (`https://github.com/northcutted/clearcutt-factory/reproduction/v1`, from
+  `clearcutt-factory verify --image --attest`, which its reusable workflows
+  run after each publish and rebase). One that cosign verified against the
+  image signers (bound like the recipe), whose subject and `digest` are the
+  image's, and that was made from a recipe or rebase record verified on the
+  same image (`from.digest.sha256` is that statement's sha256, of the kind its
+  method rebuilds from) makes the image `reproduced` without rebuilding it.
+  `--reproduce` rebuilds only the images without one. New, additive contract
+  fields on `reproducibility`: `source` (`attestation` or `rebuild`),
+  `builder` (the run and machine, as the attestation says, and the
+  clearcutt-factory and BuildKit versions), `signer`, and `ref`. An
+  attestation that isn't verified or bound is never read or counted, and the
+  detail says why.
 
 ## v0.15.0
 

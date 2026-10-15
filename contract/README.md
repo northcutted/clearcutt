@@ -69,6 +69,15 @@ stale base whose `daysBehind` couldn't be measured: unknown, not zero.
 data: unknown, not clean. `summary.vulnerabilities.notScanned` counts those.
 `scannedAt` says what day the findings describe.
 
+**Reproducibility.** `reproducibility.source` says how an image was found to
+reproduce: `rebuild` (this run rebuilt it) or `attestation` (a
+clearcutt-factory reproduction attestation on the image, verified against a
+trusted signer and made from a recipe or rebase record verified on the same
+image; this run didn't rebuild it). An attested result names who signed it
+(`signer`), where it is stored (`ref`), and the run and machine that
+reproduced it (`builder`, as the attestation says). Absent, nothing checked
+it.
+
 **Packages.** `packages` lists what the images whose package sets could be read
 ship; `summary.packages.unknown` counts the rest. "No image ships X" is only
 true when that count is zero.

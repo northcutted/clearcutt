@@ -623,6 +623,15 @@ type imageData struct {
 	// unreadableScans are platforms whose verified vulnerability scan
 	// couldn't be read.
 	unreadableScans []string
+	// statements are the recipes and rebase records cosign verified on the
+	// image: the sha256 of each in-toto statement (the signed DSSE payload)
+	// → its predicate type. Reproduction attestations name what they were
+	// made from this way.
+	statements map[string]string
+	// attested is the reproducibility a verified reproduction attestation
+	// shows; attestNote says why attached ones didn't count.
+	attested   *report.Reproducibility
+	attestNote string
 }
 
 // attachment is where a kind of evidence is expected.
@@ -631,7 +640,7 @@ var perPlatform = map[string]bool{KindSBOM: true, KindVulnerabilityScan: true}
 // gatherEvidence discovers and verifies every kind of evidence on the image
 // (index-level kinds) and its platform images (SBOMs and scans).
 func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platforms []report.Platform, opts Options) (report.Evidence, imageData) {
-	data := imageData{vulns: map[string]vulnScan{}}
+	data := imageData{vulns: map[string]vulnScan{}, statements: map[string]string{}}
 	type subject struct{ platform, digest string }
 	subjects := []subject{{"", digest}}
 	for _, p := range platforms {
@@ -697,6 +706,9 @@ func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platf
 	if items[KindTests].Status == "missing" {
 		items[KindTests].Detail = "No test attestation."
 	}
+	if unknown[digest] == nil {
+		data.attested, data.attestNote = attestedReproduction(ctx, repo, digest, imageSource, found[digest], opts, data.statements)
+	}
 	return report.Evidence{
 		Signature: *items[KindSignature], SBOM: *items[KindSBOM], VulnerabilityScan: *items[KindVulnerabilityScan],
 		Provenance: *items[KindProvenance], Recipe: *items[KindRecipe], Rebase: *items[KindRebase], Tests: *items[KindTests],
@@ -727,6 +739,11 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 	best := verified[0]
 	signer := best.signer
 	pred := best.Predicate()
+	if kind == KindRecipe || kind == KindRebase {
+		for _, c := range verified {
+			data.statements[statementDigest(c.Statement)] = c.PredicateType
+		}
+	}
 	switch kind {
 	case KindVulnerabilityScan:
 		if s, ok := readVulnPredicate(pred); ok {
@@ -854,8 +871,9 @@ func builderOf(obs estategraph.Observation, data imageData) report.Builder {
 	return report.Builder{Kind: b.Name, Basis: "image metadata (history, labels, layer layout)"}
 }
 
-// reproduce rebuilds an image from its verified recipe, or repeats its
-// verified rebase, when the policy asks for it.
+// reproduce reports whether an image reproduces: as a verified reproduction
+// attestation shows, without rebuilding it, or, when the policy asks for it,
+// by rebuilding it from its verified recipe or repeating its verified rebase.
 func reproduce(ctx context.Context, img *report.Image, data imageData, opts Options) report.Reproducibility {
 	found := func(s string) bool { return s == "verified" || s == "present" || s == "failed" }
 	hasRecipe, hasRebase := found(img.Evidence.Recipe.Status), found(img.Evidence.Rebase.Status)
@@ -865,6 +883,19 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 		}
 		return report.Reproducibility{Status: "no-recipe"}
 	}
+	if data.attested != nil {
+		return *data.attested
+	}
+	r := reproduceLocally(ctx, img, data, opts, hasRebase)
+	if data.attestNote != "" {
+		r.Detail = strings.TrimSpace(r.Detail + " " + data.attestNote)
+	}
+	return r
+}
+
+// reproduceLocally rebuilds an image from its verified recipe, or repeats
+// its verified rebase, when the policy asks for it.
+func reproduceLocally(ctx context.Context, img *report.Image, data imageData, opts Options, hasRebase bool) report.Reproducibility {
 	method, verified, signer := "recipe-rebuild", data.recipeVerified, data.recipeSigner
 	if hasRebase {
 		method, verified, signer = "rebase-repeat", data.rebaseVerified, data.rebaseSigner
@@ -882,7 +913,7 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 		bound = report.Signer{Identity: signer.Identity, Issuer: signer.Issuer, SourceRepository: signer.SourceRepository}
 	}
 	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, bound)
-	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got}
+	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got, Source: "rebuild"}
 	switch {
 	case got == img.Digest:
 		r.Status = "reproduced"
@@ -891,7 +922,7 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	default:
 		// No digest: the rebuild didn't finish, so whether the image
 		// reproduces is still undecided.
-		r.Status, r.Detail = "not-checked", "The rebuild couldn't finish: "+err.Error()
+		r.Status, r.Detail, r.Source = "not-checked", "The rebuild couldn't finish: "+err.Error(), ""
 	}
 	return r
 }
