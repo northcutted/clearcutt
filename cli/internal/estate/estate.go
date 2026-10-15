@@ -16,7 +16,9 @@ package estate
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -26,6 +28,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
@@ -166,6 +169,11 @@ func (c *Client) Push(ref string, snapshot Snapshot) (string, error) {
 	return digest.String(), nil
 }
 
+// ErrNotFound means nothing is stored at a reference: the registry knows no
+// such manifest or repository. Pull returns it only for the manifest; a
+// manifest whose files can't be read is a failure, not nothing.
+var ErrNotFound = errors.New("nothing is stored there")
+
 // Pull fetches the snapshot stored at ref.
 func (c *Client) Pull(ref string) (Snapshot, string, error) {
 	target, err := name.ParseReference(ref, c.nameOpts...)
@@ -174,6 +182,9 @@ func (c *Client) Pull(ref string) (Snapshot, string, error) {
 	}
 	desc, err := remote.Get(target, c.remoteOpts...)
 	if err != nil {
+		if manifestNotFound(err) {
+			return Snapshot{}, "", fmt.Errorf("fetching estate artifact %s: %w: %v", ref, ErrNotFound, err)
+		}
 		return Snapshot{}, "", fmt.Errorf("fetching estate artifact %s: %w", ref, err)
 	}
 	img, err := desc.Image()
@@ -220,4 +231,22 @@ func (c *Client) Pull(ref string) (Snapshot, string, error) {
 		snapshot.Files[fileName] = buf.Bytes()
 	}
 	return snapshot, desc.Digest.String(), nil
+}
+
+// manifestNotFound reports whether the registry answered a manifest request
+// saying there is no such manifest or repository.
+func manifestNotFound(err error) bool {
+	var terr *transport.Error
+	if !errors.As(err, &terr) {
+		return false
+	}
+	if terr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	for _, d := range terr.Errors {
+		if d.Code == transport.ManifestUnknownErrorCode || d.Code == transport.NameUnknownErrorCode {
+			return true
+		}
+	}
+	return false
 }

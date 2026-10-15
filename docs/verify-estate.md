@@ -217,11 +217,11 @@ clearcutt-verify estate push ghcr.io/acme/estate:latest --dir dist/estate \
   --generated-at "$(jq -r .metadata.generatedAt dist/estate/estate-report.json)"
 ```
 
-`--allow-missing` succeeds only when the registry says nothing is stored at
-the reference; any other failure fails, so a run never starts a fresh history
-and pushes it over one it couldn't read. A portal build pulls the same
-reference. The push prints the artifact's
-digest; sign it (`cosign sign ghcr.io/acme/estate@sha256:…`) so readers can
+`--allow-missing` succeeds only when the registry has no manifest at the
+reference; any other failure fails, including a stored bundle whose files
+can't be read, so a run never starts a fresh history and pushes it over one it
+couldn't read. A portal build pulls the same reference. The push prints the
+artifact's digest; sign it (`cosign sign ghcr.io/acme/estate@sha256:…`) so readers can
 tell the report came from your job.
 
 ## Other fields readers use

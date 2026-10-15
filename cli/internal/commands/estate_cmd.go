@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/northcutted/clearcutt-verify/internal/estate"
 	"github.com/spf13/cobra"
 )
@@ -161,24 +159,6 @@ func runEstatePush(ref string) error {
 	return nil
 }
 
-// notFound reports whether the registry said the reference doesn't exist:
-// no such manifest or repository.
-func notFound(err error) bool {
-	var terr *transport.Error
-	if !errors.As(err, &terr) {
-		return false
-	}
-	if terr.StatusCode == http.StatusNotFound {
-		return true
-	}
-	for _, d := range terr.Errors {
-		if d.Code == transport.ManifestUnknownErrorCode || d.Code == transport.NameUnknownErrorCode {
-			return true
-		}
-	}
-	return false
-}
-
 func newEstateHistoryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "history <reference>",
@@ -258,7 +238,7 @@ func runEstatePull(ref string) error {
 		// Nothing stored yet is the one failure a first run expects. Anything
 		// else (credentials, network, a foreign artifact) must stop a job that
 		// would otherwise start a new history and push it over the old one.
-		if estateOpts.allowMissing && notFound(err) {
+		if estateOpts.allowMissing && errors.Is(err, estate.ErrNotFound) {
 			_, _ = fmt.Fprintf(out, "[estate] nothing at %s yet; nothing pulled\n", ref)
 			return nil
 		}

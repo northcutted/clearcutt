@@ -58,10 +58,11 @@ jobs:
 - **History.** `estate pull` fetches the last bundle and `estate verify --out`
   extends `estate-history.json` in it; `estate push` stores the new bundle.
   `--allow-missing` lets the pull succeed, writing nothing, only when the
-  registry says nothing is stored at the reference (404, `MANIFEST_UNKNOWN`,
+  registry has no manifest at the reference (404, `MANIFEST_UNKNOWN`,
   `NAME_UNKNOWN`): a first run. Any other failure (credentials, network, an
-  artifact that isn't an estate bundle) fails the step, so the job never
-  starts a fresh history and pushes it over the one it couldn't read. Sign
+  artifact that isn't an estate bundle, a stored bundle whose files can't be
+  read) fails the step, so the job never starts a fresh history and pushes it
+  over the one it couldn't read. Sign
   the bundle if readers should be able to tell it came from this job:
   `cosign sign ghcr.io/acme/estate@sha256:…` (needs `id-token: write`).
 - **Gate.** `--fail-on failed` (or `unverified`) exits **2** when an image falls

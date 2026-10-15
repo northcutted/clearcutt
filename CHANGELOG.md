@@ -72,8 +72,9 @@ When a release is cut, move these entries under a heading for its version.
   rebuild is bound to exactly the signer (identity, issuer, run repository)
   that verified the recipe the report shows, not to the first policy regexp
   that matches.
-- New `estate pull --allow-missing` succeeds only when nothing is stored at the
-  reference yet; any other failure fails. The documented scheduled job uses it
+- New `estate pull --allow-missing` succeeds only when the registry has no
+  manifest at the reference yet; any other failure fails, including a stored
+  bundle whose files can't be read. The documented scheduled job uses it
   instead of `|| true`, which let a failed pull start a new history that the
   push then wrote over the old one.
 - The GitHub Action pinned by commit SHA installs the release tagged at that
