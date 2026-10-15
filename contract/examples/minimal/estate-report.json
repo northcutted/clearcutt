@@ -322,8 +322,11 @@
           "predicateType": "https://slsa.dev/provenance/v1",
           "signer": {
             "identity": "https://github.com/acme/images/.github/workflows/images.yml@refs/heads/main",
-            "issuer": "https://token.actions.githubusercontent.com"
-          }
+            "issuer": "https://token.actions.githubusercontent.com",
+            "sourceRepository": "https://github.com/acme/images",
+            "sourceRef": "refs/heads/main"
+          },
+          "signerWorkflow": "github.com/acme/images/.github/workflows/images.yml"
         },
         "recipe": {
           "status": "verified",

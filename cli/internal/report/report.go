@@ -378,7 +378,11 @@ type EvidenceItem struct {
 	Status string `json:"status" enum:"verified,present,failed,missing,unknown,not-applicable"`
 	// Source is where it was found: cosign-signature, cosign-attestation,
 	// github-attestation, or oci-referrer (an unsigned document). Open: new
-	// sources may appear.
+	// sources may appear. github-attestation is a GitHub artifact
+	// attestation (actions/attest-build-provenance) stored in the registry,
+	// which gh attestation verify --bundle-from-oci can check too; it is told
+	// apart from cosign's by its content, so only verified evidence is
+	// labeled so, and an unverified one shows as cosign-attestation.
 	Source string `json:"source,omitempty"`
 	// PredicateType is the in-toto predicate type, for attestations.
 	PredicateType string `json:"predicateType,omitempty"`
@@ -387,6 +391,12 @@ type EvidenceItem struct {
 	// Actions, the repository and ref of the run that signed (or the trusted
 	// key). Otherwise it is what the evidence's certificate claims, unverified.
 	Signer *Signer `json:"signer,omitempty"`
+	// SignerWorkflow, on verified evidence a GitHub Actions workflow signed,
+	// is that workflow without its ref (github.com/OWNER/REPO/.github/
+	// workflows/FILE): what gh attestation verify --signer-workflow takes,
+	// with signer.sourceRepository as its --repo. For a reusable workflow it
+	// is the called workflow, and sourceRepository the caller.
+	SignerWorkflow string `json:"signerWorkflow,omitempty"`
 	// Ref is where it is stored (e.g. an attestation's repository@digest).
 	Ref string `json:"ref,omitempty"`
 	// Timestamp is when it was signed or produced (RFC 3339), if known.

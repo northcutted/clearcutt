@@ -704,3 +704,82 @@ func TestKeylessTransparencyLogFailure(t *testing.T) {
 		t.Errorf("keyless log failure as evidence: %+v", item)
 	}
 }
+
+// githubProvenance is SLSA provenance as actions/attest-build-provenance
+// writes it.
+func githubProvenance(repo, workflow string) map[string]any {
+	return map[string]any{
+		"buildDefinition": map[string]any{
+			"buildType":            githubBuildType,
+			"externalParameters":   map[string]any{"workflow": map[string]string{"ref": "refs/heads/main", "repository": repo, "path": workflow}},
+			"resolvedDependencies": []any{map[string]any{"uri": "git+" + repo + "@refs/heads/main", "digest": map[string]string{"gitCommit": "abc123"}}},
+		},
+		"runDetails": map[string]any{"builder": map[string]string{"id": repo + "/" + workflow + "@refs/heads/main"}},
+	}
+}
+
+// TestGitHubArtifactAttestations: provenance GitHub's attest-build-provenance
+// pushed to the registry is labeled github-attestation, told by its verified
+// content, with the signer workflow gh attestation verify needs; unverified
+// copies aren't read, so they aren't.
+func TestGitHubArtifactAttestations(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ours := fulcioCert(t, ourSigner, ghIssuer)
+	evil := fulcioCert(t, evilSigner, ghIssuer)
+	push := func(name string, predicate map[string]any, cert string) {
+		idx := pushIndex(t, host+"/"+name+":1", nil, built, nil)
+		d := descriptorOf(t, idx)
+		attach(t, host+"/"+name, d, bundleJSON(t, PredicateCosignSign, d.Digest.String(), map[string]any{}, ours))
+		attach(t, host+"/"+name, d, bundleJSON(t, "https://slsa.dev/provenance/v1", d.Digest.String(), predicate, cert))
+	}
+	push("github", githubProvenance("https://github.com/acme/images", ".github/workflows/images.yml"), ours)
+	push("cosign", provenancePredicate("https://github.com/acme/images", "abc123"), ours)
+	push("forged", githubProvenance("https://github.com/acme/images", ".github/workflows/images.yml"), evil)
+
+	verifier := acmeVerifier()
+	r, err := Build(context.Background(), observe(t, host, "github:1", "cosign:1", "forged:1"), Options{
+		Name: "gh", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: verifier, Platforms: []string{"linux/amd64"},
+		Policy: report.Policy{Required: []string{"provenance"}, TrustedSigners: verifier.Signers},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateReport(t, r)
+	img := map[string]report.Image{}
+	for _, i := range r.Images {
+		img[i.ID] = i
+	}
+	const workflow = "github.com/acme/images/.github/workflows/images.yml"
+	if p := img["github"].Evidence.Provenance; p.Status != "verified" || p.Source != "github-attestation" || p.SignerWorkflow != workflow ||
+		p.Signer == nil || p.Signer.SourceRepository != "https://github.com/acme/images" {
+		t.Errorf("GitHub provenance: %+v", p)
+	}
+	if s := img["github"].Source; s == nil || s.Basis != "provenance" || s.URL != "https://github.com/acme/images" || s.Revision != "abc123" {
+		t.Errorf("GitHub provenance source: %+v", s)
+	}
+	if p := img["cosign"].Evidence.Provenance; p.Status != "verified" || p.Source != "cosign-attestation" || p.SignerWorkflow != workflow {
+		t.Errorf("cosign provenance: %+v", p)
+	}
+	if p := img["forged"].Evidence.Provenance; p.Status != "failed" || p.Source != "cosign-attestation" || p.SignerWorkflow != "" {
+		t.Errorf("unverified GitHub provenance: %+v", p)
+	}
+	if s := img["github"].Evidence.Signature; s.SignerWorkflow != workflow {
+		t.Errorf("signature signer workflow: %+v", s)
+	}
+}
+
+func TestSignerWorkflow(t *testing.T) {
+	for s, want := range map[report.Signer]string{
+		{Identity: ourSigner, Issuer: ghIssuer}: "github.com/acme/images/.github/workflows/images.yml",
+		{Identity: "https://github.com/northcutted/clearcutt-factory/.github/workflows/fleet.yml@refs/tags/v0.2.0", Issuer: ghIssuer}: "github.com/northcutted/clearcutt-factory/.github/workflows/fleet.yml",
+		{Identity: "alice@acme.com", Issuer: "https://accounts.google.com"}:                                                           "",
+		{Identity: "https://github.com/acme/images", Issuer: ghIssuer}:                                                                "",
+		{Key: "/etc/acme.pub"}: "",
+	} {
+		if got := signerWorkflow(s); got != want {
+			t.Errorf("%+v: %q, want %q", s, got, want)
+		}
+	}
+}

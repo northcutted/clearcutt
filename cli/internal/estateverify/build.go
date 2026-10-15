@@ -2,6 +2,7 @@ package estateverify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -728,7 +729,7 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 		return "missing"
 	}
 	if item.Source == "" {
-		item.Source, item.PredicateType, item.Ref, item.Timestamp, item.Signer = got.Source, got.PredicateType, got.Ref, got.Timestamp, got.Signer
+		item.Source, item.PredicateType, item.Ref, item.Timestamp, item.Signer, item.SignerWorkflow = got.Source, got.PredicateType, got.Ref, got.Timestamp, got.Signer, got.SignerWorkflow
 	}
 	if got.Detail != "" {
 		item.Detail = got.Detail
@@ -831,16 +832,58 @@ func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, 
 	return "", fmt.Errorf("gave up following rebase records at %s", ref)
 }
 
+// sourceName says how evidence is stored, from what can be seen without
+// reading its content.
 func sourceName(f Found) string {
 	switch {
 	case f.Format == FormatRawReferrer:
 		return "oci-referrer"
 	case f.Kind == KindSignature:
 		return "cosign-signature"
-	case f.Kind == KindProvenance && f.Signer != nil && strings.Contains(f.Signer.Identity, "/attest-build-provenance"):
-		return "github-attestation"
 	}
 	return "cosign-attestation"
+}
+
+// githubBuildType is the build type of the SLSA provenance GitHub artifact
+// attestations carry (actions/attest-build-provenance).
+const githubBuildType = "https://actions.github.io/buildtypes/workflow/v1"
+
+// verifiedSourceName says where verified evidence came from. A GitHub
+// artifact attestation (actions/attest-build-provenance, pushed to the
+// registry) is a Sigstore bundle like cosign's; its verified content tells
+// it apart: SLSA provenance of GitHub's workflow build type. Unverified
+// copies aren't read, so they keep their storage name.
+func verifiedSourceName(c verifiedCopy) string {
+	if c.Kind == KindProvenance && c.Format == FormatBundle {
+		var p struct {
+			BuildDefinition struct {
+				BuildType string `json:"buildType"`
+			} `json:"buildDefinition"`
+		}
+		if json.Unmarshal(c.Predicate(), &p) == nil && p.BuildDefinition.BuildType == githubBuildType {
+			return "github-attestation"
+		}
+	}
+	return sourceName(c.Found)
+}
+
+// signerWorkflow is the GitHub Actions workflow a verified signer's identity
+// names, without its scheme and ref (github.com/OWNER/REPO/.github/workflows/
+// FILE), as gh attestation verify --signer-workflow takes it; "" for other
+// signers.
+func signerWorkflow(s report.Signer) string {
+	if s.Issuer != githubIssuer {
+		return ""
+	}
+	rest, ok := strings.CutPrefix(s.Identity, "https://")
+	if !ok {
+		return ""
+	}
+	wf, _, ok := strings.Cut(rest, "@")
+	if !ok || !strings.Contains(wf, "/.github/workflows/") {
+		return ""
+	}
+	return wf
 }
 
 // worst returns the most concerning status (failed, missing, unknown,

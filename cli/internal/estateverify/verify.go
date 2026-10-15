@@ -816,7 +816,8 @@ func verifyEvidence(ctx context.Context, v *Verifier, repo, digest, kind, imageS
 	})
 	best := verified[0]
 	signer := best.signer
-	item := report.EvidenceItem{Status: "verified", Source: sourceName(best.Found), PredicateType: best.PredicateType, Ref: best.Ref, Timestamp: best.Timestamp, Signer: &signer}
+	item := report.EvidenceItem{Status: "verified", Source: verifiedSourceName(best), PredicateType: best.PredicateType, Ref: best.Ref, Timestamp: best.Timestamp, Signer: &signer,
+		SignerWorkflow: signerWorkflow(signer)}
 	if n := len(copies) - len(verified); n == 1 {
 		item.Detail = "1 other attached copy isn't verified and wasn't read."
 	} else if n > 1 {

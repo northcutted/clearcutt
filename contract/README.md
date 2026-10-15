@@ -53,7 +53,11 @@ item's `signer` is the signer cosign checked; on any other status it is what
 the evidence's certificate claims, unverified. `signer.tlog: false` on
 verified evidence means cosign checked the key's signature but no
 transparency log entry, because the policy's key signer says it signs
-without one. A rebased image's `factory`
+without one. `source: github-attestation` marks a GitHub artifact attestation
+in the registry (told by its verified content, so only on verified
+evidence), and `signerWorkflow` names the GitHub Actions workflow that signed
+verified evidence the way `gh attestation verify --signer-workflow` takes it
+(`signer.sourceRepository` gives its `--repo`). A rebased image's `factory`
 kind, name, and stack (`stack`, `stackRef`, `stackDigest`) come from the
 verified recipe of the image it was rebased from, reached through verified
 rebase records, so rebased apps are listed under `stacks` too.

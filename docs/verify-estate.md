@@ -262,6 +262,14 @@ tell the report came from your job.
   status (anything but `verified` means some platform's packages are missing).
 - `base.daysBehindUnknown` marks a stale base whose `daysBehind` couldn't be
   measured.
+- Provenance from GitHub's `actions/attest-build-provenance`, pushed to the
+  registry, is `source: github-attestation`, told by its verified content
+  (SLSA provenance of GitHub's workflow build type); an unverified copy isn't
+  read, so it shows as `cosign-attestation`. Verified evidence a GitHub
+  Actions workflow signed records `signerWorkflow`, so a reader can offer
+  `gh attestation verify oci://REPOSITORY@DIGEST --bundle-from-oci --repo
+  OWNER/REPO --signer-workflow SIGNER_WORKFLOW`, with `--repo` from
+  `signer.sourceRepository`.
 - `tests` is `present` (source `recipe`) for clearcutt-factory images whose
   verified recipe declares a smoke test: factory runs it on every platform
   before pushing, but doesn't attest the result. A rebased image's stays

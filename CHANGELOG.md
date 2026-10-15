@@ -135,6 +135,15 @@ When a release is cut, move these entries under a heading for its version.
   severities and findings without a fix are only counted, to keep the history
   small. The `northcutted-images` fixture's newest rows are regenerated from
   its report.
+- Provenance from GitHub's `actions/attest-build-provenance` pushed to the
+  registry is labeled `github-attestation` (it was `cosign-attestation`: the
+  label looked for `/attest-build-provenance` in the signer's identity, which
+  is the calling workflow). It is told by its verified content, SLSA
+  provenance of GitHub's workflow build type, so only verified evidence is
+  labeled so. Verified evidence a GitHub Actions workflow signed records
+  `signerWorkflow` (new, additive), the workflow without its ref, so readers
+  can offer `gh attestation verify --signer-workflow`. The committed
+  `northcutted-images` fixture predates both; regenerating it adds them.
 
 ## v0.15.0
 
