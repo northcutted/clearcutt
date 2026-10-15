@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/yaml"
@@ -55,6 +56,18 @@ func ReadPolicy(path string) (report.Policy, error) {
 	if f.APIVersion != report.APIVersion || f.Kind != "VerificationPolicy" {
 		return report.Policy{}, fmt.Errorf("%s: expected apiVersion %s and kind VerificationPolicy", path, report.APIVersion)
 	}
+	// Key files are relative to the file that names them, as clearcutt-factory
+	// reads them: cosign (and, for --reproduce, clearcutt-factory) runs
+	// elsewhere.
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return report.Policy{}, err
+	}
+	for _, signers := range [][]report.Signer{f.TrustedSigner, f.StackSigners} {
+		for i := range signers {
+			signers[i].Key = keyPath(dir, signers[i].Key)
+		}
+	}
 	p := report.Policy{Required: f.Required, TrustedSigners: f.TrustedSigner, FailOn: f.FailOn, OnlyFixed: f.OnlyFixed, MaxDaysBehind: f.MaxDaysBehind, MaxScanAgeDays: f.MaxScanAgeDays, StackSigners: f.StackSigners}
 	if f.TrustPolicy != "" {
 		tp := f.TrustPolicy
@@ -84,6 +97,15 @@ func ReadTrustPolicy(path string) (report.TrustPolicy, error) {
 	if t.APIVersion != report.APIVersion || t.Kind != report.KindTrustPolicy {
 		return report.TrustPolicy{}, fmt.Errorf("%s: expected apiVersion %s and kind %s", path, report.APIVersion, report.KindTrustPolicy)
 	}
+	// A key file is relative to the trust policy (as clearcutt-factory reads
+	// it), so cosign finds it wherever it runs and the report names it.
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return report.TrustPolicy{}, err
+	}
+	for i := range t.Signers {
+		t.Signers[i].Key = keyPath(dir, t.Signers[i].Key)
+	}
 	for i, s := range t.Signers {
 		for _, r := range s.Roles {
 			if r != "image" && r != "stack" {
@@ -95,6 +117,16 @@ func ReadTrustPolicy(path string) (report.TrustPolicy, error) {
 		}
 	}
 	return t, nil
+}
+
+// keyPath resolves a key file relative to dir, the directory of the file
+// that names it. cosign KMS and other URIs (with "://", or pkcs11:) are used
+// as they are.
+func keyPath(dir, k string) string {
+	if k == "" || strings.Contains(k, "://") || strings.HasPrefix(k, "pkcs11:") || filepath.IsAbs(k) {
+		return k
+	}
+	return filepath.Join(dir, k)
 }
 
 // ValidatePolicy checks the policy's requirements and signers.

@@ -156,6 +156,11 @@ Name it from a verification policy (`trustPolicy: trust.yaml`, relative to the
 policy) or pass `--trust-policy trust.yaml`; its image signers join the
 policy's `trustedSigners`.
 
+A signer's `key:` file is relative to the file that names it (the trust
+policy, or the verification policy), as clearcutt-factory reads it, so cosign
+and `--reproduce` find it wherever they run, and the report names the file
+that was used. A cosign KMS URI (`awskms://…`, `pkcs11:…`) is used as written.
+
 With `maxDaysBehind`, an image whose base couldn't be placed is `unverified`:
 it might be behind. So is one whose base is behind its newest version by an
 unknown number of days (`base.daysBehindUnknown`: a creation time is missing,
@@ -245,8 +250,8 @@ tell the report came from your job.
 `--reproduce` rebuilds every clearcutt-factory image from its verified recipe
 (or repeats its verified rebase) with `clearcutt-factory verify --image`, bound
 to exactly the signer that verified the recipe or rebase record the report
-shows (its identity, issuer, and the repository of the run that signed), and
-records whether the digest matched. It needs `clearcutt-factory` on `PATH` (or
+shows (its identity, issuer, and the repository of the run that signed; or
+the trusted key), and records whether the digest matched. It needs `clearcutt-factory` on `PATH` (or
 `--factory-path`) and a container runtime, and takes as long as the builds do.
 Each rebuild works in its own directory under the user cache directory (on
 macOS, `~/Library/Caches/clearcutt-verify/reproduce/`), which is kept with its

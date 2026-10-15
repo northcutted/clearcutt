@@ -518,9 +518,18 @@ func fakeCosign(ctx context.Context, forged map[string]bool, args []string) ([]b
 	}
 	var sigs []map[string]any
 	var out bytes.Buffer
+	key := flag("--key")
 	for _, f := range found {
 		s := f.Signer
-		if f.Format == FormatRawReferrer || forged[f.Ref] || s == nil || !strings.HasPrefix(s.Identity, "https://github.com/acme/") {
+		switch {
+		case f.Format == FormatRawReferrer || forged[f.Ref]:
+			continue
+		case key != "":
+			// Key-signed copies carry no certificate; acme's key signed them.
+			if s != nil && s.Key == "" || !strings.HasSuffix(key, "acme.pub") {
+				continue
+			}
+		case s == nil || !strings.HasPrefix(s.Identity, "https://github.com/acme/"):
 			continue
 		}
 		if id := flag("--certificate-identity"); id != "" && s.Identity != id {

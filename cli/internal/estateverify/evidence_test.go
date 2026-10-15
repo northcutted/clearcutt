@@ -2,16 +2,26 @@ package estateverify
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/static"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/northcutted/clearcutt-verify/internal/report"
 )
@@ -452,5 +462,127 @@ func TestAttachedCopiesCantCrowdOutATrustedOne(t *testing.T) {
 	// trusted scan's signer (1), and the forged signers of its copies (10).
 	if calls > 2*12 {
 		t.Errorf("%d cosign runs for 2 platforms", calls)
+	}
+}
+
+// pushKeySignedAttestation attaches an attestation the way cosign v2 did
+// with a key: an .att tag holding a DSSE envelope, and no certificate.
+func pushKeySignedAttestation(t *testing.T, repo, digest, predicateType string, predicate any) {
+	t.Helper()
+	st, _ := json.Marshal(map[string]any{"_type": "https://in-toto.io/Statement/v1", "predicateType": predicateType, "predicate": predicate,
+		"subject": []any{map[string]any{"name": repo, "digest": map[string]string{"sha256": strings.TrimPrefix(digest, "sha256:")}}}})
+	env, _ := json.Marshal(map[string]any{"payloadType": "application/vnd.in-toto+json", "payload": base64.StdEncoding.EncodeToString(st), "signatures": []any{}})
+	img, err := mutate.Append(mutate.MediaType(empty.Image, types.OCIManifestSchema1),
+		mutate.Addendum{Layer: static.NewLayer(env, "application/vnd.dsse.envelope.v1+json"), Annotations: map[string]string{"predicateType": predicateType}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := name.ParseReference(repo + ":" + strings.Replace(digest, ":", "-", 1) + ".att")
+	if err := remote.Write(r, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestKeySignedRecipeReproduces: a trust policy's key file is relative to
+// the trust policy, and --reproduce rebuilds a key-signed image bound to that
+// key, wherever cosign and clearcutt-factory run.
+func TestKeySignedRecipeReproduces(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	idx := pushIndex(t, host+"/tools:1", nil, built, nil)
+	d := descriptorOf(t, idx)
+	pushKeySignedAttestation(t, host+"/tools", d.Digest.String(), PredicateRecipe, imageRecipePredicate(host+"/base:latest", "sha256:"+strings.Repeat("e", 64)))
+
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"keys/acme.pub":      "-----BEGIN PUBLIC KEY-----\n-----END PUBLIC KEY-----\n",
+		"policy/trust.yaml":  "apiVersion: clearcutt.dev/v1\nkind: TrustPolicy\nsigners:\n  - name: acme-key\n    key: ../keys/acme.pub\n",
+		"policy/verify.yaml": "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\nrequired: [recipe]\ntrustPolicy: trust.yaml\n",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Read from elsewhere: the key resolves against the trust policy.
+	var p report.Policy
+	t.Run("read", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		var err error
+		if p, err = ReadPolicy(filepath.Join(dir, "policy", "verify.yaml")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	key := filepath.Join(dir, "keys", "acme.pub")
+	if len(p.TrustedSigners) != 1 || p.TrustedSigners[0].Key != key {
+		t.Fatalf("trusted signers %+v, want key %s", p.TrustedSigners, key)
+	}
+	p.Reproduce = true
+
+	var args []string
+	reproducer := FactoryReproducer{Dir: t.TempDir(), Run: func(_ context.Context, _, _ string, a ...string) ([]byte, []byte, error) {
+		args = a
+		return []byte("reproducible: rebuilt " + d.Digest.String() + " matches\n"), nil, nil
+	}}
+	v := acmeVerifier()
+	v.Signers = p.TrustedSigners
+	r, err := Build(context.Background(), observe(t, host, "tools:1"), Options{Name: "keys", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: v, Policy: p, Reproducer: reproducer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateReport(t, r)
+	tl := r.Images[0]
+	if e := tl.Evidence.Recipe; e.Status != "verified" || e.Signer == nil || e.Signer.Key != key {
+		t.Errorf("recipe: %+v %+v", e, e.Signer)
+	}
+	if tl.Reproducibility.Status != "reproduced" || tl.Verdict.Status != "verified" {
+		t.Errorf("reproducibility %+v, verdict %+v", tl.Reproducibility, tl.Verdict)
+	}
+	if got := strings.Join(args, " "); !strings.Contains(got, "--key "+key) || strings.Contains(got, "certificate") {
+		t.Errorf("clearcutt-factory args %q", got)
+	}
+}
+
+// TestKeyPaths: key files are relative to the file that names them; KMS and
+// other cosign URIs, and absolute paths, are left alone.
+func TestKeyPaths(t *testing.T) {
+	dir := t.TempDir()
+	policy := filepath.Join(dir, "policy.yaml")
+	body := "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\nrequired: [signature]\ntrustedSigners:\n" +
+		"  - key: keys/images.pub\n  - key: awskms:///alias/acme\n  - key: pkcs11:token=acme\n  - key: /etc/acme/images.pub\nstackSigners:\n  - key: stacks.pub\n"
+	if err := os.WriteFile(policy, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := ReadPolicy(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range append(p.TrustedSigners, p.StackSigners...) {
+		got = append(got, s.Key)
+	}
+	want := []string{filepath.Join(dir, "keys/images.pub"), "awskms:///alias/acme", "pkcs11:token=acme", "/etc/acme/images.pub", filepath.Join(dir, "stacks.pub")}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("keys %q, want %q", got, want)
+	}
+}
+
+// TestReproduceWithKeySigner: a recipe a trusted key verified is rebuilt
+// against that key (it was never reproduced: no policy regexp matches a key).
+func TestReproduceWithKeySigner(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	img := &report.Image{Repository: "r", Digest: digest, Evidence: report.Evidence{Recipe: report.EvidenceItem{Status: "verified"}, Rebase: report.EvidenceItem{Status: "not-applicable"}}}
+	var got report.Signer
+	opts := Options{Policy: report.Policy{Reproduce: true, TrustedSigners: []report.Signer{{Key: "/etc/acme/acme.pub"}}},
+		Reproducer: reproducerFunc(func(_ context.Context, _ string, s report.Signer) (string, error) {
+			got = s
+			return digest, nil
+		})}
+	r := reproduce(context.Background(), img, imageData{recipeVerified: true, recipeSigner: &report.Signer{Key: "/etc/acme/acme.pub"}}, opts)
+	if r.Status != "reproduced" || got != (report.Signer{Key: "/etc/acme/acme.pub"}) {
+		t.Errorf("reproduced %+v with signer %+v", r, got)
 	}
 }

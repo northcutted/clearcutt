@@ -80,6 +80,12 @@ When a release is cut, move these entries under a heading for its version.
 - The GitHub Action pinned by commit SHA installs the release tagged at that
   commit (it installed the latest release), and fails for a commit no release
   tag points at.
+- A trust policy's or verification policy's `key:` file is relative to the
+  file that names it, as clearcutt-factory reads it (it was passed to cosign
+  as written, and cosign, and `--reproduce`, run elsewhere); KMS URIs are
+  used as written. `--reproduce` now rebuilds images whose recipe a trusted
+  key verified, with `--key` (they were always `not-checked`, leaving every
+  such image `unverified`).
 - `registry scan` skips `sha256-<digest>` tags, where registries without the
   OCI Referrers API keep an image's referrers. They sort above `latest`, so
   with few tags kept per repository the scan could pick one as the image.
