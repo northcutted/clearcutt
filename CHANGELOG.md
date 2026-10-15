@@ -104,6 +104,15 @@ When a release is cut, move these entries under a heading for its version.
   rebased image's `tests` stays `missing`, since its rebase record doesn't say
   whether a smoke test ran; its detail now names the test the original's
   recipe declares and says why it isn't counted.
+- Evidence a key signed without a transparency log can be verified: `tlog:
+  false` on a key signer (in a trust policy or a VerificationPolicy; new,
+  optional, additive in both schemas) passes `--insecure-ignore-tlog=true` to
+  cosign for that key only, and verified evidence records `signer.tlog:
+  false`. Keyless signers can't set it. Before, such evidence always failed,
+  and said it was "not signed by a trusted signer"; a failure on the
+  transparency log now says the log inclusion couldn't be verified (and, for
+  keys, how to accept it). clearcutt-factory reads the shared trust policy
+  strictly, so it has to accept `tlog` before a shared file uses it.
 
 ## v0.15.0
 

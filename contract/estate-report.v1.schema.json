@@ -898,6 +898,10 @@
         "sourceRepositoryOwner": {
           "description": "SourceRepositoryOwner, in the policy, accepts runs in any of the owner's repositories, e.g. https://github.com/acme.",
           "type": "string"
+        },
+        "tlog": {
+          "description": "Tlog false, in the policy, accepts a key signer's signatures and attestations without a transparency log entry (cosign --insecure-ignore-tlog), for a key that signs without one (a private or offline Sigstore setup). Nothing then shows when evidence was signed, so set it only for keys that never log. Keyless signers can't set it. Absent or true, log inclusion is checked. On verified evidence, false says it wasn't.",
+          "type": "boolean"
         }
       },
       "type": "object"

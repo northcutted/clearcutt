@@ -50,7 +50,10 @@ What the report reads out of evidence (`vulnerabilities`, `packages`,
 `source` with `basis: provenance`, `factory`) comes only from evidence that is
 `verified`; nothing in `present` or `failed` evidence is read. A verified
 item's `signer` is the signer cosign checked; on any other status it is what
-the evidence's certificate claims, unverified. A rebased image's `factory`
+the evidence's certificate claims, unverified. `signer.tlog: false` on
+verified evidence means cosign checked the key's signature but no
+transparency log entry, because the policy's key signer says it signs
+without one. A rebased image's `factory`
 kind, name, and stack (`stack`, `stackRef`, `stackDigest`) come from the
 verified recipe of the image it was rebased from, reached through verified
 rebase records, so rebased apps are listed under `stacks` too.

@@ -32,6 +32,10 @@ type TrustedSigner struct {
 	SourceRepositoryOwner string   `json:"sourceRepositoryOwner,omitempty"`
 	SourceRef             string   `json:"sourceRef,omitempty"`
 	SourceMatchesImage    bool     `json:"sourceMatchesImage,omitempty"`
+	// Tlog false accepts this key signer's evidence without a transparency
+	// log entry (cosign --insecure-ignore-tlog), for a key that signs
+	// without one. Keyless signers can't set it.
+	Tlog *bool `json:"tlog,omitempty"`
 }
 
 // Signer is the trusted signer's identity.
@@ -39,7 +43,7 @@ func (s TrustedSigner) Signer() Signer {
 	return Signer{
 		Identity: s.Identity, IdentityRegexp: s.IdentityRegexp, Issuer: s.Issuer, Key: s.Key,
 		SourceRepository: s.SourceRepository, SourceRepositoryOwner: s.SourceRepositoryOwner,
-		SourceRef: s.SourceRef, SourceMatchesImage: s.SourceMatchesImage,
+		SourceRef: s.SourceRef, SourceMatchesImage: s.SourceMatchesImage, Tlog: s.Tlog,
 	}
 }
 

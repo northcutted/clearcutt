@@ -138,6 +138,14 @@ type Signer struct {
 	// repository the image names as its source
 	// (org.opencontainers.image.source).
 	SourceMatchesImage bool `json:"sourceMatchesImage,omitempty"`
+	// Tlog false, in the policy, accepts a key signer's signatures and
+	// attestations without a transparency log entry (cosign
+	// --insecure-ignore-tlog), for a key that signs without one (a private
+	// or offline Sigstore setup). Nothing then shows when evidence was signed,
+	// so set it only for keys that never log. Keyless signers can't set it.
+	// Absent or true, log inclusion is checked. On verified evidence, false
+	// says it wasn't.
+	Tlog *bool `json:"tlog,omitempty"`
 }
 
 // Summary holds the estate's headline numbers.

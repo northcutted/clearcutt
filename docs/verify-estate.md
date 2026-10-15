@@ -162,6 +162,25 @@ policy, or the verification policy), as clearcutt-factory reads it, so cosign
 and `--reproduce` find it wherever they run, and the report names the file
 that was used. A cosign KMS URI (`awskms://…`, `pkcs11:…`) is used as written.
 
+A key that signs without a transparency log (a private or offline Sigstore
+setup, `--tlog-upload=false`) needs `tlog: false` on its signer:
+
+```yaml
+  - name: offline-key
+    key: keys/images.pub
+    tlog: false   # cosign --insecure-ignore-tlog, for this key only
+```
+
+Without it, its evidence is `failed`, and the detail says the transparency
+log inclusion couldn't be verified (not that someone else signed it). With
+it, cosign checks the signature but not the log for that key, so nothing shows
+when the evidence was signed; verified evidence records `signer.tlog: false`.
+Keyless signers can't set it: a certificate is valid only when the log shows
+it was used in time. clearcutt-factory reads trust policies strictly, so a
+shared one can use `tlog` once clearcutt-factory accepts the field too.
+`--reproduce` passes `--insecure-ignore-tlog=true` to `clearcutt-factory
+verify` for such a key, which needs a clearcutt-factory that accepts it.
+
 With `maxDaysBehind`, an image whose base couldn't be placed is `unverified`:
 it might be behind. So is one whose base is behind its newest version by an
 unknown number of days (`base.daysBehindUnknown`: a creation time is missing,

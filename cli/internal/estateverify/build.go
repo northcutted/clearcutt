@@ -877,7 +877,7 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	}
 	// The rebuild verifies the recipe (or rebase record) again: bind it to
 	// the signer this report shows verified it, exactly.
-	bound := report.Signer{Key: signer.Key}
+	bound := report.Signer{Key: signer.Key, Tlog: signer.Tlog}
 	if signer.Key == "" {
 		bound = report.Signer{Identity: signer.Identity, Issuer: signer.Issuer, SourceRepository: signer.SourceRepository}
 	}
