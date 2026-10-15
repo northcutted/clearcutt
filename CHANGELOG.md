@@ -80,6 +80,9 @@ When a release is cut, move these entries under a heading for its version.
 - The GitHub Action pinned by commit SHA installs the release tagged at that
   commit (it installed the latest release), and fails for a commit no release
   tag points at.
+- `registry scan` skips `sha256-<digest>` tags, where registries without the
+  OCI Referrers API keep an image's referrers. They sort above `latest`, so
+  with few tags kept per repository the scan could pick one as the image.
 
 ## v0.15.0
 
