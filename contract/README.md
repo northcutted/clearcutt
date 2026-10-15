@@ -50,7 +50,10 @@ What the report reads out of evidence (`vulnerabilities`, `packages`,
 `source` with `basis: provenance`, `factory`) comes only from evidence that is
 `verified`; nothing in `present` or `failed` evidence is read. A verified
 item's `signer` is the signer cosign checked; on any other status it is what
-the evidence's certificate claims, unverified.
+the evidence's certificate claims, unverified. A rebased image's `factory`
+kind, name, and stack (`stack`, `stackRef`, `stackDigest`) come from the
+verified recipe of the image it was rebased from, reached through verified
+rebase records, so rebased apps are listed under `stacks` too.
 
 **Bases.** `base.strength` says how an image's base is known: `proof` means the
 image starts with the base's exact layer digests (`method: layer-prefix`);

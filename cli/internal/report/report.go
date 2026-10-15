@@ -41,8 +41,9 @@ type Report struct {
 	// built on, with their newest observed version.
 	Bases []Base `json:"bases"`
 	// Stacks are the clearcutt-factory registry stacks the estate's apps
-	// are built on: each version in use, who signed it, and which apps are
-	// pinned to an older version than the stack's tag names now.
+	// are built on, rebased apps included: each version in use, who signed
+	// it, and which apps are pinned to an older version than the stack's tag
+	// names now.
 	Stacks []Stack `json:"stacks,omitempty"`
 	// Packages index which images ship which package versions. Only images
 	// whose package set could be read appear here; the rest are counted in
@@ -441,7 +442,9 @@ type Factory struct {
 	Kind string `json:"kind,omitempty" enum:"Image,App"`
 	// Name is the manifest's metadata.name (absent like kind).
 	Name string `json:"name,omitempty"`
-	// Stack is the stack an app was built on.
+	// Stack is the stack an app was built on. A rebased app's, like its
+	// stackRef and stackDigest, comes from the recipe of the image it was
+	// rebased from: a rebase keeps the layers its stack built.
 	Stack string `json:"stack,omitempty"`
 	// StackRef is the registry stack an app was built on, as its lock names
 	// it (absent for a stack defined beside the app).

@@ -382,3 +382,93 @@ func mustHash(t *testing.T, digest string) v1.Hash {
 	}
 	return h
 }
+
+// TestRebasedAppKeepsItsStack: after a fleet rebase (V11), an app's stack
+// comes from the verified recipe of the image it was rebased from, reached
+// through its verified rebase record, so the stack version and its signature
+// are still reported and checked. Nothing comes from unverified evidence.
+func TestRebasedAppKeepsItsStack(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ours := fulcioCert(t, ourSigner, ghIssuer)
+	evil := fulcioCert(t, evilSigner, ghIssuer)
+
+	stack, err := mutate.Append(mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), "application/vnd.clearcutt.factory.stack.v1+yaml"),
+		mutate.Addendum{Layer: static.NewLayer([]byte("kind: Stack\nmetadata: {name: python}\n"), "application/vnd.clearcutt.factory.stack.v1+yaml")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stackRef, _ := name.ParseReference(host + "/stacks/python:1")
+	if err := remote.Write(stackRef, stack); err != nil {
+		t.Fatal(err)
+	}
+	stackDigest, _ := stack.Digest()
+	attach(t, host+"/stacks/python", v1.Descriptor{MediaType: types.OCIManifestSchema1, Digest: stackDigest}, bundleJSON(t, PredicateCosignSign, stackDigest.String(), map[string]any{}, ours))
+
+	runOld := pushIndex(t, host+"/platform/run-python:held", nil, built.Add(-24*time.Hour), nil)
+	runNew := pushIndex(t, host+"/platform/run-python:1", nil, built, nil)
+	appRecipe := func(app string) map[string]any {
+		return map[string]any{
+			"factory":  map[string]string{"version": "v0.1.1"},
+			"manifest": "apiVersion: factory.clearcutt.dev/v1alpha1\nkind: App\nmetadata:\n  name: " + app + "\nspec:\n  stack: " + host + "/stacks/python:1\n  test:\n    http: {port: 8080, path: /healthz}\n",
+			"lock":     "app:\n  stack: python\n  stackDigest: sha256:" + strings.Repeat("d", 64) + "\n  stackArtifact: {ref: " + host + "/stacks/python:1, digest: " + stackDigest.String() + "}\n",
+		}
+	}
+	// rebasedApp pushes an app built on the held run image, signs its recipe
+	// with recipeCert, and the fleet's rebase of it onto the new run image.
+	rebasedApp := func(app, recipeCert string) {
+		original := pushIndex(t, host+"/apps/"+app+":built", runOld, built.Add(-12*time.Hour), nil)
+		od := descriptorOf(t, original)
+		attach(t, host+"/apps/"+app, od, bundleJSON(t, PredicateRecipe, od.Digest.String(), appRecipe(app), recipeCert))
+		rebased := pushIndex(t, host+"/apps/"+app+":1", runNew, built, nil)
+		rd := descriptorOf(t, rebased)
+		attach(t, host+"/apps/"+app, rd, bundleJSON(t, PredicateCosignSign, rd.Digest.String(), map[string]any{}, ours))
+		attach(t, host+"/apps/"+app, rd, bundleJSON(t, PredicateRebase, rd.Digest.String(),
+			map[string]any{"factory": map[string]string{"version": "v0.1.1"}, "image": host + "/apps/" + app + "@" + od.Digest.String()}, ours))
+	}
+	rebasedApp("catalog", ours)
+	// checkout's original recipe was signed by a stranger: nothing is read from it.
+	rebasedApp("checkout", evil)
+
+	verifier := acmeVerifier()
+	r, err := Build(context.Background(), observe(t, host, "platform/run-python:1", "apps/catalog:1", "apps/checkout:1"), Options{
+		Name: "rebased", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: verifier, Platforms: []string{"linux/amd64"},
+		Policy: report.Policy{TrustedSigners: verifier.Signers, StackSigners: verifier.Signers},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateReport(t, r)
+	img := map[string]report.Image{}
+	for _, i := range r.Images {
+		img[i.ID] = i
+	}
+
+	c := img["apps/catalog"]
+	if f := c.Factory; f == nil || f.Kind != "App" || f.Name != "catalog" || f.Stack != "python" || f.StackRef != host+"/stacks/python:1" || f.StackDigest != stackDigest.String() || f.RebasedFrom == "" {
+		t.Fatalf("rebased app factory: %+v (warnings %v)", f, c.Warnings)
+	}
+	if len(r.Stacks) != 1 {
+		t.Fatalf("stacks: %+v", r.Stacks)
+	}
+	if st := r.Stacks[0]; st.Ref != host+"/stacks/python:1" || st.Consumers != 1 || len(st.Versions) != 1 || st.Versions[0].Signature.Status != "verified" ||
+		strings.Join(st.Versions[0].Images, ",") != "apps/catalog" || !st.Versions[0].Current {
+		t.Errorf("stack: %+v", st)
+	}
+	// The rebase record doesn't say whether the smoke test ran.
+	if e := c.Evidence.Tests; e.Status != "missing" || !strings.Contains(e.Detail, "GET :8080/healthz") || !strings.Contains(e.Detail, "doesn't say whether") {
+		t.Errorf("rebased app tests: %+v", e)
+	}
+
+	co := img["apps/checkout"]
+	if f := co.Factory; f == nil || f.Kind != "" || f.StackRef != "" || f.StackDigest != "" || f.RebasedFrom == "" {
+		t.Errorf("app rebased from an image whose recipe a stranger signed: %+v", f)
+	}
+	if !strings.Contains(strings.Join(co.Warnings, ";"), "rebased from couldn't be read") {
+		t.Errorf("checkout warnings: %v", co.Warnings)
+	}
+	if e := co.Evidence.Tests; e.Detail != "No test attestation." {
+		t.Errorf("checkout tests read from an unverified recipe: %+v", e)
+	}
+}

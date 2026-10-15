@@ -186,8 +186,15 @@ func buildImage(ctx context.Context, obs estategraph.Observation, graph estategr
 	claimedSource := firstNonEmpty(obs.Labels["org.opencontainers.image.source"], obs.Annotations["org.opencontainers.image.source"])
 	ev, data := gatherEvidence(ctx, repo, img.Digest, claimedSource, platforms, opts)
 	if f := data.factory; f != nil && f.Kind == "" && f.RebasedFrom != "" && data.rebaseVerified {
-		if err := originalRecipe(ctx, f, claimedSource, opts); err != nil {
+		test, err := originalRecipe(ctx, f, claimedSource, opts)
+		if err != nil {
 			img.Warnings = append(img.Warnings, "the recipe of the image it was rebased from couldn't be read: "+err.Error())
+		}
+		if test != "" && ev.Tests.Status == "missing" {
+			// The rebase record doesn't say whether a smoke test ran, so the
+			// original's declared test can't stand for the rebased image.
+			ev.Tests.Detail = "No test attestation. The recipe of the image it was rebased from declares a smoke test (" + test +
+				"), but the rebase record doesn't say whether the rebase ran it: clearcutt-factory runs the app's smoke test when it rebases from the app manifest (rebase -f, as its fleet workflow does), not when it rebases --image or with --no-test."
 		}
 	}
 	baseOf(&img, obs, graph, ids, created)
@@ -764,43 +771,47 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 // originalRecipe names a rebased image after the recipe it was first built
 // from: a rebase record names only the image whose layers moved, so it
 // follows verified rebase records back (an image may have been rebased more
-// than once) to a verified recipe, and reads its kind, name, and stack.
-func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, opts Options) error {
+// than once) to a verified recipe, and reads its kind, name, and stack (the
+// stack version the app's layers were built with, which a rebase keeps). It
+// returns the smoke test that recipe declares. Each step is read only from
+// evidence cosign verified against the image signers.
+func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, opts Options) (test string, err error) {
 	ref := f.RebasedFrom
 	for range 8 {
 		repo, digest := splitDigestRef(ref)
 		if repo == "" || digest == "" {
-			return fmt.Errorf("%q is not repository@digest", ref)
+			return "", fmt.Errorf("%q is not repository@digest", ref)
 		}
 		found, err := opts.Discoverer.Discover(ctx, repo, digest)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRecipe, imageSource, found); item.Status != "missing" {
 			if len(verified) == 0 {
-				return fmt.Errorf("recipe of %s is %s: %s", ref, item.Status, item.Detail)
+				return "", fmt.Errorf("recipe of %s is %s: %s", ref, item.Status, item.Detail)
 			}
-			r, _, ok := readRecipe(verified[0].Predicate())
+			pred := verified[0].Predicate()
+			r, _, ok := readRecipe(pred)
 			if !ok {
-				return fmt.Errorf("recipe of %s is unreadable", ref)
+				return "", fmt.Errorf("recipe of %s is unreadable", ref)
 			}
-			f.Kind, f.Name, f.Stack = r.Kind, r.Name, r.Stack
-			return nil
+			f.Kind, f.Name, f.Stack, f.StackRef, f.StackDigest = r.Kind, r.Name, r.Stack, r.StackRef, r.StackDigest
+			return recipeTest(pred), nil
 		}
 		item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRebase, imageSource, found)
 		if item.Status == "missing" {
-			return fmt.Errorf("%s has neither a recipe nor a rebase record", ref)
+			return "", fmt.Errorf("%s has neither a recipe nor a rebase record", ref)
 		}
 		if len(verified) == 0 {
-			return fmt.Errorf("rebase record of %s is %s: %s", ref, item.Status, item.Detail)
+			return "", fmt.Errorf("rebase record of %s is %s: %s", ref, item.Status, item.Detail)
 		}
 		r, ok := readRebase(verified[0].Predicate())
 		if !ok {
-			return fmt.Errorf("rebase record of %s is unreadable", ref)
+			return "", fmt.Errorf("rebase record of %s is unreadable", ref)
 		}
 		ref = r.RebasedFrom
 	}
-	return fmt.Errorf("gave up following rebase records at %s", ref)
+	return "", fmt.Errorf("gave up following rebase records at %s", ref)
 }
 
 func sourceName(f Found) string {

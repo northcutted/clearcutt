@@ -96,6 +96,14 @@ When a release is cut, move these entries under a heading for its version.
   so `estate dependents --base <run image>` found nothing and stale run images
   went unreported. Equally long prefixes (a mirrored base) go to the one the
   image's base annotation names, else the first repository by name.
+- Rebased apps keep their stack. After a fleet rebase, the report had
+  `stacks: null` and apps' `factory` lacked `stackRef` and `stackDigest`, so
+  stack versions and stack signatures went unreported and unchecked. They now
+  come from the verified recipe of the image the app was rebased from, reached
+  through its verified rebase record (as `kind` and `name` already did). A
+  rebased image's `tests` stays `missing`, since its rebase record doesn't say
+  whether a smoke test ran; its detail now names the test the original's
+  recipe declares and says why it isn't counted.
 
 ## v0.15.0
 

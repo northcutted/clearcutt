@@ -48,7 +48,8 @@ instead.
    vulnerability scans, by the scan time inside the signed attestation), and
    the item's `detail` says how many others were ignored.
    A rebased image is named after the recipe of the image it was rebased
-   from, found by following its verified rebase records back.
+   from, found by following its verified rebase records back, and keeps that
+   recipe's stack (the stack version its layers were built with).
 4. **Base.** Where the image's layers start with an observed image's layers,
    that is proof. For images whose base tag has moved on since they were
    built, the base the image names (its `org.opencontainers.image.base.*`
@@ -188,9 +189,12 @@ report's `stacks` lists each such stack: the version its tag names now, every
 version apps are pinned to, each version's signature verified against the
 policy's stack signers (a trust policy's `stack` signers, or `stackSigners:`
 in a VerificationPolicy), and how many apps are on an older version. Each app's
-`factory.stackRef` and `factory.stackDigest` say which. A stack is a
-repository and a tag: apps on `stacks/go:1` and `stacks/go:2` are on two
-stacks, each compared with its own tag.
+`factory.stackRef` and `factory.stackDigest` say which. A rebased app (the
+fleet's steady state) is on the stack its original was built on: the verified
+recipe of the image it was rebased from says which, reached through its
+verified rebase record. A stack is a repository and a tag: apps on
+`stacks/go:1` and `stacks/go:2` are on two stacks, each compared with its own
+tag.
 
 ### Who is built on a base
 
@@ -241,7 +245,10 @@ tell the report came from your job.
   measured.
 - `tests` is `present` (source `recipe`) for clearcutt-factory images whose
   verified recipe declares a smoke test: factory runs it on every platform
-  before pushing, but doesn't attest the result.
+  before pushing, but doesn't attest the result. A rebased image's stays
+  `missing`: its rebase record doesn't say whether a smoke test ran
+  (`rebase -f app.yaml` runs the app's; `rebase --image` and `--no-test`
+  don't), and its `detail` names the test the original's recipe declares.
 - Each history entry has a row per image (`images`): its digest, verdict, base,
   rebase, and vulnerability counts in that run, for per-image history.
 

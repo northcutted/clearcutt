@@ -339,7 +339,7 @@
           "type": "integer"
         },
         "stack": {
-          "description": "Stack is the stack an app was built on.",
+          "description": "Stack is the stack an app was built on. A rebased app's, like its stackRef and stackDigest, comes from the recipe of the image it was rebased from: a rebase keeps the layers its stack built.",
           "type": "string"
         },
         "stackDigest": {
@@ -1285,7 +1285,7 @@
       "description": "Policy is what images were held to in this run."
     },
     "stacks": {
-      "description": "Stacks are the clearcutt-factory registry stacks the estate's apps are built on: each version in use, who signed it, and which apps are pinned to an older version than the stack's tag names now.",
+      "description": "Stacks are the clearcutt-factory registry stacks the estate's apps are built on, rebased apps included: each version in use, who signed it, and which apps are pinned to an older version than the stack's tag names now.",
       "items": {
         "$ref": "#/$defs/Stack"
       },
