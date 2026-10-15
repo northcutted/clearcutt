@@ -269,7 +269,11 @@ tell the report came from your job.
   (`rebase -f app.yaml` runs the app's; `rebase --image` and `--no-test`
   don't), and its `detail` names the test the original's recipe declares.
 - Each history entry has a row per image (`images`): its digest, verdict, base,
-  rebase, and vulnerability counts in that run, for per-image history.
+  rebase, and vulnerability counts in that run, for per-image history. Rows
+  also list the IDs of the image's fixable high and critical findings
+  (`fixableFindings`) and a digest of its package set (`packagesDigest`), both
+  from verified evidence, so a reader can show which findings were fixed or
+  introduced and whether packages changed between runs.
 
 ## Reproducibility
 

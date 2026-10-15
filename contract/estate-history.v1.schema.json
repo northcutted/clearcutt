@@ -103,7 +103,18 @@
         "digest": {
           "type": "string"
         },
+        "fixableFindings": {
+          "description": "FixableFindings are the IDs of the image's fixable high and critical findings (VEX-suppressed ones aside), from its verified vulnerability scans, sorted: what a reader compares between runs to show which were fixed or introduced. Listed only with vulnerabilities (absent there, there are none); other findings are only counted, to keep the history small.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "id": {
+          "type": "string"
+        },
+        "packagesDigest": {
+          "description": "PackagesDigest identifies the image's package set, read from verified SBOMs: sha256:<hex> of its package versions as \"type name version\" lines, sorted, each ending in a newline. It changes when any package does. Absent when the package set is unknown.",
           "type": "string"
         },
         "rebaseStatus": {

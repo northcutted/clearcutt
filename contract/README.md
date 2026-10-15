@@ -88,6 +88,18 @@ decided). A `verified` verdict rests on at least one piece of the image's
 evidence being `verified`, so with no `policy.trustedSigners` every verdict is
 `unverified`. `verdict.reasons` lists one line per requirement not met.
 
+**History.** Each `estate-history.json` entry has the run's summary and a row
+per image (`images`): its digest, verdict, base, rebase, and vulnerability
+counts. To show what changed between runs, a row also lists
+`fixableFindings`, the IDs of the image's fixable high and critical findings
+(VEX-suppressed ones aside) from its verified scans, and `packagesDigest`,
+which identifies its package set (sha256 of its sorted `type name
+version\n` lines, as in the report's `packages`, from verified SBOMs). Other
+findings are only counted, to keep the history small. A row with
+`vulnerabilities` and no `fixableFindings` has none; without
+`vulnerabilities` they are unknown, and without `packagesDigest` so is the
+package set.
+
 **Identity.** `images[].id` is unique in a report and stable across runs for
 the same repository, so it works in URLs. `base.imageId` links to the base when
 the base is in the report.

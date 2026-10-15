@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -137,4 +140,64 @@ func TestEstateVerifyTrustPolicyFlag(t *testing.T) {
 	if _, err := estatePolicy(); err == nil {
 		t.Error("read a missing trust policy")
 	}
+}
+
+var updateFixtures = flag.Bool("update", false, "rewrite the fixture history's rows from its report")
+
+// TestFixtureHistoryRows: the northcutted-images fixture's newest history
+// rows are what this run's code makes of its report (go test -update
+// rewrites them), and they list fixable high and critical findings and a
+// package-set digest only from what the report verified.
+func TestFixtureHistoryRows(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "contract", "fixtures", "northcutted-images")
+	var r report.Report
+	var h report.History
+	readJSON(t, filepath.Join(dir, "estate-report.json"), &r)
+	readJSON(t, filepath.Join(dir, "estate-history.json"), &h)
+	if len(h.Entries) == 0 || h.Entries[0].GeneratedAt != r.Metadata.GeneratedAt {
+		t.Fatalf("the history's newest entry isn't the report's run")
+	}
+	rows := historyImages(&r)
+	if *updateFixtures {
+		h.Entries[0].Images = rows
+		if err := writeReportJSON(filepath.Join(dir, "estate-history.json"), h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := json.Marshal(rows)
+	want, _ := json.Marshal(h.Entries[0].Images)
+	if string(got) != string(want) {
+		t.Fatalf("fixture history rows are stale; run go test ./internal/commands -run TestFixtureHistoryRows -update")
+	}
+	byID := map[string]report.HistoryImage{}
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	// debian-tools has 25 critical and 116 high findings, 12 of them fixable.
+	if row := byID["debian-tools"]; len(row.FixableFindings) == 0 || len(row.FixableFindings) > 12 || !strings.HasPrefix(row.PackagesDigest, "sha256:") {
+		t.Errorf("debian-tools row: %+v", row)
+	}
+	// hello-app has no findings; Docker Hub's debian has no verified scan or SBOM.
+	if row := byID["hello-app"]; row.Vulnerabilities == nil || row.FixableFindings != nil || row.PackagesDigest == "" {
+		t.Errorf("hello-app row: %+v", row)
+	}
+	if row := byID["debian-trixie-slim"]; row.Vulnerabilities != nil || row.FixableFindings != nil || row.PackagesDigest != "" {
+		t.Errorf("debian-trixie-slim row: %+v", row)
+	}
+}
+
+func TestPackagesDigest(t *testing.T) {
+	a := packagesDigest([]string{"apk zlib 1.3\n", "apk busybox 1.37\n"})
+	if a != packagesDigest([]string{"apk busybox 1.37\n", "apk zlib 1.3\n"}) || a == packagesDigest([]string{"apk busybox 1.37\n", "apk zlib 1.3.1\n"}) {
+		t.Errorf("digest depends on order, or not on versions")
+	}
+	// sha256 of "apk busybox 1.37\napk zlib 1.3\n", which readers can recompute.
+	if a != "sha256:"+sha256Hex("apk busybox 1.37\napk zlib 1.3\n") {
+		t.Errorf("digest %s", a)
+	}
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }

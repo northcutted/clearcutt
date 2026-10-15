@@ -127,6 +127,14 @@ When a release is cut, move these entries under a heading for its version.
   clearcutt-factory and BuildKit versions), `signer`, and `ref`. An
   attestation that isn't verified or bound is never read or counted, and the
   detail says why.
+- History rows (`estate-history.json`, `entries[].images[]`) list
+  `fixableFindings`, the IDs of each image's fixable high and critical
+  findings, and `packagesDigest`, a digest of its package set, both from
+  verified evidence only (new, additive), so readers can show which findings
+  were fixed or introduced, and whether packages changed, between runs. Lower
+  severities and findings without a fix are only counted, to keep the history
+  small. The `northcutted-images` fixture's newest rows are regenerated from
+  its report.
 
 ## v0.15.0
 

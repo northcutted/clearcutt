@@ -132,7 +132,19 @@
             "low": 1,
             "negligible": 0,
             "unknown": 4
-          }
+          },
+          "fixableFindings": [
+            "GO-2026-6603",
+            "GO-2026-6605",
+            "GO-2026-6607",
+            "GO-2026-6608",
+            "GO-2026-6609",
+            "GO-2026-6610",
+            "GO-2026-6611",
+            "GO-2026-6613",
+            "GO-2026-6629"
+          ],
+          "packagesDigest": "sha256:28061ddc7202e931d91b051aea4283f14b50d1e2e2211741c4f8fbf80a7d7453"
         },
         {
           "id": "debian-tools",
@@ -150,7 +162,19 @@
             "low": 11,
             "negligible": 97,
             "unknown": 6
-          }
+          },
+          "fixableFindings": [
+            "GO-2026-6603",
+            "GO-2026-6605",
+            "GO-2026-6607",
+            "GO-2026-6608",
+            "GO-2026-6609",
+            "GO-2026-6610",
+            "GO-2026-6611",
+            "GO-2026-6613",
+            "GO-2026-6629"
+          ],
+          "packagesDigest": "sha256:79a15a838bec2b0d1e2b2813a1f5fb44dedb9923e84c3a594795541fcc7514f9"
         },
         {
           "id": "debian-trixie-slim",
@@ -173,7 +197,8 @@
             "low": 0,
             "negligible": 0,
             "unknown": 0
-          }
+          },
+          "packagesDigest": "sha256:e494620031c6243bf104c3ec15c9a2d4497592dacc0daf05b11268cd174f6ebf"
         },
         {
           "id": "platform-tools",
@@ -191,17 +216,47 @@
             "low": 1,
             "negligible": 0,
             "unknown": 21
-          }
+          },
+          "fixableFindings": [
+            "GHSA-2v4p-qf9q-27wj",
+            "GHSA-hrxh-6v49-42gf",
+            "GHSA-vp52-pcj8-j9qc",
+            "GO-2026-4970",
+            "GO-2026-5026",
+            "GO-2026-5942",
+            "GO-2026-5970",
+            "GO-2026-5972",
+            "GO-2026-6088",
+            "GO-2026-6089",
+            "GO-2026-6090",
+            "GO-2026-6179",
+            "GO-2026-6180",
+            "GO-2026-6303",
+            "GO-2026-6354",
+            "GO-2026-6355",
+            "GO-2026-6603",
+            "GO-2026-6605",
+            "GO-2026-6607",
+            "GO-2026-6608",
+            "GO-2026-6609",
+            "GO-2026-6610",
+            "GO-2026-6611",
+            "GO-2026-6613",
+            "GO-2026-6629"
+          ],
+          "packagesDigest": "sha256:06605045561d1eebdbd395a94e4f4995363b11e8c1c7b7abb8d700c4e9fe63a4"
         },
         {
           "id": "static",
           "digest": "sha256:fe55470f22d3259488d9d3739168d8f04da67755f0b69382bc26eda4a7d3d327",
-          "verdict": "unverified"
+          "verdict": "unverified",
+          "packagesDigest": "sha256:ec9778eb1f3778faaf817f521908fa1b06ae034a6fc0a18a18ebf4ddf7562d71"
         },
         {
           "id": "wolfi-base",
           "digest": "sha256:1c451d46a0d5c4e9f2b38e0e8d3e299564a1aa95c21973efcc1980a9d1d2e73e",
-          "verdict": "unverified"
+          "verdict": "unverified",
+          "packagesDigest": "sha256:9ca191ab524adf8e0066d2fef72a495debfeecf6e906a46c45f64960a0c2c5cb"
         }
       ]
     },

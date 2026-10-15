@@ -634,6 +634,18 @@ type HistoryImage struct {
 	RebaseStatus string `json:"rebaseStatus,omitempty"`
 	// Vulnerabilities are the counted findings; absent when unknown.
 	Vulnerabilities *SeverityCounts `json:"vulnerabilities,omitempty"`
+	// FixableFindings are the IDs of the image's fixable high and critical
+	// findings (VEX-suppressed ones aside), from its verified vulnerability
+	// scans, sorted: what a reader compares between runs to show which were
+	// fixed or introduced. Listed only with vulnerabilities (absent there,
+	// there are none); other findings are only counted, to keep the history
+	// small.
+	FixableFindings []string `json:"fixableFindings,omitempty"`
+	// PackagesDigest identifies the image's package set, read from verified
+	// SBOMs: sha256:<hex> of its package versions as "type name version"
+	// lines, sorted, each ending in a newline. It changes when any package
+	// does. Absent when the package set is unknown.
+	PackagesDigest string `json:"packagesDigest,omitempty"`
 }
 
 // HistoryBase is an image's base in a history row.

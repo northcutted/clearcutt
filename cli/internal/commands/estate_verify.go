@@ -3,6 +3,8 @@ package commands
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -308,6 +310,12 @@ func extendHistory(r *report.Report, path, out string) (*report.History, error) 
 
 // historyImages is one row per image of the run, for per-image history.
 func historyImages(r *report.Report) []report.HistoryImage {
+	packages := map[string][]string{} // image ID → "type name version" lines
+	for _, p := range r.Packages {
+		for _, id := range p.Images {
+			packages[id] = append(packages[id], p.Type+" "+p.Name+" "+p.Version+"\n")
+		}
+	}
 	rows := make([]report.HistoryImage, 0, len(r.Images))
 	for _, img := range r.Images {
 		row := report.HistoryImage{ID: img.ID, Digest: img.Digest, Verdict: img.Verdict.Status}
@@ -320,10 +328,36 @@ func historyImages(r *report.Report) []report.HistoryImage {
 		if v := img.Vulnerabilities; v != nil {
 			counts := v.Counts
 			row.Vulnerabilities = &counts
+			row.FixableFindings = fixableFindings(v)
+		}
+		if img.Packages != nil {
+			row.PackagesDigest = packagesDigest(packages[img.ID])
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// fixableFindings lists the IDs of the counted (not suppressed) high and
+// critical findings that have a fix, once each, sorted.
+func fixableFindings(v *report.Vulnerabilities) []string {
+	var ids []string
+	for _, f := range v.Findings {
+		if !f.Suppressed && len(f.FixedIn) > 0 && (f.Severity == "high" || f.Severity == "critical") {
+			ids = appendUniqueString(ids, f.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// packagesDigest identifies a package set: sha256 of its "type name
+// version\n" lines, sorted.
+func packagesDigest(lines []string) string {
+	sorted := append([]string{}, lines...)
+	sort.Strings(sorted)
+	sum := sha256.Sum256([]byte(strings.Join(sorted, "")))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func printEstateSummary(w io.Writer, r *report.Report) {
