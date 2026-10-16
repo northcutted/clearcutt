@@ -34,6 +34,61 @@ When a release is cut, move these entries under a heading for its version.
 - Removed `.github/actions/install-clearcutt-verify`. Install with the
   repository's action, `uses: northcutted/clearcutt-verify@vX.Y.Z`, which
   checks the release's checksum and Sigstore bundle the same way.
+- **`estate verify` reads only what cosign verified.** Vulnerabilities,
+  packages, the provenance source, and clearcutt-factory details come only from
+  attestations cosign verified against a trusted signer; `present` and
+  `failed` evidence is reported but nothing in it is read. Before, the newest
+  attached copy of each kind was read by its unverified timestamp, so anyone
+  who could push to a repository could attach a newer copy that hid findings,
+  faked a scan time or provenance source, or (with a forged certificate) turned
+  a reusable workflow's `present` signature into `verified`. cosign is now asked
+  for exactly the signer each copy's certificate names, so the signer shown on
+  verified evidence is the one cosign checked. Every copy naming a signer the
+  policy accepts is verified, so copies attached under made-up certificates,
+  however many and however new, can't replace or crowd out a verified one
+  (copies holding content no trusted identity signed cost no cosign run). A
+  signature counts only when cosign verified a signature over the image's
+  digest, not a bundle of another type.
+- Verdicts are stricter: a `verified` verdict needs at least one piece of the
+  image's evidence verified against a trusted signer, so with no trusted
+  signer every image is `unverified` (it was `verified`), and checks that read
+  no evidence (`maxDaysBehind`, `--reproduce`) no longer verify an unsigned
+  image; `failOn` needs a verified scan on every platform (an unverified clean
+  scan no longer passes); `maxScanAgeDays` measures the oldest platform's
+  scan, and leaves an image with no verified scan of every platform
+  `unverified`; with `maxDaysBehind`, a
+  stale base whose age couldn't be measured is `unverified` (new, additive
+  `base.daysBehindUnknown` in the contract); and an image that names a base it
+  can't be shown to be built on stays unresolved instead of becoming a root.
+- Trusted signers' `identityRegexp` must be anchored (`^`), and is refused
+  when it matches probe identities of other owners on any forge: made up,
+  prefixed or suffixed (`acme-evil` for `^https://github\.com/acme`), or a
+  character off (an unescaped `.`), or an email domain extended past yours.
+  The probes catch the usual mistakes, not every over-broad expression.
+- `stacks` has one entry per stack repository and tag, so apps on another
+  major tag no longer count as stale.
+- `--reproduce` reads the rebuilt digest only from clearcutt-factory's final
+  result, a rebuild that exits with an error is never `reproduced`, and the
+  rebuild is bound to exactly the signer (identity, issuer, run repository)
+  that verified the recipe the report shows, not to the first policy regexp
+  that matches.
+- New `estate pull --allow-missing` succeeds only when the registry has no
+  manifest at the reference yet; any other failure fails, including a stored
+  bundle whose files can't be read. The documented scheduled job uses it
+  instead of `|| true`, which let a failed pull start a new history that the
+  push then wrote over the old one.
+- The GitHub Action pinned by commit SHA installs the release tagged at that
+  commit (it installed the latest release), and fails for a commit no release
+  tag points at.
+- A trust policy's or verification policy's `key:` file is relative to the
+  file that names it, as clearcutt-factory reads it (it was passed to cosign
+  as written, and cosign, and `--reproduce`, run elsewhere); KMS URIs are
+  used as written. `--reproduce` now rebuilds images whose recipe a trusted
+  key verified, with `--key` (they were always `not-checked`, leaving every
+  such image `unverified`).
+- `registry scan` skips `sha256-<digest>` tags, where registries without the
+  OCI Referrers API keep an image's referrers. They sort above `latest`, so
+  with few tags kept per repository the scan could pick one as the image.
 
 ## v0.15.0
 

@@ -82,6 +82,24 @@ func TestScanEnumeratesNamespaceAndSkipsSidecarTags(t *testing.T) {
 	}
 }
 
+// TestScanSkipsReferrersTags: a registry without the Referrers API keeps an
+// image's referrers under a sha256-<digest> tag, which sorts above latest;
+// keeping one tag per repository must keep the image.
+func TestScanSkipsReferrersTags(t *testing.T) {
+	digest := strings.Repeat("0123456789abcdef", 4)
+	lister := &fakeLister{
+		repos: []string{"acme/images/app"},
+		tags:  map[string][]string{"reg.test/acme/images/app": {"latest", "sha256-" + digest}},
+	}
+	got, err := Scan(context.Background(), lister, Options{Registry: "reg.test", Namespace: "acme/images", MaxTagsPerRepo: 1})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if strings.Join(got.Refs, ",") != "reg.test/acme/images/app:latest" || got.Summary.SidecarTagsSkipped != 1 {
+		t.Fatalf("refs %v, %d skipped", got.Refs, got.Summary.SidecarTagsSkipped)
+	}
+}
+
 func TestScanIncludesSidecarTagsWhenAsked(t *testing.T) {
 	lister := &fakeLister{
 		repos: []string{"acme/app"},
@@ -228,7 +246,8 @@ func TestScanWarnsWhenNothingMatches(t *testing.T) {
 }
 
 func TestIsSidecarTag(t *testing.T) {
-	for _, tag := range []string{"sha256-abc.sig", "sha256-abc.att", "sha256-abc.sbom"} {
+	digest := strings.Repeat("0123456789abcdef", 4)
+	for _, tag := range []string{"sha256-abc.sig", "sha256-abc.att", "sha256-abc.sbom", "sha256-" + digest, "sha256-" + digest + ".sig"} {
 		if !isSidecarTag(tag) {
 			t.Fatalf("%q should be a sidecar tag", tag)
 		}

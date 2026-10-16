@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sigs.k8s.io/yaml"
@@ -55,6 +56,18 @@ func ReadPolicy(path string) (report.Policy, error) {
 	if f.APIVersion != report.APIVersion || f.Kind != "VerificationPolicy" {
 		return report.Policy{}, fmt.Errorf("%s: expected apiVersion %s and kind VerificationPolicy", path, report.APIVersion)
 	}
+	// Key files are relative to the file that names them, as clearcutt-factory
+	// reads them: cosign (and, for --reproduce, clearcutt-factory) runs
+	// elsewhere.
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return report.Policy{}, err
+	}
+	for _, signers := range [][]report.Signer{f.TrustedSigner, f.StackSigners} {
+		for i := range signers {
+			signers[i].Key = keyPath(dir, signers[i].Key)
+		}
+	}
 	p := report.Policy{Required: f.Required, TrustedSigners: f.TrustedSigner, FailOn: f.FailOn, OnlyFixed: f.OnlyFixed, MaxDaysBehind: f.MaxDaysBehind, MaxScanAgeDays: f.MaxScanAgeDays, StackSigners: f.StackSigners}
 	if f.TrustPolicy != "" {
 		tp := f.TrustPolicy
@@ -84,6 +97,15 @@ func ReadTrustPolicy(path string) (report.TrustPolicy, error) {
 	if t.APIVersion != report.APIVersion || t.Kind != report.KindTrustPolicy {
 		return report.TrustPolicy{}, fmt.Errorf("%s: expected apiVersion %s and kind %s", path, report.APIVersion, report.KindTrustPolicy)
 	}
+	// A key file is relative to the trust policy (as clearcutt-factory reads
+	// it), so cosign finds it wherever it runs and the report names it.
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return report.TrustPolicy{}, err
+	}
+	for i := range t.Signers {
+		t.Signers[i].Key = keyPath(dir, t.Signers[i].Key)
+	}
 	for i, s := range t.Signers {
 		for _, r := range s.Roles {
 			if r != "image" && r != "stack" {
@@ -95,6 +117,16 @@ func ReadTrustPolicy(path string) (report.TrustPolicy, error) {
 		}
 	}
 	return t, nil
+}
+
+// keyPath resolves a key file relative to dir, the directory of the file
+// that names it. cosign KMS and other URIs (with "://", or pkcs11:) are used
+// as they are.
+func keyPath(dir, k string) string {
+	if k == "" || strings.Contains(k, "://") || strings.HasPrefix(k, "pkcs11:") || filepath.IsAbs(k) {
+		return k
+	}
+	return filepath.Join(dir, k)
 }
 
 // ValidatePolicy checks the policy's requirements and signers.
@@ -128,6 +160,15 @@ func verdict(img report.Image, p report.Policy) report.Verdict {
 // scan ages are measured against.
 func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict {
 	var failed, unverified []string
+	switch {
+	case len(p.TrustedSigners) == 0:
+		// Nothing about an image can be verified without someone to trust.
+		unverified = append(unverified, "no trusted signer is configured, so nothing about it can be verified")
+	case !anyVerified(img.Evidence):
+		// A verdict rests on something a trusted signer vouched for; checks
+		// that read no evidence (base drift, scan age) can't stand alone.
+		unverified = append(unverified, "none of its evidence is verified, so a trusted signer vouched for nothing about it")
+	}
 	for _, k := range p.Required {
 		item := evidenceItem(img.Evidence, k)
 		switch item.Status {
@@ -143,19 +184,38 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		}
 	}
 	if p.FailOn != "" {
-		if img.Vulnerabilities == nil {
-			unverified = append(unverified, "vulnerabilities are unknown (no scan)")
-		} else if n := countAtOrAbove(img.Vulnerabilities, p.FailOn, p.OnlyFixed); n > 0 {
-			fixable := ""
-			if p.OnlyFixed {
-				fixable = " fixable"
+		// Findings come only from verified scans; a scan that isn't verified
+		// on every platform leaves the rest unknown, never clean.
+		scan := img.Evidence.VulnerabilityScan.Status
+		if v := img.Vulnerabilities; v != nil {
+			if n := countAtOrAbove(v, p.FailOn, p.OnlyFixed); n > 0 {
+				fixable := ""
+				if p.OnlyFixed {
+					fixable = " fixable"
+				}
+				failed = append(failed, fmt.Sprintf("%d%s vulnerabilities at %s or above", n, fixable, p.FailOn))
 			}
-			failed = append(failed, fmt.Sprintf("%d%s vulnerabilities at %s or above", n, fixable, p.FailOn))
+		}
+		switch {
+		case img.Vulnerabilities == nil && (scan == "missing" || scan == ""):
+			unverified = append(unverified, "vulnerabilities are unknown (no scan)")
+		case scan != "verified":
+			unverified = append(unverified, "vulnerabilities are unknown (the vulnerability scan is "+scan+", not verified)")
+		case img.Vulnerabilities == nil:
+			unverified = append(unverified, "vulnerabilities are unknown (the verified scan couldn't be read)")
 		}
 	}
-	if p.MaxScanAgeDays > 0 && img.Vulnerabilities != nil {
-		scanned, err := time.Parse(time.RFC3339, img.Vulnerabilities.ScannedAt)
+	if p.MaxScanAgeDays > 0 {
+		// The age is measured on verified scans of every platform; with none
+		// to measure, how old its findings are is unknown.
+		var scanned time.Time
+		var err error
+		if img.Vulnerabilities != nil {
+			scanned, err = time.Parse(time.RFC3339, img.Vulnerabilities.ScannedAt)
+		}
 		switch {
+		case img.Vulnerabilities == nil || img.Evidence.VulnerabilityScan.Status != "verified":
+			unverified = append(unverified, "the vulnerability scan's age is unknown (no verified scan of every platform)")
 		case err != nil:
 			unverified = append(unverified, "the vulnerability scan's age is unknown (no scan time)")
 		case now.Sub(scanned) > time.Duration(p.MaxScanAgeDays)*24*time.Hour:
@@ -167,6 +227,8 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		switch b := img.Base; {
 		case b != nil && b.DaysBehind > p.MaxDaysBehind:
 			failed = append(failed, fmt.Sprintf("base is %d days behind its newest version (limit %d)", b.DaysBehind, p.MaxDaysBehind))
+		case b != nil && b.Drift == "stale" && b.DaysBehindUnknown:
+			unverified = append(unverified, "its base is behind its newest version, by how many days couldn't be measured")
 		case b != nil && b.Drift == "unknown", b == nil && img.Root == "":
 			// A root has no base to fall behind; anything else might.
 			unverified = append(unverified, "how far its base is behind couldn't be measured")
@@ -187,6 +249,17 @@ func verdictAt(img report.Image, p report.Policy, now time.Time) report.Verdict 
 		return report.Verdict{Status: "unverified", Reasons: unverified}
 	}
 	return report.Verdict{Status: "verified", Reasons: []string{}}
+}
+
+// anyVerified reports whether any of the image's evidence verified against a
+// trusted signer.
+func anyVerified(e report.Evidence) bool {
+	for _, k := range Kinds {
+		if evidenceItem(e, k).Status == "verified" {
+			return true
+		}
+	}
+	return false
 }
 
 func countAtOrAbove(v *report.Vulnerabilities, sev string, onlyFixed bool) int {

@@ -3,14 +3,19 @@ package commands
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 func estateTestRegistry(t *testing.T) string {
@@ -76,6 +81,67 @@ func TestEstateRoundTripsTheRealPublicSnapshot(t *testing.T) {
 		if sha256.Sum256(original) != sha256.Sum256(pulled) {
 			t.Errorf("%s did not round-trip byte for byte (%d bytes out, %d back)", fileName, len(original), len(pulled))
 		}
+	}
+}
+
+// TestEstatePullAllowMissing: a scheduled job's first run has no bundle to
+// pull, and says so with --allow-missing; every other failure still fails,
+// so a job never starts a new history over one it couldn't read.
+func TestEstatePullAllowMissing(t *testing.T) {
+	host := estateTestRegistry(t)
+	dir := t.TempDir()
+	if stdout, err := runCLI(t, "estate", "pull", host+"/acme/estate:latest", "--output", dir, "--insecure"); err == nil {
+		t.Fatalf("pulling nothing succeeded without --allow-missing:\n%s", stdout)
+	}
+	stdout, err := runCLI(t, "estate", "pull", host+"/acme/estate:latest", "--output", dir, "--insecure", "--allow-missing")
+	if err != nil || !strings.Contains(stdout, "nothing at") {
+		t.Fatalf("--allow-missing on a first run: %v\n%s", err, stdout)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("wrote %d files", len(entries))
+	}
+
+	// Something that isn't an estate artifact is a failure, not a first run.
+	img, err := random.Image(64, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := name.ParseReference(host + "/acme/other:latest")
+	if err := remote.Write(ref, img); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, err := runCLI(t, "estate", "pull", ref.String(), "--output", dir, "--insecure", "--allow-missing"); err == nil {
+		t.Fatalf("a foreign artifact passed as missing:\n%s", stdout)
+	}
+	// So is a stored bundle whose files can't be read: its manifest is
+	// there, so a job must not start a fresh history over it.
+	var blobsGone atomic.Bool
+	reg := registry.New()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if blobsGone.Load() && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprint(w, `{"errors":[{"code":"BLOB_UNKNOWN","message":"blob unknown to registry"}]}`)
+			return
+		}
+		reg.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	stored := strings.TrimPrefix(srv.URL, "http://") + "/acme/estate:latest"
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "estate-report.json"), []byte(`{"kind":"EstateReport"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if stdout, err := runCLI(t, "estate", "push", stored, "--dir", src, "--file", "estate-report.json", "--insecure"); err != nil {
+		t.Fatalf("estate push: %v\n%s", err, stdout)
+	}
+	blobsGone.Store(true)
+	if stdout, err := runCLI(t, "estate", "pull", stored, "--output", dir, "--insecure", "--allow-missing"); err == nil {
+		t.Fatalf("a bundle with unreadable files passed as missing:\n%s", stdout)
+	}
+	// So is a registry that can't be reached.
+	if stdout, err := runCLI(t, "estate", "pull", "127.0.0.1:1/acme/estate:latest", "--output", dir, "--insecure", "--allow-missing"); err == nil {
+		t.Fatalf("an unreachable registry passed as missing:\n%s", stdout)
 	}
 }
 

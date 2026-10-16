@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -259,9 +260,16 @@ func discoverRepositories(ctx context.Context, lister Lister, registry, namespac
 	return out, nil
 }
 
+// referrersTag is the tag a registry without the OCI Referrers API keeps an
+// image's referrers index under (sha256-<digest>): evidence, not an image.
+var referrersTag = regexp.MustCompile(`^sha256-[0-9a-f]{64}$`)
+
 // isSidecarTag reports whether a tag names Sigstore/attestation evidence rather than
 // a runnable image.
 func isSidecarTag(tag string) bool {
+	if referrersTag.MatchString(tag) {
+		return true
+	}
 	if !strings.HasPrefix(tag, "sha256-") {
 		return false
 	}
@@ -328,5 +336,5 @@ func (l *RemoteLister) Tags(ctx context.Context, repository string) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository %q: %w", repository, err)
 	}
-	return remote.ListWithContext(ctx, repo, l.remoteOpts...)
+	return remote.List(repo, append([]remote.Option{remote.WithContext(ctx)}, l.remoteOpts...)...)
 }

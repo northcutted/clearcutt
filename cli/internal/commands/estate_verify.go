@@ -64,8 +64,9 @@ For each image it finds the evidence attached in the registry (signatures,
 SBOMs, vulnerability reports, SLSA provenance, clearcutt-factory recipes and
 rebase records; cosign v2 tags and v3 bundles), verifies it with cosign
 against the policy's trusted signers, reads vulnerabilities and packages from
-the attestations, places the image on its base (proven by layer digests where
-possible), and decides a verdict. With --reproduce it rebuilds
+the attestations that verified (nothing from ones that didn't), places the
+image on its base (proven by layer digests where possible), and decides a
+verdict. With no trusted signer, no image is verified. With --reproduce it rebuilds
 clearcutt-factory images from their signed recipes (clearcutt-factory on PATH).
 
 Images come from an observations file (clearcutt-verify import observe) or a list of

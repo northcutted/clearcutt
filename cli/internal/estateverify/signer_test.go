@@ -59,34 +59,64 @@ func TestSignerOfSource(t *testing.T) {
 	}
 }
 
-func TestCallerFlags(t *testing.T) {
-	cert := &report.Signer{Identity: reusable, SourceRepository: "https://github.com/acme/checkout"}
+// TestAccepts covers which certificates a trusted signer accepts before
+// cosign is asked to verify them, and what cosign is then asked for.
+func TestAccepts(t *testing.T) {
+	cert := report.Signer{Identity: reusable, Issuer: ghIssuer, SourceRepository: "https://github.com/acme/checkout", SourceRef: "refs/heads/main"}
+	factory := report.Signer{IdentityRegexp: `^https://github\.com/acme/factory/`, Issuer: ghIssuer}
+	with := func(f func(*report.Signer)) report.Signer {
+		s := factory
+		f(&s)
+		return s
+	}
 	for _, c := range []struct {
-		name   string
-		signer report.Signer
-		subj   Subject
-		want   string // flags, or the error's text
+		name        string
+		signer      report.Signer
+		cert        report.Signer
+		imageSource string
+		want        string // "" when accepted, else the error's text
 	}{
-		{"none", report.Signer{}, Subject{Signer: cert}, ""},
-		{"exact", report.Signer{SourceRepository: "https://github.com/acme/checkout", SourceRef: "refs/heads/main"}, Subject{},
-			"--certificate-github-workflow-repository acme/checkout --certificate-github-workflow-ref refs/heads/main"},
-		{"owner, from the certificate", report.Signer{SourceRepositoryOwner: "https://github.com/acme"}, Subject{Signer: cert}, "--certificate-github-workflow-repository acme/checkout"},
-		{"owner, another's", report.Signer{SourceRepositoryOwner: "https://github.com/acme"}, Subject{Signer: &report.Signer{SourceRepository: "https://github.com/acme-evil/x"}}, "not a repository of"},
-		{"owner, unknown", report.Signer{SourceRepositoryOwner: "https://github.com/acme"}, Subject{}, "not a repository of"},
-		{"image source", report.Signer{SourceMatchesImage: true}, Subject{ImageSource: "https://github.com/acme/checkout.git"}, "--certificate-github-workflow-repository acme/checkout"},
-		{"image source, none", report.Signer{SourceMatchesImage: true}, Subject{}, "names no source"},
-		{"image source, outside the owner", report.Signer{SourceMatchesImage: true, SourceRepositoryOwner: "https://github.com/acme"}, Subject{ImageSource: "https://github.com/mallory/x"}, "not a repository of"},
-		{"image source, not the repository", report.Signer{SourceMatchesImage: true, SourceRepository: "https://github.com/acme/a"}, Subject{ImageSource: "https://github.com/acme/b"}, "not https://github.com/acme/a"},
-		{"not GitHub", report.Signer{SourceRepository: "https://gitlab.com/acme/a"}, Subject{}, "not https://github.com/OWNER/REPO"},
+		{"identity regexp", factory, cert, "", ""},
+		{"exact identity", report.Signer{Identity: reusable, Issuer: ghIssuer}, cert, "", ""},
+		{"another identity", report.Signer{Identity: ourSigner, Issuer: ghIssuer}, cert, "", "not " + ourSigner},
+		{"another workflow", report.Signer{IdentityRegexp: `^https://github\.com/acme/images/`, Issuer: ghIssuer}, cert, "", "doesn't match"},
+		{"another issuer", with(func(s *report.Signer) { s.Issuer = "https://gitlab.com" }), cert, "", "issued by"},
+		{"repository", with(func(s *report.Signer) { s.SourceRepository = "https://github.com/acme/checkout" }), cert, "", ""},
+		{"another repository", with(func(s *report.Signer) { s.SourceRepository = "https://github.com/acme/billing" }), cert, "", "not https://github.com/acme/billing"},
+		{"owner", with(func(s *report.Signer) { s.SourceRepositoryOwner = "https://github.com/acme" }), cert, "", ""},
+		{"another owner", with(func(s *report.Signer) { s.SourceRepositoryOwner = "https://github.com/acme" }),
+			report.Signer{Identity: reusable, Issuer: ghIssuer, SourceRepository: "https://github.com/acme-evil/x"}, "", "not a repository of"},
+		{"owner, no repository named", with(func(s *report.Signer) { s.SourceRepositoryOwner = "https://github.com/acme" }),
+			report.Signer{Identity: reusable, Issuer: ghIssuer}, "", "not a repository of"},
+		{"image source", with(func(s *report.Signer) { s.SourceMatchesImage = true }), cert, "https://github.com/acme/checkout.git", ""},
+		{"image source, none", with(func(s *report.Signer) { s.SourceMatchesImage = true }), cert, "", "names no source"},
+		{"image source, another", with(func(s *report.Signer) { s.SourceMatchesImage = true }), cert, "https://github.com/acme/billing", "signed in https://github.com/acme/checkout, not https://github.com/acme/billing"},
+		{"image source, no repository named", with(func(s *report.Signer) { s.SourceMatchesImage = true }),
+			report.Signer{Identity: reusable, Issuer: ghIssuer}, "https://github.com/acme/checkout", "an unnamed repository"},
+		{"image source, outside the owner", with(func(s *report.Signer) {
+			s.SourceMatchesImage, s.SourceRepositoryOwner = true, "https://github.com/acme"
+		}),
+			cert, "https://github.com/mallory/x", "not a repository of"},
+		{"ref", with(func(s *report.Signer) { s.SourceRef = "refs/heads/main" }), cert, "", ""},
+		{"another ref", with(func(s *report.Signer) { s.SourceRef = "refs/heads/release" }), cert, "", "not refs/heads/release"},
+		{"not GitHub", with(func(s *report.Signer) { s.SourceRepository = "https://gitlab.com/acme/a" }), cert, "", "not https://github.com/OWNER/REPO"},
 	} {
-		flags, err := callerFlags(c.signer, c.subj)
-		got := strings.Join(flags, " ")
-		if err != nil {
-			got = err.Error()
+		err := accepts(c.signer, c.cert, c.imageSource)
+		if (c.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
 		}
-		if (c.want == "" && got != "") || !strings.Contains(got, c.want) {
-			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
-		}
+	}
+
+	flags, signer := exactFlags(cert)
+	if strings.Join(flags, " ") != "--certificate-identity "+reusable+" --certificate-oidc-issuer "+ghIssuer+
+		" --certificate-github-workflow-repository acme/checkout --certificate-github-workflow-ref refs/heads/main" || signer != cert {
+		t.Errorf("exact flags %q, signer %+v", flags, signer)
+	}
+	// Outside GitHub Actions, cosign can check only identity and issuer, so
+	// the signer named is only that.
+	flags, signer = exactFlags(report.Signer{Identity: "https://gitlab.com/acme/a//.gitlab-ci.yml@refs/heads/main", Issuer: "https://gitlab.com", SourceRepository: "https://gitlab.com/acme/a"})
+	if len(flags) != 4 || signer.SourceRepository != "" {
+		t.Errorf("gitlab flags %q, signer %+v", flags, signer)
 	}
 	if _, err := signerFlags(report.Signer{IdentityRegexp: "^https://gitlab\\.com/acme/", Issuer: "https://gitlab.com", SourceRepository: "https://github.com/acme/a"}); err == nil {
 		t.Error("accepted source constraints without the GitHub issuer")

@@ -2,10 +2,8 @@ package estateverify
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -94,13 +92,24 @@ func Build(ctx context.Context, observations estategraph.Observations, opts Opti
 		r.Policy.TrustedSigners = []report.Signer{}
 	}
 
-	ids := map[string]string{} // digest ref / manifest digest → image ID
+	ids := map[string]string{}     // digest ref / manifest digest → image ID
+	created := map[string]string{} // manifest digest → creation time
+	// Images that may not be made roots: ones that name a base of their
+	// own, and ones whose layers couldn't be read.
+	notRoots := map[string]bool{}
 	for _, o := range observations.Images {
 		ids[o.DigestRef] = o.ID
 		ids[normalizeRepo(o.DigestRef)] = o.ID
 		ids[o.ManifestDigest] = o.ID
+		_, d := splitDigestRef(o.DigestRef)
+		created[firstNonEmpty(d, o.ManifestDigest)] = o.Created
+		created[o.ManifestDigest] = o.Created
+		if len(o.Layers) == 0 {
+			notRoots[o.ID] = true
+		}
 	}
 	packagesByImage := make([][]pkg, len(observations.Images))
+	namesBase := make([]bool, len(observations.Images))
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, conc)
@@ -110,16 +119,22 @@ func Build(ctx context.Context, observations estategraph.Observations, opts Opti
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			img, pkgs := buildImage(ctx, obs, graph, ids, opts)
+			img, pkgs, named := buildImage(ctx, obs, graph, ids, created, opts)
 			r.Images[i] = img
 			packagesByImage[i] = pkgs
+			namesBase[i] = named
 		}(i, obs)
 	}
 	wg.Wait()
+	for i, named := range namesBase {
+		if named {
+			notRoots[observations.Images[i].ID] = true
+		}
+	}
 	sort.SliceStable(r.Images, func(i, j int) bool { return r.Images[i].ID < r.Images[j].ID })
 
 	r.Bases = basesOf(r.Images)
-	markRoots(r.Images, r.Bases)
+	markRoots(r.Images, r.Bases, notRoots)
 	r.Stacks = stacksOf(ctx, r.Images, opts)
 	// Verdicts last: whether an image is a root is known only now.
 	now, err := time.Parse(time.RFC3339, generatedAt)
@@ -134,10 +149,12 @@ func Build(ctx context.Context, observations estategraph.Observations, opts Opti
 	return r, nil
 }
 
-// buildImage verifies one image; Build decides its verdict.
-func buildImage(ctx context.Context, obs estategraph.Observation, graph estategraph.Graph, ids map[string]string, opts Options) (report.Image, []pkg) {
+// buildImage verifies one image; Build decides its verdict. named says
+// whether the image names a base of its own (in its annotations or its
+// recipe's lock), which makes it no root.
+func buildImage(ctx context.Context, obs estategraph.Observation, graph estategraph.Graph, ids, created map[string]string, opts Options) (img report.Image, pkgs []pkg, named bool) {
 	repo, digest := splitDigestRef(normalizeRepo(obs.DigestRef))
-	img := report.Image{
+	img = report.Image{
 		ID: obs.ID, Repository: repo, Digest: firstNonEmpty(obs.ManifestDigest, digest), Tags: []string{},
 		Created: obs.Created, Platforms: []report.Platform{}, Description: obs.Labels["org.opencontainers.image.description"],
 		Warnings: append([]string{}, obs.Warnings...),
@@ -155,7 +172,7 @@ func buildImage(ctx context.Context, obs estategraph.Observation, graph estategr
 		img.Builder = report.Builder{Kind: "unknown", Basis: "the image couldn't be read"}
 		img.Reproducibility = report.Reproducibility{Status: "not-checked", Detail: "The image couldn't be read."}
 		img.Unresolved = []string{"the image couldn't be read"}
-		return img, nil
+		return img, nil, false
 	}
 
 	platforms, err := platformImages(ctx, repo, img.Digest, obs, opts.RemoteOptions, opts.Platforms)
@@ -173,18 +190,22 @@ func buildImage(ctx context.Context, obs estategraph.Observation, graph estategr
 			img.Warnings = append(img.Warnings, "the recipe of the image it was rebased from couldn't be read: "+err.Error())
 		}
 	}
-	baseOf(&img, obs, graph, ids)
+	baseOf(&img, obs, graph, ids, created)
 	if img.Base == nil || img.Base.Strength != "proof" {
-		claimedBase(ctx, &img, platforms, ids, data.lockBase, opts.RemoteOptions)
+		named = claimedBase(ctx, &img, platforms, ids, data.lockBase, opts.RemoteOptions)
 	}
 	img.Evidence = ev
 	img.Vulnerabilities = mergeVulnerabilities(data.vulns)
+	if len(data.unreadableScans) > 0 {
+		// Findings from some platforms only would read as the image's.
+		img.Vulnerabilities = nil
+		img.Warnings = append(img.Warnings, "the verified vulnerability scan of "+strings.Join(data.unreadableScans, ", ")+" couldn't be read, so its vulnerabilities are unknown")
+	}
 	if data.provenanceSource != nil {
 		img.Source = data.provenanceSource
 	}
 	img.Factory = data.factory
 	img.Builder = builderOf(obs, data)
-	var pkgs []pkg
 	if data.packagesKnown {
 		pkgs = dedupePackages(data.packages)
 		n := len(pkgs)
@@ -192,7 +213,7 @@ func buildImage(ctx context.Context, obs estategraph.Observation, graph estategr
 		img.PackagesSource = &report.PackagesSource{Evidence: "sbom", Status: ev.SBOM.Status, Platforms: data.sbomPlatforms}
 	}
 	img.Reproducibility = reproduce(ctx, &img, data, opts)
-	return img, pkgs
+	return img, pkgs, named
 }
 
 // platformImages lists the platform images of repo@digest.
@@ -257,7 +278,7 @@ func platformImages(ctx context.Context, repo, digest string, obs estategraph.Ob
 }
 
 // baseOf fills the image's base, root, or unresolved reasons from the graph.
-func baseOf(img *report.Image, obs estategraph.Observation, graph estategraph.Graph, ids map[string]string) {
+func baseOf(img *report.Image, obs estategraph.Observation, graph estategraph.Graph, ids, created map[string]string) {
 	for _, e := range graph.Edges {
 		if e.ConsumerID != obs.ID {
 			continue
@@ -271,10 +292,17 @@ func baseOf(img *report.Image, obs estategraph.Observation, graph estategraph.Gr
 		if img.Base.Strength == "proof" {
 			img.Base.ProvenOn = observedPlatform(obs)
 		}
+		// Days behind are counted between the two versions' creation times.
+		img.Base.DaysBehindUnknown = e.Drift == "stale" && (!dated(e.BaseCreated) || !dated(created[e.CurrentBaseDigest]))
 		return
 	}
 	for _, root := range graph.Roots {
 		if root.ImageID == obs.ID {
+			if len(obs.Layers) == 0 {
+				// Nothing shows it has no base: it couldn't be read.
+				img.Unresolved = []string{"no observed layers; the image config could not be read"}
+				return
+			}
 			img.Root = root.Reason
 			return
 		}
@@ -293,16 +321,29 @@ func baseOf(img *report.Image, obs estategraph.Observation, graph estategraph.Gr
 // (clearcutt-factory apps and other BuildKit builds record them), else the
 // base pinned in a clearcutt-factory recipe's lock. This places images whose
 // base tag has moved on since they were built, which comparing against the
-// current tag can't.
-func claimedBase(ctx context.Context, img *report.Image, platforms []report.Platform, ids map[string]string, lockBase *pinnedImage, ropts []remote.Option) {
+// current tag can't. It reports whether the image names a base: one that
+// does is no root, and a claim that can't be proven leaves it unresolved.
+func claimedBase(ctx context.Context, img *report.Image, platforms []report.Platform, ids map[string]string, lockBase *pinnedImage, ropts []remote.Option) bool {
 	if len(platforms) == 0 {
-		return
+		return false
 	}
 	p := platforms[0]
 	o := append([]remote.Option{remote.WithContext(ctx)}, ropts...)
+	// unproven leaves the image without a base it names but can't be shown
+	// to be built on.
+	unproven := func(reason string) bool {
+		if img.Base == nil {
+			img.Root = ""
+		}
+		img.Unresolved = appendUnique(img.Unresolved, reason)
+		return true
+	}
 	self, err := fetchManifest(img.Repository+"@"+p.Digest, o)
 	if err != nil {
-		return
+		if lockBase != nil {
+			return unproven(fmt.Sprintf("its recipe pins %s@%s as its base, but its own manifest couldn't be read", lockBase.Ref, lockBase.Digest))
+		}
+		return false
 	}
 	baseName := self.Annotations["org.opencontainers.image.base.name"]
 	baseDigest := self.Annotations["org.opencontainers.image.base.digest"]
@@ -311,22 +352,21 @@ func claimedBase(ctx context.Context, img *report.Image, platforms []report.Plat
 		baseName = lockBase.Ref
 		if baseDigest, _, err = currentPlatformDigest(repoOf(lockBase.Ref)+"@"+lockBase.Digest, p.Platform, o); err != nil {
 			img.Warnings = append(img.Warnings, fmt.Sprintf("the base its recipe pins (%s@%s) couldn't be read: %v", lockBase.Ref, lockBase.Digest, err))
-			return
+			return unproven(fmt.Sprintf("its recipe pins %s@%s as its base, which couldn't be read", lockBase.Ref, lockBase.Digest))
 		}
 	}
 	if baseName == "" || baseDigest == "" {
-		return
+		return false
 	}
 	baseName = qualify(baseName)
 	baseRepo := repoOf(baseName)
 	base, err := fetchManifest(baseRepo+"@"+baseDigest, o)
 	if err != nil {
 		img.Warnings = append(img.Warnings, fmt.Sprintf("the base it names (%s@%s) couldn't be read: %v", baseRepo, baseDigest, err))
-		return
+		return unproven(fmt.Sprintf("it names %s@%s as its base, which couldn't be read", baseRepo, baseDigest))
 	}
 	if !layerPrefix(base.Layers, self.Layers) {
-		img.Unresolved = appendUnique(img.Unresolved, fmt.Sprintf("its annotations name %s@%s as its base, but it doesn't start with that image's layers", baseRepo, baseDigest))
-		return
+		return unproven(fmt.Sprintf("its annotations name %s@%s as its base, but it doesn't start with that image's layers", baseRepo, baseDigest))
 	}
 	link := &report.BaseLink{
 		Repository: baseRepo, Ref: baseName, Digest: baseDigest, Platform: p.Platform, ProvenOn: p.Platform,
@@ -340,12 +380,31 @@ func claimedBase(ctx context.Context, img *report.Image, platforms []report.Plat
 			link.Drift = "current"
 		} else {
 			link.Drift, link.VersionsBehind = "stale", 1
-			if then, err := configCreated(baseRepo+"@"+baseDigest, o); err == nil && !created.IsZero() && !then.IsZero() {
+			if then, err := configCreated(baseRepo+"@"+baseDigest, o); err == nil && datedTime(created) && datedTime(then) {
 				link.DaysBehind = max(0, int(created.Sub(then).Hours()/24))
+			} else {
+				link.DaysBehindUnknown = true
 			}
 		}
 	}
 	img.Base, img.Root, img.Unresolved = link, "", nil
+	return true
+}
+
+// reproducibleEpoch is the cutoff below which a creation time is a
+// reproducible build's placeholder (Nix stamps 1970-01-01T00:00:01Z, others
+// the 1980 DOS epoch), not when the image was built.
+var reproducibleEpoch = time.Date(1980, 1, 2, 0, 0, 0, 0, time.UTC)
+
+// datedTime reports whether t is a real creation time.
+func datedTime(t time.Time) bool {
+	return !t.IsZero() && !t.Before(reproducibleEpoch)
+}
+
+// dated reports whether an RFC 3339 creation time is a real one.
+func dated(s string) bool {
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
+	return err == nil && datedTime(t)
 }
 
 func fetchManifest(ref string, o []remote.Option) (*v1.Manifest, error) {
@@ -451,15 +510,17 @@ func repoOf(ref string) string {
 
 // markRoots makes an image with no base of its own a root when other images
 // are built on its repository (perhaps on an older version of it): it is the
-// top of their supply chain, not a gap.
-func markRoots(images []report.Image, bases []report.Base) {
+// top of their supply chain, not a gap. Images that name a base of their own,
+// or whose layers couldn't be read (notRoots), stay unresolved: being built
+// on doesn't show they have no base.
+func markRoots(images []report.Image, bases []report.Base, notRoots map[string]bool) {
 	isBase := map[string]bool{}
 	for _, b := range bases {
 		isBase[b.Repository] = true
 	}
 	for i := range images {
 		img := &images[i]
-		if img.Base == nil && img.Root == "" && isBase[img.Repository] {
+		if img.Base == nil && img.Root == "" && isBase[img.Repository] && !notRoots[img.ID] {
 			img.Root = "other images are proven to be built on versions of this repository"
 			img.Unresolved = nil
 		}
@@ -548,12 +609,13 @@ type imageData struct {
 	rebaseSigner     *report.Signer
 	recipeVerified   bool
 	rebaseVerified   bool
-	// claimedSource is the repository the image names as its source.
-	claimedSource string
 	// sbomPlatforms are the platform images whose SBOMs were read.
 	sbomPlatforms []string
 	// recipeTest describes the smoke test a verified recipe declares.
 	recipeTest string
+	// unreadableScans are platforms whose verified vulnerability scan
+	// couldn't be read.
+	unreadableScans []string
 }
 
 // attachment is where a kind of evidence is expected.
@@ -562,7 +624,7 @@ var perPlatform = map[string]bool{KindSBOM: true, KindVulnerabilityScan: true}
 // gatherEvidence discovers and verifies every kind of evidence on the image
 // (index-level kinds) and its platform images (SBOMs and scans).
 func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platforms []report.Platform, opts Options) (report.Evidence, imageData) {
-	data := imageData{vulns: map[string]vulnScan{}, claimedSource: imageSource}
+	data := imageData{vulns: map[string]vulnScan{}}
 	type subject struct{ platform, digest string }
 	subjects := []subject{{"", digest}}
 	for _, p := range platforms {
@@ -634,40 +696,36 @@ func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platf
 	}, data
 }
 
-// verifyKind finds and verifies kind on one subject, records what the
-// payload says, and returns the status.
+// verifyKind verifies kind on one subject, records what the verified
+// payload says, and returns the status. Only content cosign verified is
+// read: an unverified copy is reported, never read.
 func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, found []Found, lookErr error, opts Options, item *report.EvidenceItem, data *imageData, platform string) string {
 	if lookErr != nil {
 		item.Detail = "The registry couldn't be read: " + lookErr.Error()
 		return "unknown"
 	}
-	f, ok := newest(found, kind, digest)
-	if !ok {
+	got, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, kind, imageSource, found)
+	if got.Status == "missing" {
 		return "missing"
 	}
 	if item.Source == "" {
-		item.Source = sourceName(f)
-		item.PredicateType = f.PredicateType
-		item.Ref = f.Ref
-		item.Timestamp = f.Timestamp
-		item.Signer = f.Signer
+		item.Source, item.PredicateType, item.Ref, item.Timestamp, item.Signer = got.Source, got.PredicateType, got.Ref, got.Timestamp, got.Signer
 	}
-
-	status, detail := check(ctx, opts.Verifier, repo+"@"+digest, f, imageSource)
-	if detail != "" {
-		item.Detail = detail
+	if got.Detail != "" {
+		item.Detail = got.Detail
 	}
-
-	// Read the payload. Present evidence is still read, but the verdict
-	// only credits what was verified.
-	pred := f.Predicate()
-	if f.Format == FormatRawReferrer {
-		pred = f.Statement
+	if len(verified) == 0 {
+		return got.Status
 	}
+	best := verified[0]
+	signer := best.signer
+	pred := best.Predicate()
 	switch kind {
 	case KindVulnerabilityScan:
 		if s, ok := readVulnPredicate(pred); ok {
 			data.vulns[firstNonEmpty(platform, "default")] = s
+		} else {
+			data.unreadableScans = append(data.unreadableScans, firstNonEmpty(platform, "default"))
 		}
 	case KindSBOM:
 		if pkgs, ok := readSBOM(pred); ok {
@@ -680,12 +738,10 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 	case KindRecipe:
 		if fi, base, ok := readRecipe(pred); ok {
 			data.factory = fi
-			data.recipeVerified = status == "verified"
-			data.recipeSigner = f.Signer
-			if status == "verified" {
-				data.lockBase = base
-				data.recipeTest = recipeTest(pred)
-			}
+			data.recipeVerified = true
+			data.recipeSigner = &signer
+			data.lockBase = base
+			data.recipeTest = recipeTest(pred)
 		}
 	case KindRebase:
 		if fi, ok := readRebase(pred); ok {
@@ -694,31 +750,15 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 			} else {
 				data.factory.RebasedFrom = fi.RebasedFrom
 			}
-			data.rebaseVerified = status == "verified"
-			data.rebaseSigner = f.Signer
+			data.rebaseVerified = true
+			data.rebaseSigner = &signer
 		}
 	case KindProvenance:
-		if s, ok := readProvenanceSource(pred); ok && status == "verified" {
+		if s, ok := readProvenanceSource(pred); ok {
 			data.provenanceSource = s
 		}
 	}
-	return status
-}
-
-// newest returns the newest evidence of kind on digest: republished
-// evidence supersedes older copies.
-func newest(found []Found, kind, digest string) (Found, bool) {
-	var candidates []Found
-	for _, f := range found {
-		if f.Kind == kind && (f.Subject == "" || f.Subject == digest) {
-			candidates = append(candidates, f)
-		}
-	}
-	if len(candidates) == 0 {
-		return Found{}, false
-	}
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].Timestamp > candidates[j].Timestamp })
-	return candidates[0], true
+	return got.Status
 }
 
 // originalRecipe names a rebased image after the recipe it was first built
@@ -736,53 +776,31 @@ func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, 
 		if err != nil {
 			return err
 		}
-		if e, ok := newest(found, KindRecipe, digest); ok {
-			if status, detail := check(ctx, opts.Verifier, ref, e, imageSource); status != "verified" {
-				return fmt.Errorf("recipe of %s is %s: %s", ref, status, detail)
+		if item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRecipe, imageSource, found); item.Status != "missing" {
+			if len(verified) == 0 {
+				return fmt.Errorf("recipe of %s is %s: %s", ref, item.Status, item.Detail)
 			}
-			r, _, ok := readRecipe(e.Predicate())
+			r, _, ok := readRecipe(verified[0].Predicate())
 			if !ok {
 				return fmt.Errorf("recipe of %s is unreadable", ref)
 			}
 			f.Kind, f.Name, f.Stack = r.Kind, r.Name, r.Stack
 			return nil
 		}
-		e, ok := newest(found, KindRebase, digest)
-		if !ok {
+		item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRebase, imageSource, found)
+		if item.Status == "missing" {
 			return fmt.Errorf("%s has neither a recipe nor a rebase record", ref)
 		}
-		if status, detail := check(ctx, opts.Verifier, ref, e, imageSource); status != "verified" {
-			return fmt.Errorf("rebase record of %s is %s: %s", ref, status, detail)
+		if len(verified) == 0 {
+			return fmt.Errorf("rebase record of %s is %s: %s", ref, item.Status, item.Detail)
 		}
-		r, ok := readRebase(e.Predicate())
+		r, ok := readRebase(verified[0].Predicate())
 		if !ok {
 			return fmt.Errorf("rebase record of %s is unreadable", ref)
 		}
 		ref = r.RebasedFrom
 	}
 	return fmt.Errorf("gave up following rebase records at %s", ref)
-}
-
-// check verifies evidence found on ref and returns its status (verified,
-// present, or failed) and, when it isn't verified, why.
-func check(ctx context.Context, v *Verifier, ref string, f Found, imageSource string) (status, detail string) {
-	if f.Format == FormatRawReferrer {
-		return "present", "An unsigned document; nothing to verify."
-	}
-	trusted, err := v.Verify(ctx, Subject{Ref: ref, Kind: f.Kind, PredicateType: f.PredicateType, ImageSource: imageSource, Signer: f.Signer})
-	switch {
-	case errors.Is(err, ErrNoSigner):
-		return "present", "No trusted signer is configured, so it can't be verified."
-	case err != nil:
-		return "failed", err.Error()
-	}
-	// A reusable workflow signs with its own identity wherever it is
-	// called from; trusting the identity alone trusts every caller.
-	if caller, ok := calledFromElsewhere(f.Signer); ok && !constrainsCaller(trusted) {
-		return "present", fmt.Sprintf("Signed by %s, called from %s. The trusted signer doesn't say which calling repositories it accepts, "+
-			"so a run in any repository calling that workflow would verify too: set sourceRepository, sourceRepositoryOwner, or sourceMatchesImage.", f.Signer.Identity, caller)
-	}
-	return "verified", ""
 }
 
 func sourceName(f Found) string {
@@ -846,12 +864,13 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	if !verified || signer == nil {
 		return report.Reproducibility{Status: "not-checked", Method: method, Detail: "Only verified recipes and rebase records are reproduced."}
 	}
-	trusted := trustedSignerFor(*signer, opts.Policy.TrustedSigners)
-	// The rebuild verifies the recipe again; bind it to the same repository.
-	if repo, err := resolveRepository(trusted, Subject{ImageSource: data.claimedSource, Signer: signer}); err == nil && repo != "" {
-		trusted.SourceRepository, trusted.SourceRepositoryOwner, trusted.SourceMatchesImage = repo, "", false
+	// The rebuild verifies the recipe (or rebase record) again: bind it to
+	// the signer this report shows verified it, exactly.
+	bound := report.Signer{Key: signer.Key}
+	if signer.Key == "" {
+		bound = report.Signer{Identity: signer.Identity, Issuer: signer.Issuer, SourceRepository: signer.SourceRepository}
 	}
-	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, trusted)
+	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, bound)
 	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got}
 	switch {
 	case got == img.Digest:
@@ -864,25 +883,6 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 		r.Status, r.Detail = "not-checked", "The rebuild couldn't finish: "+err.Error()
 	}
 	return r
-}
-
-// trustedSignerFor returns the policy signer that matches a certificate's
-// identity (what cosign is told to require when reproducing).
-func trustedSignerFor(cert report.Signer, trusted []report.Signer) report.Signer {
-	for _, t := range trusted {
-		if t.Issuer != "" && t.Issuer != cert.Issuer {
-			continue
-		}
-		if t.Identity != "" && t.Identity == cert.Identity {
-			return t
-		}
-		if t.IdentityRegexp != "" {
-			if re, err := regexp.Compile(t.IdentityRegexp); err == nil && re.MatchString(cert.Identity) {
-				return t
-			}
-		}
-	}
-	return report.Signer{Identity: cert.Identity, Issuer: cert.Issuer}
 }
 
 func dedupePackages(pkgs []pkg) []pkg {

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,12 +14,13 @@ import (
 )
 
 type estateFlags struct {
-	dir         string
-	files       []string
-	generatedAt string
-	insecure    bool
-	output      string
-	history     string
+	dir          string
+	files        []string
+	generatedAt  string
+	insecure     bool
+	output       string
+	history      string
+	allowMissing bool
 }
 
 var estateOpts estateFlags
@@ -79,6 +81,7 @@ func newEstatePullCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&estateOpts.output, "output", ".", "Directory to write the snapshot files into")
 	cmd.Flags().BoolVar(&estateOpts.insecure, "insecure", false, "Use plain HTTP without auth (test registries only)")
+	cmd.Flags().BoolVar(&estateOpts.allowMissing, "allow-missing", false, "Succeed, writing nothing, when the registry has nothing at the reference yet (a first run); any other failure still fails")
 	return cmd
 }
 
@@ -232,6 +235,13 @@ func runEstateHistory(ref string) error {
 func runEstatePull(ref string) error {
 	snapshot, digest, err := estateClient().Pull(ref)
 	if err != nil {
+		// Nothing stored yet is the one failure a first run expects. Anything
+		// else (credentials, network, a foreign artifact) must stop a job that
+		// would otherwise start a new history and push it over the old one.
+		if estateOpts.allowMissing && errors.Is(err, estate.ErrNotFound) {
+			_, _ = fmt.Fprintf(out, "[estate] nothing at %s yet; nothing pulled\n", ref)
+			return nil
+		}
 		return err
 	}
 	if err := os.MkdirAll(estateOpts.output, 0o755); err != nil {

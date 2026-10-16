@@ -14,18 +14,20 @@ import (
 // are built on, from their verified recipes: the versions in use, each
 // version's signature checked against the policy's stack signers, and the
 // apps pinned to a version other than the one the stack's tag names now.
+// A stack is a repository and tag: apps on ghcr.io/acme/stacks/go:1 and
+// :2 are on two stacks, each current or stale against its own tag.
 func stacksOf(ctx context.Context, images []report.Image, opts Options) []report.Stack {
-	type pin struct{ ref, digest, image string }
-	byRepo := map[string][]pin{}
+	type pin struct{ digest, image string }
+	byRef := map[string][]pin{}
 	for _, img := range images {
 		f := img.Factory
 		if f == nil || f.StackRef == "" || f.StackDigest == "" || img.Evidence.Recipe.Status != "verified" {
 			continue
 		}
 		ref := qualify(f.StackRef)
-		byRepo[repoOf(ref)] = append(byRepo[repoOf(ref)], pin{ref, f.StackDigest, img.ID})
+		byRef[ref] = append(byRef[ref], pin{f.StackDigest, img.ID})
 	}
-	if len(byRepo) == 0 {
+	if len(byRef) == 0 {
 		return nil
 	}
 	verifier := &Verifier{Signers: opts.Policy.StackSigners}
@@ -35,8 +37,9 @@ func stacksOf(ctx context.Context, images []report.Image, opts Options) []report
 	o := append([]remote.Option{remote.WithContext(ctx)}, opts.RemoteOptions...)
 
 	var out []report.Stack
-	for repo, pins := range byRepo {
-		st := report.Stack{Repository: repo, Ref: pins[0].ref, Versions: []report.StackVersion{}}
+	for ref, pins := range byRef {
+		repo := repoOf(ref)
+		st := report.Stack{Repository: repo, Ref: ref, Versions: []report.StackVersion{}}
 		if r, err := name.ParseReference(st.Ref); err == nil {
 			if desc, err := remote.Head(r, o...); err == nil {
 				st.CurrentDigest = desc.Digest.String()
@@ -65,7 +68,12 @@ func stacksOf(ctx context.Context, images []report.Image, opts Options) []report
 		}
 		out = append(out, st)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Repository < out[j].Repository })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Repository != out[j].Repository {
+			return out[i].Repository < out[j].Repository
+		}
+		return out[i].Ref < out[j].Ref
+	})
 	return out
 }
 
@@ -75,13 +83,11 @@ func stackSignature(ctx context.Context, repo, digest string, verifier *Verifier
 	if err != nil {
 		return report.EvidenceItem{Status: "unknown", Detail: "The registry couldn't be read: " + err.Error()}
 	}
-	f, ok := newest(found, KindSignature, digest)
-	if !ok {
-		return report.EvidenceItem{Status: "missing", Detail: "The stack carries no signature."}
+	item, _ := verifyEvidence(ctx, verifier, repo, digest, KindSignature, "", found)
+	if item.Status == "missing" {
+		item.Detail = "The stack carries no signature."
 	}
-	item := report.EvidenceItem{Source: sourceName(f), Ref: f.Ref, Timestamp: f.Timestamp, Signer: f.Signer}
-	item.Status, item.Detail = check(ctx, verifier, repo+"@"+digest, f, "")
-	if len(verifier.Signers) == 0 {
+	if item.Status != "missing" && len(verifier.Signers) == 0 {
 		item.Detail = "No stack signer is configured (a trust policy's stack signers), so it can't be verified."
 	}
 	return item
