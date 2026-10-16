@@ -18,6 +18,10 @@ commands and flags, the estate report contract, the action, release assets).
 When a release is cut, move these entries under a heading for its version.
 -->
 
+## v0.16.0
+
+Released 2026-10-16.
+
 - Release binaries carry a SLSA build provenance attestation, signed by the
   release workflow and verifiable with `gh attestation verify`. The release
   workflow signs with cosign v3.1.3, accepts only stable `X.Y.Z` versions,
