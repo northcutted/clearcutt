@@ -44,6 +44,12 @@ const (
 // Kinds lists every evidence kind in report order.
 var Kinds = []string{KindSignature, KindSBOM, KindVulnerabilityScan, KindProvenance, KindRecipe, KindRebase, KindTests}
 
+// KindReproduction is a clearcutt-factory reproduction attestation. It is
+// not one of the report's evidence items: a verified one, bound to a recipe
+// or rebase record verified on the same image, decides the image's
+// reproducibility.
+const KindReproduction = "reproduction"
+
 // Storage formats evidence is found in.
 const (
 	FormatBundle      = "sigstore-bundle" // cosign v3 / GitHub: a Sigstore bundle as an OCI referrer
@@ -57,6 +63,9 @@ const (
 	PredicateVuln       = "https://cosign.sigstore.dev/attestation/vuln/v1"
 	PredicateRecipe     = "https://github.com/northcutted/clearcutt-factory/recipe/v1"
 	PredicateRebase     = "https://github.com/northcutted/clearcutt-factory/rebase/v1"
+	// PredicateReproduction says an image was rebuilt from its recipe, or its
+	// rebase repeated, to the same digest (clearcutt-factory verify --attest).
+	PredicateReproduction = "https://github.com/northcutted/clearcutt-factory/reproduction/v1"
 	// Before clearcutt-factory had its name.
 	legacyPredicateRecipe = "https://github.com/northcutted/declarative-image-factory/recipe/v1"
 	legacyPredicateRebase = "https://github.com/northcutted/declarative-image-factory/rebase/v1"
@@ -79,6 +88,8 @@ func KindOf(predicateType string) string {
 		return KindRecipe
 	case pt == PredicateRebase, pt == legacyPredicateRebase:
 		return KindRebase
+	case pt == PredicateReproduction:
+		return KindReproduction
 	case strings.HasPrefix(pt, "https://in-toto.io/attestation/test-result/"):
 		return KindTests
 	}

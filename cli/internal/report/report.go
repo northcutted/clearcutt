@@ -41,8 +41,9 @@ type Report struct {
 	// built on, with their newest observed version.
 	Bases []Base `json:"bases"`
 	// Stacks are the clearcutt-factory registry stacks the estate's apps
-	// are built on: each version in use, who signed it, and which apps are
-	// pinned to an older version than the stack's tag names now.
+	// are built on, rebased apps included: each version in use, who signed
+	// it, and which apps are pinned to an older version than the stack's tag
+	// names now.
 	Stacks []Stack `json:"stacks,omitempty"`
 	// Packages index which images ship which package versions. Only images
 	// whose package set could be read appear here; the rest are counted in
@@ -106,7 +107,9 @@ type Policy struct {
 	// policy's stack signers. Registry stacks the estate's apps are built on
 	// are verified against them.
 	StackSigners []Signer `json:"stackSigners,omitempty"`
-	// Reproduce reports whether this run rebuilt images to check them.
+	// Reproduce reports whether this run checked that images reproduce:
+	// those without a verified reproduction attestation were rebuilt, and
+	// one that doesn't reproduce, or couldn't be checked, falls short.
 	Reproduce bool `json:"reproduce"`
 }
 
@@ -137,6 +140,14 @@ type Signer struct {
 	// repository the image names as its source
 	// (org.opencontainers.image.source).
 	SourceMatchesImage bool `json:"sourceMatchesImage,omitempty"`
+	// Tlog false, in the policy, accepts a key signer's signatures and
+	// attestations without a transparency log entry (cosign
+	// --insecure-ignore-tlog), for a key that signs without one (a private
+	// or offline Sigstore setup). Nothing then shows when evidence was signed,
+	// so set it only for keys that never log. Keyless signers can't set it.
+	// Absent or true, log inclusion is checked. On verified evidence, false
+	// says it wasn't.
+	Tlog *bool `json:"tlog,omitempty"`
 }
 
 // Summary holds the estate's headline numbers.
@@ -367,7 +378,11 @@ type EvidenceItem struct {
 	Status string `json:"status" enum:"verified,present,failed,missing,unknown,not-applicable"`
 	// Source is where it was found: cosign-signature, cosign-attestation,
 	// github-attestation, or oci-referrer (an unsigned document). Open: new
-	// sources may appear.
+	// sources may appear. github-attestation is a GitHub artifact
+	// attestation (actions/attest-build-provenance) stored in the registry,
+	// which gh attestation verify --bundle-from-oci can check too; it is told
+	// apart from cosign's by its content, so only verified evidence is
+	// labeled so, and an unverified one shows as cosign-attestation.
 	Source string `json:"source,omitempty"`
 	// PredicateType is the in-toto predicate type, for attestations.
 	PredicateType string `json:"predicateType,omitempty"`
@@ -376,6 +391,12 @@ type EvidenceItem struct {
 	// Actions, the repository and ref of the run that signed (or the trusted
 	// key). Otherwise it is what the evidence's certificate claims, unverified.
 	Signer *Signer `json:"signer,omitempty"`
+	// SignerWorkflow, on verified evidence a GitHub Actions workflow signed,
+	// is that workflow without its ref (github.com/OWNER/REPO/.github/
+	// workflows/FILE): what gh attestation verify --signer-workflow takes,
+	// with signer.sourceRepository as its --repo. For a reusable workflow it
+	// is the called workflow, and sourceRepository the caller.
+	SignerWorkflow string `json:"signerWorkflow,omitempty"`
 	// Ref is where it is stored (e.g. an attestation's repository@digest).
 	Ref string `json:"ref,omitempty"`
 	// Timestamp is when it was signed or produced (RFC 3339), if known.
@@ -419,18 +440,56 @@ type Finding struct {
 // Reproducibility is whether rebuilding the image gives the same digest.
 type Reproducibility struct {
 	// Status is reproduced, not-reproduced (the rebuild gave a different
-	// digest), not-checked (a recipe exists but this run didn't rebuild, or
-	// the rebuild couldn't finish; see detail), or no-recipe (nothing to
-	// rebuild from).
+	// digest), not-checked (a recipe exists but nothing checked it: no
+	// verified reproduction attestation, and this run didn't rebuild, or the
+	// rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild
+	// from).
 	Status string `json:"status" enum:"reproduced,not-reproduced,not-checked,no-recipe"`
 	// Method is recipe-rebuild (rebuilt from the signed recipe) or
 	// rebase-repeat (repeated the recorded rebase).
 	Method string `json:"method,omitempty" enum:"recipe-rebuild,rebase-repeat"`
-	// CheckedAt is when it was checked (RFC 3339).
+	// CheckedAt is when it was checked (RFC 3339): when this run rebuilt it,
+	// or when the attested reproduction ran.
 	CheckedAt string `json:"checkedAt,omitempty"`
 	// Digest is what the rebuild produced.
 	Digest string `json:"digest,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	// Source is where the result comes from: attestation (a clearcutt-factory
+	// reproduction attestation on the image, verified against a trusted
+	// signer and made from a recipe or rebase record verified on the same
+	// image; this run didn't rebuild it) or rebuild (this run rebuilt it,
+	// --reproduce). Absent when nothing checked it.
+	Source string `json:"source,omitempty" enum:"attestation,rebuild"`
+	// Builder is where an attested reproduction ran, as its verified
+	// attestation says.
+	Builder *ReproductionBuilder `json:"builder,omitempty"`
+	// Signer is who signed the reproduction attestation, as cosign checked
+	// it (source attestation).
+	Signer *Signer `json:"signer,omitempty"`
+	// Ref is where the reproduction attestation is stored (source
+	// attestation).
+	Ref string `json:"ref,omitempty"`
+}
+
+// ReproductionBuilder is the machine, and the CI run if any, that reproduced
+// an image, as its reproduction attestation says. It shows the image rebuilt
+// on a fresh machine, not who else could rebuild it.
+type ReproductionBuilder struct {
+	// ID is the CI run: on GitHub Actions, the run attempt's URL.
+	ID string `json:"id,omitempty"`
+	// Workflow is the workflow the run belongs to (on GitHub Actions, the
+	// calling workflow's ref), and Job the job in it.
+	Workflow string `json:"workflow,omitempty"`
+	Job      string `json:"job,omitempty"`
+	// Runner is github-hosted or self-hosted, on GitHub Actions.
+	Runner string `json:"runner,omitempty"`
+	// OS and Arch are the machine's, e.g. linux and amd64.
+	OS   string `json:"os,omitempty"`
+	Arch string `json:"arch,omitempty"`
+	// FactoryVersion is the clearcutt-factory that reproduced it.
+	FactoryVersion string `json:"factoryVersion,omitempty"`
+	// BuildKit is the BuildKit it rebuilt with (recipe-rebuild).
+	BuildKit string `json:"buildkit,omitempty"`
 }
 
 // Factory describes an image built or rebased by clearcutt-factory, from its
@@ -441,7 +500,9 @@ type Factory struct {
 	Kind string `json:"kind,omitempty" enum:"Image,App"`
 	// Name is the manifest's metadata.name (absent like kind).
 	Name string `json:"name,omitempty"`
-	// Stack is the stack an app was built on.
+	// Stack is the stack an app was built on. A rebased app's, like its
+	// stackRef and stackDigest, comes from the recipe of the image it was
+	// rebased from: a rebase keeps the layers its stack built.
 	Stack string `json:"stack,omitempty"`
 	// StackRef is the registry stack an app was built on, as its lock names
 	// it (absent for a stack defined beside the app).
@@ -583,6 +644,18 @@ type HistoryImage struct {
 	RebaseStatus string `json:"rebaseStatus,omitempty"`
 	// Vulnerabilities are the counted findings; absent when unknown.
 	Vulnerabilities *SeverityCounts `json:"vulnerabilities,omitempty"`
+	// FixableFindings are the IDs of the image's fixable high and critical
+	// findings (VEX-suppressed ones aside), from its verified vulnerability
+	// scans, sorted: what a reader compares between runs to show which were
+	// fixed or introduced. Listed only with vulnerabilities (absent there,
+	// there are none); other findings are only counted, to keep the history
+	// small.
+	FixableFindings []string `json:"fixableFindings,omitempty"`
+	// PackagesDigest identifies the image's package set, read from verified
+	// SBOMs: sha256:<hex> of its package versions as "type name version"
+	// lines, sorted, each ending in a newline. It changes when any package
+	// does. Absent when the package set is unknown.
+	PackagesDigest string `json:"packagesDigest,omitempty"`
 }
 
 // HistoryBase is an image's base in a history row.

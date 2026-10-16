@@ -11,17 +11,24 @@ import (
 )
 
 // stacksOf lists the registry stacks the estate's clearcutt-factory apps
-// are built on, from their verified recipes: the versions in use, each
-// version's signature checked against the policy's stack signers, and the
-// apps pinned to a version other than the one the stack's tag names now.
-// A stack is a repository and tag: apps on ghcr.io/acme/stacks/go:1 and
-// :2 are on two stacks, each current or stale against its own tag.
+// are built on, from their verified recipes (a rebased app's is the recipe
+// of the image it was rebased from, reached through its verified rebase
+// record): the versions in use, each version's signature checked against
+// the policy's stack signers, and the apps pinned to a version other than
+// the one the stack's tag names now. A stack is a repository and tag: apps
+// on ghcr.io/acme/stacks/go:1 and :2 are on two stacks, each current or
+// stale against its own tag.
 func stacksOf(ctx context.Context, images []report.Image, opts Options) []report.Stack {
 	type pin struct{ digest, image string }
 	byRef := map[string][]pin{}
 	for _, img := range images {
 		f := img.Factory
-		if f == nil || f.StackRef == "" || f.StackDigest == "" || img.Evidence.Recipe.Status != "verified" {
+		if f == nil || f.StackRef == "" || f.StackDigest == "" {
+			continue
+		}
+		// The factory block is read only from verified evidence; this keeps
+		// it that way.
+		if img.Evidence.Recipe.Status != "verified" && img.Evidence.Rebase.Status != "verified" {
 			continue
 		}
 		ref := qualify(f.StackRef)

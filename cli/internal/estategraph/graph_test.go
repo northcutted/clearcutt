@@ -265,6 +265,78 @@ func TestBuildGraphPrefersProofOverSelfReportedLabels(t *testing.T) {
 	}
 }
 
+// The showcase prototype's shape (V10): an app built on a run image that was
+// built on an upstream base starts with both images' layers. It is built on
+// the run image, the nearest base, even though the upstream repository sorts
+// first; the upstream base is the run image's base.
+func TestBuildGraphAttributesAnImageToItsNearestBase(t *testing.T) {
+	upstream := obs("cgr.dev/chainguard/wolfi-base:latest", "2026-01-01T00:00:00Z", "wolfi")
+	run := obs("localhost:5001/platform/run-python:1", "2026-01-02T00:00:00Z", "wolfi", "python")
+	app := obs("localhost:5001/apps/catalog:1", "2026-01-03T00:00:00Z", "wolfi", "python", "catalog")
+
+	for _, order := range [][]Observation{{upstream, run, app}, {app, run, upstream}, {run, app, upstream}} {
+		graph := graphOf(t, GraphOptions{}, order...)
+
+		edge := edgeFor(t, graph, "localhost:5001/apps/catalog:1")
+		if edge.BaseRepository != "localhost:5001/platform/run-python" || edge.Method != MethodLayerPrefix || edge.Drift != DriftCurrent {
+			t.Fatalf("app base = %s via %s (%s), want the run image by layer proof", edge.BaseRepository, edge.Method, edge.Drift)
+		}
+		// The upstream base still shows as a matched signal.
+		if len(edge.Signals) != 2 || edge.Signals[0].Type != MethodLayerPrefix || edge.Signals[1].Type != MethodLayerPrefix {
+			t.Fatalf("app signals = %+v, want both layer-prefix matches", edge.Signals)
+		}
+		if e := edgeFor(t, graph, "localhost:5001/platform/run-python:1"); e.BaseRepository != "cgr.dev/chainguard/wolfi-base" {
+			t.Fatalf("run image base = %s, want the upstream base", e.BaseRepository)
+		}
+		if len(graph.Roots) != 1 || graph.Roots[0].ImageRef != "cgr.dev/chainguard/wolfi-base:latest" {
+			t.Fatalf("roots = %+v, want the upstream base", graph.Roots)
+		}
+		if len(graph.Bases) != 2 || graph.Bases[0].Consumers != 1 || graph.Bases[1].Repository != "localhost:5001/platform/run-python" || graph.Bases[1].Consumers != 1 {
+			t.Fatalf("bases = %+v, want one consumer each", graph.Bases)
+		}
+	}
+}
+
+// The nearest base wins on an older version of it too: the app is behind
+// its run image, not on the upstream base.
+func TestBuildGraphNearestBaseOnAnOlderVersion(t *testing.T) {
+	upstream := obs("cgr.dev/chainguard/wolfi-base:latest", "2026-01-01T00:00:00Z", "wolfi")
+	held := obs("localhost:5001/run-python:held", "2026-01-02T00:00:00Z", "wolfi", "python-1")
+	current := obs("localhost:5001/run-python:latest", "2026-01-09T00:00:00Z", "wolfi", "python-2")
+	app := obs("localhost:5001/apps/catalog:1", "2026-01-03T00:00:00Z", "wolfi", "python-1", "catalog")
+
+	graph := graphOf(t, GraphOptions{}, upstream, held, current, app)
+
+	edge := edgeFor(t, graph, "localhost:5001/apps/catalog:1")
+	if edge.BaseRepository != "localhost:5001/run-python" || edge.BaseRef != "localhost:5001/run-python:held" || edge.Drift != DriftStale || edge.DaysBehind != 7 {
+		t.Fatalf("app edge = %+v, want stale on the held run image", edge)
+	}
+}
+
+// Equally long prefixes are the same layers in two places (a mirror): the one
+// the image's own base annotation names wins, else the first repository by
+// name, so the choice never depends on input order.
+func TestBuildGraphTieBetweenEqualPrefixes(t *testing.T) {
+	upstream := obs("docker.io/library/debian:13", "2026-01-01T00:00:00Z", "debian")
+	mirror := obs("reg.test/mirror/debian:13", "2026-01-01T00:00:00Z", "debian")
+	app := obs("reg.test/apps/api:1", "2026-01-02T00:00:00Z", "debian", "api")
+
+	for _, order := range [][]Observation{{upstream, mirror, app}, {app, mirror, upstream}} {
+		if e := edgeFor(t, graphOf(t, GraphOptions{}, order...), "reg.test/apps/api:1"); e.BaseRepository != "docker.io/library/debian" {
+			t.Fatalf("undeclared tie went to %s, want the first repository by name", e.BaseRepository)
+		}
+	}
+	app.Annotations["org.opencontainers.image.base.name"] = "reg.test/mirror/debian:13"
+	if e := edgeFor(t, graphOf(t, GraphOptions{}, upstream, mirror, app), "reg.test/apps/api:1"); e.BaseRepository != "reg.test/mirror/debian" || e.Method != MethodLayerPrefix {
+		t.Fatalf("declared tie went to %s via %s, want the mirror the image names", e.BaseRepository, e.Method)
+	}
+	delete(app.Annotations, "org.opencontainers.image.base.name")
+	app.Labels["org.opencontainers.image.base.digest"] = mirror.ManifestDigest
+	if e := edgeFor(t, graphOf(t, GraphOptions{}, upstream, mirror, app), "reg.test/apps/api:1"); e.BaseRepository != "reg.test/mirror/debian" || e.Method != MethodLayerPrefix {
+		t.Fatalf("tie declared by digest went to %s via %s, want the mirror", e.BaseRepository, e.Method)
+	}
+}
+
 func TestBuildGraphIdenticalLayerSetsAreNotABaseRelationship(t *testing.T) {
 	one := obs("reg.test/a/mirror:v1", "2026-01-01T00:00:00Z", "os", "jdk")
 	two := obs("reg.test/b/mirror:v1", "2026-01-02T00:00:00Z", "os", "jdk")

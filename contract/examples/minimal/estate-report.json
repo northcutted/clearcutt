@@ -322,8 +322,11 @@
           "predicateType": "https://slsa.dev/provenance/v1",
           "signer": {
             "identity": "https://github.com/acme/images/.github/workflows/images.yml@refs/heads/main",
-            "issuer": "https://token.actions.githubusercontent.com"
-          }
+            "issuer": "https://token.actions.githubusercontent.com",
+            "sourceRepository": "https://github.com/acme/images",
+            "sourceRef": "refs/heads/main"
+          },
+          "signerWorkflow": "github.com/acme/images/.github/workflows/images.yml"
         },
         "recipe": {
           "status": "verified",
@@ -372,7 +375,8 @@
         "status": "reproduced",
         "method": "recipe-rebuild",
         "checkedAt": "2026-10-05T21:52:40Z",
-        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source": "rebuild"
       },
       "factory": {
         "kind": "App",
@@ -545,7 +549,23 @@
         "status": "reproduced",
         "method": "rebase-repeat",
         "checkedAt": "2026-10-06T05:44:10Z",
-        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "detail": "Reproduced from the rebase record verified on this image by clearcutt-factory v0.2.0 on https://github.com/acme/images/actions/runs/123/attempts/1, as its verified reproduction attestation says; this run didn't rebuild it.",
+        "source": "attestation",
+        "builder": {
+          "id": "https://github.com/acme/images/actions/runs/123/attempts/1",
+          "workflow": "acme/images/.github/workflows/fleet.yml@refs/heads/main",
+          "job": "rebase",
+          "runner": "github-hosted",
+          "os": "linux",
+          "arch": "amd64",
+          "factoryVersion": "v0.2.0"
+        },
+        "signer": {
+          "identity": "https://github.com/acme/images/.github/workflows/fleet.yml@refs/heads/main",
+          "issuer": "https://token.actions.githubusercontent.com"
+        },
+        "ref": "ghcr.io/acme/images/billing@sha256:abababababababababababababababababababababababababababababababab"
       },
       "factory": {
         "kind": "App",

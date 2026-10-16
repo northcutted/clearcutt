@@ -282,8 +282,12 @@
           ],
           "description": "Signer is who signed it. On verified evidence it is what cosign checked: the certificate's identity and issuer and, for GitHub Actions, the repository and ref of the run that signed (or the trusted key). Otherwise it is what the evidence's certificate claims, unverified."
         },
+        "signerWorkflow": {
+          "description": "SignerWorkflow, on verified evidence a GitHub Actions workflow signed, is that workflow without its ref (github.com/OWNER/REPO/.github/ workflows/FILE): what gh attestation verify --signer-workflow takes, with signer.sourceRepository as its --repo. For a reusable workflow it is the called workflow, and sourceRepository the caller.",
+          "type": "string"
+        },
         "source": {
-          "description": "Source is where it was found: cosign-signature, cosign-attestation, github-attestation, or oci-referrer (an unsigned document). Open: new sources may appear.",
+          "description": "Source is where it was found: cosign-signature, cosign-attestation, github-attestation, or oci-referrer (an unsigned document). Open: new sources may appear. github-attestation is a GitHub artifact attestation (actions/attest-build-provenance) stored in the registry, which gh attestation verify --bundle-from-oci can check too; it is told apart from cosign's by its content, so only verified evidence is labeled so, and an unverified one shows as cosign-attestation.",
           "type": "string"
         },
         "status": {
@@ -339,7 +343,7 @@
           "type": "integer"
         },
         "stack": {
-          "description": "Stack is the stack an app was built on.",
+          "description": "Stack is the stack an app was built on. A rebased app's, like its stackRef and stackDigest, comes from the recipe of the image it was rebased from: a rebase keeps the layers its stack built.",
           "type": "string"
         },
         "stackDigest": {
@@ -732,7 +736,7 @@
           "type": "boolean"
         },
         "reproduce": {
-          "description": "Reproduce reports whether this run rebuilt images to check them.",
+          "description": "Reproduce reports whether this run checked that images reproduce: those without a verified reproduction attestation were rebuilt, and one that doesn't reproduce, or couldn't be checked, falls short.",
           "type": "boolean"
         },
         "required": {
@@ -775,8 +779,16 @@
       "additionalProperties": false,
       "description": "Reproducibility is whether rebuilding the image gives the same digest.",
       "properties": {
+        "builder": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/ReproductionBuilder"
+            }
+          ],
+          "description": "Builder is where an attested reproduction ran, as its verified attestation says."
+        },
         "checkedAt": {
-          "description": "CheckedAt is when it was checked (RFC 3339).",
+          "description": "CheckedAt is when it was checked (RFC 3339): when this run rebuilt it, or when the attested reproduction ran.",
           "type": "string"
         },
         "detail": {
@@ -793,8 +805,27 @@
             "rebase-repeat"
           ]
         },
+        "ref": {
+          "description": "Ref is where the reproduction attestation is stored (source attestation).",
+          "type": "string"
+        },
+        "signer": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Signer"
+            }
+          ],
+          "description": "Signer is who signed the reproduction attestation, as cosign checked it (source attestation)."
+        },
+        "source": {
+          "description": "Source is where the result comes from: attestation (a clearcutt-factory reproduction attestation on the image, verified against a trusted signer and made from a recipe or rebase record verified on the same image; this run didn't rebuild it) or rebuild (this run rebuilt it, --reproduce). Absent when nothing checked it.",
+          "enum": [
+            "attestation",
+            "rebuild"
+          ]
+        },
         "status": {
-          "description": "Status is reproduced, not-reproduced (the rebuild gave a different digest), not-checked (a recipe exists but this run didn't rebuild, or the rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild from).",
+          "description": "Status is reproduced, not-reproduced (the rebuild gave a different digest), not-checked (a recipe exists but nothing checked it: no verified reproduction attestation, and this run didn't rebuild, or the rebuild couldn't finish; see detail), or no-recipe (nothing to rebuild from).",
           "enum": [
             "reproduced",
             "not-reproduced",
@@ -831,6 +862,43 @@
         "notReproduced",
         "reproduced"
       ],
+      "type": "object"
+    },
+    "ReproductionBuilder": {
+      "additionalProperties": false,
+      "description": "ReproductionBuilder is the machine, and the CI run if any, that reproduced an image, as its reproduction attestation says. It shows the image rebuilt on a fresh machine, not who else could rebuild it.",
+      "properties": {
+        "arch": {
+          "type": "string"
+        },
+        "buildkit": {
+          "description": "BuildKit is the BuildKit it rebuilt with (recipe-rebuild).",
+          "type": "string"
+        },
+        "factoryVersion": {
+          "description": "FactoryVersion is the clearcutt-factory that reproduced it.",
+          "type": "string"
+        },
+        "id": {
+          "description": "ID is the CI run: on GitHub Actions, the run attempt's URL.",
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "os": {
+          "description": "OS and Arch are the machine's, e.g. linux and amd64.",
+          "type": "string"
+        },
+        "runner": {
+          "description": "Runner is github-hosted or self-hosted, on GitHub Actions.",
+          "type": "string"
+        },
+        "workflow": {
+          "description": "Workflow is the workflow the run belongs to (on GitHub Actions, the calling workflow's ref), and Job the job in it.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "SeverityCounts": {
@@ -898,6 +966,10 @@
         "sourceRepositoryOwner": {
           "description": "SourceRepositoryOwner, in the policy, accepts runs in any of the owner's repositories, e.g. https://github.com/acme.",
           "type": "string"
+        },
+        "tlog": {
+          "description": "Tlog false, in the policy, accepts a key signer's signatures and attestations without a transparency log entry (cosign --insecure-ignore-tlog), for a key that signs without one (a private or offline Sigstore setup). Nothing then shows when evidence was signed, so set it only for keys that never log. Keyless signers can't set it. Absent or true, log inclusion is checked. On verified evidence, false says it wasn't.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -1285,7 +1357,7 @@
       "description": "Policy is what images were held to in this run."
     },
     "stacks": {
-      "description": "Stacks are the clearcutt-factory registry stacks the estate's apps are built on: each version in use, who signed it, and which apps are pinned to an older version than the stack's tag names now.",
+      "description": "Stacks are the clearcutt-factory registry stacks the estate's apps are built on, rebased apps included: each version in use, who signed it, and which apps are pinned to an older version than the stack's tag names now.",
       "items": {
         "$ref": "#/$defs/Stack"
       },

@@ -144,6 +144,7 @@ func TestKindOf(t *testing.T) {
 		PredicateRecipe:                                   KindRecipe,
 		legacyPredicateRebase:                             KindRebase,
 		"https://in-toto.io/attestation/test-result/v0.1": KindTests,
+		PredicateReproduction:                             KindReproduction,
 		"https://apko.dev/image-configuration":            "",
 	} {
 		if got := KindOf(pt); got != want {
@@ -203,6 +204,17 @@ func TestSignerFlags(t *testing.T) {
 	}
 	if got, _ := signerFlags(report.Signer{Key: "cosign.pub"}); strings.Join(got, " ") != "--key cosign.pub" {
 		t.Errorf("key flags %v", got)
+	}
+	no, yes := false, true
+	if got, _ := signerFlags(report.Signer{Key: "cosign.pub", Tlog: &no}); strings.Join(got, " ") != "--key cosign.pub --insecure-ignore-tlog=true" {
+		t.Errorf("key flags without a transparency log %v", got)
+	}
+	if got, _ := signerFlags(report.Signer{Key: "cosign.pub", Tlog: &yes}); strings.Join(got, " ") != "--key cosign.pub" {
+		t.Errorf("key flags with tlog: true %v", got)
+	}
+	// A keyless certificate is only as good as the log entry that dates it.
+	if _, err := signerFlags(report.Signer{Identity: ourSigner, Issuer: ghIssuer, Tlog: &no}); err == nil || !strings.Contains(err.Error(), "applies to key signers") {
+		t.Errorf("keyless signer without a transparency log: %v", err)
 	}
 }
 

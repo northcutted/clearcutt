@@ -85,9 +85,45 @@ func (v *Verifier) Verify(ctx context.Context, subj Subject) (Verified, error) {
 	flags, signer := exactFlags(*subj.Signer)
 	statements, err := v.verifyWith(ctx, subj, flags)
 	if err != nil {
-		return Verified{}, fmt.Errorf("not signed by a trusted signer: %w", err)
+		return Verified{}, errors.New(notVerified(err))
 	}
 	return Verified{Trusted: preferred(accepted, *subj.Signer), Signer: signer, Statements: statements}, nil
+}
+
+// tlogFailure reports whether cosign failed on the transparency log (no
+// entry, or one it couldn't verify) rather than on who signed: cosign checks
+// the log before, or apart from, the signature, so it says nothing about the
+// signer.
+func tlogFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "transparency log") || strings.Contains(s, "log inclusion") || strings.Contains(s, "tlog")
+}
+
+// notVerified says why cosign didn't verify keyless evidence.
+func notVerified(err error) string {
+	if tlogFailure(err) {
+		return "its transparency log inclusion couldn't be verified: " + err.Error()
+	}
+	return "not signed by a trusted signer: " + err.Error()
+}
+
+// ignoresTlog reports whether a key signer accepts evidence with no
+// transparency log entry (tlog: false).
+func ignoresTlog(s report.Signer) bool {
+	return s.Key != "" && s.Tlog != nil && !*s.Tlog
+}
+
+// keySigner is the signer cosign checked with trusted key signer s: the key,
+// and whether the transparency log was skipped.
+func keySigner(s report.Signer) report.Signer {
+	out := report.Signer{Key: s.Key}
+	if ignoresTlog(s) {
+		out.Tlog = s.Tlog
+	}
+	return out
 }
 
 // keyless reports whether a certificate names a keyless signer.
@@ -131,19 +167,35 @@ func preferred(accepted []report.Signer, cert report.Signer) report.Signer {
 }
 
 // verifyKeys verifies evidence with no certificate against the trusted keys.
+// A key whose evidence fails only on the transparency log is said to have
+// failed there, not to be the wrong signer.
 func (v *Verifier) verifyKeys(ctx context.Context, subj Subject) (Verified, error) {
 	var errs []string
+	tlog := false
 	for _, s := range v.Signers {
 		if s.Key == "" {
 			errs = append(errs, "no certificate names who signed it")
 			continue
 		}
-		statements, err := v.verifyWith(ctx, subj, []string{"--key", s.Key})
+		flags, err := signerFlags(s)
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
 		}
-		return Verified{Trusted: s, Signer: report.Signer{Key: s.Key}, Statements: statements}, nil
+		statements, err := v.verifyWith(ctx, subj, flags)
+		switch {
+		case err != nil && tlogFailure(err):
+			tlog = true
+			errs = append(errs, fmt.Sprintf("key %s: %v (if this key signs without a transparency log, set tlog: false on its trusted signer)", s.Key, err))
+			continue
+		case err != nil:
+			errs = append(errs, err.Error())
+			continue
+		}
+		return Verified{Trusted: s, Signer: keySigner(s), Statements: statements}, nil
+	}
+	if tlog {
+		return Verified{}, fmt.Errorf("its transparency log inclusion couldn't be verified: %s", strings.Join(dedupe(errs), "; "))
 	}
 	return Verified{}, fmt.Errorf("not signed by a trusted signer: %s", strings.Join(dedupe(errs), "; "))
 }
@@ -377,7 +429,13 @@ func (v *Verifier) run(ctx context.Context, args ...string) ([]byte, error) {
 // ClearCutt, it refuses identities that would let anyone verify.
 func signerFlags(s report.Signer) ([]string, error) {
 	if s.Key != "" {
+		if ignoresTlog(s) {
+			return []string{"--key", s.Key, "--insecure-ignore-tlog=true"}, nil
+		}
 		return []string{"--key", s.Key}, nil
+	}
+	if s.Tlog != nil && !*s.Tlog {
+		return nil, fmt.Errorf("trusted signer %q: tlog: false applies to key signers; a keyless certificate is valid only when the transparency log shows it was used in time", firstNonEmpty(s.IdentityRegexp, s.Identity))
 	}
 	id := strings.TrimSpace(s.IdentityRegexp)
 	if id == "" {
@@ -728,7 +786,7 @@ func verifyEvidence(ctx context.Context, v *Verifier, repo, digest, kind, imageS
 			statements, err := v.verifyWith(ctx, subj, flags)
 			for _, i := range c.copies {
 				if err != nil {
-					status[i], detail[i] = "failed", "not signed by a trusted signer: "+err.Error()
+					status[i], detail[i] = "failed", notVerified(err)
 					continue
 				}
 				pass(i, Verified{Trusted: preferred(c.accepted, c.cert), Signer: signer, Statements: statements})
@@ -758,7 +816,8 @@ func verifyEvidence(ctx context.Context, v *Verifier, repo, digest, kind, imageS
 	})
 	best := verified[0]
 	signer := best.signer
-	item := report.EvidenceItem{Status: "verified", Source: sourceName(best.Found), PredicateType: best.PredicateType, Ref: best.Ref, Timestamp: best.Timestamp, Signer: &signer}
+	item := report.EvidenceItem{Status: "verified", Source: verifiedSourceName(best), PredicateType: best.PredicateType, Ref: best.Ref, Timestamp: best.Timestamp, Signer: &signer,
+		SignerWorkflow: signerWorkflow(signer)}
 	if n := len(copies) - len(verified); n == 1 {
 		item.Detail = "1 other attached copy isn't verified and wasn't read."
 	} else if n > 1 {

@@ -50,7 +50,17 @@ What the report reads out of evidence (`vulnerabilities`, `packages`,
 `source` with `basis: provenance`, `factory`) comes only from evidence that is
 `verified`; nothing in `present` or `failed` evidence is read. A verified
 item's `signer` is the signer cosign checked; on any other status it is what
-the evidence's certificate claims, unverified.
+the evidence's certificate claims, unverified. `signer.tlog: false` on
+verified evidence means cosign checked the key's signature but no
+transparency log entry, because the policy's key signer says it signs
+without one. `source: github-attestation` marks a GitHub artifact attestation
+in the registry (told by its verified content, so only on verified
+evidence), and `signerWorkflow` names the GitHub Actions workflow that signed
+verified evidence the way `gh attestation verify --signer-workflow` takes it
+(`signer.sourceRepository` gives its `--repo`). A rebased image's `factory`
+kind, name, and stack (`stack`, `stackRef`, `stackDigest`) come from the
+verified recipe of the image it was rebased from, reached through verified
+rebase records, so rebased apps are listed under `stacks` too.
 
 **Bases.** `base.strength` says how an image's base is known: `proof` means the
 image starts with the base's exact layer digests (`method: layer-prefix`);
@@ -63,6 +73,15 @@ stale base whose `daysBehind` couldn't be measured: unknown, not zero.
 data: unknown, not clean. `summary.vulnerabilities.notScanned` counts those.
 `scannedAt` says what day the findings describe.
 
+**Reproducibility.** `reproducibility.source` says how an image was found to
+reproduce: `rebuild` (this run rebuilt it) or `attestation` (a
+clearcutt-factory reproduction attestation on the image, verified against a
+trusted signer and made from a recipe or rebase record verified on the same
+image; this run didn't rebuild it). An attested result names who signed it
+(`signer`), where it is stored (`ref`), and the run and machine that
+reproduced it (`builder`, as the attestation says). Absent, nothing checked
+it.
+
 **Packages.** `packages` lists what the images whose package sets could be read
 ship; `summary.packages.unknown` counts the rest. "No image ships X" is only
 true when that count is zero.
@@ -72,6 +91,18 @@ true when that count is zero.
 decided). A `verified` verdict rests on at least one piece of the image's
 evidence being `verified`, so with no `policy.trustedSigners` every verdict is
 `unverified`. `verdict.reasons` lists one line per requirement not met.
+
+**History.** Each `estate-history.json` entry has the run's summary and a row
+per image (`images`): its digest, verdict, base, rebase, and vulnerability
+counts. To show what changed between runs, a row also lists
+`fixableFindings`, the IDs of the image's fixable high and critical findings
+(VEX-suppressed ones aside) from its verified scans, and `packagesDigest`,
+which identifies its package set (sha256 of its sorted `type name
+version\n` lines, as in the report's `packages`, from verified SBOMs). Other
+findings are only counted, to keep the history small. A row with
+`vulnerabilities` and no `fixableFindings` has none; without
+`vulnerabilities` they are unknown, and without `packagesDigest` so is the
+package set.
 
 **Identity.** `images[].id` is unique in a report and stable across runs for
 the same repository, so it works in URLs. `base.imageId` links to the base when

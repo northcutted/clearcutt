@@ -89,6 +89,61 @@ When a release is cut, move these entries under a heading for its version.
 - `registry scan` skips `sha256-<digest>` tags, where registries without the
   OCI Referrers API keep an image's referrers. They sort above `latest`, so
   with few tags kept per repository the scan could pick one as the image.
+- An image whose layers start with several observed images' layers is built
+  on the nearest one, the longest prefix. With an upstream base such as
+  `cgr.dev/chainguard/wolfi-base` in the inventory, every app was attributed
+  to it instead of to its run image (the first match by repository name won),
+  so `estate dependents --base <run image>` found nothing and stale run images
+  went unreported. Equally long prefixes (a mirrored base) go to the one the
+  image's base annotation names, else the first repository by name.
+- Rebased apps keep their stack. After a fleet rebase, the report had
+  `stacks: null` and apps' `factory` lacked `stackRef` and `stackDigest`, so
+  stack versions and stack signatures went unreported and unchecked. They now
+  come from the verified recipe of the image the app was rebased from, reached
+  through its verified rebase record (as `kind` and `name` already did). A
+  rebased image's `tests` stays `missing`, since its rebase record doesn't say
+  whether a smoke test ran; its detail now names the test the original's
+  recipe declares and says why it isn't counted.
+- Evidence a key signed without a transparency log can be verified: `tlog:
+  false` on a key signer (in a trust policy or a VerificationPolicy; new,
+  optional, additive in both schemas) passes `--insecure-ignore-tlog=true` to
+  cosign for that key only, and verified evidence records `signer.tlog:
+  false`. Keyless signers can't set it. Before, such evidence always failed,
+  and said it was "not signed by a trusted signer"; a failure on the
+  transparency log now says the log inclusion couldn't be verified (and, for
+  keys, how to accept it). clearcutt-factory reads the shared trust policy
+  strictly, so it has to accept `tlog` before a shared file uses it.
+- `estate verify` reads clearcutt-factory's reproduction attestations
+  (`https://github.com/northcutted/clearcutt-factory/reproduction/v1`, from
+  `clearcutt-factory verify --image --attest`, which its reusable workflows
+  run after each publish and rebase). One that cosign verified against the
+  image signers (bound like the recipe), whose subject and `digest` are the
+  image's, and that was made from a recipe or rebase record verified on the
+  same image (`from.digest.sha256` is that statement's sha256, of the kind its
+  method rebuilds from) makes the image `reproduced` without rebuilding it.
+  `--reproduce` rebuilds only the images without one. New, additive contract
+  fields on `reproducibility`: `source` (`attestation` or `rebuild`),
+  `builder` (the run and machine, as the attestation says, and the
+  clearcutt-factory and BuildKit versions), `signer`, and `ref`. An
+  attestation that isn't verified or bound is never read or counted, and the
+  detail says why.
+- History rows (`estate-history.json`, `entries[].images[]`) list
+  `fixableFindings`, the IDs of each image's fixable high and critical
+  findings, and `packagesDigest`, a digest of its package set, both from
+  verified evidence only (new, additive), so readers can show which findings
+  were fixed or introduced, and whether packages changed, between runs. Lower
+  severities and findings without a fix are only counted, to keep the history
+  small. The `northcutted-images` fixture's newest rows are regenerated from
+  its report.
+- Provenance from GitHub's `actions/attest-build-provenance` pushed to the
+  registry is labeled `github-attestation` (it was `cosign-attestation`: the
+  label looked for `/attest-build-provenance` in the signer's identity, which
+  is the calling workflow). It is told by its verified content, SLSA
+  provenance of GitHub's workflow build type, so only verified evidence is
+  labeled so. Verified evidence a GitHub Actions workflow signed records
+  `signerWorkflow` (new, additive), the workflow without its ref, so readers
+  can offer `gh attestation verify --signer-workflow`. The committed
+  `northcutted-images` fixture predates both; regenerating it adds them.
 
 ## v0.15.0
 

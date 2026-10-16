@@ -3,6 +3,8 @@ package commands
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,8 +68,11 @@ rebase records; cosign v2 tags and v3 bundles), verifies it with cosign
 against the policy's trusted signers, reads vulnerabilities and packages from
 the attestations that verified (nothing from ones that didn't), places the
 image on its base (proven by layer digests where possible), and decides a
-verdict. With no trusted signer, no image is verified. With --reproduce it rebuilds
-clearcutt-factory images from their signed recipes (clearcutt-factory on PATH).
+verdict. With no trusted signer, no image is verified. A verified
+clearcutt-factory reproduction attestation, made from the image's verified
+recipe or rebase record, shows an image reproduced without rebuilding it. With
+--reproduce it rebuilds the other clearcutt-factory images from their signed
+recipes (clearcutt-factory on PATH).
 
 Images come from an observations file (clearcutt-verify import observe) or a list of
 references (--refs), which are imported and observed first.`,
@@ -88,7 +93,7 @@ references (--refs), which are imported and observed first.`,
 	f.StringVar(&o.name, "name", "estate", "Estate name in the report")
 	f.StringVar(&o.out, "out", "", "Bundle directory to write (estate-report.json, estate-history.json)")
 	f.StringVar(&o.history, "history", "", "Previous estate-history.json to extend (default: the one in --out, if any)")
-	f.BoolVar(&o.reproduce, "reproduce", false, "Rebuild clearcutt-factory images from their signed recipes and compare digests")
+	f.BoolVar(&o.reproduce, "reproduce", false, "Rebuild clearcutt-factory images from their signed recipes and compare digests (images with a verified reproduction attestation aren't rebuilt)")
 	f.StringVar(&o.factoryPath, "factory-path", "clearcutt-factory", "clearcutt-factory binary, for --reproduce")
 	f.StringVar(&o.cosignPath, "cosign-path", "cosign", "cosign binary")
 	f.StringVar(&o.generatedAt, "generated-at", "", "Deterministic report timestamp (RFC 3339)")
@@ -305,6 +310,12 @@ func extendHistory(r *report.Report, path, out string) (*report.History, error) 
 
 // historyImages is one row per image of the run, for per-image history.
 func historyImages(r *report.Report) []report.HistoryImage {
+	packages := map[string][]string{} // image ID → "type name version" lines
+	for _, p := range r.Packages {
+		for _, id := range p.Images {
+			packages[id] = append(packages[id], p.Type+" "+p.Name+" "+p.Version+"\n")
+		}
+	}
 	rows := make([]report.HistoryImage, 0, len(r.Images))
 	for _, img := range r.Images {
 		row := report.HistoryImage{ID: img.ID, Digest: img.Digest, Verdict: img.Verdict.Status}
@@ -317,10 +328,36 @@ func historyImages(r *report.Report) []report.HistoryImage {
 		if v := img.Vulnerabilities; v != nil {
 			counts := v.Counts
 			row.Vulnerabilities = &counts
+			row.FixableFindings = fixableFindings(v)
+		}
+		if img.Packages != nil {
+			row.PackagesDigest = packagesDigest(packages[img.ID])
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// fixableFindings lists the IDs of the counted (not suppressed) high and
+// critical findings that have a fix, once each, sorted.
+func fixableFindings(v *report.Vulnerabilities) []string {
+	var ids []string
+	for _, f := range v.Findings {
+		if !f.Suppressed && len(f.FixedIn) > 0 && (f.Severity == "high" || f.Severity == "critical") {
+			ids = appendUniqueString(ids, f.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// packagesDigest identifies a package set: sha256 of its "type name
+// version\n" lines, sorted.
+func packagesDigest(lines []string) string {
+	sorted := append([]string{}, lines...)
+	sort.Strings(sorted)
+	sum := sha256.Sum256([]byte(strings.Join(sorted, "")))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 func printEstateSummary(w io.Writer, r *report.Report) {

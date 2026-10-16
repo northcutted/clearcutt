@@ -2,6 +2,7 @@ package estateverify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -186,8 +187,15 @@ func buildImage(ctx context.Context, obs estategraph.Observation, graph estategr
 	claimedSource := firstNonEmpty(obs.Labels["org.opencontainers.image.source"], obs.Annotations["org.opencontainers.image.source"])
 	ev, data := gatherEvidence(ctx, repo, img.Digest, claimedSource, platforms, opts)
 	if f := data.factory; f != nil && f.Kind == "" && f.RebasedFrom != "" && data.rebaseVerified {
-		if err := originalRecipe(ctx, f, claimedSource, opts); err != nil {
+		test, err := originalRecipe(ctx, f, claimedSource, opts)
+		if err != nil {
 			img.Warnings = append(img.Warnings, "the recipe of the image it was rebased from couldn't be read: "+err.Error())
+		}
+		if test != "" && ev.Tests.Status == "missing" {
+			// The rebase record doesn't say whether a smoke test ran, so the
+			// original's declared test can't stand for the rebased image.
+			ev.Tests.Detail = "No test attestation. The recipe of the image it was rebased from declares a smoke test (" + test +
+				"), but the rebase record doesn't say whether the rebase ran it: clearcutt-factory runs the app's smoke test when it rebases from the app manifest (rebase -f, as its fleet workflow does), not when it rebases --image or with --no-test."
 		}
 	}
 	baseOf(&img, obs, graph, ids, created)
@@ -616,6 +624,15 @@ type imageData struct {
 	// unreadableScans are platforms whose verified vulnerability scan
 	// couldn't be read.
 	unreadableScans []string
+	// statements are the recipes and rebase records cosign verified on the
+	// image: the sha256 of each in-toto statement (the signed DSSE payload)
+	// → its predicate type. Reproduction attestations name what they were
+	// made from this way.
+	statements map[string]string
+	// attested is the reproducibility a verified reproduction attestation
+	// shows; attestNote says why attached ones didn't count.
+	attested   *report.Reproducibility
+	attestNote string
 }
 
 // attachment is where a kind of evidence is expected.
@@ -624,7 +641,7 @@ var perPlatform = map[string]bool{KindSBOM: true, KindVulnerabilityScan: true}
 // gatherEvidence discovers and verifies every kind of evidence on the image
 // (index-level kinds) and its platform images (SBOMs and scans).
 func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platforms []report.Platform, opts Options) (report.Evidence, imageData) {
-	data := imageData{vulns: map[string]vulnScan{}}
+	data := imageData{vulns: map[string]vulnScan{}, statements: map[string]string{}}
 	type subject struct{ platform, digest string }
 	subjects := []subject{{"", digest}}
 	for _, p := range platforms {
@@ -690,6 +707,9 @@ func gatherEvidence(ctx context.Context, repo, digest, imageSource string, platf
 	if items[KindTests].Status == "missing" {
 		items[KindTests].Detail = "No test attestation."
 	}
+	if unknown[digest] == nil {
+		data.attested, data.attestNote = attestedReproduction(ctx, repo, digest, imageSource, found[digest], opts, data.statements)
+	}
 	return report.Evidence{
 		Signature: *items[KindSignature], SBOM: *items[KindSBOM], VulnerabilityScan: *items[KindVulnerabilityScan],
 		Provenance: *items[KindProvenance], Recipe: *items[KindRecipe], Rebase: *items[KindRebase], Tests: *items[KindTests],
@@ -709,7 +729,7 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 		return "missing"
 	}
 	if item.Source == "" {
-		item.Source, item.PredicateType, item.Ref, item.Timestamp, item.Signer = got.Source, got.PredicateType, got.Ref, got.Timestamp, got.Signer
+		item.Source, item.PredicateType, item.Ref, item.Timestamp, item.Signer, item.SignerWorkflow = got.Source, got.PredicateType, got.Ref, got.Timestamp, got.Signer, got.SignerWorkflow
 	}
 	if got.Detail != "" {
 		item.Detail = got.Detail
@@ -720,6 +740,11 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 	best := verified[0]
 	signer := best.signer
 	pred := best.Predicate()
+	if kind == KindRecipe || kind == KindRebase {
+		for _, c := range verified {
+			data.statements[statementDigest(c.Statement)] = c.PredicateType
+		}
+	}
 	switch kind {
 	case KindVulnerabilityScan:
 		if s, ok := readVulnPredicate(pred); ok {
@@ -764,55 +789,101 @@ func verifyKind(ctx context.Context, repo, digest, kind, imageSource string, fou
 // originalRecipe names a rebased image after the recipe it was first built
 // from: a rebase record names only the image whose layers moved, so it
 // follows verified rebase records back (an image may have been rebased more
-// than once) to a verified recipe, and reads its kind, name, and stack.
-func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, opts Options) error {
+// than once) to a verified recipe, and reads its kind, name, and stack (the
+// stack version the app's layers were built with, which a rebase keeps). It
+// returns the smoke test that recipe declares. Each step is read only from
+// evidence cosign verified against the image signers.
+func originalRecipe(ctx context.Context, f *report.Factory, imageSource string, opts Options) (test string, err error) {
 	ref := f.RebasedFrom
 	for range 8 {
 		repo, digest := splitDigestRef(ref)
 		if repo == "" || digest == "" {
-			return fmt.Errorf("%q is not repository@digest", ref)
+			return "", fmt.Errorf("%q is not repository@digest", ref)
 		}
 		found, err := opts.Discoverer.Discover(ctx, repo, digest)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRecipe, imageSource, found); item.Status != "missing" {
 			if len(verified) == 0 {
-				return fmt.Errorf("recipe of %s is %s: %s", ref, item.Status, item.Detail)
+				return "", fmt.Errorf("recipe of %s is %s: %s", ref, item.Status, item.Detail)
 			}
-			r, _, ok := readRecipe(verified[0].Predicate())
+			pred := verified[0].Predicate()
+			r, _, ok := readRecipe(pred)
 			if !ok {
-				return fmt.Errorf("recipe of %s is unreadable", ref)
+				return "", fmt.Errorf("recipe of %s is unreadable", ref)
 			}
-			f.Kind, f.Name, f.Stack = r.Kind, r.Name, r.Stack
-			return nil
+			f.Kind, f.Name, f.Stack, f.StackRef, f.StackDigest = r.Kind, r.Name, r.Stack, r.StackRef, r.StackDigest
+			return recipeTest(pred), nil
 		}
 		item, verified := verifyEvidence(ctx, opts.Verifier, repo, digest, KindRebase, imageSource, found)
 		if item.Status == "missing" {
-			return fmt.Errorf("%s has neither a recipe nor a rebase record", ref)
+			return "", fmt.Errorf("%s has neither a recipe nor a rebase record", ref)
 		}
 		if len(verified) == 0 {
-			return fmt.Errorf("rebase record of %s is %s: %s", ref, item.Status, item.Detail)
+			return "", fmt.Errorf("rebase record of %s is %s: %s", ref, item.Status, item.Detail)
 		}
 		r, ok := readRebase(verified[0].Predicate())
 		if !ok {
-			return fmt.Errorf("rebase record of %s is unreadable", ref)
+			return "", fmt.Errorf("rebase record of %s is unreadable", ref)
 		}
 		ref = r.RebasedFrom
 	}
-	return fmt.Errorf("gave up following rebase records at %s", ref)
+	return "", fmt.Errorf("gave up following rebase records at %s", ref)
 }
 
+// sourceName says how evidence is stored, from what can be seen without
+// reading its content.
 func sourceName(f Found) string {
 	switch {
 	case f.Format == FormatRawReferrer:
 		return "oci-referrer"
 	case f.Kind == KindSignature:
 		return "cosign-signature"
-	case f.Kind == KindProvenance && f.Signer != nil && strings.Contains(f.Signer.Identity, "/attest-build-provenance"):
-		return "github-attestation"
 	}
 	return "cosign-attestation"
+}
+
+// githubBuildType is the build type of the SLSA provenance GitHub artifact
+// attestations carry (actions/attest-build-provenance).
+const githubBuildType = "https://actions.github.io/buildtypes/workflow/v1"
+
+// verifiedSourceName says where verified evidence came from. A GitHub
+// artifact attestation (actions/attest-build-provenance, pushed to the
+// registry) is a Sigstore bundle like cosign's; its verified content tells
+// it apart: SLSA provenance of GitHub's workflow build type. Unverified
+// copies aren't read, so they keep their storage name.
+func verifiedSourceName(c verifiedCopy) string {
+	if c.Kind == KindProvenance && c.Format == FormatBundle {
+		var p struct {
+			BuildDefinition struct {
+				BuildType string `json:"buildType"`
+			} `json:"buildDefinition"`
+		}
+		if json.Unmarshal(c.Predicate(), &p) == nil && p.BuildDefinition.BuildType == githubBuildType {
+			return "github-attestation"
+		}
+	}
+	return sourceName(c.Found)
+}
+
+// signerWorkflow is the GitHub Actions workflow a verified signer's identity
+// names, without its scheme and ref (github.com/OWNER/REPO/.github/workflows/
+// FILE), as gh attestation verify --signer-workflow takes it; "" for other
+// signers.
+func signerWorkflow(s report.Signer) string {
+	if s.Issuer != githubIssuer {
+		return ""
+	}
+	rest, ok := strings.CutPrefix(s.Identity, "https://")
+	if !ok {
+		return ""
+	}
+	wf, _, ok := strings.Cut(rest, "@")
+	if !ok || !strings.Contains(wf, "/.github/workflows/") {
+		return ""
+	}
+	return wf
 }
 
 // worst returns the most concerning status (failed, missing, unknown,
@@ -843,8 +914,9 @@ func builderOf(obs estategraph.Observation, data imageData) report.Builder {
 	return report.Builder{Kind: b.Name, Basis: "image metadata (history, labels, layer layout)"}
 }
 
-// reproduce rebuilds an image from its verified recipe, or repeats its
-// verified rebase, when the policy asks for it.
+// reproduce reports whether an image reproduces: as a verified reproduction
+// attestation shows, without rebuilding it, or, when the policy asks for it,
+// by rebuilding it from its verified recipe or repeating its verified rebase.
 func reproduce(ctx context.Context, img *report.Image, data imageData, opts Options) report.Reproducibility {
 	found := func(s string) bool { return s == "verified" || s == "present" || s == "failed" }
 	hasRecipe, hasRebase := found(img.Evidence.Recipe.Status), found(img.Evidence.Rebase.Status)
@@ -854,6 +926,19 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 		}
 		return report.Reproducibility{Status: "no-recipe"}
 	}
+	if data.attested != nil {
+		return *data.attested
+	}
+	r := reproduceLocally(ctx, img, data, opts, hasRebase)
+	if data.attestNote != "" {
+		r.Detail = strings.TrimSpace(r.Detail + " " + data.attestNote)
+	}
+	return r
+}
+
+// reproduceLocally rebuilds an image from its verified recipe, or repeats
+// its verified rebase, when the policy asks for it.
+func reproduceLocally(ctx context.Context, img *report.Image, data imageData, opts Options, hasRebase bool) report.Reproducibility {
 	method, verified, signer := "recipe-rebuild", data.recipeVerified, data.recipeSigner
 	if hasRebase {
 		method, verified, signer = "rebase-repeat", data.rebaseVerified, data.rebaseSigner
@@ -866,12 +951,12 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	}
 	// The rebuild verifies the recipe (or rebase record) again: bind it to
 	// the signer this report shows verified it, exactly.
-	bound := report.Signer{Key: signer.Key}
+	bound := report.Signer{Key: signer.Key, Tlog: signer.Tlog}
 	if signer.Key == "" {
 		bound = report.Signer{Identity: signer.Identity, Issuer: signer.Issuer, SourceRepository: signer.SourceRepository}
 	}
 	got, err := opts.Reproducer.Reproduce(ctx, img.Repository+"@"+img.Digest, bound)
-	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got}
+	r := report.Reproducibility{Method: method, CheckedAt: time.Now().UTC().Format(time.RFC3339), Digest: got, Source: "rebuild"}
 	switch {
 	case got == img.Digest:
 		r.Status = "reproduced"
@@ -880,7 +965,7 @@ func reproduce(ctx context.Context, img *report.Image, data imageData, opts Opti
 	default:
 		// No digest: the rebuild didn't finish, so whether the image
 		// reproduces is still undecided.
-		r.Status, r.Detail = "not-checked", "The rebuild couldn't finish: "+err.Error()
+		r.Status, r.Detail, r.Source = "not-checked", "The rebuild couldn't finish: "+err.Error(), ""
 	}
 	return r
 }

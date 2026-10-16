@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -584,5 +585,201 @@ func TestReproduceWithKeySigner(t *testing.T) {
 	r := reproduce(context.Background(), img, imageData{recipeVerified: true, recipeSigner: &report.Signer{Key: "/etc/acme/acme.pub"}}, opts)
 	if r.Status != "reproduced" || got != (report.Signer{Key: "/etc/acme/acme.pub"}) {
 		t.Errorf("reproduced %+v with signer %+v", r, got)
+	}
+}
+
+// TestKeySignerWithoutTransparencyLog (V8): evidence a key signed without a
+// transparency log fails on the log, and says so, unless its trusted signer
+// says tlog: false; then it verifies (cosign --insecure-ignore-tlog for that
+// key only), the report says the log wasn't checked, and the rebuild is bound
+// the same way.
+func TestKeySignerWithoutTransparencyLog(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	idx := pushIndex(t, host+"/tools:1", nil, built, nil)
+	d := descriptorOf(t, idx)
+	pushKeySignedAttestation(t, host+"/tools", d.Digest.String(), PredicateRecipe, imageRecipePredicate(host+"/base:latest", "sha256:"+strings.Repeat("e", 64)))
+
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	write("acme.pub", "-----BEGIN PUBLIC KEY-----\n-----END PUBLIC KEY-----\n")
+	key := filepath.Join(dir, "acme.pub")
+	// cosign, for evidence signed with no transparency log entry.
+	var ran [][]string
+	verifier := func(signers []report.Signer) *Verifier {
+		v := acmeVerifier()
+		v.Signers = signers
+		v.Run = func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+			ran = append(ran, args)
+			if contains(args, "--key") && !contains(args, "--insecure-ignore-tlog=true") {
+				return nil, errors.New("cosign " + args[0] + ": exit status 1: failed to verify log inclusion: not enough verified log entries from transparency log: 0 < 1")
+			}
+			return fakeCosign(ctx, nil, args)
+		}
+		return v
+	}
+	build := func(p report.Policy, rep Reproducer) report.Image {
+		t.Helper()
+		r, err := Build(context.Background(), observe(t, host, "tools:1"), Options{Name: "keys", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z",
+			Verifier: verifier(p.TrustedSigners), Policy: p, Reproducer: rep})
+		if err != nil {
+			t.Fatal(err)
+		}
+		validateReport(t, r)
+		return r.Images[0]
+	}
+
+	// The key's trusted signer expects a log entry: the log is what failed.
+	p, err := ReadPolicy(write("policy.yaml", "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\nrequired: [recipe]\ntrustedSigners:\n  - key: acme.pub\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := build(p, nil).Evidence.Recipe
+	if e.Status != "failed" || !strings.Contains(e.Detail, "transparency log inclusion couldn't be verified") || !strings.Contains(e.Detail, "tlog: false") ||
+		strings.Contains(e.Detail, "not signed by a trusted signer") {
+		t.Errorf("recipe without a log entry: %+v", e)
+	}
+
+	// tlog: false, in a trust policy shared with clearcutt-factory.
+	write("trust.yaml", "apiVersion: clearcutt.dev/v1\nkind: TrustPolicy\nsigners:\n  - name: offline-key\n    key: acme.pub\n    tlog: false\n")
+	p, err = ReadPolicy(write("policy.yaml", "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\nrequired: [recipe]\ntrustPolicy: trust.yaml\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.TrustedSigners) != 1 || p.TrustedSigners[0].Tlog == nil || *p.TrustedSigners[0].Tlog {
+		t.Fatalf("trusted signers %+v", p.TrustedSigners)
+	}
+	p.Reproduce = true
+	var factoryArgs []string
+	rep := FactoryReproducer{Dir: t.TempDir(), Run: func(_ context.Context, _, _ string, a ...string) ([]byte, []byte, error) {
+		factoryArgs = a
+		return []byte("reproducible: rebuilt " + d.Digest.String() + " matches\n"), nil, nil
+	}}
+	ran = nil
+	tl := build(p, rep)
+	if e := tl.Evidence.Recipe; e.Status != "verified" || e.Signer == nil || e.Signer.Key != key || e.Signer.Tlog == nil || *e.Signer.Tlog {
+		t.Errorf("recipe with tlog: false: %+v %+v", e, e.Signer)
+	}
+	for _, args := range ran {
+		if !contains(args, "--insecure-ignore-tlog=true") {
+			t.Errorf("cosign ran without --insecure-ignore-tlog: %q", args)
+		}
+	}
+	if got := strings.Join(factoryArgs, " "); !strings.Contains(got, "--key "+key+" --insecure-ignore-tlog=true") || tl.Reproducibility.Status != "reproduced" {
+		t.Errorf("clearcutt-factory args %q, reproducibility %+v", got, tl.Reproducibility)
+	}
+
+	// Only key signers can skip the log.
+	write("trust.yaml", "apiVersion: clearcutt.dev/v1\nkind: TrustPolicy\nsigners:\n  - identity: "+ourSigner+"\n    issuer: "+ghIssuer+"\n    tlog: false\n")
+	if _, err := ReadPolicy(write("policy.yaml", "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\ntrustPolicy: trust.yaml\n")); err == nil || !strings.Contains(err.Error(), "applies to key signers") {
+		t.Errorf("keyless tlog: false: %v", err)
+	}
+	if _, err := ReadPolicy(write("policy.yaml", "apiVersion: clearcutt.dev/v1\nkind: VerificationPolicy\ntrustedSigners:\n  - identity: "+ourSigner+"\n    issuer: "+ghIssuer+"\n    tlog: false\n")); err == nil || !strings.Contains(err.Error(), "applies to key signers") {
+		t.Errorf("keyless tlog: false in a verification policy: %v", err)
+	}
+}
+
+// A keyless signature whose log entry doesn't verify fails on the log, not
+// on its signer.
+func TestKeylessTransparencyLogFailure(t *testing.T) {
+	v := &Verifier{Signers: []report.Signer{{IdentityRegexp: `^https://github\.com/acme/`, Issuer: ghIssuer}},
+		Run: func(context.Context, string, ...string) ([]byte, error) {
+			return nil, errors.New("cosign verify: exit status 1: verifying tlog entry: inclusion proof failed")
+		}}
+	cert := &report.Signer{Identity: ourSigner, Issuer: ghIssuer, SourceRepository: "https://github.com/acme/images"}
+	_, err := v.Verify(context.Background(), Subject{Ref: "r@sha256:x", Kind: KindSignature, Signer: cert})
+	if err == nil || !strings.HasPrefix(err.Error(), "its transparency log inclusion couldn't be verified") {
+		t.Errorf("keyless log failure: %v", err)
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	item, verified := verifyEvidence(context.Background(), v, "r", digest, KindSignature, "", []Found{{Kind: KindSignature, PredicateType: PredicateCosignSign, Format: FormatBundle, Signer: cert}})
+	if len(verified) != 0 || item.Status != "failed" || !strings.HasPrefix(item.Detail, "its transparency log inclusion couldn't be verified") {
+		t.Errorf("keyless log failure as evidence: %+v", item)
+	}
+}
+
+// githubProvenance is SLSA provenance as actions/attest-build-provenance
+// writes it.
+func githubProvenance(repo, workflow string) map[string]any {
+	return map[string]any{
+		"buildDefinition": map[string]any{
+			"buildType":            githubBuildType,
+			"externalParameters":   map[string]any{"workflow": map[string]string{"ref": "refs/heads/main", "repository": repo, "path": workflow}},
+			"resolvedDependencies": []any{map[string]any{"uri": "git+" + repo + "@refs/heads/main", "digest": map[string]string{"gitCommit": "abc123"}}},
+		},
+		"runDetails": map[string]any{"builder": map[string]string{"id": repo + "/" + workflow + "@refs/heads/main"}},
+	}
+}
+
+// TestGitHubArtifactAttestations: provenance GitHub's attest-build-provenance
+// pushed to the registry is labeled github-attestation, told by its verified
+// content, with the signer workflow gh attestation verify needs; unverified
+// copies aren't read, so they aren't.
+func TestGitHubArtifactAttestations(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)), ggcrregistry.WithReferrersSupport(true)))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ours := fulcioCert(t, ourSigner, ghIssuer)
+	evil := fulcioCert(t, evilSigner, ghIssuer)
+	push := func(name string, predicate map[string]any, cert string) {
+		idx := pushIndex(t, host+"/"+name+":1", nil, built, nil)
+		d := descriptorOf(t, idx)
+		attach(t, host+"/"+name, d, bundleJSON(t, PredicateCosignSign, d.Digest.String(), map[string]any{}, ours))
+		attach(t, host+"/"+name, d, bundleJSON(t, "https://slsa.dev/provenance/v1", d.Digest.String(), predicate, cert))
+	}
+	push("github", githubProvenance("https://github.com/acme/images", ".github/workflows/images.yml"), ours)
+	push("cosign", provenancePredicate("https://github.com/acme/images", "abc123"), ours)
+	push("forged", githubProvenance("https://github.com/acme/images", ".github/workflows/images.yml"), evil)
+
+	verifier := acmeVerifier()
+	r, err := Build(context.Background(), observe(t, host, "github:1", "cosign:1", "forged:1"), Options{
+		Name: "gh", Version: "test", GeneratedAt: "2026-10-06T00:00:00Z", Verifier: verifier, Platforms: []string{"linux/amd64"},
+		Policy: report.Policy{Required: []string{"provenance"}, TrustedSigners: verifier.Signers},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateReport(t, r)
+	img := map[string]report.Image{}
+	for _, i := range r.Images {
+		img[i.ID] = i
+	}
+	const workflow = "github.com/acme/images/.github/workflows/images.yml"
+	if p := img["github"].Evidence.Provenance; p.Status != "verified" || p.Source != "github-attestation" || p.SignerWorkflow != workflow ||
+		p.Signer == nil || p.Signer.SourceRepository != "https://github.com/acme/images" {
+		t.Errorf("GitHub provenance: %+v", p)
+	}
+	if s := img["github"].Source; s == nil || s.Basis != "provenance" || s.URL != "https://github.com/acme/images" || s.Revision != "abc123" {
+		t.Errorf("GitHub provenance source: %+v", s)
+	}
+	if p := img["cosign"].Evidence.Provenance; p.Status != "verified" || p.Source != "cosign-attestation" || p.SignerWorkflow != workflow {
+		t.Errorf("cosign provenance: %+v", p)
+	}
+	if p := img["forged"].Evidence.Provenance; p.Status != "failed" || p.Source != "cosign-attestation" || p.SignerWorkflow != "" {
+		t.Errorf("unverified GitHub provenance: %+v", p)
+	}
+	if s := img["github"].Evidence.Signature; s.SignerWorkflow != workflow {
+		t.Errorf("signature signer workflow: %+v", s)
+	}
+}
+
+func TestSignerWorkflow(t *testing.T) {
+	for s, want := range map[report.Signer]string{
+		{Identity: ourSigner, Issuer: ghIssuer}: "github.com/acme/images/.github/workflows/images.yml",
+		{Identity: "https://github.com/northcutted/clearcutt-factory/.github/workflows/fleet.yml@refs/tags/v0.2.0", Issuer: ghIssuer}: "github.com/northcutted/clearcutt-factory/.github/workflows/fleet.yml",
+		{Identity: "alice@acme.com", Issuer: "https://accounts.google.com"}:                                                           "",
+		{Identity: "https://github.com/acme/images", Issuer: ghIssuer}:                                                                "",
+		{Key: "/etc/acme.pub"}: "",
+	} {
+		if got := signerWorkflow(s); got != want {
+			t.Errorf("%+v: %q, want %q", s, got, want)
+		}
 	}
 }

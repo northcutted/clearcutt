@@ -41,6 +41,10 @@
         },
         "sourceRepositoryOwner": {
           "type": "string"
+        },
+        "tlog": {
+          "description": "Tlog false accepts this key signer's evidence without a transparency log entry (cosign --insecure-ignore-tlog), for a key that signs without one. Keyless signers can't set it.",
+          "type": "boolean"
         }
       },
       "type": "object"

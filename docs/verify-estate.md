@@ -48,7 +48,8 @@ instead.
    vulnerability scans, by the scan time inside the signed attestation), and
    the item's `detail` says how many others were ignored.
    A rebased image is named after the recipe of the image it was rebased
-   from, found by following its verified rebase records back.
+   from, found by following its verified rebase records back, and keeps that
+   recipe's stack (the stack version its layers were built with).
 4. **Base.** Where the image's layers start with an observed image's layers,
    that is proof. For images whose base tag has moved on since they were
    built, the base the image names (its `org.opencontainers.image.base.*`
@@ -161,6 +162,25 @@ policy, or the verification policy), as clearcutt-factory reads it, so cosign
 and `--reproduce` find it wherever they run, and the report names the file
 that was used. A cosign KMS URI (`awskms://…`, `pkcs11:…`) is used as written.
 
+A key that signs without a transparency log (a private or offline Sigstore
+setup, `--tlog-upload=false`) needs `tlog: false` on its signer:
+
+```yaml
+  - name: offline-key
+    key: keys/images.pub
+    tlog: false   # cosign --insecure-ignore-tlog, for this key only
+```
+
+Without it, its evidence is `failed`, and the detail says the transparency
+log inclusion couldn't be verified (not that someone else signed it). With
+it, cosign checks the signature but not the log for that key, so nothing shows
+when the evidence was signed; verified evidence records `signer.tlog: false`.
+Keyless signers can't set it: a certificate is valid only when the log shows
+it was used in time. clearcutt-factory reads trust policies strictly, so a
+shared one can use `tlog` once clearcutt-factory accepts the field too.
+`--reproduce` passes `--insecure-ignore-tlog=true` to `clearcutt-factory
+verify` for such a key, which needs a clearcutt-factory that accepts it.
+
 With `maxDaysBehind`, an image whose base couldn't be placed is `unverified`:
 it might be behind. So is one whose base is behind its newest version by an
 unknown number of days (`base.daysBehindUnknown`: a creation time is missing,
@@ -188,9 +208,12 @@ report's `stacks` lists each such stack: the version its tag names now, every
 version apps are pinned to, each version's signature verified against the
 policy's stack signers (a trust policy's `stack` signers, or `stackSigners:`
 in a VerificationPolicy), and how many apps are on an older version. Each app's
-`factory.stackRef` and `factory.stackDigest` say which. A stack is a
-repository and a tag: apps on `stacks/go:1` and `stacks/go:2` are on two
-stacks, each compared with its own tag.
+`factory.stackRef` and `factory.stackDigest` say which. A rebased app (the
+fleet's steady state) is on the stack its original was built on: the verified
+recipe of the image it was rebased from says which, reached through its
+verified rebase record. A stack is a repository and a tag: apps on
+`stacks/go:1` and `stacks/go:2` are on two stacks, each compared with its own
+tag.
 
 ### Who is built on a base
 
@@ -239,15 +262,54 @@ tell the report came from your job.
   status (anything but `verified` means some platform's packages are missing).
 - `base.daysBehindUnknown` marks a stale base whose `daysBehind` couldn't be
   measured.
+- Provenance from GitHub's `actions/attest-build-provenance`, pushed to the
+  registry, is `source: github-attestation`, told by its verified content
+  (SLSA provenance of GitHub's workflow build type); an unverified copy isn't
+  read, so it shows as `cosign-attestation`. Verified evidence a GitHub
+  Actions workflow signed records `signerWorkflow`, so a reader can offer
+  `gh attestation verify oci://REPOSITORY@DIGEST --bundle-from-oci --repo
+  OWNER/REPO --signer-workflow SIGNER_WORKFLOW`, with `--repo` from
+  `signer.sourceRepository`.
 - `tests` is `present` (source `recipe`) for clearcutt-factory images whose
   verified recipe declares a smoke test: factory runs it on every platform
-  before pushing, but doesn't attest the result.
+  before pushing, but doesn't attest the result. A rebased image's stays
+  `missing`: its rebase record doesn't say whether a smoke test ran
+  (`rebase -f app.yaml` runs the app's; `rebase --image` and `--no-test`
+  don't), and its `detail` names the test the original's recipe declares.
 - Each history entry has a row per image (`images`): its digest, verdict, base,
-  rebase, and vulnerability counts in that run, for per-image history.
+  rebase, and vulnerability counts in that run, for per-image history. Rows
+  also list the IDs of the image's fixable high and critical findings
+  (`fixableFindings`) and a digest of its package set (`packagesDigest`), both
+  from verified evidence, so a reader can show which findings were fixed or
+  introduced and whether packages changed between runs.
 
 ## Reproducibility
 
-`--reproduce` rebuilds every clearcutt-factory image from its verified recipe
+clearcutt-factory's reusable workflows rebuild each image they publish on a
+second runner (and repeat each fleet rebase), and attest each match on the
+image (`clearcutt-factory verify --image --attest`, predicate
+`https://github.com/northcutted/clearcutt-factory/reproduction/v1`). Such an
+attestation makes an image `reproduced` without rebuilding it, with
+`reproducibility.source: attestation`, when:
+
+- cosign verified it against the policy's image signers, bound like the
+  recipe (`sourceMatchesImage` and the other constraints apply);
+- its subject, and the `digest` it says the reproduction gave, are the image's
+  digest;
+- it was made (`from.digest.sha256`, the sha256 of the signed DSSE payload)
+  from a recipe or rebase record cosign verified on the same image, of the
+  kind its method rebuilds from (`recipe-rebuild` from a recipe,
+  `rebase-repeat` from a rebase record).
+
+The report then gives the method, `checkedAt` (the attestation's
+`reproducedAt`), the digest, who signed it (`signer`), where it is (`ref`),
+and the run and machine that reproduced it (`builder`, as the attestation
+says). It shows the image rebuilt on a fresh machine of the publisher's, not
+that anyone else can rebuild it; `--reproduce` rebuilds the others yourself.
+An attestation that isn't verified, or doesn't meet these conditions, is not
+read or counted, and `reproducibility.detail` says why.
+
+`--reproduce` rebuilds every other clearcutt-factory image from its verified recipe
 (or repeats its verified rebase) with `clearcutt-factory verify --image`, bound
 to exactly the signer that verified the recipe or rebase record the report
 shows (its identity, issuer, and the repository of the run that signed; or
@@ -263,8 +325,9 @@ couldn't finish (a registry or the container runtime failing) is
 reproduces is still undecided. The digest is read only from the result
 clearcutt-factory reports last (its final output line on success, its error
 on a mismatch), never from build output, and a rebuild that exits with an
-error is never `reproduced`. Without `--reproduce`, images with recipes are
-`not-checked`.
+error is never `reproduced`; its `reproducibility.source` is `rebuild`.
+Without `--reproduce`, images with recipes and no verified reproduction
+attestation are `not-checked`.
 
 ## Limits
 
