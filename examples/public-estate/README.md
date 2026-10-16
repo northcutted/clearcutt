@@ -11,7 +11,7 @@ built ourselves would prove the weaker version of it.
 ## Why it is committed rather than fetched
 
 `clearcutt-verify import observe` will happily re-observe these refs live. The snapshot
-is committed so the demo, the site build, and the regression test are hermetic
+is committed so the demo and the regression tests are hermetic
 and deterministic — a tag that moves upstream must not change what CI asserts.
 
 Re-observing today will produce different digests. That is the point of the

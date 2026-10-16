@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a defect in the ClearCutt factory, CLI, portal, docs, or workflows.
+description: Report a defect in the clearcutt-verify CLI, the estate report contract, the GitHub Action, docs, or workflows.
 labels: ["bug"]
 body:
   - type: dropdown
@@ -8,9 +8,9 @@ body:
       label: Affected surface
       description: Which part of the repo does this affect?
       options:
-        - core (Nix image factory)
         - cli (Go CLI)
-        - site (Astro portal)
+        - contract (estate report schemas)
+        - action (action.yml)
         - docs
         - workflows (.github)
         - other / not sure
@@ -22,7 +22,7 @@ body:
     attributes:
       label: CLI version
       description: Output of `clearcutt-verify --version`. Write `n/a` if the bug does not involve the CLI.
-      placeholder: clearcutt-verify version v0.9.8
+      placeholder: clearcutt-verify version v0.15.0
     validations:
       required: true
 

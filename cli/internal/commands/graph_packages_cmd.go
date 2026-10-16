@@ -83,8 +83,8 @@ func runGraphPackages() error {
 	} else if plan := estategraph.PlanSBOMFetch(observations); plan.Unresolved > 0 {
 		// Say what is missing and what recovering it would cost, without doing
 		// it. An operator should choose the network spend, not discover it.
-		fmt.Fprintf(out, "[graph-packages] %d image(s) record no package set in their config.\n", plan.Unresolved)
-		fmt.Fprintf(out, "[graph-packages] --fetch-sboms would recover them with %d registry fetch(es) (%d avoided by deduplicating identical content).\n",
+		fprintf(out, "[graph-packages] %d image(s) record no package set in their config.\n", plan.Unresolved)
+		fprintf(out, "[graph-packages] --fetch-sboms would recover them with %d registry fetch(es) (%d avoided by deduplicating identical content).\n",
 			plan.Fetches, plan.Saved)
 	}
 
@@ -109,14 +109,14 @@ func runGraphPackages() error {
 	graph.Warnings = append(sbomWarnings, graph.Warnings...)
 	printPackageGraph(graph)
 	if path := strings.TrimSpace(graphPackagesOpts.output); path != "" {
-		fmt.Fprintf(out, "\n[graph-packages] wrote %s\n", path)
+		fprintf(out, "\n[graph-packages] wrote %s\n", path)
 	}
 	return nil
 }
 
 func printPackageGraph(graph estategraph.PackageGraph) {
 	s := graph.Summary
-	fmt.Fprintf(out, "[graph-packages] %d image(s): %d with a readable package set, %d unknown\n",
+	fprintf(out, "[graph-packages] %d image(s): %d with a readable package set, %d unknown\n",
 		s.Images, s.Resolved, s.Unresolved)
 	if len(s.BySource) > 0 {
 		parts := make([]string, 0, len(s.BySource))
@@ -124,9 +124,9 @@ func printPackageGraph(graph estategraph.PackageGraph) {
 			parts = append(parts, fmt.Sprintf("%s x%d", source, count))
 		}
 		sort.Strings(parts)
-		fmt.Fprintf(out, "[graph-packages] evidence: %s\n", strings.Join(parts, ", "))
+		fprintf(out, "[graph-packages] evidence: %s\n", strings.Join(parts, ", "))
 	}
-	fmt.Fprintf(out, "[graph-packages] %d distinct package(s), %d carried by more than one image; the widest is in %d\n",
+	fprintf(out, "[graph-packages] %d distinct package(s), %d carried by more than one image; the widest is in %d\n",
 		s.DistinctPackages, s.SharedPackages, s.WidestReach)
 
 	filter := strings.ToLower(strings.TrimSpace(graphPackagesOpts.packageFilter))
@@ -139,40 +139,40 @@ func printPackageGraph(graph estategraph.PackageGraph) {
 			}
 		}
 		rows = matched
-		fmt.Fprintf(out, "[graph-packages] %d package(s) match %q\n", len(rows), graphPackagesOpts.packageFilter)
+		fprintf(out, "[graph-packages] %d package(s) match %q\n", len(rows), graphPackagesOpts.packageFilter)
 	}
 	if len(rows) > 0 {
 		limit := len(rows)
 		if filter == "" && limit > 12 {
 			limit = 12
 		}
-		fmt.Fprintf(out, "\n%-34s %-18s %8s\n", "PACKAGE", "VERSION", "IMAGES")
+		fprintf(out, "\n%-34s %-18s %8s\n", "PACKAGE", "VERSION", "IMAGES")
 		for _, r := range rows[:limit] {
-			fmt.Fprintf(out, "%-34s %-18s %8d\n", truncate(r.Package.Name, 34), truncate(r.Package.Version, 18), r.Count)
+			fprintf(out, "%-34s %-18s %8d\n", truncate(r.Package.Name, 34), truncate(r.Package.Version, 18), r.Count)
 		}
 		if limit < len(rows) {
-			fmt.Fprintf(out, "... %d more (see the package graph JSON)\n", len(rows)-limit)
+			fprintf(out, "... %d more (see the package graph JSON)\n", len(rows)-limit)
 		}
 	}
 	// When a filter matched, name the images: that is the CVE-response question.
 	if filter != "" && len(rows) > 0 {
-		fmt.Fprintf(out, "\nImages carrying %q:\n", graphPackagesOpts.packageFilter)
+		fprintf(out, "\nImages carrying %q:\n", graphPackagesOpts.packageFilter)
 		shown := 0
 		for _, r := range rows {
 			for _, image := range r.Images {
 				if shown >= 20 {
 					break
 				}
-				fmt.Fprintf(out, "  %s %s  %s\n", r.Package.Name, r.Package.Version, image)
+				fprintf(out, "  %s %s  %s\n", r.Package.Name, r.Package.Version, image)
 				shown++
 			}
 		}
 		if shown >= 20 {
-			fmt.Fprintln(out, "  ... truncated; see the package graph JSON for the full list")
+			fprintln(out, "  ... truncated; see the package graph JSON for the full list")
 		}
 	}
 	for _, warning := range graph.Warnings {
-		fmt.Fprintf(out, "\n[graph-packages] %s\n", warning)
+		fprintf(out, "\n[graph-packages] %s\n", warning)
 	}
 }
 
@@ -186,13 +186,13 @@ func printPackageGraph(graph estategraph.PackageGraph) {
 func fetchSBOMsWithWarning(observations estategraph.Observations) (estategraph.Observations, []string, error) {
 	plan := estategraph.PlanSBOMFetch(observations)
 	if plan.Fetches == 0 {
-		fmt.Fprintln(out, "[graph-packages] every image already records a package set; no SBOM fetch needed")
+		fprintln(out, "[graph-packages] every image already records a package set; no SBOM fetch needed")
 		return observations, nil, nil
 	}
-	fmt.Fprintf(errOut, "[graph-packages] WARNING: fetching SBOMs for %d image(s) with no package set in their config.\n", plan.Unresolved)
-	fmt.Fprintf(errOut, "[graph-packages] WARNING: this makes %d registry request(s) at concurrency %d; %d fetch(es) avoided by deduplicating identical content.\n",
+	fprintf(errOut, "[graph-packages] WARNING: fetching SBOMs for %d image(s) with no package set in their config.\n", plan.Unresolved)
+	fprintf(errOut, "[graph-packages] WARNING: this makes %d registry request(s) at concurrency %d; %d fetch(es) avoided by deduplicating identical content.\n",
 		plan.Fetches, graphPackagesOpts.concurrency, plan.Saved)
-	fmt.Fprintf(errOut, "[graph-packages] WARNING: large estates can hit registry rate limits. Nix images need none of this — their package set is already in the config.\n")
+	fprintf(errOut, "[graph-packages] WARNING: large estates can hit registry rate limits. Nix images need none of this — their package set is already in the config.\n")
 
 	fetcher := estategraph.SBOMFetcher(estategraph.NewRegistrySBOMFetcher())
 	if sbomFetcherOverride != nil {

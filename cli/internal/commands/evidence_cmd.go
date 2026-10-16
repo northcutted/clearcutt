@@ -109,7 +109,7 @@ func runEvidenceAttach(ref string) error {
 		return fmt.Errorf("no evidence files found in %s (looked for %s)", evidenceOpts.dir, strings.Join(wanted, ", "))
 	}
 	for _, fileName := range missing {
-		fmt.Fprintf(out, "[evidence] %s not present; attaching without it\n", fileName)
+		fprintf(out, "[evidence] %s not present; attaching without it\n", fileName)
 	}
 	digest, err := evidenceClient().Attach(ref, bundle)
 	if err != nil {
@@ -120,12 +120,12 @@ func runEvidenceAttach(ref string) error {
 		names = append(names, fileName)
 	}
 	sort.Strings(names)
-	fmt.Fprintf(out, "[evidence] attached %d file(s) to %s\n", len(names), ref)
+	fprintf(out, "[evidence] attached %d file(s) to %s\n", len(names), ref)
 	for _, fileName := range names {
-		fmt.Fprintf(out, "[evidence]   %s (%d bytes)\n", fileName, len(bundle.Files[fileName]))
+		fprintf(out, "[evidence]   %s (%d bytes)\n", fileName, len(bundle.Files[fileName]))
 	}
-	fmt.Fprintf(out, "[evidence] bundle %s\n", digest)
-	fmt.Fprintf(out, "[evidence] registry lifecycle rules can delete this; `clearcutt-verify evidence export` keeps a copy that outlives them\n")
+	fprintf(out, "[evidence] bundle %s\n", digest)
+	fprintf(out, "[evidence] registry lifecycle rules can delete this; `clearcutt-verify evidence export` keeps a copy that outlives them\n")
 	return nil
 }
 
@@ -151,18 +151,18 @@ func runEvidenceList(ref string) error {
 		return encoder.Encode(attachments)
 	}
 	if len(attachments) == 0 {
-		fmt.Fprintf(out, "[evidence] no evidence attached to %s\n", ref)
+		fprintf(out, "[evidence] no evidence attached to %s\n", ref)
 		return nil
 	}
 	for _, attachment := range attachments {
-		fmt.Fprintf(out, "%s\n", attachment.Digest)
+		fprintf(out, "%s\n", attachment.Digest)
 		if attachment.Release != "" {
-			fmt.Fprintf(out, "  release  %s\n", attachment.Release)
+			fprintf(out, "  release  %s\n", attachment.Release)
 		}
 		if attachment.Created != "" {
-			fmt.Fprintf(out, "  created  %s\n", attachment.Created)
+			fprintf(out, "  created  %s\n", attachment.Created)
 		}
-		fmt.Fprintf(out, "  files    %s\n", strings.Join(attachment.Files, ", "))
+		fprintf(out, "  files    %s\n", strings.Join(attachment.Files, ", "))
 	}
 	return nil
 }
@@ -198,12 +198,12 @@ func runEvidenceExport(ref string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "[evidence] exported %d bundle(s) from %s to %s\n", len(manifest.Attachments), ref, evidenceOpts.output)
+	fprintf(out, "[evidence] exported %d bundle(s) from %s to %s\n", len(manifest.Attachments), ref, evidenceOpts.output)
 	for _, attachment := range manifest.Attachments {
-		fmt.Fprintf(out, "[evidence]   %s  %s\n", attachment.Digest, strings.Join(attachment.Files, ", "))
+		fprintf(out, "[evidence]   %s  %s\n", attachment.Digest, strings.Join(attachment.Files, ", "))
 	}
-	fmt.Fprintf(out, "[evidence] oci/    digest-preserving; restore with `clearcutt-verify evidence import`\n")
-	fmt.Fprintf(out, "[evidence] files/  plain files, readable without container tooling\n")
+	fprintf(out, "[evidence] oci/    digest-preserving; restore with `clearcutt-verify evidence import`\n")
+	fprintf(out, "[evidence] files/  plain files, readable without container tooling\n")
 	return nil
 }
 
@@ -223,10 +223,10 @@ func runEvidenceImport(dir, repo string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "[evidence] restored %d bundle(s) into %s\n", len(restored), repo)
+	fprintf(out, "[evidence] restored %d bundle(s) into %s\n", len(restored), repo)
 	for _, digest := range restored {
-		fmt.Fprintf(out, "[evidence]   %s\n", digest)
+		fprintf(out, "[evidence]   %s\n", digest)
 	}
-	fmt.Fprintf(out, "[evidence] digests are unchanged, so signatures over this evidence still verify\n")
+	fprintf(out, "[evidence] digests are unchanged, so signatures over this evidence still verify\n")
 	return nil
 }

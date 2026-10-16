@@ -14,11 +14,14 @@ dist/
 .claudeprompt
 .cursorrules
 .windsurfrules
+/.vscode/tasks.json
 
 /clearcutt
 /clearcutt-verify
 /cli/clearcutt
 /cli/clearcutt-verify
+# A local build output that was once committed by mistake.
+/cli/iface_check
 
 cli/coverage.out
 cli/coverage.txt

@@ -13,9 +13,8 @@ The CLI distinguishes "the gate said no" from "the gate could not run":
 | `1` | Operational error: bad flags or arguments, IO failure, or required tooling not available. |
 | `2` | Policy gate failed: a check evaluated and rejected the input. |
 
-Exit code 2 comes from `estate verify --fail-on failed|unverified`,
-`graph build --fail-on-stale`, and `verify release-evidence`. Scripts can branch
-on the code:
+Exit code 2 comes from `estate verify --fail-on failed|unverified` and
+`graph build --fail-on-stale`. Scripts can branch on the code:
 
 ```text
 clearcutt-verify estate verify --refs refs.txt --policy policy.yaml --out dist/estate --fail-on failed; case $? in
@@ -33,7 +32,7 @@ Unknown values are rejected before the command runs.
 ## Install
 
 Releases ship cross-compiled binaries (`clearcutt-verify-<os>-<arch>` for
-`darwin`/`linux`/`windows` on `amd64`/`arm64`), a keyless Sigstore signature
+`darwin`/`linux` on `amd64`/`arm64`), a keyless Sigstore signature
 bundle per binary (`<binary>.sig`), and a `SHA256SUMS.txt` manifest. Download a
 binary and its `.sig` bundle from the
 [latest release](https://github.com/northcutted/clearcutt-verify/releases/latest)
@@ -49,7 +48,13 @@ cosign verify-blob \
 chmod +x clearcutt-verify-linux-amd64
 ```
 
-In GitHub Actions, `.github/actions/install-clearcutt-verify` does the same.
+In GitHub Actions, the repository's action
+(`uses: northcutted/clearcutt-verify@vX.Y.Z`) does the same; see
+[Verifying an estate in GitHub Actions](github-actions.md).
+
+Releases after v0.15.0 also carry a SLSA build provenance attestation per
+binary, which `gh attestation verify clearcutt-verify-linux-amd64 --repo northcutted/clearcutt-verify`
+checks.
 
 ## Build
 
@@ -65,13 +70,9 @@ read-only against the registry: it reads manifests, configs, and tags, and write
 local files.
 
 ```bash
-# Enumerate a registry namespace into an inventory
-./clearcutt-verify registry scan \
-  --registry ghcr.io \
-  --namespace YOUR_ORG/YOUR_REPO \
-  --repository YOUR_BASE_IMAGE \
-  --repository YOUR_APP_IMAGE \
-  --output dist/scan/images.yaml
+# Enumerate a registry namespace into an inventory (on GHCR, an
+# organization's container packages, listed through the GitHub API)
+./clearcutt-verify registry scan --github-org YOUR_ORG --output dist/scan/images.yaml
 
 # Read each image's manifest, config, layers, and labels
 ./clearcutt-verify import observe --images dist/scan/images.yaml --output dist/scan/observations.json
@@ -105,10 +106,13 @@ an unchanged estate does not create a new version, and drift is a diff between t
 tags. `estate pull` rejects any manifest that is not a ClearCutt estate artifact. See
 [registry-graph.md](registry-graph.md#persisting-a-snapshot).
 
-`registry scan` prefers the distribution `_catalog` endpoint filtered by
-`--namespace`; registries that do not implement it (GHCR, Docker Hub) need
-`--repository`, which is repeatable. Cosign signature and attestation sidecar tags
-are skipped unless `--include-sidecar-tags` is passed.
+`registry scan --registry HOST` uses the distribution `_catalog` endpoint,
+filtered by `--namespace`. Registries that do not implement it, Docker Hub among
+them, need `--repository`, which is repeatable. GHCR does not implement it
+either: `--github-org` lists an organization's (or user's) container packages
+through the GitHub Packages API instead, with a `GITHUB_TOKEN` that can read
+packages, and `--package-prefix` keeps some of them. Cosign signature and
+attestation sidecar tags are skipped unless `--include-sidecar-tags` is passed.
 
 `graph layers` is the content view: fleet core, common layers, content-identical
 images, similarity clusters, per-image unique content, deduplication accounting, and
@@ -150,20 +154,10 @@ every edge with the confidence that method earns. See
 ./clearcutt-verify estate pull ghcr.io/acme/estate:latest --output dist/estate
 ```
 
+To verify a single image, give `--refs` a file holding just its reference: an
+estate of one image gets the same checks and the same report.
+
 See [Verifying an estate](verify-estate.md) and the [report contract](../contract/README.md).
-
-## One Image
-
-```bash
-./clearcutt-verify verify release-evidence \
-  --ref ghcr.io/YOUR_ORG/YOUR_REPO/YOUR_IMAGE:TAG \
-  --repo YOUR_ORG/YOUR_REPO \
-  --workflow-identity 'https://github.com/YOUR_ORG/YOUR_REPO/.github/workflows/release.yml@refs/heads/main'
-```
-
-`verify release-evidence` checks one published image's Sigstore signature, its
-SBOM and test-result attestations, and its SLSA and GitHub provenance, matching
-the workflow identity exactly.
 
 ## Drift Check Scope
 

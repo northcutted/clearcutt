@@ -56,9 +56,10 @@ repeats.**
   undetermined with the reason. Absence is never rendered as zero.
 
 Evidence ClearCutt reads — SBOMs, signatures, attestations — is evidence
-**someone else produced**. ClearCutt records whether it is present and
-well-formed. Verifying it cryptographically is `verify release-evidence`,
-cosign, and SLSA verification, against the registry.
+**someone else produced**. `import observe` and `import assess` record
+whether it is present; `estate verify` verifies it with cosign against the
+signers a policy trusts, and evidence anyone else signed is `failed`, not
+trusted.
 
 ## 3. Registry-native storage
 
@@ -84,9 +85,9 @@ See [registry-native evidence](registry-native-evidence.md).
   patch, rebuild, or re-tag anything.
 - **A scan is a point in time.** Findings reflect the scanner's database at the
   moment it ran.
-- **A vulnerability acceptance is not a suppression.** An accepted finding stays
-  in the scan output and in the report, carries a named owner and an expiry, and
-  blocks exactly as hard as an unaccepted one once it expires.
+- **A VEX statement is not a deletion.** A finding a VEX statement covers stays
+  in the report, marked suppressed; it is just not counted toward the
+  vulnerability gate.
 - **Coverage is not proof.** An estate can raise the share of images with a
   known base by adding labels to its own images. Only layer evidence raises the
   proven share, which is why the two are reported separately.

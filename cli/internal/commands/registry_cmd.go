@@ -195,19 +195,19 @@ func runRegistryScan(ctx context.Context) error {
 			Images    int    `json:"images"`
 		}{Result: result, Inventory: opts.output, Images: summary.ImageCount})
 	}
-	fmt.Fprintf(out, "[registry-scan] %s/%s: %d repositories, %d tags discovered, %d selected\n",
+	fprintf(out, "[registry-scan] %s/%s: %d repositories, %d tags discovered, %d selected\n",
 		opts.registry, opts.namespace, result.Summary.RepositoriesDiscovered, result.Summary.TagsDiscovered, result.Summary.TagsSelected)
 	if result.Summary.SidecarTagsSkipped > 0 {
-		fmt.Fprintf(out, "[registry-scan] skipped %d cosign/attestation sidecar tag(s); pass --include-sidecar-tags to keep them\n", result.Summary.SidecarTagsSkipped)
+		fprintf(out, "[registry-scan] skipped %d cosign/attestation sidecar tag(s); pass --include-sidecar-tags to keep them\n", result.Summary.SidecarTagsSkipped)
 	}
 	if result.Summary.RepositoriesFailed > 0 {
-		fmt.Fprintf(errOut, "[registry-scan] %d repository(ies) could not be listed; see per-repository warnings with --scan-output\n", result.Summary.RepositoriesFailed)
+		fprintf(errOut, "[registry-scan] %d repository(ies) could not be listed; see per-repository warnings with --scan-output\n", result.Summary.RepositoriesFailed)
 	}
-	fmt.Fprintf(out, "[registry-scan] wrote %d image(s) to %s\n", summary.ImageCount, opts.output)
+	fprintf(out, "[registry-scan] wrote %d image(s) to %s\n", summary.ImageCount, opts.output)
 	if summary.LowConfidence > 0 {
-		fmt.Fprintf(out, "[registry-scan] %d image(s) could not be classified by runtime and need review\n", summary.LowConfidence)
+		fprintf(out, "[registry-scan] %d image(s) could not be classified by runtime and need review\n", summary.LowConfidence)
 	}
-	fmt.Fprintf(out, "[registry-scan] next: clearcutt-verify import observe --images %s --output observations.json\n", opts.output)
+	fprintf(out, "[registry-scan] next: clearcutt-verify import observe --images %s --output observations.json\n", opts.output)
 	return nil
 }
 

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -10,11 +11,11 @@ import (
 )
 
 // ErrCheckFailed is the sentinel policy error returned by gating commands
-// (verify, certify, conformance, exceptions validate, and the other check-list
-// gates) when one or more policy checks fail. main maps it to process exit
-// code 2 without printing a redundant "Error:" line, since the command has
-// already rendered a detailed report. All other errors are operational
-// (bad flags, IO, missing catalog) and exit 1.
+// (estate verify --fail-on, graph build --fail-on-stale) when one or more
+// policy checks fail. main maps it to process exit code 2 without printing a
+// redundant "Error:" line, since the command has already rendered a detailed
+// report. All other errors are operational (bad flags, IO, an unreachable
+// registry) and exit 1.
 var ErrCheckFailed = errors.New("one or more checks failed")
 
 // out and errOut are the writers used for all command output. They default to
@@ -24,6 +25,18 @@ var (
 	out    io.Writer = os.Stdout
 	errOut io.Writer = os.Stderr
 )
+
+// fprintf and fprintln write a line of human-readable command output. A failed
+// write to the terminal has nowhere better to be reported, so they drop the
+// error on purpose. Structured output (printStructured) and tables
+// (tabwriter's Flush) return their errors.
+func fprintf(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+func fprintln(w io.Writer, a ...any) {
+	_, _ = fmt.Fprintln(w, a...)
+}
 
 // structuredFormat reports whether the global --format selects a structured
 // machine-readable output (json or yaml/yml) instead of the default human form.

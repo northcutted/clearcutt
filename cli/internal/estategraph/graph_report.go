@@ -152,7 +152,7 @@ func GraphMarkdown(graph Graph) string {
 	}
 
 	fmt.Fprintf(&b, "## Reproduce this report\n\n")
-	fmt.Fprintf(&b, "```bash\nclearcutt registry scan --registry <host> --namespace <namespace> --output images.yaml\nclearcutt import observe --images images.yaml --output observations.json\nclearcutt graph build --observations observations.json --output graph.json --report graph.md\n```\n")
+	fmt.Fprintf(&b, "```bash\nclearcutt-verify registry scan --registry <host> --namespace <namespace> --output images.yaml\nclearcutt-verify import observe --images images.yaml --output observations.json\nclearcutt-verify graph build --observations observations.json --output graph.json --report graph.md\n```\n")
 	return b.String()
 }
 

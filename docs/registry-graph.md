@@ -339,9 +339,8 @@ It reports:
 
 This one is worth calling out. Images published under different references with
 identical layer sets usually mean a release republished something that did not
-change. On this repository's own fleet, all 16 scanned images fall into 6 identical
-groups — `v0.12.2`, `v0.13.0`, and `v0.14.0` are content-identical for every tier.
-Three releases, no new content.
+change: a run of version tags in one identical group is a run of releases with no
+new content.
 
 Note that identical layers mean identical *content*, not identical *configuration*:
 two images can share every layer and still differ in entrypoint, user, or labels.
